@@ -15,8 +15,14 @@ import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 import { CONNECTOR_JS_CONTENT } from '../../utils/connectorContent';
+import {
+    appendCodexMcpTomlSnippet,
+    buildCodexMcpTomlSnippet,
+    hasCodexMcpServerConfig
+} from '../../utils/codexMcpConfig';
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
+type CodexConfigStatus = 'no-config-file' | 'nexus-configured' | 'config-exists';
 type DesktopModuleMap = {
     child_process: typeof import('child_process');
     fs: typeof import('fs');
@@ -225,7 +231,7 @@ export class GetStartedTab {
             this.services.component
         );
 
-        this.container.createEl('h3', { text: 'Claude Desktop setup' });
+        this.container.createEl('h3', { text: 'MCP integration setup' });
 
         // MCP setup requires Node.js modules (path, fs, child_process) — desktop only
         if (!Platform.isDesktop) {
@@ -235,6 +241,8 @@ export class GetStartedTab {
             });
             return;
         }
+
+        this.container.createEl('h4', { text: 'Claude Desktop' });
 
         // Check for Node.js availability
         const nodePath = this.resolveNodePath();
@@ -370,8 +378,110 @@ export class GetStartedTab {
             }
         }
 
+        this.renderCodexSetupSection();
+
         // Always show manual copy-paste section as fallback
         this.renderManualConfigSection(configPath);
+    }
+
+    private renderCodexSetupSection(): void {
+        this.container.createEl('hr', { cls: 'nexus-divider' });
+
+        const section = this.container.createDiv('nexus-codex-config');
+        section.createEl('h4', { text: 'Codex' });
+
+        const nodeFs = this.loadDesktopModule('fs');
+        const pathMod = this.loadDesktopModule('path');
+        const configPath = this.getCodexConfigPath(pathMod);
+        const nodePath = this.resolveNodePath();
+        const configStatus = this.getCodexConfigStatus(nodeFs, configPath);
+
+        const row = section.createDiv('nexus-mcp-row');
+        const statusText = this.getCodexStatusText(configStatus);
+        row.createEl('span', {
+            text: statusText,
+            cls: configStatus === 'nexus-configured'
+                ? 'nexus-mcp-status nexus-mcp-success'
+                : 'nexus-mcp-status'
+        });
+
+        const actions = row.createDiv('nexus-mcp-actions');
+        const component = this.services.component;
+
+        if (configStatus === 'nexus-configured') {
+            const openBtn = actions.createEl('button', { text: 'Open config' });
+            const openHandler = () => this.openConfigFile(configPath);
+            if (component) {
+                component.registerDomEvent(openBtn, 'click', openHandler);
+            }
+
+            const revealBtn = actions.createEl('button', { text: this.getRevealButtonText() });
+            const revealHandler = () => this.revealInFolder(configPath);
+            if (component) {
+                component.registerDomEvent(revealBtn, 'click', revealHandler);
+            }
+
+            section.createEl('p', {
+                text: 'Restart codex or start a new session if Nexus does not appear.',
+                cls: 'nexus-mcp-help'
+            });
+        } else {
+            const addBtn = actions.createEl('button', { text: 'Add Nexus', cls: 'mod-cta' });
+            const addHandler = () => {
+                this.autoConfigureCodex();
+            };
+            if (component) {
+                component.registerDomEvent(addBtn, 'click', addHandler);
+            }
+
+            if (!nodePath) {
+                addBtn.disabled = true;
+            }
+
+            section.createEl('p', {
+                text: 'This updates the config file directly; no terminal window opens.',
+                cls: 'nexus-mcp-help'
+            });
+        }
+
+        this.renderCodexManualConfig(section, configPath);
+    }
+
+    private renderCodexManualConfig(section: HTMLElement, configPath: string): void {
+        const manualSection = section.createDiv('nexus-manual-config');
+        manualSection.createEl('p', {
+            text: 'Manual configuration:',
+            cls: 'setting-item-description'
+        });
+
+        const configToml = this.getCodexConfigToml();
+        const codeBlock = manualSection.createEl('pre', { cls: 'nexus-config-code' });
+        codeBlock.createEl('code', { text: configToml });
+
+        const copyBtn = manualSection.createEl('button', { text: 'Copy configuration', cls: 'mod-cta' });
+        const copyHandler = async () => {
+            try {
+                await navigator.clipboard.writeText(configToml);
+                copyBtn.textContent = 'Copied!';
+                window.setTimeout(() => {
+                    copyBtn.textContent = 'Copy configuration';
+                }, 2000);
+            } catch {
+                new Notice('Failed to copy to clipboard');
+            }
+        };
+        const component = this.services.component;
+        if (component) {
+            component.registerDomEvent(copyBtn, 'click', copyHandler);
+        }
+
+        const pathInfo = manualSection.createDiv('nexus-config-path');
+        pathInfo.createEl('span', { text: 'Config file location: ', cls: 'setting-item-description' });
+        const pathLink = pathInfo.createEl('a', { text: configPath, href: '#' });
+        const pathHandler = () => this.revealInFolder(configPath);
+        if (component) {
+            component.registerDomEvent(pathLink, 'click', pathHandler);
+        }
     }
 
     /**
@@ -477,6 +587,63 @@ export class GetStartedTab {
         return typeof maybeConfig.mcpServers === 'object' && maybeConfig.mcpServers !== null;
     }
 
+    private getCodexConfigPath(pathMod: DesktopModuleMap['path']): string {
+        const codexHome = process.env.CODEX_HOME || pathMod.join(this.getUserHome(), '.codex');
+        return pathMod.normalize(pathMod.join(codexHome, 'config.toml'));
+    }
+
+    private getUserHome(): string {
+        if (Platform.isWin) {
+            return process.env.USERPROFILE || process.env.HOME || '';
+        }
+
+        return process.env.HOME || '';
+    }
+
+    private getCodexConfigStatus(
+        nodeFs: DesktopModuleMap['fs'],
+        configPath: string
+    ): CodexConfigStatus {
+        if (!nodeFs.existsSync(configPath)) {
+            return 'no-config-file';
+        }
+
+        try {
+            const content = nodeFs.readFileSync(configPath, 'utf-8');
+            const serverKey = getPrimaryServerKey(this.services.app.vault.getName());
+
+            if (hasCodexMcpServerConfig(content, serverKey)) {
+                return 'nexus-configured';
+            }
+        } catch (error) {
+            console.error('[GetStartedTab] Error reading Codex config:', error);
+        }
+
+        return 'config-exists';
+    }
+
+    private getCodexStatusText(configStatus: CodexConfigStatus): string {
+        if (configStatus === 'nexus-configured') {
+            return '✓ connected';
+        }
+
+        if (configStatus === 'no-config-file') {
+            return 'Ready to configure';
+        }
+
+        return 'Codex config found';
+    }
+
+    private getCodexConfigToml(): string {
+        const pathMod = this.loadDesktopModule('path');
+        const vaultName = this.services.app.vault.getName();
+        const serverKey = getPrimaryServerKey(vaultName);
+        const connectorPath = pathMod.normalize(pathMod.join(this.services.pluginPath, 'connector.js'));
+        const nodePath = this.resolveNodePath() || 'node';
+
+        return buildCodexMcpTomlSnippet(serverKey, nodePath, [connectorPath]);
+    }
+
     /**
      * Generate the configuration JSON string
      */
@@ -565,6 +732,53 @@ export class GetStartedTab {
         } catch (error) {
             console.error('[GetStartedTab] Error auto-configuring:', error);
             new Notice(`Failed to configure: ${(error as Error).message}`);
+        }
+    }
+
+    private autoConfigureCodex(): void {
+        const nodeFs = this.loadDesktopModule('fs');
+        const pathMod = this.loadDesktopModule('path');
+
+        try {
+            const nodePath = this.resolveNodePath();
+
+            if (!nodePath) {
+                new Notice('Node.js not found. Please install Node.js and try again.');
+                return;
+            }
+
+            const vaultName = this.services.app.vault.getName();
+            const serverKey = getPrimaryServerKey(vaultName);
+            const connectorPath = this.ensureConnectorFile(nodeFs, pathMod);
+            const configPath = this.getCodexConfigPath(pathMod);
+            const configDir = pathMod.dirname(configPath);
+            const configToml = buildCodexMcpTomlSnippet(serverKey, nodePath, [connectorPath]);
+
+            if (!nodeFs.existsSync(configDir)) {
+                nodeFs.mkdirSync(configDir, { recursive: true });
+            }
+
+            if (!nodeFs.existsSync(configPath)) {
+                nodeFs.writeFileSync(configPath, `${configToml}\n`, 'utf-8');
+                new Notice('Nexus connector added to the app config. Restart the app or start a new session if needed.');
+                this.render();
+                return;
+            }
+
+            const existingContent = nodeFs.readFileSync(configPath, 'utf-8');
+            if (hasCodexMcpServerConfig(existingContent, serverKey)) {
+                new Notice('Nexus is already configured in the app config.');
+                this.render();
+                return;
+            }
+
+            const updatedContent = appendCodexMcpTomlSnippet(existingContent, configToml);
+            nodeFs.writeFileSync(configPath, updatedContent, 'utf-8');
+            new Notice('Nexus connector added to the app config. Restart the app or start a new session if needed.');
+            this.render();
+        } catch (error) {
+            console.error('[GetStartedTab] Error auto-configuring Codex:', error);
+            new Notice(`Failed to configure Codex: ${(error as Error).message}`);
         }
     }
 
