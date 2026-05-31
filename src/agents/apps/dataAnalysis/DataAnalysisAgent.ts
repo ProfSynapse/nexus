@@ -20,6 +20,13 @@ import { PyodideSandbox } from './services/PyodideSandbox';
 import { HucreEnsurer } from './services/HucreEnsurer';
 import type { HucreModule } from './spreadsheet/HucreModule';
 import { resolveVaultRoot } from '../../../database/storage/VaultRootResolver';
+import { SpreadsheetAutoSync } from './spreadsheet/SpreadsheetAutoSync';
+import { WorkbookMirrorService } from './spreadsheet/WorkbookMirrorService';
+import { WorkbookWriteBackService } from './spreadsheet/WorkbookWriteBackService';
+import { HucreXlsxSource } from './spreadsheet/HucreXlsxSource';
+import { HucreXlsxWriter } from './spreadsheet/HucreXlsxWriter';
+import { SnapshotArchiveService } from '../../../services/storage/SnapshotArchiveService';
+import { App, EventRef, Notice, normalizePath } from 'obsidian';
 
 const DATA_ANALYSIS_MANIFEST: AppManifest = {
   id: 'data-analysis',
@@ -43,6 +50,8 @@ const DATA_ANALYSIS_MANIFEST: AppManifest = {
 export class DataAnalysisAgent extends BaseAppAgent {
   private sandbox: IAnalysisSandbox | null = null;
   private hucre: HucreEnsurer | null = null;
+  private autoSync: SpreadsheetAutoSync | null = null;
+  private vaultModifyRef: EventRef | null = null;
 
   constructor() {
     super(DATA_ANALYSIS_MANIFEST);
@@ -93,7 +102,71 @@ export class DataAnalysisAgent extends BaseAppAgent {
     this.sandbox = sandbox;
   }
 
+  /** Start the auto-sync vault watcher once the App is injected (desktop). */
+  setApp(app: App): void {
+    super.setApp(app);
+    if (this.vaultModifyRef) {
+      return;
+    }
+    this.autoSync = new SpreadsheetAutoSync({
+      getRoot: () => this.getMirrorStorage().root,
+      sync: (workbookId) => this.syncWorkbook(workbookId),
+    });
+    this.vaultModifyRef = app.vault.on('modify', (file) => this.autoSync?.notifyModified(file.path));
+  }
+
+  /**
+   * Auto write-back for one mirrored workbook: read the manifest for its source
+   * `.xlsx`, apply the edited CSV shards back losslessly, and persist. Triggered
+   * (debounced) by the vault watcher when a mirror shard changes; a no-op when
+   * there's no manifest or nothing actually changed.
+   */
+  private async syncWorkbook(workbookId: string): Promise<void> {
+    const app = this.getApp();
+    const vault = this.getVault();
+    if (!app || !vault) {
+      return;
+    }
+    const { root, maxShardBytes } = this.getMirrorStorage();
+    const mirror = new WorkbookMirrorService(vault.adapter);
+    const manifest = await mirror.readManifest({ root, workbookId, maxShardBytes });
+    if (!manifest || !manifest.sourcePath) {
+      return;
+    }
+
+    let buffer: ArrayBuffer;
+    try {
+      buffer = await vault.adapter.readBinary(normalizePath(manifest.sourcePath));
+    } catch {
+      return; // source moved/deleted — skip silently
+    }
+
+    const mod = await this.getHucreModule();
+    const writeBack = new WorkbookWriteBackService(
+      vault.adapter,
+      new HucreXlsxSource(() => Promise.resolve(mod)),
+      new HucreXlsxWriter(() => Promise.resolve(mod)),
+      mirror,
+      new SnapshotArchiveService(vault.adapter)
+    );
+
+    const target = { root, workbookId, maxShardBytes, sourcePath: manifest.sourcePath };
+    const result = await writeBack.apply(target, new Uint8Array(buffer));
+
+    if (result.applied && result.newBytes) {
+      await vault.adapter.writeBinary(normalizePath(manifest.sourcePath), result.newBytes.slice().buffer);
+      const blocked = result.summary.cellsBlocked > 0 ? `, ${result.summary.cellsBlocked} formula cell(s) skipped` : '';
+      new Notice(`Synced ${result.summary.cellsApplied} change(s) to ${manifest.sourcePath}${blocked}.`, 4000);
+    }
+  }
+
   onunload(): void {
+    if (this.vaultModifyRef) {
+      this.getApp()?.vault.offref(this.vaultModifyRef);
+      this.vaultModifyRef = null;
+    }
+    this.autoSync?.dispose();
+    this.autoSync = null;
     this.sandbox?.dispose();
     this.sandbox = null;
     super.onunload();

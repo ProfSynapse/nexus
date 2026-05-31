@@ -45,20 +45,34 @@ in the vault. Ask the AI (or call the tool) `mirrorWorkbook { path: "budget.xlsx
   `.part0/.part1/…` with contiguous row ranges.
 - Re-running mirror on the unchanged file reports `regenerated: false`.
 
-## 4. Edit + write back
+## 4. Edit → AUTOMATIC write-back
 
-Edit a **data** cell in a `.partN.csv` (e.g. change an amount). Then
-`applyToWorkbook { path: "budget.xlsx", dryRun: true }` → review the summary
-(`cellsApplied`, sample before→after, `cellsBlocked`). Then run without `dryRun`.
+The round-trip is **automatic**: editing any mirror `.partN.csv` triggers a
+debounced (~1.5s) write-back to the source `.xlsx` — no explicit tool call needed.
+Edit a CSV two ways:
+
+- **With pandas (code edits the CSV):** `runAnalysis` with `outputPath` pointing at
+  a mirror shard and a `.csv` extension, e.g.
+  `inputs:{data:"Nexus/spreadsheets/budget/Data.part0.csv"}`,
+  `outputPath:"Nexus/spreadsheets/budget/Data.part0.csv"`, code that returns a list
+  of rows/records (`df.to_dict("records")`). The result is written as CSV.
+- **With CRUD:** `contentManager replace/insert` on the `.partN.csv` text.
+
+Either way, ~1.5s after the edit settles:
 
 **Expect:**
-- The `.xlsx` updates with your value, and — critically — **the chart and all
-  formatting survive** when you open it in Excel. (This is the whole point of
-  hucre vs openpyxl.)
-- A snapshot appears under `spreadsheets/budget/_archive/<ts>/`.
-- The mirror re-projects (manifest `sourceHash` changes; CSVs reflect the new state).
-- ❗ Open the file in Excel and confirm formulas downstream of your edit
-  **recalculate** (hucre writes values, Excel recalcs on open).
+- A Notice: "Synced N change(s) to budget.xlsx …".
+- The `.xlsx` updates, and — critically — **the chart and all formatting survive**
+  when you open it in Excel (the whole point of hucre vs openpyxl).
+- A snapshot under `spreadsheets/budget/_archive/<ts>/`.
+- The mirror re-projects (manifest `sourceHash` changes) **without looping**
+  (the watcher suppresses its own re-projection writes).
+- ❗ In Excel, confirm formulas downstream of your edit **recalculate** (hucre
+  writes values; Excel recalcs on open).
+
+`applyToWorkbook` still exists for a **manual/preview** path — call it with
+`dryRun: true` to see the change set, or `force: true` to override the divergence
+guard — but you don't need it for the normal flow.
 
 ## 5. Guard checks
 

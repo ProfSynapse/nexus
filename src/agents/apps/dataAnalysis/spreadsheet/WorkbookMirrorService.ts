@@ -32,6 +32,8 @@ export interface MirrorTarget {
   root: string;
   /** Workbook id (source basename without extension), e.g. `budget`. */
   workbookId: string;
+  /** Vault-relative path of the source `.xlsx` (recorded for auto-sync). */
+  sourcePath?: string;
   /** Per-file byte cap (e.g. `maxShardBytes`). */
   maxShardBytes: number;
   /** Clock injection for deterministic tests. Default {@link Date.now}. */
@@ -113,6 +115,7 @@ export class WorkbookMirrorService {
     const manifest: MirrorManifest = {
       schemaVersion: MIRROR_SCHEMA_VERSION,
       workbook: target.workbookId,
+      sourcePath: target.sourcePath ?? existing?.sourcePath ?? '',
       sourceHash: workbook.sourceHash,
       hasMacros: workbook.hasMacros ?? false,
       generatedAt: new Date((target.now ?? Date.now)()).toISOString(),

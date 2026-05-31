@@ -19,6 +19,7 @@ import { isValidPath } from '../../../../utils/pathUtils';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { verbs } from '../../../utils/toolStatusLabels';
 import { DataAnalysisAgent } from '../DataAnalysisAgent';
+import { dataToCsv } from '../spreadsheet/csv';
 import { RunAnalysisParams, SandboxFile } from '../types';
 import {
   clampInputBytes,
@@ -164,7 +165,9 @@ export class RunAnalysisTool extends BaseTool<RunAnalysisParams, CommonResult> {
     outPath: string,
     data: unknown
   ): Promise<void> {
-    const content = JSON.stringify(data, null, 2);
+    // A `.csv` outputPath writes tabular CSV (so pandas results can land in a
+    // spreadsheet mirror shard, auto-syncing back to .xlsx); anything else is JSON.
+    const content = /\.csv$/i.test(outPath) ? dataToCsv(data) : JSON.stringify(data, null, 2);
     const existing = vault.getAbstractFileByPath(outPath);
     if (existing) {
       await vault.adapter.write(outPath, content);

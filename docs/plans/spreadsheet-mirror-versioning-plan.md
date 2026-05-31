@@ -77,6 +77,19 @@ A sheet can exceed the cap, so each sheet's CSV **shards to `maxShardBytes`**
 index**: sheet order, per-shard row ranges, reassembly order, and the source hash.
 The event-log JSONL shards the same way as it grows.
 
+### 3.2b Trigger model: AUTOMATIC write-back (decided 2026-05-31)
+
+User decision: the round-trip runs **automatically** on CSV save, not via an
+explicit AI tool call. A debounced (`~1.5s`) vault `modify` watcher
+(`SpreadsheetAutoSync`) scoped to `<root>/spreadsheets/*/*.csv` runs the
+write-back when a shard changes; it suppresses its own re-projection writes
+(syncing flag + cooldown) so there's no loop. `applyToWorkbook` remains as a
+manual `dryRun`/`force` path. The AI edits the CSV either with **pandas**
+(`runAnalysis` `outputPath` ending `.csv` → tabular result written as CSV) or
+with **ContentManager CRUD**. `mirrorWorkbook` is still the explicit "start
+working on this workbook" step. `manifest.sourcePath` records the `.xlsx` so the
+watcher can locate it.
+
 ### 3.3 The CSV is a *projection*; the xlsx is the source of truth (LOCKED)
 
 The mirror is **not** a parallel store — it's a regenerated view:

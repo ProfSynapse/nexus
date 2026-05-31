@@ -85,6 +85,8 @@ export interface MirrorManifest {
   schemaVersion: number;
   /** Workbook id (basename), e.g. `budget`. */
   workbook: string;
+  /** Vault-relative path of the source `.xlsx` (so auto-sync can locate it). */
+  sourcePath: string;
   sourceHash: string;
   hasMacros: boolean;
   generatedAt: string;

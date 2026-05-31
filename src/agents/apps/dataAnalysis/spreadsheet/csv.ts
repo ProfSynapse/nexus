@@ -102,3 +102,57 @@ export function serializeRows(rows: CellValue[][]): string {
   }
   return rows.map(serializeRow).join('\n') + '\n';
 }
+
+/**
+ * Serialize an arbitrary JSON-ish analysis result to CSV. Accepts an array of
+ * rows (`unknown[][]`), an array of records (`Record[]` — columns are the union
+ * of keys, first-seen order), or an array of scalars (single column). Throws on
+ * a non-array result (a scalar/object can't be a table).
+ */
+export function dataToCsv(data: unknown): string {
+  if (!Array.isArray(data)) {
+    throw new Error('CSV output requires a list of rows (arrays) or records (objects).');
+  }
+  if (data.length === 0) {
+    return '';
+  }
+  if (Array.isArray(data[0])) {
+    return serializeRows((data as unknown[][]).map((row) => row.map(toCsvCell)));
+  }
+  if (isRecord(data[0])) {
+    const cols: string[] = [];
+    const seen = new Set<string>();
+    for (const rec of data as Record<string, unknown>[]) {
+      for (const key of Object.keys(rec)) {
+        if (!seen.has(key)) {
+          seen.add(key);
+          cols.push(key);
+        }
+      }
+    }
+    const rows: CellValue[][] = [cols];
+    for (const rec of data as Record<string, unknown>[]) {
+      rows.push(cols.map((col) => toCsvCell(rec[col])));
+    }
+    return serializeRows(rows);
+  }
+  return serializeRows((data as unknown[]).map((value) => [toCsvCell(value)]));
+}
+
+function toCsvCell(value: unknown): CellValue {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

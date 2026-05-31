@@ -72,7 +72,8 @@ export class MirrorWorkbookTool extends BaseTool<MirrorWorkbookParams, CommonRes
       const { root, maxShardBytes } = this.agent.getMirrorStorage();
       const workbookId = workbookIdFromPath(params.path);
       const mirror = new WorkbookMirrorService(vault.adapter);
-      const { manifest, regenerated } = await mirror.generate(workbook, { root, workbookId, maxShardBytes });
+      const { manifest, regenerated } = await mirror.generate(workbook,
+        { root, workbookId, maxShardBytes, sourcePath: normalizePath(params.path) });
 
       return this.prepareResult(true, {
         mirrorDir: mirror.mirrorDir({ root, workbookId, maxShardBytes }),
