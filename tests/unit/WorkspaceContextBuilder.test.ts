@@ -251,4 +251,119 @@ describe('WorkspaceContextBuilder', () => {
       'Failed: Wrote Projects/A.md'
     ]);
   });
+
+  it('narrates each activity in its own captured memory/goal/constraints', async () => {
+    const builder = new WorkspaceContextBuilder();
+    const memoryService = {
+      getMemoryTraces: jest.fn().mockResolvedValue({
+        items: [
+          {
+            timestamp: 300,
+            content: 'Used tool',
+            metadata: {
+              tool: { agent: 'toolManager', mode: 'useTools' },
+              context: {
+                workspaceId: 'workspace-uuid',
+                sessionId: 'session-b',
+                memory: 'We finalized the hero copy and are assembling the launch email.',
+                goal: 'Ship a reviewable draft of the launch email.',
+                constraints: 'Keep it under 300 words.'
+              },
+              input: { arguments: { tool: 'content read "Notes/release.md"' } }
+            }
+          },
+          {
+            timestamp: 200,
+            content: 'Used tool',
+            metadata: {
+              tool: { agent: 'toolManager', mode: 'useTools' },
+              context: {
+                workspaceId: 'workspace-uuid',
+                sessionId: 'session-a',
+                goal: 'Survey the landscape.'
+              },
+              input: { arguments: { tool: 'search search-content "prior art"' } }
+            }
+          }
+        ]
+      })
+    };
+
+    const result = await builder.buildContextBriefing(
+      { id: 'workspace-uuid', name: 'Workspace', rootFolder: '/', context: {} } as never,
+      memoryService as never,
+      10
+    );
+
+    expect(result.recentActivity).toEqual([
+      'We finalized the hero copy and are assembling the launch email. I read Notes/release.md to ship a reviewable draft of the launch email. Keep it under 300 words.',
+      'I searched for "prior art" to survey the landscape.'
+    ]);
+  });
+
+  it('leaves context-free activities as the bare action', async () => {
+    const builder = new WorkspaceContextBuilder();
+    const memoryService = {
+      getMemoryTraces: jest.fn().mockResolvedValue({
+        items: [
+          {
+            timestamp: 300,
+            content: 'Used tool',
+            metadata: {
+              tool: { agent: 'toolManager', mode: 'useTools' },
+              input: { arguments: { tool: 'content read "Notes/release.md"' } }
+            }
+          }
+        ]
+      })
+    };
+
+    const result = await builder.buildContextBriefing(
+      { id: 'workspace-uuid', name: 'Workspace', rootFolder: '/', context: {} } as never,
+      memoryService as never,
+      10
+    );
+
+    expect(result.recentActivity).toEqual(['Read Notes/release.md']);
+  });
+
+  it('narrates failed activities as attempts and supports legacy context fields', async () => {
+    const builder = new WorkspaceContextBuilder();
+    const memoryService = {
+      getMemoryTraces: jest.fn().mockResolvedValue({
+        items: [
+          {
+            timestamp: 300,
+            content: 'Tool execution failed',
+            metadata: {
+              tool: { agent: 'toolManager', mode: 'useTools' },
+              context: {
+                workspaceId: 'workspace-uuid',
+                sessionId: 'legacy-session',
+                sessionMemory: 'Reproducing the reported bug.',
+                primaryGoal: 'Patch the crash.'
+              },
+              input: { arguments: { strategy: 'serial', tool: 'content write "Notes/fix.md" "body"' } },
+              legacy: {
+                result: {
+                  success: false,
+                  data: { results: [{ agent: 'contentManager', tool: 'write', success: false }] }
+                }
+              }
+            }
+          }
+        ]
+      })
+    };
+
+    const result = await builder.buildContextBriefing(
+      { id: 'workspace-uuid', name: 'Workspace', rootFolder: '/', context: {} } as never,
+      memoryService as never,
+      10
+    );
+
+    expect(result.recentActivity).toEqual([
+      'Reproducing the reported bug. I tried to write Notes/fix.md to patch the crash, but it failed.'
+    ]);
+  });
 });

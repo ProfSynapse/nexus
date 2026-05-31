@@ -23,8 +23,25 @@ import { splitTopLevelSegments, tokenizeWithMeta } from '../../toolManager/servi
 interface TraceItem {
   timestamp?: number;
   content?: string;
+  sessionId?: string;
   metadata?: unknown;
 }
+
+/** Context (memory/goal/constraints) captured with a single trace */
+interface TraceContextFields {
+  memory?: string;
+  goal?: string;
+  constraints?: string;
+}
+
+/** Past-tense activity verbs → base form, for narrating failed attempts naturally */
+const BASE_VERBS: Record<string, string> = {
+  read: 'read', wrote: 'write', updated: 'update', searched: 'search',
+  created: 'create', saved: 'save', loaded: 'load', listed: 'list',
+  moved: 'move', copied: 'copy', archived: 'archive', opened: 'open',
+  ran: 'run', linked: 'link', generated: 'generate', executed: 'execute',
+  queried: 'query'
+};
 
 /**
  * Interface for memory service methods used by this builder
@@ -164,12 +181,18 @@ export class WorkspaceContextBuilder {
   }
 
   /**
-   * Get recent activity from memory traces
-   * Extracts memory (new format) or sessionMemory (legacy) from trace metadata
+   * Get recent activity from memory traces as natural-language sentences.
+   *
+   * Each activity is narrated in the context captured with its own trace: the
+   * memory (what was happening), goal (what it was for), and constraints (limits
+   * in force) are composed into a readable sentence so that what happened is
+   * grounded in why it happened. Activities with no captured context fall back
+   * to the bare action description. Newest first, capped at `limit`.
+   *
    * @param workspaceId The workspace ID
    * @param memoryService The memory service instance
    * @param limit Maximum number of activity items
-   * @returns Array of recent activity strings
+   * @returns Array of composed recent-activity sentences
    */
   private async getRecentActivity(
     workspaceId: string,
@@ -188,11 +211,11 @@ export class WorkspaceContextBuilder {
       // Sort by timestamp descending (newest first)
       traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Use trace content directly - it contains the activity description
       const activities: string[] = [];
       for (const trace of traces) {
-        for (const activity of this.formatTraceActivities(trace)) {
-          activities.push(activity);
+        const context = this.extractTraceContext(trace);
+        for (const action of this.formatTraceActivities(trace)) {
+          activities.push(this.composeActivitySentence(action, context));
           if (activities.length >= limit) {
             return activities;
           }
@@ -204,6 +227,74 @@ export class WorkspaceContextBuilder {
       console.error('[WorkspaceContextBuilder] getRecentActivity error:', error);
       return ['Recent activity unavailable'];
     }
+  }
+
+  /**
+   * Extract the context (memory/goal/constraints) captured with a trace.
+   * Supports both the V2 context schema (memory/goal/constraints) and the legacy
+   * schema (sessionMemory/primaryGoal). Empty strings normalize to undefined.
+   */
+  private extractTraceContext(trace: TraceItem): TraceContextFields {
+    const metadata = asRecord(trace.metadata);
+    const context = asRecord(metadata.context);
+
+    const memory = getString(context.memory) || getString(context.sessionMemory);
+    const goal = getString(context.goal) || getString(context.primaryGoal);
+    const constraints = getString(context.constraints);
+
+    return {
+      memory: memory || undefined,
+      goal: goal || undefined,
+      constraints: constraints || undefined
+    };
+  }
+
+  /**
+   * Compose an activity and its captured context into a natural-language
+   * sentence. When no context was captured, the bare action is returned so
+   * context-free traces read exactly as before.
+   *
+   * Shape: an optional leading memory sentence (kept verbatim — it is free-form
+   * text), then the action woven with its goal ("I read X to do Y"), then an
+   * optional trailing constraints sentence.
+   */
+  private composeActivitySentence(action: string, context: TraceContextFields): string {
+    const { memory, goal, constraints } = context;
+    if (!memory && !goal && !constraints) {
+      return action;
+    }
+
+    const parts: string[] = [];
+    if (memory) {
+      parts.push(ensureSentence(memory));
+    }
+    parts.push(ensureSentence(this.composeActionClause(action, goal)));
+    if (constraints) {
+      parts.push(ensureSentence(constraints));
+    }
+    return parts.join(' ');
+  }
+
+  /**
+   * Weave the action with its goal: "I read X" → "I read X to finish the draft".
+   * Failed activities are narrated as attempts ("I tried to write X, but it
+   * failed") using a small past→base verb map.
+   */
+  private composeActionClause(action: string, goal: string | undefined): string {
+    const failed = action.startsWith('Failed: ');
+    const act = failed ? action.slice('Failed: '.length) : action;
+    const goalClause = goal ? ` to ${lowerFirst(stripTerminalPunctuation(goal))}` : '';
+
+    if (failed) {
+      const [verb, ...rest] = act.split(' ');
+      const base = BASE_VERBS[verb.toLowerCase()];
+      const attempt = base
+        ? `I tried to ${base}${rest.length ? ' ' + rest.join(' ') : ''}`
+        : `My attempt to ${lowerFirst(act)}`;
+      return `${attempt}${goalClause}, but it failed`;
+    }
+
+    return `I ${lowerFirst(act)}${goalClause}`;
   }
 
   private formatTraceActivities(trace: TraceItem): string[] {
@@ -611,4 +702,24 @@ function toCamelCase(value: string): string {
 
 function truncate(value: string): string {
   return value.length > 60 ? `${value.slice(0, 60)}...` : value;
+}
+
+/** Lowercase only the first character, leaving the rest (paths, proper nouns) intact. */
+function lowerFirst(value: string): string {
+  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+}
+
+/** Strip a single trailing sentence terminator (and surrounding whitespace) for clean weaving. */
+function stripTerminalPunctuation(value: string): string {
+  return value.trim().replace(/[.!?]+$/, '').trim();
+}
+
+/** Ensure a clause reads as a sentence: trimmed, capitalized, and terminated. */
+function ensureSentence(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
 }
