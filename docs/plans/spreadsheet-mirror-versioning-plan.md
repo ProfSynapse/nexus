@@ -291,6 +291,17 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
     pre-scan refuses them; real-world chart/pivot/conditional-format fidelity
     pass; Electron asset-load path; pin the (pre-1.0) version.
 - **Phase 1** — Mirror generation (hucre read → sharded values-CSV + manifest).
+  - **Core DONE 2026-05-31** (`src/agents/apps/dataAnalysis/spreadsheet/`,
+    11 tests in `SpreadsheetMirror.test.ts`): pure projection — RFC-4180 `csv.ts`,
+    byte-budget `shard.ts`, `WorkbookMirrorService` (idempotent via `sourceHash`,
+    stale-shard cleanup that spares `_archive/`, sheet-name collision
+    disambiguation), the `XlsxSource` seam + `HucreXlsxSource` value mapping
+    (loader-injected, unit-tested with a fake module), and the pinned
+    `HucreAssets` manifest. main.js unchanged — hucre is not bundled.
+  - **Remaining (Electron-bound)**: the `HucreEnsurer` fetch/load mechanics
+    (download the vendored `hucre/xlsx` bundle + `import(file://…)`), real
+    formula-cell detection via `openXlsx` cell inspection, and the
+    `mirrorWorkbook` tool wiring into the Data Analysis app.
 - **Phase 2** — Lossless write-back (`applyToWorkbook`) — hucre apply, formula
   guard, `dryRun`, snapshot-then-replace, re-projection.
 - **Phase 3** — Event log (JSONL + v14 SQLite table) + history/restore UI (§8).
