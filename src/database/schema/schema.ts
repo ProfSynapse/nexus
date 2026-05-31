@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 12
+ * Current Version: 13
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -438,7 +438,30 @@ CREATE TABLE IF NOT EXISTS task_note_links (
 
 CREATE INDEX IF NOT EXISTS idx_task_links_note ON task_note_links(notePath);
 
+-- ==================== SKILLS ====================
+-- Derived cache of on-disk skill folders (<root>/skills/<provider>/<name>/SKILL.md).
+-- Source of truth is the folder; most columns are rebuildable by a re-scan.
+-- is_archived + last_loaded_at are owned state a re-scan must preserve.
+-- See docs/plans/skills-protocol-integration-plan.md §4.
+
+CREATE TABLE IF NOT EXISTS skills (
+  id            TEXT PRIMARY KEY,
+  provider      TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  vault_path    TEXT NOT NULL,
+  origin_path   TEXT,
+  content_hash  TEXT NOT NULL,
+  is_archived   INTEGER DEFAULT 0,
+  last_loaded_at INTEGER,
+  created       INTEGER NOT NULL,
+  updated       INTEGER NOT NULL,
+  UNIQUE(provider, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
+
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (12, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (13, strftime('%s', 'now') * 1000);
 `;
