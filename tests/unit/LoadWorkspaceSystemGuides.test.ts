@@ -25,7 +25,7 @@ describe('LoadWorkspaceTool system guides workspace', () => {
             context: {
               name: 'Assistant guides',
               rootFolder: 'Assistant data/guides',
-              recentActivity: [{ activities: ['Start with Assistant data/guides/index.md.'] }]
+              recentActivity: ['Start with Assistant data/guides/index.md.']
             },
             workflows: [],
             workflowDefinitions: [],

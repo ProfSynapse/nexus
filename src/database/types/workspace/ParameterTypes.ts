@@ -11,27 +11,6 @@ import {
 export type WorkspaceWorkflowDefinition = WorkspaceWorkflow
 
 /**
- * A recent-activity group: a run of tool activity couched in the context it
- * happened under. Activities are sourced from tool-call traces; the optional
- * memory/goal/constraints fields are the most recent (per-session) context the
- * model captured while performing them. Activities are ordered newest-first.
- */
-export interface RecentActivityContext {
-  /** Session the activity belongs to (omitted for ungrouped/legacy traces) */
-  sessionId?: string;
-  /** Model-facing session display name, if captured */
-  sessionName?: string;
-  /** Compressed essence of the conversation at the time (latest non-empty for the session) */
-  memory?: string;
-  /** The objective being pursued (latest non-empty for the session) */
-  goal?: string;
-  /** Rules/limits that were in force (latest non-empty for the session) */
-  constraints?: string;
-  /** Activity descriptions, newest first */
-  activities: string[];
-}
-
-/**
  * Create workspace parameters - LLM must provide complete WorkspaceContext structure
  */
 export interface CreateWorkspaceParameters extends CommonParameters {
@@ -109,7 +88,7 @@ export interface LoadWorkspaceResult extends CommonResult {
       description?: string;
       purpose?: string;
       rootFolder: string;
-      recentActivity: RecentActivityContext[];
+      recentActivity: string[];
     };
     workflows: string[];
     workflowDefinitions?: WorkspaceWorkflowDefinition[];

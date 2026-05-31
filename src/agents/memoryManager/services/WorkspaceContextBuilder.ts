@@ -16,7 +16,6 @@
  */
 
 import { ProjectWorkspace } from '../../../database/types/workspace/WorkspaceTypes';
-import { RecentActivityContext } from '../../../database/types/workspace/ParameterTypes';
 import { formatWorkflowScheduleSummary } from '../../../services/workflows/types';
 import { splitTopLevelSegments, tokenizeWithMeta } from '../../toolManager/services/ToolCliNormalizer';
 
@@ -28,17 +27,21 @@ interface TraceItem {
   metadata?: unknown;
 }
 
-/** Context (memory/goal/constraints) extracted from a single trace */
+/** Context (memory/goal/constraints) captured with a single trace */
 interface TraceContextFields {
-  sessionId?: string;
-  sessionName?: string;
   memory?: string;
   goal?: string;
   constraints?: string;
 }
 
-/** Sentinel grouping key for traces with no associated session */
-const UNGROUPED_KEY = '__ungrouped__';
+/** Past-tense activity verbs → base form, for narrating failed attempts naturally */
+const BASE_VERBS: Record<string, string> = {
+  read: 'read', wrote: 'write', updated: 'update', searched: 'search',
+  created: 'create', saved: 'save', loaded: 'load', listed: 'list',
+  moved: 'move', copied: 'copy', archived: 'archive', opened: 'open',
+  ran: 'run', linked: 'link', generated: 'generate', executed: 'execute',
+  queried: 'query'
+};
 
 /**
  * Interface for memory service methods used by this builder
@@ -56,7 +59,7 @@ export interface ContextBriefing {
   description?: string;
   purpose?: string;
   rootFolder: string;
-  recentActivity: RecentActivityContext[];
+  recentActivity: string[];
 }
 
 /**
@@ -76,20 +79,20 @@ export class WorkspaceContextBuilder {
     memoryService: IMemoryServiceForContext | null,
     limit: number
   ): Promise<ContextBriefing> {
-    let recentActivity: RecentActivityContext[] = [];
+    let recentActivity: string[] = [];
 
     if (memoryService) {
       try {
         recentActivity = await this.getRecentActivity(workspace.id, memoryService, limit);
       } catch (error) {
         console.error('[WorkspaceContextBuilder] getRecentActivity failed:', error);
-        recentActivity = [{ activities: [`Recent activity error: ${error instanceof Error ? error.message : String(error)}`] }];
+        recentActivity = [`Recent activity error: ${error instanceof Error ? error.message : String(error)}`];
       }
     } else {
-      recentActivity = [{ activities: ['No recent activity'] }];
+      recentActivity = ['No recent activity'];
     }
 
-    const finalActivity = recentActivity.length > 0 ? recentActivity : [{ activities: ['No recent activity'] }];
+    const finalActivity = recentActivity.length > 0 ? recentActivity : ['No recent activity'];
 
     return {
       name: workspace.name,
@@ -178,112 +181,120 @@ export class WorkspaceContextBuilder {
   }
 
   /**
-   * Get recent activity from memory traces, grouped by the context it happened
-   * under. Each group carries the session's captured memory/goal/constraints
-   * (newest non-empty value wins) alongside the activities performed under it,
-   * so recent actions are couched in the reasoning that drove them.
+   * Get recent activity from memory traces as natural-language sentences.
    *
-   * Groups are ordered by recency (the session with the newest activity first),
-   * and activities within each group are ordered newest-first. The `limit`
-   * caps the total number of activities across all groups.
+   * Each activity is narrated in the context captured with its own trace: the
+   * memory (what was happening), goal (what it was for), and constraints (limits
+   * in force) are composed into a readable sentence so that what happened is
+   * grounded in why it happened. Activities with no captured context fall back
+   * to the bare action description. Newest first, capped at `limit`.
    *
    * @param workspaceId The workspace ID
    * @param memoryService The memory service instance
-   * @param limit Maximum number of activity items (across all groups)
-   * @returns Recent activity grouped by session/context
+   * @param limit Maximum number of activity items
+   * @returns Array of composed recent-activity sentences
    */
   private async getRecentActivity(
     workspaceId: string,
     memoryService: IMemoryServiceForContext,
     limit: number
-  ): Promise<RecentActivityContext[]> {
+  ): Promise<string[]> {
     try {
       // Get all traces from workspace (across all sessions)
       const tracesResult = await memoryService.getMemoryTraces(workspaceId);
       const traces = tracesResult.items || [];
 
       if (traces.length === 0) {
-        return [];
+        return ['No recent activity'];
       }
 
       // Sort by timestamp descending (newest first)
       traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Group activities by session, preserving newest-first ordering. Because
-      // we walk newest-first, the first time we touch a session its context is
-      // the most recent; later (older) traces only fill fields still missing.
-      const groups = new Map<string, RecentActivityContext>();
-      let total = 0;
-
+      const activities: string[] = [];
       for (const trace of traces) {
-        if (total >= limit) {
-          break;
-        }
-
-        const activities = this.formatTraceActivities(trace);
-        if (activities.length === 0) {
-          continue;
-        }
-
         const context = this.extractTraceContext(trace);
-        const key = context.sessionId || UNGROUPED_KEY;
-
-        let group = groups.get(key);
-        if (!group) {
-          group = { activities: [] };
-          if (context.sessionId) group.sessionId = context.sessionId;
-          if (context.sessionName) group.sessionName = context.sessionName;
-          if (context.memory) group.memory = context.memory;
-          if (context.goal) group.goal = context.goal;
-          if (context.constraints) group.constraints = context.constraints;
-          groups.set(key, group);
-        } else {
-          // Backfill any context fields not yet captured for this session.
-          if (!group.sessionName && context.sessionName) group.sessionName = context.sessionName;
-          if (!group.memory && context.memory) group.memory = context.memory;
-          if (!group.goal && context.goal) group.goal = context.goal;
-          if (!group.constraints && context.constraints) group.constraints = context.constraints;
-        }
-
-        for (const activity of activities) {
-          if (total >= limit) {
-            break;
+        for (const action of this.formatTraceActivities(trace)) {
+          activities.push(this.composeActivitySentence(action, context));
+          if (activities.length >= limit) {
+            return activities;
           }
-          group.activities.push(activity);
-          total += 1;
         }
       }
 
-      return Array.from(groups.values()).filter(group => group.activities.length > 0);
+      return activities.length > 0 ? activities : ['No recent activity'];
     } catch (error) {
       console.error('[WorkspaceContextBuilder] getRecentActivity error:', error);
-      return [{ activities: ['Recent activity unavailable'] }];
+      return ['Recent activity unavailable'];
     }
   }
 
   /**
-   * Extract the session-scoped context (memory/goal/constraints) captured with a
-   * trace. Supports both the V2 context schema (memory/goal/constraints) and the
-   * legacy schema (sessionMemory/primaryGoal/sessionDescription). Empty strings
-   * are normalized to undefined.
+   * Extract the context (memory/goal/constraints) captured with a trace.
+   * Supports both the V2 context schema (memory/goal/constraints) and the legacy
+   * schema (sessionMemory/primaryGoal). Empty strings normalize to undefined.
    */
   private extractTraceContext(trace: TraceItem): TraceContextFields {
     const metadata = asRecord(trace.metadata);
     const context = asRecord(metadata.context);
 
-    const sessionId = getString(context.sessionId) || getString(trace.sessionId);
-    const sessionName = getString(context.sessionName) || getString(context.sessionDescription);
     const memory = getString(context.memory) || getString(context.sessionMemory);
     const goal = getString(context.goal) || getString(context.primaryGoal);
     const constraints = getString(context.constraints);
 
     return {
-      sessionId: sessionId || undefined,
-      sessionName: sessionName || undefined,
       memory: memory || undefined,
       goal: goal || undefined,
       constraints: constraints || undefined
     };
+  }
+
+  /**
+   * Compose an activity and its captured context into a natural-language
+   * sentence. When no context was captured, the bare action is returned so
+   * context-free traces read exactly as before.
+   *
+   * Shape: an optional leading memory sentence (kept verbatim — it is free-form
+   * text), then the action woven with its goal ("I read X to do Y"), then an
+   * optional trailing constraints sentence.
+   */
+  private composeActivitySentence(action: string, context: TraceContextFields): string {
+    const { memory, goal, constraints } = context;
+    if (!memory && !goal && !constraints) {
+      return action;
+    }
+
+    const parts: string[] = [];
+    if (memory) {
+      parts.push(ensureSentence(memory));
+    }
+    parts.push(ensureSentence(this.composeActionClause(action, goal)));
+    if (constraints) {
+      parts.push(ensureSentence(constraints));
+    }
+    return parts.join(' ');
+  }
+
+  /**
+   * Weave the action with its goal: "I read X" → "I read X to finish the draft".
+   * Failed activities are narrated as attempts ("I tried to write X, but it
+   * failed") using a small past→base verb map.
+   */
+  private composeActionClause(action: string, goal: string | undefined): string {
+    const failed = action.startsWith('Failed: ');
+    const act = failed ? action.slice('Failed: '.length) : action;
+    const goalClause = goal ? ` to ${lowerFirst(stripTerminalPunctuation(goal))}` : '';
+
+    if (failed) {
+      const [verb, ...rest] = act.split(' ');
+      const base = BASE_VERBS[verb.toLowerCase()];
+      const attempt = base
+        ? `I tried to ${base}${rest.length ? ' ' + rest.join(' ') : ''}`
+        : `My attempt to ${lowerFirst(act)}`;
+      return `${attempt}${goalClause}, but it failed`;
+    }
+
+    return `I ${lowerFirst(act)}${goalClause}`;
   }
 
   private formatTraceActivities(trace: TraceItem): string[] {
@@ -691,4 +702,24 @@ function toCamelCase(value: string): string {
 
 function truncate(value: string): string {
   return value.length > 60 ? `${value.slice(0, 60)}...` : value;
+}
+
+/** Lowercase only the first character, leaving the rest (paths, proper nouns) intact. */
+function lowerFirst(value: string): string {
+  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+}
+
+/** Strip a single trailing sentence terminator (and surrounding whitespace) for clean weaving. */
+function stripTerminalPunctuation(value: string): string {
+  return value.trim().replace(/[.!?]+$/, '').trim();
+}
+
+/** Ensure a clause reads as a sentence: trimmed, capitalized, and terminated. */
+function ensureSentence(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  const capitalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
 }

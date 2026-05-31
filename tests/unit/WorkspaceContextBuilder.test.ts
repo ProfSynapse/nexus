@@ -38,13 +38,9 @@ describe('WorkspaceContextBuilder', () => {
 
     expect(memoryService.getMemoryTraces).toHaveBeenCalledWith('workspace-uuid');
     expect(result.recentActivity).toEqual([
-      {
-        activities: [
-          'Updated Projects/A.md',
-          'Read Projects/A.md',
-          'Searched for "workspace state"'
-        ]
-      }
+      'Updated Projects/A.md',
+      'Read Projects/A.md',
+      'Searched for "workspace state"'
     ]);
   });
 
@@ -84,14 +80,10 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        activities: [
-          'Created task Write tests',
-          'Moved Projects/A.md to Archive/A.md',
-          'Loaded workspace Product Workspace',
-          'Saved state checkpoint'
-        ]
-      }
+      'Created task Write tests',
+      'Moved Projects/A.md to Archive/A.md',
+      'Loaded workspace Product Workspace',
+      'Saved state checkpoint'
     ]);
   });
 
@@ -143,12 +135,8 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        activities: [
-          'Read Projects/A.md',
-          'Wrote Projects/A.md'
-        ]
-      }
+      'Read Projects/A.md',
+      'Wrote Projects/A.md'
     ]);
   });
 
@@ -205,15 +193,11 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        activities: [
-          'Saved state E2E Activity Probe State 2',
-          'Updated Projects/activity-probe.md',
-          'Wrote Projects/probes/new-file.md',
-          'Created folder Projects/probes',
-          'Updated Projects/old.md'
-        ]
-      }
+      'Saved state E2E Activity Probe State 2',
+      'Updated Projects/activity-probe.md',
+      'Wrote Projects/probes/new-file.md',
+      'Created folder Projects/probes',
+      'Updated Projects/old.md'
     ]);
   });
 
@@ -272,7 +256,7 @@ describe('WorkspaceContextBuilder', () => {
     ]);
   });
 
-  it('couches activity in its captured context, grouped by session', async () => {
+  it('narrates each activity in its own captured memory/goal/constraints', async () => {
     const builder = new WorkspaceContextBuilder();
     const memoryService = {
       getMemoryTraces: jest.fn().mockResolvedValue({
@@ -280,15 +264,13 @@ describe('WorkspaceContextBuilder', () => {
           {
             timestamp: 300,
             content: 'Used tool',
-            sessionId: 'session-b',
             metadata: {
               tool: { agent: 'toolManager', mode: 'useTools' },
               context: {
                 workspaceId: 'workspace-uuid',
                 sessionId: 'session-b',
-                sessionName: 'Drafting',
-                memory: 'Working on the release notes draft.',
-                goal: 'Finish the v6 release notes.',
+                memory: 'We finalized the hero copy and are assembling the launch email.',
+                goal: 'Ship a reviewable draft of the launch email.',
                 constraints: 'Keep it under 300 words.'
               },
               input: { arguments: { tool: 'content read "Notes/release.md"' } }
@@ -297,13 +279,11 @@ describe('WorkspaceContextBuilder', () => {
           {
             timestamp: 200,
             content: 'Used tool',
-            sessionId: 'session-a',
             metadata: {
               tool: { agent: 'toolManager', mode: 'useTools' },
               context: {
                 workspaceId: 'workspace-uuid',
                 sessionId: 'session-a',
-                memory: 'Researching prior art.',
                 goal: 'Survey the landscape.'
               },
               input: { arguments: { tool: 'search search-content "prior art"' } }
@@ -320,24 +300,12 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        sessionId: 'session-b',
-        sessionName: 'Drafting',
-        memory: 'Working on the release notes draft.',
-        goal: 'Finish the v6 release notes.',
-        constraints: 'Keep it under 300 words.',
-        activities: ['Read Notes/release.md']
-      },
-      {
-        sessionId: 'session-a',
-        memory: 'Researching prior art.',
-        goal: 'Survey the landscape.',
-        activities: ['Searched for "prior art"']
-      }
+      'We finalized the hero copy and are assembling the launch email. I read Notes/release.md to ship a reviewable draft of the launch email. Keep it under 300 words.',
+      'I searched for "prior art" to survey the landscape.'
     ]);
   });
 
-  it('backfills missing context fields from older traces in the same session (latest non-empty wins)', async () => {
+  it('leaves context-free activities as the bare action', async () => {
     const builder = new WorkspaceContextBuilder();
     const memoryService = {
       getMemoryTraces: jest.fn().mockResolvedValue({
@@ -345,32 +313,9 @@ describe('WorkspaceContextBuilder', () => {
           {
             timestamp: 300,
             content: 'Used tool',
-            sessionId: 'session-a',
             metadata: {
               tool: { agent: 'toolManager', mode: 'useTools' },
-              context: {
-                workspaceId: 'workspace-uuid',
-                sessionId: 'session-a',
-                goal: 'Ship the fix.'
-                // memory/constraints absent on the newest trace
-              },
-              input: { arguments: { tool: 'content write "Notes/fix.md" "body"' } }
-            }
-          },
-          {
-            timestamp: 200,
-            content: 'Used tool',
-            sessionId: 'session-a',
-            metadata: {
-              tool: { agent: 'toolManager', mode: 'useTools' },
-              context: {
-                workspaceId: 'workspace-uuid',
-                sessionId: 'session-a',
-                memory: 'Earlier we reproduced the bug.',
-                goal: 'Reproduce the bug.',
-                constraints: 'No new dependencies.'
-              },
-              input: { arguments: { tool: 'content read "Notes/fix.md"' } }
+              input: { arguments: { tool: 'content read "Notes/release.md"' } }
             }
           }
         ]
@@ -383,37 +328,32 @@ describe('WorkspaceContextBuilder', () => {
       10
     );
 
-    expect(result.recentActivity).toEqual([
-      {
-        sessionId: 'session-a',
-        // goal comes from the newest trace; memory/constraints backfilled from the older one
-        goal: 'Ship the fix.',
-        memory: 'Earlier we reproduced the bug.',
-        constraints: 'No new dependencies.',
-        activities: ['Wrote Notes/fix.md', 'Read Notes/fix.md']
-      }
-    ]);
+    expect(result.recentActivity).toEqual(['Read Notes/release.md']);
   });
 
-  it('supports legacy context fields (sessionMemory/primaryGoal)', async () => {
+  it('narrates failed activities as attempts and supports legacy context fields', async () => {
     const builder = new WorkspaceContextBuilder();
     const memoryService = {
       getMemoryTraces: jest.fn().mockResolvedValue({
         items: [
           {
             timestamp: 300,
-            content: 'Used tool',
-            sessionId: 'legacy-session',
+            content: 'Tool execution failed',
             metadata: {
               tool: { agent: 'toolManager', mode: 'useTools' },
               context: {
                 workspaceId: 'workspace-uuid',
                 sessionId: 'legacy-session',
-                sessionDescription: 'Legacy work',
-                sessionMemory: 'Legacy memory blob.',
-                primaryGoal: 'Legacy goal.'
+                sessionMemory: 'Reproducing the reported bug.',
+                primaryGoal: 'Patch the crash.'
               },
-              input: { arguments: { tool: 'content read "Notes/legacy.md"' } }
+              input: { arguments: { strategy: 'serial', tool: 'content write "Notes/fix.md" "body"' } },
+              legacy: {
+                result: {
+                  success: false,
+                  data: { results: [{ agent: 'contentManager', tool: 'write', success: false }] }
+                }
+              }
             }
           }
         ]
@@ -427,13 +367,7 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        sessionId: 'legacy-session',
-        sessionName: 'Legacy work',
-        memory: 'Legacy memory blob.',
-        goal: 'Legacy goal.',
-        activities: ['Read Notes/legacy.md']
-      }
+      'Reproducing the reported bug. I tried to write Notes/fix.md to patch the crash, but it failed.'
     ]);
   });
 });

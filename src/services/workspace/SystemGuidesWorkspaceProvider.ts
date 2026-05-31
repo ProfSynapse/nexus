@@ -271,13 +271,9 @@ export class SystemGuidesWorkspaceProvider {
           purpose: workspacePromptContext.purpose,
           rootFolder: workspace.rootFolder,
           recentActivity: [
-            {
-              activities: [
-                `Start with ${entrypoint}.`,
-                'Load additional guide files selectively when they are relevant.',
-                'Treat the sibling data folder as storage, not documentation.'
-              ]
-            }
+            `Start with ${entrypoint}.`,
+            'Load additional guide files selectively when they are relevant.',
+            'Treat the sibling data folder as storage, not documentation.'
           ]
         },
         workflows: [],

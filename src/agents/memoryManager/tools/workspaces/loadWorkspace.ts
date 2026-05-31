@@ -260,11 +260,9 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
       // Add navigation fallback message if workspace path building failed
       if (workspacePathResult.failed) {
-        result.data.context.recentActivity.push({
-          activities: [
-            "Note: Workspace directory navigation unavailable. Use vaultManager listDirectoryMode to explore the workspace folder structure."
-          ]
-        });
+        result.data.context.recentActivity.push(
+          "Note: Workspace directory navigation unavailable. Use vaultManager listDirectoryMode to explore the workspace folder structure."
+        );
       }
 
       return result;
@@ -297,7 +295,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         context: {
           name: 'Unknown',
           rootFolder: '',
-          recentActivity: [{ activities: [errorMessage] }]
+          recentActivity: [errorMessage]
         },
         workflows: [],
         workflowDefinitions: [],
@@ -369,7 +367,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           properties: {
             context: {
               type: 'object',
-              description: 'Contextual briefing about the workspace, including recent activity couched in the context it happened under.',
+              description: 'Contextual briefing about the workspace, including recent activity narrated in the context it happened under.',
               properties: {
                 name: { type: 'string', description: 'Workspace name' },
                 description: { type: 'string', description: 'Workspace description' },
@@ -377,23 +375,8 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
                 rootFolder: { type: 'string', description: 'Workspace root folder path' },
                 recentActivity: {
                   type: 'array',
-                  description: 'Recent tool activity grouped by the session/context it occurred under. Each group pairs the captured memory/goal/constraints with the actions taken under them, so recent activity is grounded in the reasoning that drove it. Groups are ordered newest-first.',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      sessionId: { type: 'string', description: 'Session the activity belongs to (omitted for ungrouped/legacy traces)' },
-                      sessionName: { type: 'string', description: 'Model-facing session display name, if captured' },
-                      memory: { type: 'string', description: 'Compressed essence of the conversation at the time (latest non-empty for the session)' },
-                      goal: { type: 'string', description: 'The objective being pursued (latest non-empty for the session)' },
-                      constraints: { type: 'string', description: 'Rules/limits that were in force (latest non-empty for the session)' },
-                      activities: {
-                        type: 'array',
-                        items: { type: 'string' },
-                        description: 'Activity descriptions, newest first'
-                      }
-                    },
-                    required: ['activities']
-                  }
+                  items: { type: 'string' },
+                  description: 'Recent tool activity as natural-language sentences, newest first. Each sentence couches the action in the memory/goal/constraints captured with that activity, so what happened is grounded in why it happened.'
                 }
               },
               required: ['name', 'rootFolder', 'recentActivity']
