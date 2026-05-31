@@ -1,6 +1,7 @@
 import type { DataAdapter } from 'obsidian';
 import type { ParsedSkillFolder } from '../types';
 import { fnv1aHex } from './skillHash';
+import { parseSkillFrontmatter } from './skillFrontmatter';
 
 // Re-exported so callers can import the parsed-folder shape alongside the scanner.
 export type { ParsedSkillFolder };
@@ -67,8 +68,10 @@ export class SkillScanner {
           }
 
           const content = await this.adapter.read(skillMdPath);
-          const frontmatter = await SkillScanner.parseFrontmatter(content);
+          const frontmatter = await parseSkillFrontmatter(content);
 
+          // Scanner-specific fallback: when frontmatter has no `name`, use the
+          // folder name. (The shared parser deliberately doesn't know the folder.)
           const fmName =
             typeof frontmatter.name === 'string' && frontmatter.name.trim().length > 0
               ? frontmatter.name.trim()
@@ -103,24 +106,5 @@ export class SkillScanner {
   /** Ignore `_`-prefixed (e.g. `_archive`) and `.`-prefixed entries. */
   private static isIgnored(basename: string): boolean {
     return basename.startsWith('_') || basename.startsWith('.');
-  }
-
-  /**
-   * Extracts and parses the leading YAML frontmatter block (delimited by `---`). Uses a dynamic
-   * import of `yaml` (mobile-safe — no Node API at module init). Returns `{}` when there is no
-   * frontmatter or parsing fails.
-   */
-  private static async parseFrontmatter(content: string): Promise<Record<string, unknown>> {
-    const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
-    if (!match) {
-      return {};
-    }
-    try {
-      const { parse } = await import('yaml');
-      const parsed: unknown = parse(match[1]);
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-    } catch {
-      return {};
-    }
   }
 }

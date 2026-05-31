@@ -6,14 +6,15 @@
  * and syncs edited mirror copies back to their origin dotfolders, all via
  * vault.adapter (cross-platform). Archive-then-replace, last-writer-wins (§3).
  * Providers are auto-discovered from the vault-root provider-dotfolder scan.
- * Foundation-phase stub — wiring lands in a later wave.
- * See: docs/plans/skills-protocol-integration-plan.md §12.
+ * See: docs/plans/skills-protocol-integration-plan.md §3 / §12.
  */
 
 import { BaseTool } from '../../../baseTool';
-import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { SkillsAgent } from '../SkillsAgent';
+import { resolveSkillsRuntime } from '../services/SkillsContext';
+import { SkillSyncService } from '../services/SkillSyncService';
 
 interface SyncSkillsParams extends CommonParameters {
   direction?: 'import' | 'sync-back' | 'both';
@@ -21,9 +22,9 @@ interface SyncSkillsParams extends CommonParameters {
 }
 
 export class SyncSkillsTool extends BaseTool<SyncSkillsParams, CommonResult> {
-  private agent: BaseAppAgent;
+  private agent: SkillsAgent;
 
-  constructor(agent: BaseAppAgent) {
+  constructor(agent: SkillsAgent) {
     super(
       'syncSkills',
       'Sync Skills',
@@ -34,10 +35,56 @@ export class SyncSkillsTool extends BaseTool<SyncSkillsParams, CommonResult> {
     this.agent = agent;
   }
 
-  async execute(_params: SyncSkillsParams): Promise<CommonResult> {
-    await Promise.resolve(); // TODO(foundation): replace with real async work
-    return this.prepareResult(false, undefined,
-      'Skills syncSkills: not yet implemented (foundation phase)');
+  async execute(params: SyncSkillsParams): Promise<CommonResult> {
+    const r = resolveSkillsRuntime(this.agent);
+    if (!r.ok) {
+      return this.prepareResult(false, undefined, r.error);
+    }
+
+    const direction = params.direction ?? 'both';
+    const sync = new SkillSyncService(r.rt.vaultAdapter, r.rt.skillsRoot, r.rt.index);
+
+    const providers = await sync.discoverProviders();
+    const wantsImport = direction === 'import' || direction === 'both';
+    const wantsSyncBack = direction === 'sync-back' || direction === 'both';
+
+    // No provider dotfolders found and we'd be importing → §12 empty shape.
+    if (providers.length === 0 && wantsImport) {
+      return this.prepareResult(true, {
+        providers: [],
+        imported: [],
+        syncedBack: [],
+        skipped: [],
+        note: 'No .{provider}/skills folders found at the vault root.',
+      });
+    }
+
+    const imported: string[] = [];
+    const syncedBack: string[] = [];
+    const skipped: string[] = [];
+    const archived: string[] = [];
+
+    if (wantsImport) {
+      const res = await sync.import(params.source);
+      imported.push(...res.imported);
+      skipped.push(...res.skipped);
+      archived.push(...res.archived);
+    }
+
+    if (wantsSyncBack) {
+      const res = await sync.syncBack(params.source);
+      syncedBack.push(...res.syncedBack);
+      skipped.push(...res.skipped);
+      archived.push(...res.archived);
+    }
+
+    return this.prepareResult(true, {
+      providers,
+      imported,
+      syncedBack,
+      skipped,
+      archived,
+    });
   }
 
   getParameterSchema(): JSONSchema {

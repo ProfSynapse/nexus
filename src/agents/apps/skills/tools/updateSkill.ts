@@ -16,8 +16,10 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import type { SkillsAgent } from '../SkillsAgent';
 import { resolveSkillsRuntime, resolveSkillByName } from '../services/SkillsContext';
 import { SkillWriteService } from '../services/SkillWriteService';
+import { SkillSyncService } from '../services/SkillSyncService';
 import { SkillValidator } from '../services/SkillValidator';
 import { fnv1aHex } from '../services/skillHash';
+import { parseSkillFrontmatter } from '../services/skillFrontmatter';
 
 interface UpdateSkillParams extends CommonParameters {
   name: string;
@@ -25,31 +27,6 @@ interface UpdateSkillParams extends CommonParameters {
   description?: string;
   body?: string;
   rename?: string;
-}
-
-/** Split a SKILL.md into its parsed frontmatter fields and trailing body. */
-async function splitSkillMd(content: string): Promise<{ name: string; description: string; body: string }> {
-  const normalized = content.replace(/\r\n/g, '\n');
-  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(normalized);
-  if (!match) {
-    return { name: '', description: '', body: normalized.trim() };
-  }
-
-  let name = '';
-  let description = '';
-  try {
-    const { parse } = await import('yaml');
-    const parsed: unknown = parse(match[1]);
-    if (parsed && typeof parsed === 'object') {
-      const fields = parsed as Record<string, unknown>;
-      name = typeof fields.name === 'string' ? fields.name : '';
-      description = typeof fields.description === 'string' ? fields.description : '';
-    }
-  } catch {
-    // Unparseable frontmatter → treat fields as empty; merge fills from params.
-  }
-
-  return { name, description, body: (match[2] ?? '').trim() };
 }
 
 export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
@@ -88,7 +65,7 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       return this.prepareResult(false, undefined,
         `Could not read SKILL.md for skill "${existing.name}" (${provider}) at ${existing.vaultPath}/SKILL.md`);
     }
-    const current = await splitSkillMd(currentContent);
+    const current = await parseSkillFrontmatter(currentContent);
 
     // Merge: caller values win, else fall back to the current on-disk values.
     const newName = params.rename ?? existing.name;
@@ -144,7 +121,6 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       contentHash: fnv1aHex(skillMd),
     });
 
-    // TODO(sync slice): syncedBackTo when origin_path is set.
     const result: Record<string, unknown> = {
       skill: {
         name: newName,
@@ -155,6 +131,24 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
     };
     if (archivedVersion !== null) {
       result.archivedVersion = archivedVersion;
+    }
+
+    // Sync-back: if this skill originated from a provider dotfolder, push the
+    // updated mirror copy back to its origin. A sync-back failure must NOT fail
+    // the update — wrap defensively and swallow (no logger wired in this app).
+    if (existing.originPath) {
+      try {
+        const updated = await r.rt.index.getOne(provider, newName);
+        if (updated) {
+          const sync = new SkillSyncService(r.rt.vaultAdapter, r.rt.skillsRoot, r.rt.index);
+          const syncedBackTo = await sync.syncBackOne(updated);
+          if (syncedBackTo !== null) {
+            result.syncedBackTo = syncedBackTo;
+          }
+        }
+      } catch {
+        // Sync-back is best-effort — never fail the update on it.
+      }
     }
 
     return this.prepareResult(true, result);
