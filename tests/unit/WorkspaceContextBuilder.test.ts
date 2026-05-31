@@ -248,11 +248,7 @@ describe('WorkspaceContextBuilder', () => {
     );
 
     expect(result.recentActivity).toEqual([
-      {
-        activities: [
-          'Failed: Wrote Projects/A.md'
-        ]
-      }
+      'Failed: Wrote Projects/A.md'
     ]);
   });
 
