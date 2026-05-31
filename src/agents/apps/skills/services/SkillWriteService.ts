@@ -17,9 +17,15 @@
 
 import { normalizePath } from 'obsidian';
 import type { DataAdapter } from 'obsidian';
+import { SnapshotArchiveService } from '../../../../services/storage/SnapshotArchiveService';
 
 export class SkillWriteService {
-  constructor(private adapter: DataAdapter) {}
+  /** Shared version-in-place snapshot primitive (co-located `_archive/<ts>/`). */
+  private readonly snapshot: SnapshotArchiveService;
+
+  constructor(private adapter: DataAdapter) {
+    this.snapshot = new SnapshotArchiveService(adapter);
+  }
 
   /** True only when the folder exists AND contains a SKILL.md. */
   async exists(folderPath: string): Promise<boolean> {
@@ -162,6 +168,10 @@ export class SkillWriteService {
    * Snapshot the CURRENT folder into `<folderPath>/_archive/<ts>/` (only if a
    * prior SKILL.md exists), then run `write()`. Returns the archive path, or
    * null when there was no prior version to snapshot.
+   *
+   * The snapshot mechanics (timestamp, same-instant disambiguation, skip
+   * `_`/`.`-prefixed children) live in the shared {@link SnapshotArchiveService};
+   * this method only owns the skill-specific gate (a prior SKILL.md must exist).
    */
   async archiveThenReplace(folderPath: string, write: () => Promise<void>): Promise<string | null> {
     const folder = normalizePath(folderPath);
@@ -172,16 +182,7 @@ export class SkillWriteService {
       return null;
     }
 
-    const ts = new Date(Date.now()).toISOString().replace(/[:.]/g, '-');
-    // Disambiguate same-millisecond snapshots so a second archive in the same
-    // ISO instant doesn't overwrite the first: append -1, -2, … until free.
-    let archivePath = normalizePath(`${folder}/_archive/${ts}`);
-    let suffix = 1;
-    while (await this.adapter.exists(archivePath)) {
-      archivePath = normalizePath(`${folder}/_archive/${ts}-${suffix}`);
-      suffix += 1;
-    }
-    await this.copyTree(folder, archivePath);
+    const archivePath = await this.snapshot.archiveCopy(folder);
 
     await write();
     return archivePath;

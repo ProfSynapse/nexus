@@ -275,8 +275,14 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
 ## 11. Implementation phases
 
 - **Phase 0 — Spikes (gate the effort):**
-  - **S1**: Extract `SnapshotArchiveService` from `SkillWriteService`; assert
-    byte-identical archive output (no Skills behavior change).
+  - **S1 — DONE 2026-05-31**: Extracted `SnapshotArchiveService`
+    (`src/services/storage/SnapshotArchiveService.ts`) — the generic version-in-place
+    snapshot primitive (timestamp + same-instant disambiguation + skip-`_`/`.` tree
+    copy). `SkillWriteService.archiveThenReplace` now delegates to it, keeping the
+    SKILL.md gate + `null` contract. No-behavior-change proven: the existing
+    `SkillWriteService.test.ts` stays green; +4 direct tests in
+    `SnapshotArchiveService.test.ts`. Full Skills+archive sweep 127/127, build+lint
+    clean, main.js unchanged.
   - **S2 (hucre evaluation) — partially DONE 2026-05-31**
     (`spike-findings-hucre-2026-05-31.md`): ✅ byte-intact preservation of an
     unmanaged part through a data-cell edit; ✅ bundle measured (302 KB xlsx-only
