@@ -27,7 +27,9 @@ export interface HucreAssetSpec {
 
 export const HUCRE_XLSX_ASSET: HucreAssetSpec = {
   file: 'hucre-xlsx.mjs',
-  url: `https://esm.sh/hucre@${HUCRE_VERSION}/xlsx`,
+  // `?bundle` inlines hucre's internal `./xlsx/*` parts into one self-contained
+  // ESM file so the vendored asset loads offline (no further network fetches).
+  url: `https://esm.sh/hucre@${HUCRE_VERSION}/xlsx?bundle&target=es2022`,
   minBytes: 50_000,
 };
 

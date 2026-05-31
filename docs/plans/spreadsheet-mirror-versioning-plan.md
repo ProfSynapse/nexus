@@ -298,10 +298,13 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
     disambiguation), the `XlsxSource` seam + `HucreXlsxSource` value mapping
     (loader-injected, unit-tested with a fake module), and the pinned
     `HucreAssets` manifest. main.js unchanged — hucre is not bundled.
-  - **Remaining (Electron-bound)**: the `HucreEnsurer` fetch/load mechanics
-    (download the vendored `hucre/xlsx` bundle + `import(file://…)`), real
-    formula-cell detection via `openXlsx` cell inspection, and the
-    `mirrorWorkbook` tool wiring into the Data Analysis app.
+  - **Integration DONE 2026-05-31**: `HucreEnsurer` (download esm.sh `?bundle` →
+    `hucre/` folder → Blob-URL ESM import, cached); real formula-cell detection
+    via worksheet-XML scan in `HucreXlsxSource` (guard now active); `mirrorWorkbook`
+    tool wired into the Data Analysis app (desktop-gated, vault binary read,
+    `resolveVaultRoot`+`maxShardBytes` from runtime ctx). Build clean; hucre NOT
+    bundled (main.js +15 KB tool code only). **Needs first-run Electron validation —
+    see `spreadsheet-mirror-manual-test.md`.**
 - **Phase 2** — Lossless write-back (`applyToWorkbook`) — hucre apply, formula
   guard, `dryRun`, snapshot-then-replace, re-projection.
   - **Core DONE 2026-05-31** (6 tests in `SpreadsheetWriteBack.test.ts`):
@@ -314,9 +317,10 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
     with a JSON-as-xlsx fake so the real orchestration runs end-to-end). The
     actual `.xlsx` binary write to the vault is returned to the caller
     (Electron `writeBinary`).
-  - **Remaining (Electron-bound)**: precise sheet→worksheet-part mapping via
-    workbook rels (currently best-effort sorted-Nth), the vault binary write +
-    `.xlsm` handling, and `applyToWorkbook` tool wiring.
+  - **Integration DONE 2026-05-31**: `applyToWorkbook` tool wired (dryRun/force,
+    vault `writeBinary` of the new `.xlsx`, snapshot + re-project). Remaining to
+    validate in Electron: precise sheet→worksheet-part mapping via workbook rels
+    (currently best-effort sorted-Nth) and `.xlsm` round-trip — see manual-test doc.
 - **Phase 3** — Event log (JSONL + v14 SQLite table) + history/restore UI (§8).
 - **Phase 4** — Conflict/divergence policy (§7) + settings.
 

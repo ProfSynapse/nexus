@@ -17,21 +17,11 @@
  * parts) but may regenerate a sibling worksheet.
  */
 
-import type { CellValue, CellWrite, XlsxWriter } from './types';
-
-export interface HucreRoundtripWorkbook {
-  sheets: Array<{ name: string; rows: CellValue[][] }>;
-  _rawEntries: Map<string, Uint8Array>;
-  _modifiedParts: Set<string>;
-}
-
-export interface HucreApplyModule {
-  openXlsx(bytes: Uint8Array): Promise<HucreRoundtripWorkbook>;
-  saveXlsx(workbook: HucreRoundtripWorkbook): Promise<Uint8Array>;
-}
+import type { HucreModule, HucreRoundtripWorkbook } from './HucreModule';
+import type { CellWrite, XlsxWriter } from './types';
 
 export class HucreXlsxWriter implements XlsxWriter {
-  constructor(private loadModule: () => Promise<HucreApplyModule>) {}
+  constructor(private loadModule: () => Promise<HucreModule>) {}
 
   async applyCellWrites(sourceBytes: Uint8Array, writes: CellWrite[]): Promise<Uint8Array> {
     const mod = await this.loadModule();

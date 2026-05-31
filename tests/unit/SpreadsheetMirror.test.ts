@@ -154,11 +154,23 @@ describe('WorkbookMirrorService', () => {
 });
 
 describe('HucreXlsxSource', () => {
-  it('maps hucre reader output to a ParsedWorkbook with a content hash', async () => {
+  it('maps openXlsx output to a ParsedWorkbook + detects formula cells from XML', async () => {
+    const sheetXml = '<worksheet><sheetData>' +
+      '<row r="1"><c r="A1" t="str"><v>x</v></c></row>' +
+      '<row r="2"><c r="A2"><f>SUM(A1)</f><v>1</v></c></row>' +
+      '</sheetData></worksheet>';
     const fakeModule = {
-      async readXlsx(_bytes: Uint8Array) {
-        return { sheets: [{ name: 'S', rows: [['x', 1, true, null, new Date('2026-01-02T00:00:00Z')]] }], hasMacros: true };
+      async openXlsx(_bytes: Uint8Array) {
+        return {
+          sheets: [{ name: 'S', rows: [['x', 1, true, null, new Date('2026-01-02T00:00:00Z')]] }],
+          _rawEntries: new Map<string, Uint8Array>([
+            ['xl/worksheets/sheet1.xml', new TextEncoder().encode(sheetXml)],
+          ]),
+          _modifiedParts: new Set<string>(),
+          hasMacros: true,
+        };
       },
+      async saveXlsx() { return new Uint8Array(); },
     };
     const src = new HucreXlsxSource(async () => fakeModule);
     const bytes = new Uint8Array([1, 2, 3, 4]);
@@ -166,6 +178,7 @@ describe('HucreXlsxSource', () => {
 
     expect(wb.hasMacros).toBe(true);
     expect(wb.sheets[0].rows[0]).toEqual(['x', 1, true, null, '2026-01-02T00:00:00.000Z']);
+    expect(wb.sheets[0].formulaCells).toEqual(['A2']);
     expect(wb.sourceHash).toBe(fnv1aHex(bytes));
   });
 

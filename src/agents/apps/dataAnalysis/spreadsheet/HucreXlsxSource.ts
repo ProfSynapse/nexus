@@ -2,53 +2,62 @@
  * HucreXlsxSource — the {@link XlsxSource} backed by the `hucre` engine
  * (lossless xlsx round-trip; see docs/plans/spike-findings-hucre-2026-05-31.md).
  *
- * hucre is VENDORED as a runtime asset (302 KB — too big for main.js's 5MB
- * ceiling, see {@link HucreAssets}), so the module is injected via a loader
- * rather than statically imported. This keeps the value-mapping logic here pure
- * and unit-testable with a fake module, while the actual asset load is the only
- * Electron-bound piece.
+ * Reads via `openXlsx` (the same RoundtripWorkbook the writer uses) so we get
+ * both the cell VALUES (for the CSV projection) and the raw worksheet XML — the
+ * latter lets us detect FORMULA cells (`<c r="B2"><f>…`) so the write-back's
+ * formula-cell guard is active. hucre is injected (it's a vendored runtime asset,
+ * not bundled — see HucreAssets), which also keeps this logic unit-testable.
  *
- * ⚠️ formula-cell detection is best-effort here and refined in the Electron pass
- * (openXlsx exposes cell-level formulas; the headless `readXlsx` returns values).
+ * ⚠️ PENDING Electron validation: the sheet-index → worksheet-part mapping is the
+ * sorted-Nth `xl/worksheets/sheetN.xml` approximation (precise mapping is via
+ * workbook rels). Verify against multi-sheet real workbooks.
  */
 
+import type { HucreModule } from './HucreModule';
 import type { CellValue, ParsedSheet, ParsedWorkbook, XlsxSource } from './types';
 
-/** The shape of one sheet as hucre's reader yields it. */
-export interface HucreSheet {
-  name: string;
-  rows: unknown[][];
-}
-
-export interface HucreReadResult {
-  sheets: HucreSheet[];
-  hasMacros?: boolean;
-}
-
-/** The slice of `hucre/xlsx` we depend on (so it can be stubbed in tests). */
-export interface HucreXlsxModule {
-  readXlsx(bytes: Uint8Array): Promise<HucreReadResult>;
-}
-
 export class HucreXlsxSource implements XlsxSource {
-  constructor(private loadModule: () => Promise<HucreXlsxModule>) {}
+  constructor(private loadModule: () => Promise<HucreModule>) {}
 
   async readWorkbook(bytes: Uint8Array): Promise<ParsedWorkbook> {
     const mod = await this.loadModule();
-    const result = await mod.readXlsx(bytes);
+    const wb = await mod.openXlsx(bytes);
 
-    const sheets: ParsedSheet[] = result.sheets.map((sheet) => ({
-      name: sheet.name,
-      rows: sheet.rows.map((row) => row.map(toCellValue)),
-      formulaCells: [],
-    }));
+    const worksheetParts = [...wb._rawEntries.keys()]
+      .filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
+      .sort();
+
+    const sheets: ParsedSheet[] = wb.sheets.map((sheet, index) => {
+      const part = worksheetParts[index];
+      const xml = part ? wb._rawEntries.get(part) : undefined;
+      return {
+        name: sheet.name,
+        rows: sheet.rows.map((row) => row.map(toCellValue)),
+        formulaCells: xml ? formulaCellsFromXml(decodeUtf8(xml)) : [],
+      };
+    });
 
     return {
       sheets,
       sourceHash: fnv1aHex(bytes),
-      hasMacros: result.hasMacros ?? false,
+      hasMacros: wb.hasMacros ?? false,
     };
   }
+}
+
+/** A1 refs of cells holding a formula (`<c r="B2" …><f>…`). */
+export function formulaCellsFromXml(xml: string): string[] {
+  const refs: string[] = [];
+  const re = /<c\b[^>]*\br="([A-Z]+\d+)"[^>]*>\s*<f[\s>/]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    refs.push(m[1]);
+  }
+  return refs;
+}
+
+function decodeUtf8(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }
 
 /** Coerce an arbitrary reader cell into a CSV-representable {@link CellValue}. */
@@ -65,7 +74,6 @@ function toCellValue(value: unknown): CellValue {
   if (typeof value === 'bigint') {
     return value.toString();
   }
-  // Unexpected object-shaped cell: serialize rather than emit "[object Object]".
   try {
     return JSON.stringify(value);
   } catch {
