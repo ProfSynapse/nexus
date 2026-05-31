@@ -5,14 +5,18 @@
  * Creates <root>/skills/<provider>/<name>/SKILL.md from name+description+body,
  * validated through the SkillValidator (§7). Defaults to the vault-native
  * 'nexus' provider when no source is given.
- * Foundation-phase stub — wiring lands in a later wave.
  * See: docs/plans/skills-protocol-integration-plan.md §12.
  */
 
+import { normalizePath } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
-import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { SkillsAgent } from '../SkillsAgent';
+import { resolveSkillsRuntime } from '../services/SkillsContext';
+import { SkillWriteService } from '../services/SkillWriteService';
+import { SkillValidator } from '../services/SkillValidator';
+import { fnv1aHex } from '../services/skillHash';
 
 interface CreateSkillParams extends CommonParameters {
   name: string;
@@ -22,9 +26,9 @@ interface CreateSkillParams extends CommonParameters {
 }
 
 export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
-  private agent: BaseAppAgent;
+  private agent: SkillsAgent;
 
-  constructor(agent: BaseAppAgent) {
+  constructor(agent: SkillsAgent) {
     super(
       'createSkill',
       'Create Skill',
@@ -35,10 +39,50 @@ export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
     this.agent = agent;
   }
 
-  async execute(_params: CreateSkillParams): Promise<CommonResult> {
-    await Promise.resolve(); // TODO(foundation): replace with real async work
-    return this.prepareResult(false, undefined,
-      'Skills createSkill: not yet implemented (foundation phase)');
+  async execute(params: CreateSkillParams): Promise<CommonResult> {
+    const r = resolveSkillsRuntime(this.agent);
+    if (!r.ok) {
+      return this.prepareResult(false, undefined, r.error);
+    }
+
+    // Validate the frontmatter input before touching disk (§7).
+    const validation = new SkillValidator().validate({
+      name: params.name,
+      description: params.description,
+      body: params.body,
+    });
+    if (!validation.valid) {
+      return this.prepareResult(false, { validationErrors: validation.errors }, 'Skill validation failed');
+    }
+
+    const provider = params.source ?? 'nexus';
+    const folder = normalizePath(`${r.rt.skillsRoot}/${provider}/${params.name}`);
+
+    const write = new SkillWriteService(r.rt.vaultAdapter);
+    if (await write.exists(folder)) {
+      return this.prepareResult(false, undefined, `Skill already exists: ${provider}/${params.name}`);
+    }
+
+    const skillMd = await write.composeSkillMd(params.name, params.description, params.body);
+    await write.writeSkill(folder, skillMd);
+
+    await r.rt.index.upsertOne({
+      provider,
+      name: params.name,
+      description: params.description,
+      vaultPath: folder,
+      contentHash: fnv1aHex(skillMd),
+    });
+
+    return this.prepareResult(true, {
+      skill: {
+        name: params.name,
+        provider,
+        description: params.description,
+        vaultPath: folder,
+      },
+      created: `${folder}/SKILL.md`,
+    });
   }
 
   getParameterSchema(): JSONSchema {

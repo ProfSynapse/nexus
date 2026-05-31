@@ -15,6 +15,7 @@ import { resolveVaultRoot } from '../../../../database/storage/VaultRootResolver
 import type { SQLiteCacheManager } from '../../../../database/storage/SQLiteCacheManager';
 import { SkillIndexService } from './SkillIndexService';
 import { SkillScanner } from './SkillScanner';
+import type { SkillRecord } from '../types';
 import type { SkillsAgent } from '../SkillsAgent';
 
 export interface SkillsRuntime {
@@ -66,4 +67,44 @@ export function resolveSkillsRuntime(agent: SkillsAgent): ResolveResult {
   const scanner = new SkillScanner(vaultAdapter, skillsRoot);
 
   return { ok: true, rt: { skillsRoot, vaultAdapter, index, scanner } };
+}
+
+/** Result of resolving a (name, source?) to a single existing skill record. */
+export type ResolveSkillResult =
+  | { ok: true; record: SkillRecord }
+  | { ok: false; error: string };
+
+/**
+ * Resolve a bare `name` (optionally scoped by `source` provider) to a single
+ * existing skill record. Shared by updateSkill/archiveSkill so the
+ * source/ambiguity handling lives in one place:
+ *   - `source` given → exact (provider, name) lookup; error if missing.
+ *   - no `source` → findByName; 0 → not-found error, 1 → use it,
+ *     >1 → ambiguity error listing the candidate providers (no silent guess).
+ */
+export async function resolveSkillByName(
+  index: SkillIndexService,
+  name: string,
+  source?: string
+): Promise<ResolveSkillResult> {
+  if (source) {
+    const record = await index.getOne(source, name);
+    if (!record) {
+      return { ok: false, error: `No skill named "${name}" for provider "${source}"` };
+    }
+    return { ok: true, record };
+  }
+
+  const matches = await index.findByName(name);
+  if (matches.length === 0) {
+    return { ok: false, error: `No skill named "${name}"` };
+  }
+  if (matches.length > 1) {
+    const providers = matches.map((m) => m.provider).join(', ');
+    return {
+      ok: false,
+      error: `Skill "${name}" exists in multiple providers (${providers}); pass --source to disambiguate`,
+    };
+  }
+  return { ok: true, record: matches[0] };
 }

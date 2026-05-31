@@ -31,39 +31,88 @@ interface SkillRow {
 export class SkillIndexService {
   constructor(private sqlite: SQLiteCacheManager) {}
 
+  /** The owned-state-preserving UPSERT statement shared by upsertOne/syncFromScan. */
+  private static readonly UPSERT_SQL =
+    `INSERT INTO skills (id, provider, name, description, vault_path, origin_path, content_hash, is_archived, last_loaded_at, created, updated) ` +
+    `VALUES (?,?,?,?,?,?,?,0,NULL,?,?) ` +
+    `ON CONFLICT(provider, name) DO UPDATE SET ` +
+    `description=excluded.description, vault_path=excluded.vault_path, ` +
+    `origin_path=excluded.origin_path, content_hash=excluded.content_hash, ` +
+    `updated=excluded.updated`;
+
   /**
-   * Upsert each parsed skill folder into the index. On conflict (provider,name)
-   * the derived columns are refreshed but the owned state (`is_archived`,
-   * `last_loaded_at`) is deliberately left out of the SET clause so a re-scan
-   * never clobbers it.
+   * Upsert a single parsed skill folder into the index. On conflict
+   * (provider,name) the derived columns are refreshed but the owned state
+   * (`is_archived`, `last_loaded_at`) is deliberately left out of the SET clause
+   * so neither a re-scan NOR a CRUA write clobbers it.
+   */
+  async upsertOne(parsed: ParsedSkillFolder): Promise<void> {
+    const now = Date.now();
+    await this.sqlite.run(SkillIndexService.UPSERT_SQL, [
+      uuidv4(),
+      parsed.provider,
+      parsed.name,
+      parsed.description,
+      parsed.vaultPath,
+      parsed.originPath ?? null,
+      parsed.contentHash,
+      now,
+      now,
+    ]);
+  }
+
+  /**
+   * Upsert each parsed skill folder into the index. Loop-calls {@link upsertOne}
+   * so the UPSERT SQL lives in exactly one place.
    */
   async syncFromScan(parsed: ParsedSkillFolder[]): Promise<void> {
-    const sql =
-      `INSERT INTO skills (id, provider, name, description, vault_path, origin_path, content_hash, is_archived, last_loaded_at, created, updated) ` +
-      `VALUES (?,?,?,?,?,?,?,0,NULL,?,?) ` +
-      `ON CONFLICT(provider, name) DO UPDATE SET ` +
-      `description=excluded.description, vault_path=excluded.vault_path, ` +
-      `origin_path=excluded.origin_path, content_hash=excluded.content_hash, ` +
-      `updated=excluded.updated`;
-
     for (const skill of parsed) {
-      const now = Date.now();
-      await this.sqlite.run(sql, [
-        uuidv4(),
-        skill.provider,
-        skill.name,
-        skill.description,
-        skill.vaultPath,
-        skill.originPath ?? null,
-        skill.contentHash,
-        now,
-        now,
-      ]);
+      await this.upsertOne(skill);
     }
 
     // TODO(phase): prune stale rows — skills present in the index but no longer
     // on disk are left in place for now (no destructive prune in the discovery
     // phase). A later sync phase reconciles deletions.
+  }
+
+  /** Fetch a single skill by its composite key, or null when not present. */
+  async getOne(provider: string, name: string): Promise<SkillRecord | null> {
+    const row = await this.sqlite.queryOne<SkillRow>(
+      'SELECT * FROM skills WHERE provider = ? AND name = ?',
+      [provider, name]
+    );
+    return row ? this.rowToRecord(row) : null;
+  }
+
+  /**
+   * Set (or, with `archived: false`, clear) the soft-delete flag for a skill,
+   * then return the refreshed record. Returns null when no such skill exists.
+   */
+  async setArchived(provider: string, name: string, archived: boolean): Promise<SkillRecord | null> {
+    const now = Date.now();
+    await this.sqlite.run(
+      'UPDATE skills SET is_archived = ?, updated = ? WHERE provider = ? AND name = ?',
+      [archived ? 1 : 0, now, provider, name]
+    );
+    return this.getOne(provider, name);
+  }
+
+  /**
+   * Rename a skill row in place (used by updateSkill --rename). Updates the
+   * name + vault_path on the existing (provider, oldName) row. The follow-up
+   * {@link upsertOne} refreshes hash/description on the renamed row.
+   */
+  async renameRow(
+    provider: string,
+    oldName: string,
+    newName: string,
+    newVaultPath: string
+  ): Promise<void> {
+    const now = Date.now();
+    await this.sqlite.run(
+      'UPDATE skills SET name = ?, vault_path = ?, updated = ? WHERE provider = ? AND name = ?',
+      [newName, newVaultPath, now, provider, oldName]
+    );
   }
 
   /**

@@ -4,15 +4,16 @@
  * Located at: src/agents/apps/skills/tools/archiveSkill.ts
  * Sets (or, with restore, clears) the skill's is_archived flag — the model's
  * only "delete" (soft, reversible). Hard delete is UI-only, mirroring the state
- * CRUA contract (#215).
- * Foundation-phase stub — wiring lands in a later wave.
+ * CRUA contract (#215). This is the §7 WHOLE-SKILL soft-delete; it does NOT move
+ * or delete the folder (distinct from the §3 version-archive).
  * See: docs/plans/skills-protocol-integration-plan.md §12.
  */
 
 import { BaseTool } from '../../../baseTool';
-import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { SkillsAgent } from '../SkillsAgent';
+import { resolveSkillsRuntime, resolveSkillByName } from '../services/SkillsContext';
 
 interface ArchiveSkillParams extends CommonParameters {
   name: string;
@@ -21,9 +22,9 @@ interface ArchiveSkillParams extends CommonParameters {
 }
 
 export class ArchiveSkillTool extends BaseTool<ArchiveSkillParams, CommonResult> {
-  private agent: BaseAppAgent;
+  private agent: SkillsAgent;
 
-  constructor(agent: BaseAppAgent) {
+  constructor(agent: SkillsAgent) {
     super(
       'archiveSkill',
       'Archive Skill',
@@ -34,10 +35,32 @@ export class ArchiveSkillTool extends BaseTool<ArchiveSkillParams, CommonResult>
     this.agent = agent;
   }
 
-  async execute(_params: ArchiveSkillParams): Promise<CommonResult> {
-    await Promise.resolve(); // TODO(foundation): replace with real async work
-    return this.prepareResult(false, undefined,
-      'Skills archiveSkill: not yet implemented (foundation phase)');
+  async execute(params: ArchiveSkillParams): Promise<CommonResult> {
+    const r = resolveSkillsRuntime(this.agent);
+    if (!r.ok) {
+      return this.prepareResult(false, undefined, r.error);
+    }
+
+    // Resolve the target provider (source/ambiguity handling shared with updateSkill).
+    const resolved = await resolveSkillByName(r.rt.index, params.name, params.source);
+    if (!resolved.ok) {
+      return this.prepareResult(false, undefined, resolved.error);
+    }
+
+    const rec = await r.rt.index.setArchived(
+      resolved.record.provider,
+      resolved.record.name,
+      !params.restore
+    );
+    if (!rec) {
+      return this.prepareResult(false, undefined, `No skill named "${params.name}"`);
+    }
+
+    return this.prepareResult(true, {
+      name: rec.name,
+      provider: rec.provider,
+      isArchived: rec.isArchived,
+    });
   }
 
   getParameterSchema(): JSONSchema {

@@ -174,6 +174,89 @@ describe('SkillIndexService', () => {
     });
   });
 
+  describe('upsertOne', () => {
+    it('issues a single owned-state-preserving UPSERT', async () => {
+      const mock = createMockSqlite();
+      await makeService(mock).upsertOne({
+        provider: 'nexus',
+        name: 'new-skill',
+        description: 'A new skill.',
+        vaultPath: 'Nexus/skills/nexus/new-skill',
+        contentHash: 'hash-x',
+      });
+
+      expect(mock.run).toHaveBeenCalledTimes(1);
+      const [sql, params] = mock.run.mock.calls[0];
+      expect(sql).toContain('INSERT INTO skills');
+      expect(sql).toContain('ON CONFLICT(provider, name) DO UPDATE SET');
+      const setClause = sql.slice(sql.indexOf('DO UPDATE SET'));
+      expect(setClause).not.toContain('is_archived');
+      expect(setClause).not.toContain('last_loaded_at');
+      expect(params).toHaveLength(9);
+      expect(params[1]).toBe('nexus');
+      expect(params[2]).toBe('new-skill');
+      expect(params[5]).toBeNull(); // originPath undefined → null
+      expect(params[6]).toBe('hash-x');
+    });
+  });
+
+  describe('getOne', () => {
+    it('queries by composite key and maps the row', async () => {
+      const mock = createMockSqlite();
+      mock.queryOne.mockResolvedValueOnce(sampleRow);
+      const result = await makeService(mock).getOne('claude', 'essay-editor');
+      const [sql, params] = mock.queryOne.mock.calls[0];
+      expect(sql).toBe('SELECT * FROM skills WHERE provider = ? AND name = ?');
+      expect(params).toEqual(['claude', 'essay-editor']);
+      expect(result?.name).toBe('essay-editor');
+      expect(result?.isArchived).toBe(true);
+    });
+
+    it('returns null when no row matches', async () => {
+      const mock = createMockSqlite();
+      mock.queryOne.mockResolvedValueOnce(null);
+      const result = await makeService(mock).getOne('claude', 'missing');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('setArchived', () => {
+    it('updates is_archived then returns the refreshed record', async () => {
+      const mock = createMockSqlite();
+      mock.queryOne.mockResolvedValueOnce({ ...sampleRow, is_archived: 1 });
+      const result = await makeService(mock).setArchived('claude', 'essay-editor', true);
+
+      const [sql, params] = mock.run.mock.calls[0];
+      expect(sql).toBe('UPDATE skills SET is_archived = ?, updated = ? WHERE provider = ? AND name = ?');
+      expect(params[0]).toBe(1); // archived → 1
+      expect(params[2]).toBe('claude');
+      expect(params[3]).toBe('essay-editor');
+      expect(result?.isArchived).toBe(true);
+    });
+
+    it('passes 0 when restoring (archived false)', async () => {
+      const mock = createMockSqlite();
+      mock.queryOne.mockResolvedValueOnce({ ...sampleRow, is_archived: 0 });
+      const result = await makeService(mock).setArchived('claude', 'essay-editor', false);
+      const [, params] = mock.run.mock.calls[0];
+      expect(params[0]).toBe(0);
+      expect(result?.isArchived).toBe(false);
+    });
+  });
+
+  describe('renameRow', () => {
+    it('updates name + vault_path on the (provider, oldName) row', async () => {
+      const mock = createMockSqlite();
+      await makeService(mock).renameRow('nexus', 'old-name', 'new-name', 'Nexus/skills/nexus/new-name');
+      const [sql, params] = mock.run.mock.calls[0];
+      expect(sql).toBe('UPDATE skills SET name = ?, vault_path = ?, updated = ? WHERE provider = ? AND name = ?');
+      expect(params[0]).toBe('new-name');
+      expect(params[1]).toBe('Nexus/skills/nexus/new-name');
+      expect(params[3]).toBe('nexus');
+      expect(params[4]).toBe('old-name');
+    });
+  });
+
   describe('touchLoaded', () => {
     it('runs the recency UPDATE for the given id', async () => {
       const mock = createMockSqlite();

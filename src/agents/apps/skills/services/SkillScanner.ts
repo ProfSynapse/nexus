@@ -1,5 +1,6 @@
 import type { DataAdapter } from 'obsidian';
 import type { ParsedSkillFolder } from '../types';
+import { fnv1aHex } from './skillHash';
 
 // Re-exported so callers can import the parsed-folder shape alongside the scanner.
 export type { ParsedSkillFolder };
@@ -80,7 +81,7 @@ export class SkillScanner {
             name: fmName,
             description,
             vaultPath: `${this.skillsRoot}/${provider}/${name}`,
-            contentHash: SkillScanner.fnv1a(content),
+            contentHash: fnv1aHex(content),
           });
         } catch {
           // A single unreadable / unparseable skill folder must not abort the whole scan.
@@ -121,19 +122,5 @@ export class SkillScanner {
     } catch {
       return {};
     }
-  }
-
-  /**
-   * Tiny inline FNV-1a (32-bit) string hash → hex string. Deliberately avoids Node `crypto`
-   * (mobile-unsafe) and adds no dependency.
-   */
-  private static fnv1a(input: string): string {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < input.length; i++) {
-      hash ^= input.charCodeAt(i);
-      // hash *= 16777619, kept in 32-bit unsigned via Math.imul + >>> 0
-      hash = Math.imul(hash, 0x01000193) >>> 0;
-    }
-    return (hash >>> 0).toString(16).padStart(8, '0');
   }
 }
