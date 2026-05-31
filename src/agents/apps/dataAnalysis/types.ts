@@ -8,8 +8,8 @@
 
 import { CommonParameters } from '../../../types';
 
-/** Parameters for the `runAnalysis` tool. */
-export interface RunAnalysisParams extends CommonParameters {
+/** Parameters for the `runPython` tool. */
+export interface RunPythonParams extends CommonParameters {
   /** Python source. Returns a JSON-serializable value (e.g. df...to_dict('records')). */
   code: string;
   /**

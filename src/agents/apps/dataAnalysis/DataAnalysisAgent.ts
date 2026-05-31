@@ -11,7 +11,7 @@
 
 import { BaseAppAgent } from '../BaseAppAgent';
 import { AppManifest } from '../../../types/apps/AppTypes';
-import { RunAnalysisTool } from './tools/runAnalysis';
+import { RunPythonTool } from './tools/runPython';
 import { ListCapabilitiesTool } from './tools/listCapabilities';
 import { MirrorWorkbookTool } from './tools/mirrorWorkbook';
 import { ApplyToWorkbookTool } from './tools/applyToWorkbook';
@@ -40,7 +40,7 @@ const DATA_ANALYSIS_MANIFEST: AppManifest = {
   credentials: [],
   validation: { mode: 'none' },
   tools: [
-    { slug: 'runAnalysis', description: 'Run pandas/Python on CSV/XLSX inputs and return a bounded result' },
+    { slug: 'runPython', description: 'Run pandas/Python on CSV/XLSX inputs and return a bounded result' },
     { slug: 'listCapabilities', description: 'List the available Python packages and supported input formats' },
     { slug: 'mirrorWorkbook', description: 'Project an .xlsx into editable CSV shards under <root>/spreadsheets/' },
     { slug: 'applyToWorkbook', description: 'Apply CSV edits back into the .xlsx losslessly (charts/formulas preserved)' },
@@ -55,7 +55,7 @@ export class DataAnalysisAgent extends BaseAppAgent {
 
   constructor() {
     super(DATA_ANALYSIS_MANIFEST);
-    this.registerTool(new RunAnalysisTool(this));
+    this.registerTool(new RunPythonTool(this));
     this.registerTool(new ListCapabilitiesTool(this));
     this.registerTool(new MirrorWorkbookTool(this));
     this.registerTool(new ApplyToWorkbookTool(this));

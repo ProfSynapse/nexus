@@ -1,5 +1,5 @@
 /**
- * Unit tests for RunAnalysisTool — the trusted-host orchestration around the
+ * Unit tests for RunPythonTool — the trusted-host orchestration around the
  * sandbox: desktop gating, parameter + path + size validation, output row-cap
  * enforcement, and result persistence. The Pyodide sandbox is faked so these
  * run without any WASM/Electron dependency.
@@ -12,7 +12,7 @@ jest.mock('../../src/utils/platform', () => ({
 }));
 
 import { isDesktop } from '../../src/utils/platform';
-import { RunAnalysisTool } from '../../src/agents/apps/dataAnalysis/tools/runAnalysis';
+import { RunPythonTool } from '../../src/agents/apps/dataAnalysis/tools/runPython';
 import { DataAnalysisAgent } from '../../src/agents/apps/dataAnalysis/DataAnalysisAgent';
 import { IAnalysisSandbox, SandboxRunRequest, SandboxRunResult } from '../../src/agents/apps/dataAnalysis/types';
 
@@ -59,17 +59,17 @@ beforeEach(() => {
   isDesktopMock.mockReturnValue(true);
 });
 
-describe('RunAnalysisTool', () => {
+describe('RunPythonTool', () => {
   it('refuses on mobile', async () => {
     isDesktopMock.mockReturnValue(false);
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
     const res = await tool.execute({ code: 'x', context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/desktop-only/i);
   });
 
   it('rejects missing code', async () => {
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
     const res = await tool.execute({ code: '   ', context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/Missing "code"/);
@@ -78,7 +78,7 @@ describe('RunAnalysisTool', () => {
   it('returns a successful bounded result', async () => {
     const data = [{ category: 'food', avg: 7.58 }];
     const sandbox = new FakeSandbox({ success: true, data, logs: ['ok'], stats: { durationMs: 12 } });
-    const tool = new RunAnalysisTool(makeAgent(sandbox));
+    const tool = new RunPythonTool(makeAgent(sandbox));
     const res = await tool.execute({ code: 'pd...', context: ctx });
     expect(res.success).toBe(true);
     const payload = res.data as { result: unknown; rows: number; logs: string[] };
@@ -89,7 +89,7 @@ describe('RunAnalysisTool', () => {
 
   it('enforces the output row cap', async () => {
     const rows = Array.from({ length: 2000 }, (_, i) => ({ i }));
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: rows })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: rows })));
     const res = await tool.execute({ code: 'pd...', maxRows: 1500, context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toContain('2,000 rows');
@@ -98,7 +98,7 @@ describe('RunAnalysisTool', () => {
 
   it('rejects traversal input paths before reading', async () => {
     const vault = makeVault();
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [] }), vault));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [] }), vault));
     const res = await tool.execute({ code: 'x', inputs: { evil: '../../secrets.csv' }, context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/Invalid input path/);
@@ -108,7 +108,7 @@ describe('RunAnalysisTool', () => {
   it('enforces the input size cap', async () => {
     const big = new Uint8Array(2 * 1024 * 1024).buffer; // 2MB
     const vault = makeVault({ adapter: { readBinary: jest.fn(async () => big), write: jest.fn() } });
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [] }), vault));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [] }), vault));
     const res = await tool.execute({
       code: 'x',
       inputs: { big: 'data/big.csv' },
@@ -121,7 +121,7 @@ describe('RunAnalysisTool', () => {
 
   it('injects inputs into the sandbox with a /data path and the var name', async () => {
     const sandbox = new FakeSandbox({ success: true, data: [{ ok: 1 }] });
-    const tool = new RunAnalysisTool(makeAgent(sandbox));
+    const tool = new RunPythonTool(makeAgent(sandbox));
     await tool.execute({ code: 'x', inputs: { budget: 'data/budget.csv' }, context: ctx });
     expect(sandbox.lastRequest?.files).toHaveLength(1);
     expect(sandbox.lastRequest?.files[0]).toMatchObject({
@@ -132,7 +132,7 @@ describe('RunAnalysisTool', () => {
 
   it('gives colliding var names distinct sandbox paths (no silent overwrite)', async () => {
     const sandbox = new FakeSandbox({ success: true, data: [{ ok: 1 }] });
-    const tool = new RunAnalysisTool(makeAgent(sandbox));
+    const tool = new RunPythonTool(makeAgent(sandbox));
     // "a b" and "a_b" both sanitize to "a_b" — index prefix must keep them apart
     await tool.execute({ code: 'x', inputs: { 'a b': 'x.csv', a_b: 'y.csv' }, context: ctx });
     const paths = sandbox.lastRequest?.files.map((f) => f.sandboxPath);
@@ -142,7 +142,7 @@ describe('RunAnalysisTool', () => {
 
   it('enforces the output byte budget for non-array shapes (row-cap bypass closed)', async () => {
     const sneaky = { rows: Array.from({ length: 100 }, (_, i) => ({ i })) };
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: sneaky })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: sneaky })));
     const res = await tool.execute({ code: 'x', maxOutputBytes: 50, context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/KB \(max/);
@@ -150,7 +150,7 @@ describe('RunAnalysisTool', () => {
 
   it('persists the result to outputPath when provided', async () => {
     const vault = makeVault();
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [{ a: 1 }] }), vault));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [{ a: 1 }] }), vault));
     const res = await tool.execute({ code: 'x', outputPath: 'reports/out.json', context: ctx });
     expect(res.success).toBe(true);
     expect((vault as { create: jest.Mock }).create).toHaveBeenCalledWith('reports/out.json', expect.stringContaining('"a": 1'));
@@ -158,14 +158,14 @@ describe('RunAnalysisTool', () => {
   });
 
   it('rejects an invalid outputPath', async () => {
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: true, data: [] })));
     const res = await tool.execute({ code: 'x', outputPath: '../escape.json', context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toMatch(/Invalid output path/);
   });
 
   it('surfaces a sandbox failure', async () => {
-    const tool = new RunAnalysisTool(makeAgent(new FakeSandbox({ success: false, error: 'boom (traceback)' })));
+    const tool = new RunPythonTool(makeAgent(new FakeSandbox({ success: false, error: 'boom (traceback)' })));
     const res = await tool.execute({ code: 'x', context: ctx });
     expect(res.success).toBe(false);
     expect(res.error).toBe('boom (traceback)');

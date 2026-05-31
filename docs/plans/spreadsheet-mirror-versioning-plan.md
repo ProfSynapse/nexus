@@ -85,7 +85,7 @@ explicit AI tool call. A debounced (`~1.5s`) vault `modify` watcher
 write-back when a shard changes; it suppresses its own re-projection writes
 (syncing flag + cooldown) so there's no loop. `applyToWorkbook` remains as a
 manual `dryRun`/`force` path. The AI edits the CSV either with **pandas**
-(`runAnalysis` `outputPath` ending `.csv` → tabular result written as CSV) or
+(`runPython` `outputPath` ending `.csv` → tabular result written as CSV) or
 with **ContentManager CRUD**. `mirrorWorkbook` is still the explicit "start
 working on this workbook" step. `manifest.sourcePath` records the `.xlsx` so the
 watcher can locate it.
@@ -224,7 +224,7 @@ Snapshot answers "put it back"; event log answers "what changed and when".
 - **Divergence guard** (§7): source-hash mismatch blocks blind overwrite.
 - **`dryRun`**: returns the change summary (cells changed, before→after samples,
   any refused/unsupported parts) without writing.
-- **Serialize** write-backs (one at a time), like `runAnalysis`.
+- **Serialize** write-backs (one at a time), like `runPython`.
 
 ## 7. Sync / conflict policy
 

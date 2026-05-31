@@ -16,7 +16,7 @@ Copy `main.js` + `manifest.json` + `styles.css` into
 ## 1. Enable the app
 
 Settings → **Apps** → enable **Data Analysis** (desktop-only). It exposes four
-tools: `runAnalysis`, `listCapabilities`, **`mirrorWorkbook`**, **`applyToWorkbook`**.
+tools: `runPython`, `listCapabilities`, **`mirrorWorkbook`**, **`applyToWorkbook`**.
 
 ## 2. First-run engine download (the riskiest new path)
 
@@ -51,7 +51,7 @@ The round-trip is **automatic**: editing any mirror `.partN.csv` triggers a
 debounced (~1.5s) write-back to the source `.xlsx` — no explicit tool call needed.
 Edit a CSV two ways:
 
-- **With pandas (code edits the CSV):** `runAnalysis` with `outputPath` pointing at
+- **With pandas (code edits the CSV):** `runPython` with `outputPath` pointing at
   a mirror shard and a `.csv` extension, e.g.
   `inputs:{data:"Nexus/spreadsheets/budget/Data.part0.csv"}`,
   `outputPath:"Nexus/spreadsheets/budget/Data.part0.csv"`, code that returns a list

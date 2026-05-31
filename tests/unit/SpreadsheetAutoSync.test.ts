@@ -85,7 +85,7 @@ describe('SpreadsheetAutoSync scheduling', () => {
   });
 });
 
-describe('dataToCsv (runAnalysis CSV output)', () => {
+describe('dataToCsv (runPython CSV output)', () => {
   it('serializes array-of-records with a header row', () => {
     expect(dataToCsv([{ region: 'EMEA', amount: 100 }, { region: 'APAC', amount: 200 }]))
       .toBe('region,amount\nEMEA,100\nAPAC,200\n');

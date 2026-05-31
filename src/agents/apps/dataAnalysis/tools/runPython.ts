@@ -1,5 +1,5 @@
 /**
- * RunAnalysisTool — execute Python (pandas) against vault CSV/Excel data in a
+ * RunPythonTool — execute Python (pandas) against vault CSV/Excel data in a
  * sandboxed, network-isolated Pyodide worker.
  *
  * Trusted-host responsibilities (the guest does none of this):
@@ -20,7 +20,7 @@ import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { verbs } from '../../../utils/toolStatusLabels';
 import { DataAnalysisAgent } from '../DataAnalysisAgent';
 import { dataToCsv } from '../spreadsheet/csv';
-import { RunAnalysisParams, SandboxFile } from '../types';
+import { RunPythonParams, SandboxFile } from '../types';
 import {
   clampInputBytes,
   clampMaxRows,
@@ -33,13 +33,13 @@ import {
   validateInputPath,
 } from '../services/guards';
 
-export class RunAnalysisTool extends BaseTool<RunAnalysisParams, CommonResult> {
+export class RunPythonTool extends BaseTool<RunPythonParams, CommonResult> {
   private agent: DataAnalysisAgent;
 
   constructor(agent: DataAnalysisAgent) {
     super(
-      'runAnalysis',
-      'Run Analysis',
+      'runPython',
+      'Run Python',
       'Run Python (pandas) against vault CSV/Excel files in an isolated runtime ' +
         '(off-thread, no Node, in-memory filesystem), returning a bounded result. Provide `code` ' +
         'and optional `inputs` (a map of ' +
@@ -57,7 +57,7 @@ export class RunAnalysisTool extends BaseTool<RunAnalysisParams, CommonResult> {
     return verbs('Analyzing data', 'Analyzed data', 'Analysis failed')[tense];
   }
 
-  async execute(params: RunAnalysisParams): Promise<CommonResult> {
+  async execute(params: RunPythonParams): Promise<CommonResult> {
     if (!isDesktop()) {
       return this.prepareResult(false, undefined, 'Data Analysis is desktop-only.');
     }
