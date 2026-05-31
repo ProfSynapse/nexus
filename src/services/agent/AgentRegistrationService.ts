@@ -22,6 +22,7 @@ import type { IAgent } from '../../agents/interfaces/IAgent';
 import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
 import type { MemorySettings } from '../../types';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { SessionContextManager } from '../SessionContextManager';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -214,6 +215,8 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
             getSettings: () => (hasSettings(this.plugin) ? this.plugin.settings.settings : undefined),
             getStorageAdapter: () =>
               this.serviceManager?.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined,
+            getSessionContextManager: () =>
+              this.serviceManager?.getServiceIfReady<SessionContextManager>('sessionContextManager') ?? undefined,
           }
         );
         appManager.loadInstalledApps();

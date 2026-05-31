@@ -104,6 +104,19 @@ export class ToolCallTraceService {
         relatedFiles
       });
 
+      // 5b. Stamp active skill(s) for cross-workspace usage attribution (§9).
+      // Best-effort; flows into metadataJson via the TraceMetadata index
+      // signature, so it's zero-migration. Wrapped so a missing/failing lookup
+      // never aborts the trace.
+      try {
+        const activeSkills = this.sessionContextManager.getActiveSkills?.(sessionId) ?? [];
+        if (activeSkills.length > 0) {
+          (traceMetadata as Record<string, unknown>).activeSkills = activeSkills;
+        }
+      } catch {
+        /* skill attribution is best-effort — never block the trace */
+      }
+
       // 6. Record the trace via MemoryService
       await this.memoryService.recordActivityTrace({
         workspaceId: workspaceId,

@@ -15,11 +15,15 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import type { SkillsAgent } from '../SkillsAgent';
 import { resolveSkillsRuntime } from '../services/SkillsContext';
+import { SkillUsageService, type SkillUsageHistory } from '../services/SkillUsageService';
 
 interface LoadSkillParams extends CommonParameters {
   name: string;
   source?: string;
   includeHistory?: boolean;
+  // Injected at the top level by ToolBatchExecutionService.applyContextDefaults
+  // (CLI-first contract) — used to attribute usage history to the session (§9).
+  sessionId?: string;
 }
 
 export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
@@ -79,9 +83,35 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
     // Stamp recency so this load surfaces first next time.
     await r.rt.index.touchLoaded(record.id);
 
+    const skillId = `${record.provider}/${record.name}`;
+
+    // Register the loaded skill as active for this session so subsequent
+    // tool-call traces are attributed to it (§9). Best-effort — attribution must
+    // never break a load.
+    try {
+      if (params.sessionId) {
+        r.rt.sessionContextManager?.addActiveSkill(params.sessionId, skillId);
+      }
+    } catch {
+      /* attribution is best-effort */
+    }
+
+    // Fetch cross-workspace usage history for this skill (§9). Best-effort and
+    // opt-out via includeHistory:false.
+    let usageHistory: SkillUsageHistory | undefined;
+    if (params.includeHistory !== false) {
+      try {
+        const usage = new SkillUsageService(r.rt.sqlite);
+        usageHistory = await usage.getUsageHistory(skillId);
+      } catch {
+        /* best-effort — omit usageHistory on error */
+      }
+    }
+
     // loadWorkspace-shaped payload (§12): instructions + files nested in `skill`,
     // top-level nudge. `alternatives` surfaces the other recency-ordered matches
-    // when a bare name was ambiguous across providers.
+    // when a bare name was ambiguous across providers. `usageHistory` is omitted
+    // when includeHistory:false or on fetch error.
     return this.prepareResult(true, {
       skill: {
         name: record.name,
@@ -100,6 +130,7 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
         provider: m.provider,
         lastLoadedAt: m.lastLoadedAt,
       })),
+      ...(usageHistory ? { usageHistory } : {}),
     });
   }
 

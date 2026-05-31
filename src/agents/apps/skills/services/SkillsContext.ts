@@ -13,6 +13,7 @@ import { normalizePath } from 'obsidian';
 import type { DataAdapter } from 'obsidian';
 import { resolveVaultRoot } from '../../../../database/storage/VaultRootResolver';
 import type { SQLiteCacheManager } from '../../../../database/storage/SQLiteCacheManager';
+import type { SessionContextManager } from '../../../../services/SessionContextManager';
 import { SkillIndexService } from './SkillIndexService';
 import { SkillScanner } from './SkillScanner';
 import type { SkillRecord } from '../types';
@@ -24,6 +25,10 @@ export interface SkillsRuntime {
   vaultAdapter: DataAdapter;
   index: SkillIndexService;
   scanner: SkillScanner;
+  /** Raw SQLite handle — reused by SkillUsageService for the usage-history query (§9). */
+  sqlite: SQLiteCacheManager;
+  /** Per-session active-skill tracker; undefined if the service isn't ready. */
+  sessionContextManager?: SessionContextManager;
 }
 
 export type ResolveResult = { ok: true; rt: SkillsRuntime } | { ok: false; error: string };
@@ -66,7 +71,17 @@ export function resolveSkillsRuntime(agent: SkillsAgent): ResolveResult {
   const index = new SkillIndexService(sqlite);
   const scanner = new SkillScanner(vaultAdapter, skillsRoot);
 
-  return { ok: true, rt: { skillsRoot, vaultAdapter, index, scanner } };
+  return {
+    ok: true,
+    rt: {
+      skillsRoot,
+      vaultAdapter,
+      index,
+      scanner,
+      sqlite,
+      sessionContextManager: ctx.getSessionContextManager?.(),
+    },
+  };
 }
 
 /** Result of resolving a (name, source?) to a single existing skill record. */

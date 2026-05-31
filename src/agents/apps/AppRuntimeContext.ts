@@ -10,9 +10,12 @@
 
 import type { MCPSettings } from '../../types/plugin/PluginTypes';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { SessionContextManager } from '../../services/SessionContextManager';
 
 /** Optional runtime services injected into app agents that need settings/storage. */
 export interface AppRuntimeContext {
   getSettings(): MCPSettings | undefined;
   getStorageAdapter(): IStorageAdapter | undefined;
+  /** Per-session active-skill tracker for usage attribution (§9). May be undefined if not ready. */
+  getSessionContextManager(): SessionContextManager | undefined;
 }
