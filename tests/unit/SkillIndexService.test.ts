@@ -257,6 +257,18 @@ describe('SkillIndexService', () => {
     });
   });
 
+  describe('hardDelete', () => {
+    it('issues a DELETE scoped to the composite (provider, name) key', async () => {
+      const mock = createMockSqlite();
+      await makeService(mock).hardDelete('nexus', 'essay-editor');
+
+      expect(mock.run).toHaveBeenCalledTimes(1);
+      const [sql, params] = mock.run.mock.calls[0];
+      expect(sql).toBe('DELETE FROM skills WHERE provider = ? AND name = ?');
+      expect(params).toEqual(['nexus', 'essay-editor']);
+    });
+  });
+
   describe('touchLoaded', () => {
     it('runs the recency UPDATE for the given id', async () => {
       const mock = createMockSqlite();

@@ -157,6 +157,16 @@ export class SkillIndexService {
   }
 
   /**
+   * Permanently remove a skill row from the index by its composite key. Used
+   * by the settings-UI hard-delete (humans can destroy; the model only gets the
+   * reversible `is_archived` soft-delete). The on-disk folder is removed
+   * separately by the caller via SkillWriteService.removeTree.
+   */
+  async hardDelete(provider: string, name: string): Promise<void> {
+    await this.sqlite.run('DELETE FROM skills WHERE provider = ? AND name = ?', [provider, name]);
+  }
+
+  /**
    * Stamp a skill as just-loaded — drives recency ordering in list().
    */
   async touchLoaded(id: string): Promise<void> {

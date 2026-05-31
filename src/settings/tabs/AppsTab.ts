@@ -8,8 +8,11 @@ import { SettingsRouter } from '../SettingsRouter';
 import { Settings } from '../../settings';
 import { CardItem } from '../../components/CardManager';
 import { SearchableCardManager, CardGroup } from '../../components/SearchableCardManager';
-import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
+import { AppConfigModal, AppSettingsSection, AppCustomSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
+import { SkillsSectionRenderer } from '../../components/skills/SkillsSectionRenderer';
+import type { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
+import type { BaseAppAgent } from '../../agents/apps/BaseAppAgent';
 
 /**
  * CardItem-compatible representation of an app for SearchableCardManager
@@ -151,6 +154,7 @@ export class AppsTab {
 
     // Build settings sections for agents that support them
     const settingsSections = this.buildSettingsSections(appId, agent);
+    const customSections = this.buildCustomSections(appId, agent);
     new AppConfigModal(this.services.app, {
       manifest: agent.manifest,
       credentials: { ...config.credentials },
@@ -177,7 +181,30 @@ export class AppsTab {
         new Notice(`${agent.manifest.name} uninstalled`);
       },
       settingsSections,
+      customSections,
     }).open();
+  }
+
+  /**
+   * Build custom (app-owned) settings sections. The Skills app hosts its full
+   * management UI (list / create / edit / archive / delete / sync) here via the
+   * SkillsSectionRenderer. Uses manifest.id to identify the app (avoids
+   * instanceof issues with bundlers).
+   */
+  private buildCustomSections(
+    _appId: string,
+    agent: BaseAppAgent
+  ): AppCustomSection[] {
+    if (agent.manifest.id === 'skills') {
+      return [{
+        title: 'Skills',
+        render: (el) => {
+          const renderer = new SkillsSectionRenderer(this.services.app, el, agent as SkillsAgent);
+          void renderer.render();
+        }
+      }];
+    }
+    return [];
   }
 
   /**
@@ -187,7 +214,7 @@ export class AppsTab {
    */
   private buildSettingsSections(
     _appId: string,
-    agent: import('../../agents/apps/BaseAppAgent').BaseAppAgent
+    agent: BaseAppAgent
   ): AppSettingsSection[] {
     if (agent.manifest.id === 'elevenlabs') {
       return [{

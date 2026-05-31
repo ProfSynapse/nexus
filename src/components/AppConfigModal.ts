@@ -32,6 +32,20 @@ export interface AppSettingsSection {
   loadOptions: () => Promise<{ success: boolean; options?: AppSettingOption[]; error?: string }>;
 }
 
+/**
+ * A custom settings section rendered after the dropdown `settingsSections`.
+ * Unlike AppSettingsSection (a single async-loaded dropdown), this hands the
+ * app full control of a container element so it can mount a richer management
+ * UI (e.g., the Skills list + edit modal). The `render` callback owns the
+ * element's lifecycle.
+ */
+export interface AppCustomSection {
+  /** Heading text shown above the section's container. */
+  title: string;
+  /** Mount the section's UI into the given container element. */
+  render: (container: HTMLElement) => void;
+}
+
 export interface AppConfigModalConfig {
   manifest: AppManifest;
   credentials: Record<string, string>;
@@ -42,6 +56,7 @@ export interface AppConfigModalConfig {
   onValidate?: () => Promise<{ success: boolean; error?: string; data?: unknown }>;
   validateLabel?: string;
   settingsSections?: AppSettingsSection[];
+  customSections?: AppCustomSection[];
 }
 
 export class AppConfigModal extends Modal {
@@ -106,6 +121,18 @@ export class AppConfigModal extends Modal {
 
       for (const section of this.config.settingsSections) {
         this.renderSettingsSection(contentEl, section);
+      }
+    }
+
+    // Custom sections (e.g., the Skills management UI). Each gets its own
+    // divider + heading, mirroring the settingsSections styling, then a
+    // container the app renders into.
+    if (this.config.customSections && this.config.customSections.length > 0) {
+      for (const section of this.config.customSections) {
+        contentEl.createDiv('app-config-settings-divider');
+        contentEl.createEl('h3', { text: section.title, cls: 'app-config-settings-heading' });
+        const sectionEl = contentEl.createDiv('app-config-custom-section');
+        section.render(sectionEl);
       }
     }
 
