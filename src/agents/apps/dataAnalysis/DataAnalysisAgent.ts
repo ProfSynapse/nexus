@@ -20,6 +20,7 @@ import { PyodideSandbox } from './services/PyodideSandbox';
 import { HucreEnsurer } from './services/HucreEnsurer';
 import type { HucreModule } from './spreadsheet/HucreModule';
 import { resolveVaultRoot } from '../../../database/storage/VaultRootResolver';
+import { isDesktop } from '../../../utils/platform';
 import { SpreadsheetAutoSync } from './spreadsheet/SpreadsheetAutoSync';
 import { WorkbookMirrorService } from './spreadsheet/WorkbookMirrorService';
 import { WorkbookWriteBackService } from './spreadsheet/WorkbookWriteBackService';
@@ -29,7 +30,7 @@ import { SnapshotArchiveService } from '../../../services/storage/SnapshotArchiv
 import { App, EventRef, Notice, normalizePath } from 'obsidian';
 
 const DATA_ANALYSIS_MANIFEST: AppManifest = {
-  id: 'data-analysis',
+  id: 'data',
   name: 'Data Analysis',
   description:
     'Run Python (pandas) on vault CSV/Excel data in an isolated runtime (off-thread, ' +
@@ -105,7 +106,9 @@ export class DataAnalysisAgent extends BaseAppAgent {
   /** Start the auto-sync vault watcher once the App is injected (desktop). */
   setApp(app: App): void {
     super.setApp(app);
-    if (this.vaultModifyRef) {
+    // Auto-sync is desktop-only (hucre write-back) and needs a real vault event
+    // bus — guard both so non-desktop and test/mocked vaults are no-ops.
+    if (this.vaultModifyRef || !isDesktop() || typeof app.vault?.on !== 'function') {
       return;
     }
     this.autoSync = new SpreadsheetAutoSync({

@@ -238,7 +238,7 @@ export class AppManager {
 
     // Desktop-only apps (heavy/Node-dependent runtimes — not registered on mobile)
     if (isDesktop()) {
-      registry.set('data-analysis', () => new DataAnalysisAgent());
+      registry.set('data', () => new DataAnalysisAgent());
     }
 
     return registry;
