@@ -13,6 +13,8 @@ import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
 import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
 import { WebToolsAgent } from '../../agents/apps/webTools/WebToolsAgent';
+import { DataAnalysisAgent } from '../../agents/apps/dataAnalysis/DataAnalysisAgent';
+import { isDesktop } from '../../utils/platform';
 import { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
 import type { AppRuntimeContext } from '../../agents/apps/AppRuntimeContext';
 import { App } from 'obsidian';
@@ -233,6 +235,11 @@ export class AppManager {
     registry.set('composer', () => new ComposerAgent());
     registry.set('web-tools', () => new WebToolsAgent());
     registry.set('skills', () => new SkillsAgent());
+
+    // Desktop-only apps (heavy/Node-dependent runtimes — not registered on mobile)
+    if (isDesktop()) {
+      registry.set('data-analysis', () => new DataAnalysisAgent());
+    }
 
     return registry;
   }
