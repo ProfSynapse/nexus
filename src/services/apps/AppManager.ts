@@ -13,6 +13,7 @@ import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
 import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
 import { WebToolsAgent } from '../../agents/apps/webTools/WebToolsAgent';
+import { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
 import { App } from 'obsidian';
 
 export class AppManager {
@@ -227,6 +228,7 @@ export class AppManager {
     registry.set('elevenlabs', () => new ElevenLabsAgent());
     registry.set('composer', () => new ComposerAgent());
     registry.set('web-tools', () => new WebToolsAgent());
+    registry.set('skills', () => new SkillsAgent());
 
     return registry;
   }

@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 13;
 
 export interface Migration {
   version: number;
@@ -427,6 +427,32 @@ export const MIGRATIONS: Migration[] = [
       )`,
       'CREATE INDEX IF NOT EXISTS idx_shard_cursors_path ON shard_cursors(shardPath)',
       'CREATE INDEX IF NOT EXISTS idx_shard_cursors_kind ON shard_cursors(kind)'
+    ]
+  },
+
+  // Version 12 -> 13: Add skills table (Skills app — derived cache of on-disk
+  // skill folders). Source of truth is the folder on disk; the index is always
+  // rebuildable by a re-scan. UNIQUE(provider, name) — same name allowed across
+  // providers. See docs/plans/skills-protocol-integration-plan.md §4.
+  {
+    version: 13,
+    description: 'Add skills table for the Skills app (derived index of on-disk SKILL.md folders)',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS skills (
+        id            TEXT PRIMARY KEY,
+        provider      TEXT NOT NULL,
+        name          TEXT NOT NULL,
+        description   TEXT,
+        vault_path    TEXT NOT NULL,
+        origin_path   TEXT,
+        content_hash  TEXT NOT NULL,
+        is_archived   INTEGER DEFAULT 0,
+        last_loaded_at INTEGER,
+        created       INTEGER NOT NULL,
+        updated       INTEGER NOT NULL,
+        UNIQUE(provider, name)
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)'
     ]
   },
 ];
