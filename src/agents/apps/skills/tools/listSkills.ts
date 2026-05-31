@@ -2,15 +2,17 @@
  * ListSkillsTool — discovery tool for the Skills app.
  *
  * Located at: src/agents/apps/skills/tools/listSkills.ts
- * Lists discovered skills, ordered by last_loaded_at (most-recent first).
- * Foundation-phase stub — wiring lands in a later wave.
+ * Scans the in-vault mirror, syncs the SQLite index, and returns discovered
+ * skills ordered by last_loaded_at (most-recent first). Optionally filtered by
+ * search query, provider source, or archived state.
  * See: docs/plans/skills-protocol-integration-plan.md §12.
  */
 
 import { BaseTool } from '../../../baseTool';
-import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { SkillsAgent } from '../SkillsAgent';
+import { resolveSkillsRuntime } from '../services/SkillsContext';
 
 interface ListSkillsParams extends CommonParameters {
   search?: string;
@@ -19,9 +21,9 @@ interface ListSkillsParams extends CommonParameters {
 }
 
 export class ListSkillsTool extends BaseTool<ListSkillsParams, CommonResult> {
-  private agent: BaseAppAgent;
+  private agent: SkillsAgent;
 
-  constructor(agent: BaseAppAgent) {
+  constructor(agent: SkillsAgent) {
     super(
       'listSkills',
       'List Skills',
@@ -32,10 +34,36 @@ export class ListSkillsTool extends BaseTool<ListSkillsParams, CommonResult> {
     this.agent = agent;
   }
 
-  async execute(_params: ListSkillsParams): Promise<CommonResult> {
-    await Promise.resolve(); // TODO(foundation): replace with real async work
-    return this.prepareResult(false, undefined,
-      'Skills listSkills: not yet implemented (foundation phase)');
+  async execute(params: ListSkillsParams): Promise<CommonResult> {
+    const r = resolveSkillsRuntime(this.agent);
+    if (!r.ok) {
+      return this.prepareResult(false, undefined, r.error);
+    }
+
+    const parsed = await r.rt.scanner.scan();
+    await r.rt.index.syncFromScan(parsed);
+
+    let skills = await r.rt.index.list({
+      search: params.search,
+      includeArchived: params.includeArchived,
+    });
+
+    // Provider filter is applied in JS — `source` targets the first path segment.
+    if (params.source) {
+      skills = skills.filter((s) => s.provider === params.source);
+    }
+
+    return this.prepareResult(true, {
+      count: skills.length,
+      skills: skills.map((s) => ({
+        name: s.name,
+        provider: s.provider,
+        description: s.description,
+        isArchived: s.isArchived,
+        lastLoadedAt: s.lastLoadedAt,
+        vaultPath: s.vaultPath,
+      })),
+    });
   }
 
   getParameterSchema(): JSONSchema {

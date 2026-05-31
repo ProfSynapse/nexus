@@ -10,6 +10,7 @@ import { BaseAgent } from '../baseAgent';
 import { AppManifest, AppCredentialField, ElevenLabsModel } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
 import { App, Vault } from 'obsidian';
+import type { AppRuntimeContext } from './AppRuntimeContext';
 
 /**
  * Result type for fetchTTSModels. Defined here so subclasses and consumers
@@ -27,6 +28,7 @@ export abstract class BaseAppAgent extends BaseAgent {
   protected appSettings: Record<string, string> = {};
   private _app: App | null = null;
   private _vault: Vault | null = null;
+  private _runtimeContext: AppRuntimeContext | null = null;
 
   constructor(manifest: AppManifest) {
     super(
@@ -147,6 +149,23 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getVault(): Vault | null {
     return this._vault;
+  }
+
+  /**
+   * Inject optional runtime services (settings + storage adapter). Called by
+   * AppManager after construction for apps that declare a runtime context.
+   * Apps that don't need it (most) simply never have it set.
+   */
+  setRuntimeContext(ctx: AppRuntimeContext): void {
+    this._runtimeContext = ctx;
+  }
+
+  /**
+   * Get the injected runtime context, or null if none was provided.
+   * Tools that need settings/storage (e.g. Skills) call this.
+   */
+  getRuntimeContext(): AppRuntimeContext | null {
+    return this._runtimeContext;
   }
 
   /**

@@ -21,6 +21,7 @@ import type { AppManager } from '../apps/AppManager';
 import type { IAgent } from '../../agents/interfaces/IAgent';
 import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
 import type { MemorySettings } from '../../types';
+import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -208,7 +209,12 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
             this.agentManager.unregisterAgent(name);
             this.syncToolManagerAgent('unregister', name);
           },
-          this.app
+          this.app,
+          {
+            getSettings: () => (hasSettings(this.plugin) ? this.plugin.settings.settings : undefined),
+            getStorageAdapter: () =>
+              this.serviceManager?.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined,
+          }
         );
         appManager.loadInstalledApps();
         this.appManagerInstance = appManager;
