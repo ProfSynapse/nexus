@@ -62,17 +62,52 @@ export class SkillIndexService {
   }
 
   /**
-   * Upsert each parsed skill folder into the index. Loop-calls {@link upsertOne}
-   * so the UPSERT SQL lives in exactly one place.
+   * Upsert each parsed skill folder into the index, then PRUNE index rows for
+   * skills that no longer exist on disk. Loop-calls {@link upsertOne} so the
+   * UPSERT SQL lives in exactly one place.
+   *
+   * Prune safety (deliberately conservative — the index is a rebuildable cache,
+   * but `is_archived`/`last_loaded_at` are owned state we must not wipe on a
+   * transient read failure):
+   *   - An EMPTY scan prunes nothing. A transient unreadable mirror root makes
+   *     `scan()` return `[]`; treating that as "delete everything" would wipe all
+   *     owned state. Empty ⇒ untrusted ⇒ no reconciliation.
+   *   - Pruning is SCOPED to providers actually present in this scan. A provider
+   *     folder that failed to read mid-scan is simply absent from `parsed`; its
+   *     rows are left intact rather than wrongly pruned.
+   * Trade-off: deleting the LAST skill of a provider leaves one stale row until
+   * that provider is scanned again with ≥1 skill. Acceptable — sync-back is
+   * independently guarded against resurrecting a row whose mirror folder is gone.
    */
   async syncFromScan(parsed: ParsedSkillFolder[]): Promise<void> {
     for (const skill of parsed) {
       await this.upsertOne(skill);
     }
 
-    // TODO(phase): prune stale rows — skills present in the index but no longer
-    // on disk are left in place for now (no destructive prune in the discovery
-    // phase). A later sync phase reconciles deletions.
+    if (parsed.length === 0) {
+      return;
+    }
+
+    const scannedProviders = new Set(parsed.map((p) => p.provider));
+    const present = new Set(parsed.map((p) => SkillIndexService.compositeKey(p.provider, p.name)));
+
+    const rows = await this.sqlite.query<{ provider: string; name: string }>(
+      'SELECT provider, name FROM skills',
+      []
+    );
+    for (const row of rows) {
+      if (!scannedProviders.has(row.provider)) {
+        continue;
+      }
+      if (!present.has(SkillIndexService.compositeKey(row.provider, row.name))) {
+        await this.hardDelete(row.provider, row.name);
+      }
+    }
+  }
+
+  /** Composite (provider, name) key for in-memory set membership. */
+  private static compositeKey(provider: string, name: string): string {
+    return JSON.stringify([provider, name]);
   }
 
   /** Fetch a single skill by its composite key, or null when not present. */
@@ -140,18 +175,33 @@ export class SkillIndexService {
   }
 
   /**
-   * Find skills by name, optionally scoped to a provider. Recency-ordered so
-   * the most-recently-loaded match is first (used by loadSkill to pick a
-   * default when a bare name is ambiguous across providers).
+   * Find skills by name, optionally scoped to a provider. Recency-ordered
+   * (most-recently-loaded first) with a `provider ASC` tiebreak so the result is
+   * DETERMINISTIC when multiple providers share a name and have equal/NULL
+   * last_loaded_at (used by loadSkill to pick a default on a bare ambiguous name).
+   *
+   * Excludes archived skills by default (the soft-delete contract — an archived
+   * skill must not be loadable via a bare name). Pass `includeArchived: true`
+   * for the update/archive resolution path, which legitimately targets archived
+   * skills (e.g. restore).
    */
-  async findByName(name: string, provider?: string): Promise<SkillRecord[]> {
+  async findByName(
+    name: string,
+    provider?: string,
+    opts?: { includeArchived?: boolean }
+  ): Promise<SkillRecord[]> {
     const where = ['name = ?'];
     const params: Array<string | number> = [name];
     if (provider) {
       where.push('provider = ?');
       params.push(provider);
     }
-    const sql = `SELECT * FROM skills WHERE ${where.join(' AND ')} ORDER BY last_loaded_at DESC`;
+    if (!opts?.includeArchived) {
+      where.push('is_archived = 0');
+    }
+    const sql =
+      `SELECT * FROM skills WHERE ${where.join(' AND ')} ` +
+      `ORDER BY last_loaded_at DESC, provider ASC`;
     const rows = await this.sqlite.query<SkillRow>(sql, params);
     return rows.map((row) => this.rowToRecord(row));
   }

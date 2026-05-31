@@ -110,7 +110,10 @@ export async function resolveSkillByName(
     return { ok: true, record };
   }
 
-  const matches = await index.findByName(name);
+  // includeArchived: this resolution feeds update/archive/restore, which
+  // legitimately operate on archived skills (loadSkill uses its own findByName
+  // call that excludes archived).
+  const matches = await index.findByName(name, undefined, { includeArchived: true });
   if (matches.length === 0) {
     return { ok: false, error: `No skill named "${name}"` };
   }

@@ -211,5 +211,18 @@ describe('SkillsSectionRenderer', () => {
       expect(fakeWrite.removeTree).not.toHaveBeenCalled();
       expect(fakeIndex.hardDelete).not.toHaveBeenCalled();
     });
+
+    it('refuses to delete a skill whose vaultPath escapes the skills root (no confirm, no removeTree)', async () => {
+      const renderer = await setupRenderer();
+      const poisoned = makeSkill({ vaultPath: 'Nexus/skills/../../../.obsidian' });
+      const btn = createMockElement('button') as HTMLButtonElement;
+
+      await renderer.confirmAndDelete(poisoned, btn);
+
+      // Bailed out BEFORE prompting and BEFORE any destructive call.
+      expect(capturedConfirms).toHaveLength(0);
+      expect(fakeWrite.removeTree).not.toHaveBeenCalled();
+      expect(fakeIndex.hardDelete).not.toHaveBeenCalled();
+    });
   });
 });

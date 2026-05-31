@@ -16,7 +16,8 @@ import type { SkillsAgent } from '../SkillsAgent';
 import { resolveSkillsRuntime } from '../services/SkillsContext';
 import { SkillWriteService } from '../services/SkillWriteService';
 import { SkillValidator } from '../services/SkillValidator';
-import { fnv1aHex } from '../services/skillHash';
+import { hashSkillContent } from '../services/skillHash';
+import { assertInside, SkillPathError } from '../services/skillPaths';
 
 interface CreateSkillParams extends CommonParameters {
   name: string;
@@ -45,8 +46,10 @@ export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
       return this.prepareResult(false, undefined, r.error);
     }
 
+    const validator = new SkillValidator();
+
     // Validate the frontmatter input before touching disk (§7).
-    const validation = new SkillValidator().validate({
+    const validation = validator.validate({
       name: params.name,
       description: params.description,
       body: params.body,
@@ -56,7 +59,24 @@ export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
     }
 
     const provider = params.source ?? 'nexus';
+
+    // Validate the provider/source id with the SAME lowercase-hyphenated rule as
+    // `name` so a model-supplied `source` can never inject path traversal — it is
+    // a higher path segment than the (already-validated) name.
+    const providerValidation = validator.validateProvider(provider);
+    if (!providerValidation.valid) {
+      return this.prepareResult(false, { validationErrors: providerValidation.errors }, 'Skill validation failed');
+    }
+
     const folder = normalizePath(`${r.rt.skillsRoot}/${provider}/${params.name}`);
+
+    // Defense in depth: the assembled path must resolve inside the skills root.
+    try {
+      assertInside(r.rt.skillsRoot, folder);
+    } catch (e) {
+      const message = e instanceof SkillPathError ? e.message : 'Invalid skill path';
+      return this.prepareResult(false, undefined, message);
+    }
 
     const write = new SkillWriteService(r.rt.vaultAdapter);
     if (await write.exists(folder)) {
@@ -71,7 +91,7 @@ export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
       name: params.name,
       description: params.description,
       vaultPath: folder,
-      contentHash: fnv1aHex(skillMd),
+      contentHash: hashSkillContent(skillMd),
     });
 
     return this.prepareResult(true, {

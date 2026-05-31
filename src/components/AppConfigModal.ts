@@ -42,8 +42,13 @@ export interface AppSettingsSection {
 export interface AppCustomSection {
   /** Heading text shown above the section's container. */
   title: string;
-  /** Mount the section's UI into the given container element. */
-  render: (container: HTMLElement) => void;
+  /**
+   * Mount the section's UI into the given container element. May return a
+   * teardown function (a disposer) that the modal calls on close — used to
+   * `unload()` any Obsidian Component the section loaded, so registered DOM
+   * events don't leak across repeated modal opens.
+   */
+  render: (container: HTMLElement) => void | (() => void);
 }
 
 export interface AppConfigModalConfig {
@@ -64,6 +69,8 @@ export class AppConfigModal extends Modal {
   private currentCredentials: Record<string, string>;
   private currentSettings: Record<string, string>;
   private saveTimeout: number | null = null;
+  /** Teardown callbacks returned by custom-section render(), invoked on close. */
+  private customSectionDisposers: Array<() => void> = [];
 
   constructor(app: App, config: AppConfigModalConfig) {
     super(app);
@@ -76,6 +83,10 @@ export class AppConfigModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('app-config-modal');
+
+    // Dispose any prior custom-section components before re-rendering (onOpen
+    // could in principle run more than once over the modal's life).
+    this.disposeCustomSections();
 
     // Title
     contentEl.createEl('h2', { text: this.config.manifest.name });
@@ -132,7 +143,10 @@ export class AppConfigModal extends Modal {
         contentEl.createDiv('app-config-settings-divider');
         contentEl.createEl('h3', { text: section.title, cls: 'app-config-settings-heading' });
         const sectionEl = contentEl.createDiv('app-config-custom-section');
-        section.render(sectionEl);
+        const dispose = section.render(sectionEl);
+        if (typeof dispose === 'function') {
+          this.customSectionDisposers.push(dispose);
+        }
       }
     }
 
@@ -295,6 +309,19 @@ export class AppConfigModal extends Modal {
     if (this.saveTimeout) {
       window.clearTimeout(this.saveTimeout);
     }
+    this.disposeCustomSections();
     this.contentEl.empty();
+  }
+
+  /** Run + clear all custom-section teardown callbacks (Component unload, etc.). */
+  private disposeCustomSections(): void {
+    for (const dispose of this.customSectionDisposers) {
+      try {
+        dispose();
+      } catch (error) {
+        console.error('[AppConfigModal] Custom section teardown failed:', error);
+      }
+    }
+    this.customSectionDisposers = [];
   }
 }

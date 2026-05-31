@@ -15,6 +15,7 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import type { SkillsAgent } from '../SkillsAgent';
 import { resolveSkillsRuntime } from '../services/SkillsContext';
 import { SkillSyncService } from '../services/SkillSyncService';
+import { isSafePathSegment } from '../services/skillPaths';
 
 interface SyncSkillsParams extends CommonParameters {
   direction?: 'import' | 'sync-back' | 'both';
@@ -39,6 +40,12 @@ export class SyncSkillsTool extends BaseTool<SyncSkillsParams, CommonResult> {
     const r = resolveSkillsRuntime(this.agent);
     if (!r.ok) {
       return this.prepareResult(false, undefined, r.error);
+    }
+
+    // A model-supplied provider filter becomes a `.${source}/skills` path
+    // segment — reject traversal-unsafe ids up front with a clean error.
+    if (params.source !== undefined && !isSafePathSegment(params.source)) {
+      return this.prepareResult(false, undefined, `Invalid provider id: "${params.source}"`);
     }
 
     const direction = params.direction ?? 'both';

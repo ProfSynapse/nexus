@@ -65,10 +65,16 @@ export class SkillUsageService {
     // activeSkills array (e.g. ...,"claude/essay-editor",...). We re-confirm in
     // JS below to discard false positives (e.g. a skillId that is a prefix of
     // another, or a stray match elsewhere in the JSON).
+    //
+    // Escape LIKE wildcards (% and _) in the skillId so they match literally and
+    // can't over-match (which, combined with the LIMIT, would under-report by
+    // crowding out genuine rows). Parameterized already, so this is purely about
+    // LIKE-pattern semantics, not injection.
+    const escapedId = skillId.replace(/[\\%_]/g, (ch) => `\\${ch}`);
     const rows = await this.sqlite.query<TraceRow>(
       'SELECT id, workspaceId, sessionId, timestamp, type, content, metadataJson ' +
-      'FROM memory_traces WHERE metadataJson LIKE ? ORDER BY timestamp DESC LIMIT ?',
-      [`%"${skillId}"%`, limit]
+      "FROM memory_traces WHERE metadataJson LIKE ? ESCAPE '\\' ORDER BY timestamp DESC LIMIT ?",
+      [`%"${escapedId}"%`, limit]
     );
 
     const buckets = new Map<string, WorkspaceBucket>();

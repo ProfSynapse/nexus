@@ -98,10 +98,44 @@ describe('SkillIndexService', () => {
       expect(params2[5]).toBe('/.codex/skills/pr-reviewer');
     });
 
-    it('runs nothing for an empty scan', async () => {
+    it('runs nothing for an empty scan (no upsert, no prune query)', async () => {
       const mock = createMockSqlite();
       await makeService(mock).syncFromScan([]);
       expect(mock.run).not.toHaveBeenCalled();
+      // An empty scan is untrusted — it must NOT issue the prune SELECT.
+      expect(mock.query).not.toHaveBeenCalled();
+    });
+
+    it('prunes a row whose skill no longer exists on disk (within a scanned provider)', async () => {
+      const mock = createMockSqlite();
+      // The prune SELECT returns: one stale row in a scanned provider, and one
+      // row in a provider NOT present in this scan.
+      mock.query.mockResolvedValueOnce([
+        { provider: 'claude', name: 'gone' },
+        { provider: 'claude', name: 'essay-editor' },
+        { provider: 'codex', name: 'untouched' },
+      ]);
+
+      const service = makeService(mock);
+      await service.syncFromScan([
+        {
+          provider: 'claude',
+          name: 'essay-editor',
+          description: 'Edit essays.',
+          vaultPath: 'Nexus/skills/claude/essay-editor',
+          contentHash: 'h',
+        },
+      ]);
+
+      // hardDelete is a DELETE run; collect its calls.
+      const deletes = mock.run.mock.calls.filter(([sql]) => /^DELETE FROM skills/.test(sql));
+      const deletedKeys = deletes.map(([, params]) => (params as unknown[]).join('/'));
+
+      // The stale claude/gone is pruned; the present claude/essay-editor is not;
+      // the unscanned codex/untouched is preserved (provider absent from scan).
+      expect(deletedKeys).toContain('claude/gone');
+      expect(deletedKeys).not.toContain('claude/essay-editor');
+      expect(deletedKeys).not.toContain('codex/untouched');
     });
   });
 
@@ -171,6 +205,21 @@ describe('SkillIndexService', () => {
       const [sql, params] = mock.query.mock.calls[0];
       expect(sql).toContain('WHERE name = ? AND provider = ?');
       expect(params).toEqual(['essay-editor', 'claude']);
+    });
+
+    it('excludes archived skills by default and has a deterministic provider tiebreak', async () => {
+      const mock = createMockSqlite();
+      await makeService(mock).findByName('essay-editor');
+      const [sql] = mock.query.mock.calls[0];
+      expect(sql).toContain('is_archived = 0');
+      expect(sql).toContain('ORDER BY last_loaded_at DESC, provider ASC');
+    });
+
+    it('includes archived skills when includeArchived is true (update/restore path)', async () => {
+      const mock = createMockSqlite();
+      await makeService(mock).findByName('essay-editor', undefined, { includeArchived: true });
+      const [sql] = mock.query.mock.calls[0];
+      expect(sql).not.toContain('is_archived');
     });
   });
 

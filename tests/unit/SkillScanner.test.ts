@@ -211,4 +211,41 @@ describe('SkillScanner', () => {
     const result = await new SkillScanner(adapter, ROOT).scan();
     expect(result).toEqual([]);
   });
+
+  it('keys on the FOLDER name even when frontmatter "name" differs (no key fork)', async () => {
+    // The folder is `essay-editor` but the frontmatter declares a different
+    // name. The record must use the folder name (the identity vaultPath derives
+    // from) so the (provider, name) UPSERT key cannot fork.
+    const adapter = makeAdapter({
+      folders: [ROOT, `${ROOT}/claude`, `${ROOT}/claude/essay-editor`],
+      files: {
+        [`${ROOT}/claude/essay-editor/SKILL.md`]:
+          '---\nname: totally-different\ndescription: Edit essays.\n---\nbody',
+      },
+    });
+
+    const result = await new SkillScanner(adapter, ROOT).scan();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('essay-editor'); // folder name wins
+    expect(result[0].vaultPath).toBe(`${ROOT}/claude/essay-editor`);
+    expect(result[0].description).toBe('Edit essays.'); // frontmatter still supplies description
+  });
+
+  it('skips a traversal-unsafe ".." skill folder segment', async () => {
+    const adapter = makeAdapter({
+      folders: [ROOT, `${ROOT}/claude`, `${ROOT}/claude/..`, `${ROOT}/claude/good`],
+      files: {
+        // A literal `..` child with a SKILL.md must never be scanned as a skill.
+        [`${ROOT}/claude/../SKILL.md`]: '---\nname: evil\ndescription: nope.\n---\nbody',
+        [`${ROOT}/claude/good/SKILL.md`]:
+          '---\nname: good\ndescription: Works.\n---\nbody',
+      },
+    });
+
+    const result = await new SkillScanner(adapter, ROOT).scan();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('good');
+  });
 });

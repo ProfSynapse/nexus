@@ -18,8 +18,9 @@ import { resolveSkillsRuntime, resolveSkillByName } from '../services/SkillsCont
 import { SkillWriteService } from '../services/SkillWriteService';
 import { SkillSyncService } from '../services/SkillSyncService';
 import { SkillValidator } from '../services/SkillValidator';
-import { fnv1aHex } from '../services/skillHash';
+import { hashSkillContent } from '../services/skillHash';
 import { parseSkillFrontmatter } from '../services/skillFrontmatter';
+import { assertInside, SkillPathError } from '../services/skillPaths';
 
 interface UpdateSkillParams extends CommonParameters {
   name: string;
@@ -84,6 +85,19 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       ? normalizePath(`${r.rt.skillsRoot}/${provider}/${newName}`)
       : oldFolder;
 
+    // Containment: both the existing folder (we removeTree it on rename) and the
+    // rename target must resolve inside the skills root. Guards against acting on
+    // a poisoned `vaultPath` row or a traversal-bearing rename target.
+    try {
+      assertInside(r.rt.skillsRoot, oldFolder);
+      if (isRename) {
+        assertInside(r.rt.skillsRoot, newFolder);
+      }
+    } catch (e) {
+      const message = e instanceof SkillPathError ? e.message : 'Invalid skill path';
+      return this.prepareResult(false, undefined, message);
+    }
+
     if (isRename && (await write.exists(newFolder))) {
       return this.prepareResult(false, undefined, `Skill already exists: ${provider}/${newName}`);
     }
@@ -118,7 +132,7 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       description: newDescription,
       vaultPath: newFolder,
       originPath: existing.originPath,
-      contentHash: fnv1aHex(skillMd),
+      contentHash: hashSkillContent(skillMd),
     });
 
     const result: Record<string, unknown> = {
@@ -146,8 +160,10 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
             result.syncedBackTo = syncedBackTo;
           }
         }
-      } catch {
-        // Sync-back is best-effort — never fail the update on it.
+      } catch (error) {
+        // Sync-back is best-effort — never fail the update on it, but surface
+        // the reason in the result rather than swallowing it silently.
+        result.syncBackError = error instanceof Error ? error.message : String(error);
       }
     }
 

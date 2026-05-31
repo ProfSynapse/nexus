@@ -28,7 +28,8 @@ import { SkillSyncService } from '../../agents/apps/skills/services/SkillSyncSer
 import { SkillValidator } from '../../agents/apps/skills/services/SkillValidator';
 import { SkillIndexService } from '../../agents/apps/skills/services/SkillIndexService';
 import { parseSkillFrontmatter } from '../../agents/apps/skills/services/skillFrontmatter';
-import { fnv1aHex } from '../../agents/apps/skills/services/skillHash';
+import { hashSkillContent } from '../../agents/apps/skills/services/skillHash';
+import { assertInside, SkillPathError } from '../../agents/apps/skills/services/skillPaths';
 import type { SkillRecord } from '../../agents/apps/skills/types';
 import type { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
 
@@ -300,6 +301,22 @@ export class SkillsSectionRenderer {
 
     private async confirmAndDelete(skill: SkillRecord, btn: HTMLButtonElement): Promise<void> {
         if (!this.bundle) return;
+
+        // Containment guard (highest-severity audit finding): the hard delete
+        // recursively removes skill.vaultPath. Refuse if that path — which came
+        // from the index row and could in principle be poisoned — does not
+        // resolve strictly inside the skills root, so a Delete click can never
+        // recurse into .obsidian / an up-tree directory.
+        let safeVaultPath: string;
+        try {
+            safeVaultPath = assertInside(this.bundle.skillsRoot, skill.vaultPath);
+        } catch (e) {
+            const message = e instanceof SkillPathError ? e.message : 'Invalid skill path';
+            console.error('[SkillsSectionRenderer] Refusing unsafe delete:', message);
+            new Notice('Refusing to delete: skill path is outside the skills folder.');
+            return;
+        }
+
         const confirmed = await ConfirmModal.confirm(this.app, {
             variant: 'delete',
             title: 'Delete skill?',
@@ -309,7 +326,7 @@ export class SkillsSectionRenderer {
 
         this.setBusy(btn, true);
         try {
-            await this.bundle.write.removeTree(skill.vaultPath);
+            await this.bundle.write.removeTree(safeVaultPath);
             await this.bundle.index.hardDelete(skill.provider, skill.name);
             new Notice('Skill deleted');
             await this.loadAndRender();
@@ -332,6 +349,15 @@ export class SkillsSectionRenderer {
         if (skill === null) {
             const modal = new SkillEditModal(this.app, { mode: 'create' }, async ({ name, description, body }) => {
                 const folder = normalizePath(`${bundle.skillsRoot}/nexus/${name}`);
+                // Containment (defense in depth — the modal already validates name
+                // as lowercase-hyphenated, which excludes traversal).
+                try {
+                    assertInside(bundle.skillsRoot, folder);
+                } catch (e) {
+                    const message = e instanceof SkillPathError ? e.message : 'Invalid skill path';
+                    new Notice(message);
+                    return false;
+                }
                 if (await bundle.write.exists(folder)) {
                     new Notice(`A skill named "${name}" already exists for provider "nexus".`);
                     return false;
@@ -343,7 +369,7 @@ export class SkillsSectionRenderer {
                     name,
                     description,
                     vaultPath: folder,
-                    contentHash: fnv1aHex(skillMd)
+                    contentHash: hashSkillContent(skillMd)
                 });
                 new Notice('Skill created');
                 await this.loadAndRender();
@@ -378,7 +404,7 @@ export class SkillsSectionRenderer {
                         description,
                         vaultPath: skill.vaultPath,
                         originPath: skill.originPath,
-                        contentHash: fnv1aHex(skillMd)
+                        contentHash: hashSkillContent(skillMd)
                     });
                     new Notice('Skill updated');
                     await this.loadAndRender();

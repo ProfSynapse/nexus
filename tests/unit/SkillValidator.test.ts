@@ -113,6 +113,42 @@ describe('SkillValidator', () => {
       expect(result.errors.some(e => /lowercase-hyphenated/i.test(e))).toBe(true);
       expect(result.errors.some(e => /description.*required/i.test(e))).toBe(true);
     });
+
+    it('rejects a description containing a newline', () => {
+      const result = validator.validate({
+        name: 'essay-editor',
+        description: 'line one\nline two',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => /control characters|newlines/i.test(e))).toBe(true);
+    });
+
+    it('rejects a description containing a control character', () => {
+      const result = validator.validate({
+        name: 'essay-editor',
+        description: `bad${String.fromCharCode(0)}null`,
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => /control characters|newlines/i.test(e))).toBe(true);
+    });
+  });
+
+  describe('validateProvider', () => {
+    it.each(['nexus', 'claude', 'codex', 'pr-reviewer-2'])(
+      'accepts safe provider id "%s"',
+      (provider) => {
+        expect(validator.validateProvider(provider).valid).toBe(true);
+      }
+    );
+
+    it.each(['', '..', '../evil', 'a/b', 'Claude', 'foo_bar'])(
+      'rejects unsafe/invalid provider id "%s"',
+      (provider) => {
+        const result = validator.validateProvider(provider);
+        expect(result.valid).toBe(false);
+        expect(result.errors.length).toBeGreaterThan(0);
+      }
+    );
   });
 
   describe('validateSkillMd (raw SKILL.md)', () => {

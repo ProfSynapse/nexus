@@ -7,7 +7,10 @@
  *
  * Validation rules (from docs/plans/skills-protocol-integration-plan.md §7):
  *   - `name` is required, non-empty, and lowercase-hyphenated.
- *   - `description` is required, non-empty, trimmed length within [1, 1024].
+ *   - `description` is required, non-empty, trimmed length within [1, 1024],
+ *     and free of newlines/control characters.
+ *   - `validateProvider` holds a provider/`source` id to the same name rule so a
+ *     model-supplied source can never introduce path traversal.
  *   - `validateSkillMd` additionally requires a leading `--- ... ---` YAML
  *     frontmatter block from which `name`/`description` are extracted.
  *
@@ -23,6 +26,21 @@ export type { SkillValidationResult, SkillFrontmatterInput };
 const NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const DESCRIPTION_MAX_LENGTH = 1024;
+
+/**
+ * True when `value` contains any C0 control char (U+0000–U+001F, includes
+ * \n/\r/\t) or DEL (U+007F). Implemented with a charCode scan rather than a
+ * control-char regex literal so no raw control bytes live in this source file.
+ */
+function containsControlChars(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export class SkillValidator {
   /**
@@ -44,7 +62,11 @@ export class SkillValidator {
       );
     }
 
-    // description: required, non-empty (trimmed), within length bound
+    // description: required, non-empty (trimmed), within length bound, and free
+    // of control characters / newlines. The control-char check is defense in
+    // depth: `yaml.stringify` already quotes a value containing `---`/newlines so
+    // it cannot break out of the frontmatter block, but a single-line description
+    // is the contract — reject embedded newlines/control chars outright (§7).
     const trimmedDescription = description.trim();
     if (trimmedDescription.length === 0) {
       errors.push('Skill "description" is required and must not be empty');
@@ -52,8 +74,29 @@ export class SkillValidator {
       errors.push(
         `Skill "description" must be at most ${DESCRIPTION_MAX_LENGTH} characters; got ${trimmedDescription.length}`
       );
+    } else if (containsControlChars(description)) {
+      errors.push('Skill "description" must not contain newlines or control characters');
     }
 
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Validate a provider/source id (the first path segment of a skill folder).
+   * Held to the SAME lowercase-hyphenated rule as `name` so a model-supplied
+   * `source` can never introduce path traversal (`..`), separators, or other
+   * unsafe segments. See docs/plans/skills-protocol-integration-plan.md §7.
+   */
+  validateProvider(provider: string): SkillValidationResult {
+    const errors: string[] = [];
+    const value = typeof provider === 'string' ? provider : '';
+    if (value.trim().length === 0) {
+      errors.push('Skill provider/"source" is required and must not be empty');
+    } else if (!NAME_PATTERN.test(value)) {
+      errors.push(
+        `Skill provider/"source" must be lowercase-hyphenated (matching ${NAME_PATTERN.source}); got "${value}"`
+      );
+    }
     return { valid: errors.length === 0, errors };
   }
 

@@ -1,7 +1,8 @@
 import type { DataAdapter } from 'obsidian';
 import type { ParsedSkillFolder } from '../types';
-import { fnv1aHex } from './skillHash';
+import { hashSkillContent } from './skillHash';
 import { parseSkillFrontmatter } from './skillFrontmatter';
+import { isSafePathSegment } from './skillPaths';
 
 // Re-exported so callers can import the parsed-folder shape alongside the scanner.
 export type { ParsedSkillFolder };
@@ -20,7 +21,7 @@ export type { ParsedSkillFolder };
 export class SkillScanner {
   constructor(
     private adapter: DataAdapter,
-    /** e.g. "Nexus/skills" — the resolved plugin storage root + "/skills". */
+    /** The resolved storage rootPath setting + "/skills" (settings-driven; never hardcoded). */
     private skillsRoot: string
   ) {}
 
@@ -41,7 +42,9 @@ export class SkillScanner {
 
     for (const providerPath of providerFolders) {
       const provider = SkillScanner.basename(providerPath);
-      if (SkillScanner.isIgnored(provider)) {
+      // Skip ignored (`_`/`.`-prefixed) AND traversal-unsafe segments — a folder
+      // named e.g. `..` must never become a provider key / path segment.
+      if (SkillScanner.isIgnored(provider) || !isSafePathSegment(provider)) {
         continue;
       }
 
@@ -56,7 +59,7 @@ export class SkillScanner {
 
       for (const skillPath of skillFolders) {
         const name = SkillScanner.basename(skillPath);
-        if (SkillScanner.isIgnored(name)) {
+        if (SkillScanner.isIgnored(name) || !isSafePathSegment(name)) {
           continue;
         }
 
@@ -70,21 +73,20 @@ export class SkillScanner {
           const content = await this.adapter.read(skillMdPath);
           const frontmatter = await parseSkillFrontmatter(content);
 
-          // Scanner-specific fallback: when frontmatter has no `name`, use the
-          // folder name. (The shared parser deliberately doesn't know the folder.)
-          const fmName =
-            typeof frontmatter.name === 'string' && frontmatter.name.trim().length > 0
-              ? frontmatter.name.trim()
-              : name;
+          // The (provider, name) index key is the on-disk FOLDER identity —
+          // the same identity vaultPath/originPath are built from. The
+          // frontmatter `name` is display/validation metadata only; keying on it
+          // would fork the UPSERT key (folder-name vaultPath vs frontmatter-name
+          // key) and orphan the owned is_archived/last_loaded_at state.
           const description =
             typeof frontmatter.description === 'string' ? frontmatter.description.trim() : '';
 
           results.push({
             provider,
-            name: fmName,
+            name,
             description,
             vaultPath: `${this.skillsRoot}/${provider}/${name}`,
-            contentHash: fnv1aHex(content),
+            contentHash: hashSkillContent(content),
           });
         } catch {
           // A single unreadable / unparseable skill folder must not abort the whole scan.

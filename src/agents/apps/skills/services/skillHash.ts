@@ -17,3 +17,17 @@ export function fnv1aHex(input: string): string {
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
+
+/**
+ * Hash SKILL.md *content* for change-detection / skip-identical-writes (§3).
+ *
+ * Normalizes line endings (CRLF/CR → LF) before hashing so a file that only
+ * differs by line-ending style (e.g. a provider dotfolder written by a Windows
+ * tool vs. our always-LF `composeSkillMd` output) is NOT seen as changed.
+ * Without this, every import/sync-back would perpetually re-write and re-archive
+ * identical content. Use this — NOT raw {@link fnv1aHex} — for any SKILL.md
+ * body comparison.
+ */
+export function hashSkillContent(content: string): string {
+  return fnv1aHex(content.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+}

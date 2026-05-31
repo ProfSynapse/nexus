@@ -20,8 +20,9 @@ import { normalizePath } from 'obsidian';
 import type { DataAdapter } from 'obsidian';
 import { SkillWriteService } from './SkillWriteService';
 import type { SkillIndexService } from './SkillIndexService';
-import { fnv1aHex } from './skillHash';
+import { hashSkillContent } from './skillHash';
 import { parseSkillFrontmatter } from './skillFrontmatter';
+import { assertInside, isSafePathSegment } from './skillPaths';
 import type { SkillRecord } from '../types';
 
 export interface ImportResult {
@@ -58,14 +59,8 @@ export class SkillSyncService {
   async discoverProviders(): Promise<string[]> {
     const providers: string[] = [];
 
-    let rootFolders: string[];
-    try {
-      // '' (empty string) lists the vault root in Obsidian's FileSystemAdapter.
-      const rootListing = await this.adapter.list('');
-      rootFolders = rootListing.folders;
-    } catch {
-      return providers;
-    }
+    const rootListing = await this.listVaultRoot();
+    const rootFolders = rootListing.folders;
 
     for (const dotPath of rootFolders) {
       const base = SkillSyncService.basename(dotPath);
@@ -73,7 +68,10 @@ export class SkillSyncService {
         continue;
       }
       const provider = base.slice(1);
-      if (provider.length === 0) {
+      // Reject empty + traversal-unsafe provider ids: the provider becomes a
+      // path segment in BOTH the mirror write path and the sync-back origin
+      // path, so a `..`/separator-bearing id must never flow through.
+      if (provider.length === 0 || !isSafePathSegment(provider)) {
         continue;
       }
 
@@ -117,6 +115,12 @@ export class SkillSyncService {
   async import(providerFilter?: string): Promise<ImportResult> {
     const result: ImportResult = { imported: [], skipped: [], archived: [] };
 
+    // A caller-supplied provider filter is model/UI-influenced — reject unsafe
+    // ids rather than letting them build a `.${provider}/skills` path.
+    if (providerFilter && !isSafePathSegment(providerFilter)) {
+      result.skipped.push(`${providerFilter} (invalid provider id)`);
+      return result;
+    }
     const providers = providerFilter ? [providerFilter] : await this.discoverProviders();
 
     for (const provider of providers) {
@@ -135,7 +139,7 @@ export class SkillSyncService {
 
       for (const skillFolderPath of skillFolders) {
         const name = SkillSyncService.basename(skillFolderPath);
-        if (SkillSyncService.isIgnored(name)) {
+        if (SkillSyncService.isIgnored(name) || !isSafePathSegment(name)) {
           continue;
         }
 
@@ -143,22 +147,29 @@ export class SkillSyncService {
         const mirrorFolder = normalizePath(`${this.skillsRoot}/${provider}/${name}`);
 
         try {
+          // Containment guards (belt-and-braces over the segment checks above):
+          // the source must stay inside the provider's skills dir and the mirror
+          // inside the skills root. A throw here is caught below and skips the
+          // skill rather than writing outside the intended trees.
+          assertInside(`.${provider}/skills`, sourceFolder);
+          assertInside(this.skillsRoot, mirrorFolder);
+
           const content = await this.write.readSkillMd(sourceFolder);
           if (content === null) {
             // Folder without a SKILL.md is not a skill — skip.
             continue;
           }
-          const srcHash = fnv1aHex(content);
+          const srcHash = hashSkillContent(content);
 
           // Skip identical writes (§3): mirror already has the same SKILL.md.
           const mirrorContent = await this.write.readSkillMd(mirrorFolder);
-          if (mirrorContent !== null && fnv1aHex(mirrorContent) === srcHash) {
+          if (mirrorContent !== null && hashSkillContent(mirrorContent) === srcHash) {
             result.skipped.push(`${provider}/${name} (unchanged)`);
             continue;
           }
 
           const archived = await this.write.archiveThenReplace(mirrorFolder, async () => {
-            await this.write.copyTree(sourceFolder, mirrorFolder);
+            await this.write.copyTree(sourceFolder, mirrorFolder, { mirror: true });
           });
           if (archived !== null) {
             result.archived.push(archived);
@@ -180,8 +191,11 @@ export class SkillSyncService {
           });
 
           result.imported.push(`${provider}/${name}`);
-        } catch {
-          // A single unreadable / unwritable skill folder must not abort import.
+        } catch (error) {
+          // A single unreadable / unwritable / out-of-bounds skill folder must
+          // not abort import — but surface it (don't swallow silently).
+          const message = error instanceof Error ? error.message : String(error);
+          result.skipped.push(`${provider}/${name} (import failed: ${message})`);
           continue;
         }
       }
@@ -220,8 +234,10 @@ export class SkillSyncService {
         if (outcome.synced) {
           result.syncedBack.push(label);
         }
-      } catch {
-        // A single failing sync-back must not abort the rest.
+      } catch (error) {
+        // A single failing sync-back must not abort the rest — but surface it.
+        const message = error instanceof Error ? error.message : String(error);
+        result.skipped.push(`${label} (sync-back failed: ${message})`);
         continue;
       }
     }
@@ -246,26 +262,56 @@ export class SkillSyncService {
       return { synced: false, skipped: false, archived: null };
     }
 
-    const mirrorFolder = normalizePath(record.vaultPath);
-    const originFolder = normalizePath(record.originPath);
+    // Containment: the origin we write back to MUST stay inside this provider's
+    // `.<provider>/skills` tree, and the mirror we read from inside the skills
+    // root. A poisoned `originPath` (e.g. a `..`-bearing value persisted by an
+    // older build) must never let sync-back overwrite arbitrary files. Throw on
+    // violation — the per-record caller catches it and records the failure.
+    if (!isSafePathSegment(record.provider)) {
+      throw new Error(`Refusing to sync back: unsafe provider id "${record.provider}"`);
+    }
+    const mirrorFolder = assertInside(this.skillsRoot, record.vaultPath);
+    const originFolder = assertInside(`.${record.provider}/skills`, record.originPath);
 
     const mirrorContent = await this.write.readSkillMd(mirrorFolder);
     if (mirrorContent === null) {
       // Nothing to push back.
       return { synced: false, skipped: false, archived: null };
     }
-    const mirrorHash = fnv1aHex(mirrorContent);
+    const mirrorHash = hashSkillContent(mirrorContent);
 
     const originContent = await this.write.readSkillMd(originFolder);
-    if (originContent !== null && fnv1aHex(originContent) === mirrorHash) {
+    if (originContent !== null && hashSkillContent(originContent) === mirrorHash) {
       return { synced: false, skipped: true, archived: null };
     }
 
     const archived = await this.write.archiveThenReplace(originFolder, async () => {
-      await this.write.copyTree(mirrorFolder, originFolder);
+      await this.write.copyTree(mirrorFolder, originFolder, { mirror: true });
     });
 
     return { synced: true, skipped: false, archived };
+  }
+
+  /**
+   * List the vault root, robustly across adapters. Obsidian's desktop
+   * FileSystemAdapter lists the root for `''`; mobile CapacitorAdapter behavior
+   * for the empty string is less certain, so we fall back to `'/'`. Every call
+   * is guarded — a failure yields an empty listing (discovery finds nothing)
+   * rather than throwing. NOTE: mobile provider discovery is worth a manual
+   * smoke check — see docs/plans/skills-protocol-integration-plan.md.
+   */
+  private async listVaultRoot(): Promise<{ files: string[]; folders: string[] }> {
+    for (const root of ['', '/']) {
+      try {
+        const listing = await this.adapter.list(root);
+        if (listing && (listing.folders.length > 0 || listing.files.length > 0)) {
+          return listing;
+        }
+      } catch {
+        // Try the next root form.
+      }
+    }
+    return { files: [], folders: [] };
   }
 
   /** Basename of a vault-relative path (handles trailing slash). */

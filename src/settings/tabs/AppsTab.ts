@@ -201,6 +201,9 @@ export class AppsTab {
         render: (el) => {
           const renderer = new SkillsSectionRenderer(this.services.app, el, agent as SkillsAgent);
           void renderer.render();
+          // Return a disposer so AppConfigModal.onClose unloads the renderer's
+          // Component (unregisters its DOM events) — no leak across modal opens.
+          return () => renderer.destroy();
         }
       }];
     }

@@ -80,8 +80,14 @@ export class SkillWriteService {
    * Recursively copy a skill folder's tree, SKIPPING any child whose basename
    * starts with `_` or `.` — so `_archive/` (and dotfiles) are never copied into
    * an archive snapshot or a renamed destination.
+   *
+   * With `opts.mirror`, the destination is made to MATCH the source: any
+   * non-ignored dest child NOT present in the source is removed first, so a
+   * full-folder replace (import / sync-back) doesn't leave stale resource files
+   * behind. Ignored children (`_archive/`, dotfiles) at the destination are
+   * always preserved. A plain (non-mirror) copy is purely additive.
    */
-  async copyTree(srcFolder: string, destFolder: string): Promise<void> {
+  async copyTree(srcFolder: string, destFolder: string, opts?: { mirror?: boolean }): Promise<void> {
     const src = normalizePath(srcFolder);
     const dest = normalizePath(destFolder);
 
@@ -92,6 +98,16 @@ export class SkillWriteService {
       listing = await this.adapter.list(src);
     } catch {
       return;
+    }
+
+    if (opts?.mirror) {
+      const srcFiles = new Set(
+        listing.files.map((p) => SkillWriteService.basename(p)).filter((b) => !SkillWriteService.isSkipped(b))
+      );
+      const srcFolders = new Set(
+        listing.folders.map((p) => SkillWriteService.basename(p)).filter((b) => !SkillWriteService.isSkipped(b))
+      );
+      await this.clearStaleChildren(dest, srcFiles, srcFolders);
     }
 
     for (const filePath of listing.files) {
@@ -108,7 +124,37 @@ export class SkillWriteService {
       if (SkillWriteService.isSkipped(base)) {
         continue;
       }
-      await this.copyTree(subFolder, normalizePath(`${dest}/${base}`));
+      await this.copyTree(subFolder, normalizePath(`${dest}/${base}`), opts);
+    }
+  }
+
+  /**
+   * Remove non-ignored children of `dest` that are NOT present in the given
+   * source name sets — used by the `mirror` copy mode to drop stale resources.
+   * Ignored children (`_`/`.`-prefixed, e.g. `_archive/`) are always preserved.
+   */
+  private async clearStaleChildren(
+    dest: string,
+    srcFiles: Set<string>,
+    srcFolders: Set<string>
+  ): Promise<void> {
+    let destListing: { files: string[]; folders: string[] };
+    try {
+      destListing = await this.adapter.list(dest);
+    } catch {
+      return;
+    }
+    for (const filePath of destListing.files) {
+      const base = SkillWriteService.basename(filePath);
+      if (!SkillWriteService.isSkipped(base) && !srcFiles.has(base)) {
+        await this.adapter.remove(filePath);
+      }
+    }
+    for (const subFolder of destListing.folders) {
+      const base = SkillWriteService.basename(subFolder);
+      if (!SkillWriteService.isSkipped(base) && !srcFolders.has(base)) {
+        await this.removeTree(subFolder);
+      }
     }
   }
 
@@ -127,7 +173,14 @@ export class SkillWriteService {
     }
 
     const ts = new Date(Date.now()).toISOString().replace(/[:.]/g, '-');
-    const archivePath = normalizePath(`${folder}/_archive/${ts}`);
+    // Disambiguate same-millisecond snapshots so a second archive in the same
+    // ISO instant doesn't overwrite the first: append -1, -2, … until free.
+    let archivePath = normalizePath(`${folder}/_archive/${ts}`);
+    let suffix = 1;
+    while (await this.adapter.exists(archivePath)) {
+      archivePath = normalizePath(`${folder}/_archive/${ts}-${suffix}`);
+      suffix += 1;
+    }
     await this.copyTree(folder, archivePath);
 
     await write();
