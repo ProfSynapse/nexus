@@ -137,6 +137,15 @@ TypeScript over `hucre`**, *outside* Pyodide:
 We **do not need openpyxl in this flow** (it stays in the existing Data Analysis
 app for pandas xlsx reads). No Python on the write path, no formula engine.
 
+**Spike-validated (2026-05-31, `docs/plans/spike-findings-hucre-2026-05-31.md`):**
+lossless preservation proven empirically — an unmanaged ZIP part (chart stand-in)
+survived a data-cell edit byte-for-byte via `openXlsx`/`saveXlsx` (`_rawEntries` +
+`_modifiedParts` model). Runs headless in Node 22 → unit-testable without Electron.
+**Bundle: the `hucre/xlsx` entry is 302 KB minified vs only ~218 KB main.js
+headroom → it must be VENDORED as a runtime asset** (PyodideEnsurer pattern),
+costing ~0 in main.js. Write-back must explicitly mark `_modifiedParts` per edited
+sheet (cell edits don't auto-dirty), and honor `hasMacros`→`.xlsm`.
+
 ### 3.6 Data flow
 
 ```
@@ -268,13 +277,13 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
 - **Phase 0 — Spikes (gate the effort):**
   - **S1**: Extract `SnapshotArchiveService` from `SkillWriteService`; assert
     byte-identical archive output (no Skills behavior change).
-  - **S2 (hucre evaluation)**: load a formula-bearing, multi-sheet, **chart- and
-    pivot-bearing** workbook; apply a value edit to a data cell; save; confirm
-    (a) charts/images/pivots/formatting **survive byte-intact**, (b) formulas stay
-    live, (c) **enumerate the 8/135 unsupported features** and confirm the
-    pre-scan flags them, (d) **bundle-size impact vs the main.js <5MB budget**
-    (hucre is zero-dep/tree-shakeable but must be measured), (e) round-trip on
-    real-world workbooks. Pin the version (pre-1.0).
+  - **S2 (hucre evaluation) — partially DONE 2026-05-31**
+    (`spike-findings-hucre-2026-05-31.md`): ✅ byte-intact preservation of an
+    unmanaged part through a data-cell edit; ✅ bundle measured (302 KB xlsx-only
+    → **vendor as runtime asset**, not in main.js); ✅ headless API confirmed.
+    **Remaining**: enumerate the 8/135 unsupported features + confirm the §6
+    pre-scan refuses them; real-world chart/pivot/conditional-format fidelity
+    pass; Electron asset-load path; pin the (pre-1.0) version.
 - **Phase 1** — Mirror generation (hucre read → sharded values-CSV + manifest).
 - **Phase 2** — Lossless write-back (`applyToWorkbook`) — hucre apply, formula
   guard, `dryRun`, snapshot-then-replace, re-projection.
@@ -290,7 +299,9 @@ audit/restore for a path that hasn't proven out in Obsidian.
   gate adoption on spike S2, keep `@protobi/exceljs` as fallback.
 - **Silent loss on an unsupported feature** if the §6 pre-scan misses one of
   hucre's 8 gaps — spike S2 must enumerate them.
-- **Bundle budget** — must measure hucre's footprint against main.js <5MB.
+- **Bundle budget** — measured (S2): `hucre/xlsx` is 302 KB vs ~218 KB headroom,
+  so it is **vendored as a runtime asset**, not bundled. Residual: confirm the
+  Electron asset-load path (same caveat as Pyodide assets).
 - **Divergence corruption** if the §7 conflict guard is skipped.
 - **Scope creep** — three independently useful pieces (SnapshotArchiveService,
   event log, mirror+apply). Phase-0 spikes gate Phases 1–4.
