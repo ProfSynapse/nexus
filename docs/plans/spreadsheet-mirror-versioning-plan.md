@@ -1,97 +1,156 @@
 # Spreadsheet Mirror + Versioning — Implementation Plan
 
-Status: DRAFT (design, pre-spike). Owner: TBD. Created 2026-05-31.
+Status: DRAFT (design complete, pre-spike). Owner: TBD. Created 2026-05-31.
 Companion to `docs/plans/sandboxed-code-execution-app-plan.md` (the Data Analysis app this builds on).
+
+> Design decisions below were worked through and locked 2026-05-31. The only
+> remaining gates are the Phase-0 spikes (§11).
 
 ## 1. Goal
 
 Let the AI clean / normalize / pattern-edit spreadsheet data on a plain-text
-surface, and have those edits flow back into the real `.xlsx` **without
-destroying the things CSV can't represent** (formulas, number formats, multi-sheet
-structure). Add CRUA-faithful version history so every edit is reversible and
-queryable.
+surface, and have those edits flow back into the real `.xlsx` **losslessly** —
+preserving formulas, formatting, **and charts/images/pivots**. Add CRUA-faithful
+version history so every edit is reversible and queryable.
 
-The workflow we're enabling, end to end:
+End-to-end workflow:
 
 1. AI reads a spreadsheet (already works — Data Analysis app).
-2. AI cleans / normalizes a cell range or pattern match in pandas.
-3. Edits are applied back to the workbook **as deltas**, preserving untouched
-   formulas/formatting.
-4. Every apply leaves a restore point + an audit trail.
+2. AI cleans / normalizes a cell range or pattern match in pandas (optionally via
+   a reusable **Skill**).
+3. Changed cells are applied back to the workbook **as deltas**, leaving every
+   untouched part — including charts — byte-intact.
+4. Every apply leaves a restore point + an audit trail; the mirror is re-projected
+   from the updated workbook.
 
 ### Non-goals
 
-- Not a live two-way Excel sync. The mirror is generated/regenerated; Excel is
-  not assumed to be edited concurrently (see §7 conflict policy).
-- Not preserving charts/images/pivots/VBA through a write-back (openpyxl drops
-  them — see §6). We **detect and refuse** rather than silently destroy.
-- Not mobile. The xlsx legs are desktop-only (Pyodide/openpyxl), same gate as
-  the Data Analysis app.
+- **No formula engine.** We never evaluate or flatten Excel formulas (§3.4).
+- **No chart *creation*** from scratch — only **preservation** of existing charts
+  through edits (the engine, §3.5, gives us this).
+- **No PNG/visibility extraction** of charts — the user views charts in Excel;
+  the AI doesn't need them rendered. (Considered and dropped.)
+- Not a live two-way Excel sync — the mirror is a generated projection (§3.3),
+  with a divergence guard (§7), not a concurrently-edited store.
+- **v1 desktop-only** (the pandas analysis is Pyodide/desktop). Note the
+  mirror+write-back legs are pure TS and *could* go mobile later (§9).
 
 ## 2. What we already have (de-risking)
 
-- **openpyxl + et_xmlfile are already vendored** by `PyodideEnsurer.ts` (fetched
-  as wheels, offline micropip-installed from the local `indexUrl`). The xlsx
-  read/write engine is in the runtime today — **zero new asset work.**
-- **Pyodide + pandas** loaded offline from a `file://` indexURL.
-- The network-scrubbed worker already has a micropip-init allowlist
-  (`pyodideWorkerSource.ts`) that closes after package install.
-- **`archiveThenReplace`** (version-in-place snapshot) exists in
-  `SkillWriteService` — the primitive we'll extract (§4).
-- **Hybrid JSONL→SQLite** storage with per-entity event tables (states, tasks) —
-  the pattern the event log reuses (§5).
+- **Vault-root synced folder + resolver**: `storage.rootPath` (default `Nexus`,
+  renameable in Settings → Data) resolved via `resolveVaultRoot(settings)`
+  (`VaultRootResolver.ts`). Skills already mirror under it. Hands back
+  `maxShardBytes` — our file-size cap is already a configured storage concern.
+- **Pyodide + pandas** (Data Analysis app) for the analysis/cleaning compute.
+- **`archiveThenReplace`** (version-in-place snapshot) in `SkillWriteService` —
+  the primitive we extract (§4).
+- **Hybrid JSONL→SQLite** storage with per-entity event tables (states, tasks) +
+  **sharding** precedent (`shard_cursors`, v12) — the pattern the event log and
+  the CSV sharding reuse (§3.2, §5).
+- **App settings-section framework** (`AppCustomSection` + `SkillsSectionRenderer`,
+  `BoxedSection`, `ConfirmModal`) — the UI we recycle for history/restore (§8).
 
 ## 3. Architecture
 
-### 3.1 Folder-per-workbook mirror
+### 3.1 Location & layout (Q1 — LOCKED)
 
-One workbook → one mirror folder (multi-sheet forces a container):
-
-```
-budget.xlsx                          ← the real artifact, RETAINED as fidelity anchor
-<mirror-root>/budget/
-  manifest.json                      ← sheet order, source hash, per-cell type sidecar
-  Sheet1.csv                         ← values only — the AI's edit + analysis surface
-  Sheet2.csv
-  _archive/
-    Sheet1.<ts>.csv                  ← snapshots (shared SnapshotArchiveService, §4)
-```
-
-- `manifest.json` is load-bearing: CSV files are an unordered set, so it records
-  **sheet order**, the **source `.xlsx` content hash** (divergence detection, §7),
-  and a lightweight **per-cell type sidecar** for fidelity (§6.3).
-- **Mirror-root location**: default to a hidden plugin-data subfolder (avoids
-  vault clutter and Excel-opens-the-csv confusion); configurable. Decision
-  deferred to spike — see §10 Q1.
-
-### 3.2 The CSV is the value surface; the xlsx is the formula store
-
-This is the core decision and it resolves the "can we keep formulas in the CSV?"
-question. **No** — a single CSV grid can hold either the formula text or the
-computed value per cell, never both, and the formula text isn't analyzable. So:
-
-- **CSV = values only** → the AI can analyze/normalize numerically.
-- **Original `.xlsx` = formula/format store** → retained, never thrown away.
-- **Sync = delta-apply**: only the cells the AI *changed* are written into the
-  original workbook. Untouched cells (including all formulas/formatting) are
-  preserved automatically because openpyxl rewrites them verbatim on save.
-
-Cells the AI changed get the new literal value (correct — a normalized constant
-overwrites whatever was there). Cells it didn't touch keep their formula.
-
-### 3.3 Data flow
+Mirrors live under the **resolved Nexus root**, a sibling of `skills/`/`data/`/
+`guides/`, so they inherit the user's rename, the sync guarantee (non-hidden vault
+folder), and path validation:
 
 ```
-xlsx ──openpyxl(read)──▶ values CSVs + manifest (mirror)        [generate/refresh]
-CSVs ──AI edits (CRUD / Data Analysis app)──▶ edited CSVs        [edit]
-edited CSVs ─diff vs mirror─▶ changed-cell set                   [diff]
-changed-cell set ──openpyxl(load original, set cells, save)──▶ xlsx   [sync / write-back]
-                  + snapshot prior xlsx + CSV  (§4)
-                  + append spreadsheet_edit events (§5)
+<resolveVaultRoot(settings).resolvedPath>/        ← e.g. "Nexus/" (renameable, synced)
+  spreadsheets/
+    budget/
+      manifest.json            ← sheet order, source-xlsx hash, shard index, formula-cell map
+      Sheet1.part0.csv         ← values only — the AI's edit + analysis surface
+      Sheet1.part1.csv         ← sharded to maxShardBytes (the 5MB cap)
+      Sheet2.part0.csv
+      _archive/
+        Sheet1.part0.<ts>.csv  ← value-level snapshots (SnapshotArchiveService, §4)
 ```
 
-The **single guarded boundary** is the sync step. Everything funnels through it,
-and it's where all the guardrails (§6) live.
+### 3.2 5MB-per-file cap → sharded CSVs (LOCKED)
+
+A sheet can exceed the cap, so each sheet's CSV **shards to `maxShardBytes`**
+(reusing the existing storage sharding discipline). `manifest.json` is the **shard
+index**: sheet order, per-shard row ranges, reassembly order, and the source hash.
+The event-log JSONL shards the same way as it grows.
+
+### 3.3 The CSV is a *projection*; the xlsx is the source of truth (LOCKED)
+
+The mirror is **not** a parallel store — it's a regenerated view:
+
+```
+edit CSV ──apply (changed cells)──▶ xlsx (source of truth) ──re-project──▶ fresh CSV mirror
+```
+
+After every write-back we re-project the CSVs from the updated workbook, so the
+mirror always reflects canonical state. Because the projection is small + sharded
+(<cap), **we snapshot the CSV projection, not the big xlsx** (value-level restore,
+§5) — the user's own file backups/sync cover byte-exact xlsx history.
+
+### 3.4 Formulas: never evaluated, never flattened (LOCKED — single mode)
+
+Two non-overlapping worlds, no toggle, no engine:
+
+- **Excel formulas stay live in the xlsx** → Excel recomputes them on open. We
+  never read, evaluate, or replace them.
+- **The AI computes what *it* needs in pandas** (optionally a saved **Skill**),
+  writing results as literal values into **data** cells.
+
+Implications:
+- **Formula-cell write guard**: by default the write-back **does not overwrite
+  formula cells** — it warns if an edit targets one. Existing formulas survive
+  automatically.
+- **Projection labels formula cells** (in `manifest.json`) as "formula output —
+  recompute from inputs if you need the current value; the cached value may be
+  stale until Excel reopens." No staleness handling beyond the label.
+- **Skills synergy**: a user's standard cleaning/analysis lives as a reusable,
+  versioned pandas Skill — computation moves out of brittle Excel formulas into
+  inspectable scripts.
+
+### 3.5 Write-back engine: `hucre` (LOCKED — research 2026-05-31)
+
+Every full read-modify-write library (openpyxl, ExcelJS, SheetJS) rebuilds the
+file from an incomplete object model and **drops charts/images/pivots**. We need
+surgical editing (touch only changed cells, leave everything else byte-intact).
+Rather than hand-roll OOXML zip surgery, we adopt **[`hucre`](https://github.com/productdevbook/hucre)**:
+
+- **MIT, zero dependencies, pure TypeScript, ESM.**
+- Round-trips **charts, images, pivots, VBA, themes, slicers, timelines** —
+  "open, modify, save — without losing charts." Covers 127/135 tracked features.
+- Runs in **browsers / Web Workers / Electron renderer** (`CompressionStream` +
+  pure-TS fallback; no Node APIs).
+- **Actively maintained**: v0.6.0 (2026-05-28), 1.4k stars, 7 releases.
+- Fallback if the spike finds gaps: **`@protobi/exceljs`** (chart/pivot-preserving
+  ExcelJS fork).
+
+**Architectural consequence — write-back leaves the sandbox.** The write-back is
+deterministic file manipulation with no untrusted code, so it runs **host-side in
+TypeScript over `hucre`**, *outside* Pyodide:
+
+- **hucre (host, TS)** → reads xlsx → sheet values (mirror gen) **and** applies
+  changed cells back losslessly.
+- **Pyodide/pandas (sandbox)** → purely the analysis compute on CSV values.
+
+We **do not need openpyxl in this flow** (it stays in the existing Data Analysis
+app for pandas xlsx reads). No Python on the write path, no formula engine.
+
+### 3.6 Data flow
+
+```
+xlsx ──hucre.read (TS host)──▶ values CSVs (sharded) + manifest      [generate/refresh]
+CSVs ──AI edits (CRUD / Data Analysis pandas / Skill)──▶ edited CSVs [edit]
+edited CSVs ─diff vs mirror─▶ changed data-cell set                 [diff]
+changed set ──hucre.apply changed cells, save (TS host)──▶ xlsx      [write-back, lossless]
+            + formula-cell write guard (§3.4)
+            + snapshot prior CSV shards (§4/§5)
+            + append spreadsheet_edit event (§5)
+            + re-project CSVs from updated xlsx (§3.3)
+```
+
+The **single guarded boundary** is the write-back step; all guardrails (§6) live there.
 
 ## 4. DRY archive — extract `SnapshotArchiveService`
 
@@ -103,146 +162,143 @@ The repo has **three distinct things named "archive"** (verified by grep):
 | **Relocate**-archive | **moves** note/folder out | `StorageManager.archive` tool | `.archive/<ts>/<path>` |
 | **Version-in-place** | **copies** prior bytes, live file stays | `SkillWriteService.archiveThenReplace` | `_archive/<name>.<ts>` |
 
-- The **soft-flag** archive is a repository/event convention, not extractable
-  code — do NOT unify it (would be the wrong abstraction; cf. the CLAUDE.md
-  ToolManager-bridge pin: don't extract speculatively).
-- **Spreadsheet versioning needs version-in-place** (the live CSV/xlsx stays;
-  snapshot the prior state). That's the `archiveThenReplace` semantics.
+- The **soft-flag** archive is a repository/event convention, not extractable code
+  — do NOT unify it (wrong abstraction; cf. the CLAUDE.md ToolManager-bridge pin).
+- **Spreadsheet versioning needs version-in-place** — the `archiveThenReplace`
+  semantics.
 
-**The DRY move** (triggered now because spreadsheets are the *second* consumer):
+**The DRY move** (triggered now — spreadsheets are the *second* consumer):
 
-1. Extract a shared `SnapshotArchiveService` from `SkillWriteService`:
-   `archiveCopy(path, { archiveDir, timestampFn, hashFn })` — copies current
-   bytes to a timestamped archive destination, ensures the dir.
-2. Optionally expose `archiveMove(path, ...)` over the same primitive so
-   `StorageManager.archive` *could* share the dir/timestamp helper — but keep
-   each consumer's **convention** (`.archive/<ts>/` vs `_archive/<name>.<ts>`),
-   since those paths are observable behavior. Move-vs-copy stays explicit.
-3. Rewire Skills to the shared service with **no behavior change** (Phase 0
-   spike asserts byte-identical archive output).
+1. Extract `SnapshotArchiveService` from `SkillWriteService`:
+   `archiveCopy(path, { archiveDir, timestampFn, hashFn })`.
+2. Optionally expose `archiveMove(...)` over the same primitive so
+   `StorageManager.archive` can share the dir/timestamp helper — but keep each
+   consumer's **convention** (move-vs-copy and path stay explicit; observable).
+3. Rewire Skills to the shared service with **no behavior change** (spike S1
+   asserts byte-identical output).
 
-## 5. Versioning — snapshot + event log (complementary, not redundant)
+## 5. Versioning — snapshot + event log
 
-Two layers, both CRUA-faithful (archive = soft/reversible; nothing auto-hard-deletes):
+Both CRUA-faithful (archive = soft/reversible; nothing auto-hard-deletes):
 
-- **Snapshot archive** (`SnapshotArchiveService`, §4): coarse, byte-exact restore
-  points of the prior xlsx (and/or CSV) before each apply. Restore = un-archive.
-- **Event log**: fine-grained `spreadsheet_edit` events
-  `{ workbook, sheet, range|pattern, before, after, ts, hash }`.
-  - **JSONL = source of truth** (append-only, matches tasks/states).
-  - **Mirrored into a new SQLite table** for query ("every edit to Sheet1 this
-    week"). This is a **v14 migration + one table** — not new infrastructure.
+- **Snapshot archive** (`SnapshotArchiveService`, §4): **value-level**, the prior
+  **CSV shards** before each apply (Q-resolved: always under the cap, diffable;
+  not byte-exact xlsx). Restore = un-archive.
+- **Event log** (Q4 — per-operation, LOCKED): one `spreadsheet_edit` event per
+  logical edit — `{ workbook, sheet, range|pattern, opSummary, cellsChanged,
+  sample[], ts, hash }` — **not** per-cell (avoids the 5000-cell explosion;
+  snapshots give exact restore). JSONL = source of truth (sharded), mirrored into
+  a **new SQLite table (v14 migration)** for query.
 
 Snapshot answers "put it back"; event log answers "what changed and when".
 
-## 6. Fidelity findings + guardrails (from research, 2026-05-31)
+## 6. Guardrails (at the write-back boundary)
 
-### 6.1 What openpyxl load→save preserves
-Cell values, **formulas** (default; `data_only=False`), styles, number formats,
-comments, hyperlinks, sheet dimensions/properties. → delta-apply is safe for these.
-
-### 6.2 What openpyxl load→save **destroys** — HARD GUARDRAIL
-**Charts, images, shapes** are dropped on save. Pivot tables, rich text
-(unless `rich_text=True`), and VBA (unless `keep_vba=True`, and then not editable)
-are also lossy. → **Pre-scan the original workbook before write-back**
-(`ws._charts`, `ws._images`, `wb.vba_archive`, pivot caches). If any are present,
-**refuse the silent write-back** and require explicit `acknowledgeLossy: true`
-(or write to a new file). We never silently destroy a user's charts.
-
-### 6.3 Type fidelity (CSV round-trip)
-pandas/CSV coerces types (leading-zero ZIPs, dates, big ints, NaN). Mitigations:
-- Mirror generation records each cell's **original type** in the manifest sidecar.
-- On apply, a changed cell is written **preserving the original cell's data type
-  where the new value is compatible** (e.g. keep a ZIP as text), else inferred.
-- Spike to validate (§10 Q2).
-
-### 6.4 Recalc staleness
-openpyxl writes values but does **not** evaluate formulas, so a formula
-downstream of an edited cell holds a stale cached result. Mitigation: set
-`workbook.calculation.fullCalcOnLoad = True` on save → Excel recomputes on open.
+- **Unsupported-feature pre-scan**: hucre covers 127/135 features. Before
+  write-back, detect any part hucre can't round-trip (the 8 gaps — spike S2
+  enumerates them) and **refuse rather than silently lose**. (Charts/images/pivots
+  are *supported*, so unlike the openpyxl path there is no chart guard needed.)
+- **Formula-cell write guard** (§3.4): don't overwrite formula cells by default.
+- **Divergence guard** (§7): source-hash mismatch blocks blind overwrite.
+- **`dryRun`**: returns the change summary (cells changed, before→after samples,
+  any refused/unsupported parts) without writing.
+- **Serialize** write-backs (one at a time), like `runAnalysis`.
 
 ## 7. Sync / conflict policy
 
-- Mirror carries the **source `.xlsx` hash** in its manifest.
-- Before generating/refreshing the mirror or applying a write-back, compare the
-  current xlsx hash to the stored one.
-  - Match → safe to proceed.
-  - Mismatch (user edited the xlsx in Excel since last mirror) → **do not blind
-    last-writer-wins**. Surface the divergence; offer re-mirror (discard CSV
-    edits) or refuse pending user choice. Spreadsheets are higher-stakes than
-    the Skills mirror, so default to **warn + require explicit resolution**.
-- One writer at a time through the sync boundary (serialize, like `runAnalysis`).
+- `manifest.json` carries the **source `.xlsx` hash**.
+- Before mirror-refresh or write-back, compare current xlsx hash to stored:
+  - Match → proceed.
+  - Mismatch (user edited the xlsx in Excel since last mirror) → **no blind
+    last-writer-wins**: surface the divergence; offer re-mirror (discard CSV
+    edits) or refuse pending the user's choice. Default **warn + require explicit
+    resolution** (spreadsheets are higher-stakes than the Skills mirror).
 
-## 8. Tool contracts (draft)
+## 8. UI — reuse, don't rebuild (Q5 — LOCKED)
 
-Likely additive to the Data Analysis app (desktop-only), final shape TBD:
+History/restore recycles the existing app-settings stack, ~no net-new components:
 
-- `mirrorWorkbook({ path })` → generates/refreshes the folder-per-workbook mirror;
-  returns sheet list + manifest summary. Idempotent (hash-gated).
-- `applyToWorkbook({ workbook, sheets?, dryRun?, overwrite?, acknowledgeLossy? })`
-  → diffs edited CSVs vs mirror, delta-applies to the retained xlsx via openpyxl,
-  snapshots + logs events. `dryRun` returns the change summary (cells changed,
-  before→after samples, lossy-content warnings) without writing.
-- History/restore surfaced via existing CRUA patterns + the event log.
+- **`AppCustomSection`** hook — the Skills app's settings-section mount; Data
+  Analysis app reuses it.
+- **`StatesSectionRenderer`** — already "a list of snapshots with restore/
+  archive/delete"; model `SpreadsheetHistorySectionRenderer` on it.
+- **`BoxedSection`** container + **`ConfirmModal`** (`confirmDangerousAction`,
+  `variant=delete`/`archive`) for restore/delete confirmation.
+- Backed by **`SnapshotArchiveService`** (§4) + the event log (§5).
+
+## 9. Tool contracts (draft)
+
+Additive to the Data Analysis app (desktop-gated for v1):
+
+- `mirrorWorkbook({ path })` → hucre-reads the xlsx, writes sharded values-CSVs +
+  manifest. Idempotent (hash-gated). Returns sheet/shard summary.
+- `applyToWorkbook({ workbook, sheets?, dryRun?, overwrite? })` → diffs edited
+  CSVs vs mirror, hucre-applies changed **data** cells (formula-cell guard),
+  snapshots prior shards, logs the op event, re-projects the mirror. `dryRun`
+  returns the summary without writing.
+- History/restore via the §8 UI + event log.
 
 `dryRun` default-on for the first apply of a session is under consideration
 (overwriting a workbook is hard to reverse).
 
-## 9. Platform
+Note: the mirror + write-back legs are pure TS (hucre) and mobile-capable; only
+the pandas analysis is desktop-only. v1 gates the whole feature behind
+`isDesktop()` for consistency; revisit a mobile editing surface later.
 
-Desktop-only for all xlsx legs (Pyodide/openpyxl). The values-CSV editing surface
-could be cross-platform via CRUD, but mirror generation and write-back are gated
-behind `isDesktop()`, consistent with the Data Analysis app.
+## 10. Resolved decisions (was "open questions")
 
-## 10. Open questions for review
-
-- **Q1 — Mirror location**: hidden plugin-data subfolder (clean, but invisible to
-  the user) vs co-located beside the xlsx (visible/syncable, but clutters the
-  vault and risks the user opening the CSV by mistake). Lean: plugin-data,
-  configurable.
-- **Q2 — Type fidelity depth**: is the per-cell type sidecar enough, or do we need
-  a richer typed-cell manifest? Spike with a ZIP/date/bigint-heavy sheet.
-- **Q3 — Lossy-content default**: refuse-by-default vs write-to-copy-by-default
-  when charts/images/pivots are present.
-- **Q4 — Event-log granularity**: per-cell events (precise, verbose) vs
-  per-range/per-operation events (compact, coarser audit).
-- **Q5 — Restore UX**: reuse the States-style management UI, or a dedicated
-  spreadsheet-history view?
+- **Q1 location** → `<root>/spreadsheets/<workbook>/` via `resolveVaultRoot`,
+  sharded to `maxShardBytes`. ✅
+- **Q2 type fidelity** → mostly dissolves: delta-apply only touches changed cells,
+  so the **retained xlsx is the type store**; only *new* cells need inference. No
+  rich typed manifest — a light formula-cell + new-cell-type map suffices. ✅
+- **Q3 lossy content** → solved by engine choice: **hucre preserves** charts/
+  images/pivots, so no refuse-on-charts. Guard only the 8 genuinely-unsupported
+  features (§6). ✅
+- **Q4 event-log granularity** → **per-operation** events + snapshots for exact
+  restore. ✅
+- **Q5 restore UX** → **reuse** the States-section stack via `AppCustomSection`. ✅
+- **Formula handling** → no engine, no flatten; preserve live + formula-cell
+  guard + label; AI/Skills recompute. ✅
+- **Engine** → **hucre** (host-side TS), fallback `@protobi/exceljs`. ✅
+- **PNG extraction** → dropped. ✅
 
 ## 11. Implementation phases
 
-- **Phase 0 — Spikes (gate the whole effort):**
+- **Phase 0 — Spikes (gate the effort):**
   - **S1**: Extract `SnapshotArchiveService` from `SkillWriteService`; assert
     byte-identical archive output (no Skills behavior change).
-  - **S2**: openpyxl-in-Pyodide round-trip — load a formula-bearing, multi-sheet,
-    formatted workbook; delta-apply a value edit to a formula's dependency cell;
-    save; confirm (a) untouched formulas/formats survive, (b) charts/images
-    detection works, (c) `fullCalcOnLoad` triggers recalc, (d) type fidelity on
-    ZIP/date/bigint cells.
-- **Phase 1** — Mirror generation + manifest + values-CSV (`mirrorWorkbook`).
-- **Phase 2** — Delta-apply write-back (`applyToWorkbook`) with `dryRun`, lossy
-  guardrails, `fullCalcOnLoad`, snapshot-then-replace.
-- **Phase 3** — Event log (JSONL + v14 SQLite table) + history/restore surface.
-- **Phase 4** — Conflict/divergence policy (§7) + settings/UI.
+  - **S2 (hucre evaluation)**: load a formula-bearing, multi-sheet, **chart- and
+    pivot-bearing** workbook; apply a value edit to a data cell; save; confirm
+    (a) charts/images/pivots/formatting **survive byte-intact**, (b) formulas stay
+    live, (c) **enumerate the 8/135 unsupported features** and confirm the
+    pre-scan flags them, (d) **bundle-size impact vs the main.js <5MB budget**
+    (hucre is zero-dep/tree-shakeable but must be measured), (e) round-trip on
+    real-world workbooks. Pin the version (pre-1.0).
+- **Phase 1** — Mirror generation (hucre read → sharded values-CSV + manifest).
+- **Phase 2** — Lossless write-back (`applyToWorkbook`) — hucre apply, formula
+  guard, `dryRun`, snapshot-then-replace, re-projection.
+- **Phase 3** — Event log (JSONL + v14 SQLite table) + history/restore UI (§8).
+- **Phase 4** — Conflict/divergence policy (§7) + settings.
 
-Event-log and conflict policy are deferred behind a working write-back so we
-don't build audit/restore for a path that hasn't proven out in Obsidian.
+Event-log/conflict/UI are deferred behind a working write-back so we don't build
+audit/restore for a path that hasn't proven out in Obsidian.
 
 ## 12. Risks
 
-- **Silent fidelity loss** if the lossy-content guardrail (§6.2) is incomplete —
-  highest-severity risk; must be spike-validated against real workbooks.
-- **Divergence corruption** if conflict policy (§7) is skipped — blind
-  last-writer-wins could clobber Excel edits.
-- **Scope creep** — this is a subsystem (3 independently useful pieces:
-  SnapshotArchiveService, event log, mirror+apply). Phase 0 spikes must pass
-  before committing to Phases 1-4.
-- **Verified by unit/spike only** until manually exercised in Obsidian desktop
-  (same caveat as the Data Analysis app's Electron-runtime items).
+- **`hucre` is pre-1.0 (v0.6.0)** — API churn + maturity risk; pin the version,
+  gate adoption on spike S2, keep `@protobi/exceljs` as fallback.
+- **Silent loss on an unsupported feature** if the §6 pre-scan misses one of
+  hucre's 8 gaps — spike S2 must enumerate them.
+- **Bundle budget** — must measure hucre's footprint against main.js <5MB.
+- **Divergence corruption** if the §7 conflict guard is skipped.
+- **Scope creep** — three independently useful pieces (SnapshotArchiveService,
+  event log, mirror+apply). Phase-0 spikes gate Phases 1–4.
+- **Verified by unit/spike only** until manually exercised in Obsidian desktop.
 
-## Sources (fidelity research)
+## Sources (research, 2026-05-31)
 
-- [openpyxl tutorial — what is preserved/lost on save](https://openpyxl.readthedocs.io/en/3.1/tutorial.html)
-- [openpyxl users — keeping style/format when editing](https://groups.google.com/g/openpyxl-users/c/eZ2HfCLPrJo)
-- [openpyxl data_only / cached formula values](https://groups.google.com/g/openpyxl-users/c/TWbBZjLj8Q0)
-- [openpyxl workbook.properties — CalcProperties / fullCalcOnLoad](https://openpyxl.readthedocs.io/en/3.1/api/openpyxl.workbook.properties.html)
+- [hucre — zero-dep TS spreadsheet engine, chart round-trip](https://github.com/productdevbook/hucre)
+- [xlsx-populate — surgical XML editing (unmaintained since 2019)](https://github.com/dtjohnson/xlsx-populate)
+- [ExcelJS #2607 — charts dropped on round-trip](https://github.com/exceljs/exceljs/issues/2607)
+- [openpyxl tutorial — charts/images lost on save](https://openpyxl.readthedocs.io/en/stable/tutorial.html)
