@@ -37,6 +37,25 @@ export interface XlsxSource {
   readWorkbook(bytes: Uint8Array): Promise<ParsedWorkbook>;
 }
 
+/** A single cell to write back into the source workbook. */
+export interface CellWrite {
+  sheet: string;
+  /** 0-based row. */
+  row: number;
+  /** 0-based column. */
+  col: number;
+  value: CellValue;
+}
+
+/**
+ * Engine seam: applies cell writes into the source `.xlsx` bytes and returns the
+ * new bytes, preserving every untouched part (charts/images/pivots) byte-for-byte.
+ * Backed by `hucre` in production (see `HucreXlsxWriter`).
+ */
+export interface XlsxWriter {
+  applyCellWrites(sourceBytes: Uint8Array, writes: CellWrite[]): Promise<Uint8Array>;
+}
+
 export const MIRROR_SCHEMA_VERSION = 1;
 
 /** One CSV shard of a sheet, sized to stay under `maxShardBytes`. */

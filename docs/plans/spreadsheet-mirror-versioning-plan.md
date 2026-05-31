@@ -304,6 +304,19 @@ the pandas analysis is desktop-only. v1 gates the whole feature behind
     `mirrorWorkbook` tool wiring into the Data Analysis app.
 - **Phase 2** — Lossless write-back (`applyToWorkbook`) — hucre apply, formula
   guard, `dryRun`, snapshot-then-replace, re-projection.
+  - **Core DONE 2026-05-31** (6 tests in `SpreadsheetWriteBack.test.ts`):
+    `csv.ts` gains RFC-4180 `parseCsv` + `cellToRaw`; `diff.ts` (cell diff on the
+    unquoted string form, A1 refs, formula-cell partition, original-type
+    coercion); `WorkbookWriteBackService` orchestrates read-original → divergence
+    guard → diff edited shards → formula guard → dryRun/no-op → snapshot via
+    `SnapshotArchiveService` → hucre apply → re-project. `HucreXlsxWriter` encodes
+    the spike's `_modifiedParts` marking behind an injected module (unit-tested
+    with a JSON-as-xlsx fake so the real orchestration runs end-to-end). The
+    actual `.xlsx` binary write to the vault is returned to the caller
+    (Electron `writeBinary`).
+  - **Remaining (Electron-bound)**: precise sheet→worksheet-part mapping via
+    workbook rels (currently best-effort sorted-Nth), the vault binary write +
+    `.xlsm` handling, and `applyToWorkbook` tool wiring.
 - **Phase 3** — Event log (JSONL + v14 SQLite table) + history/restore UI (§8).
 - **Phase 4** — Conflict/divergence policy (§7) + settings.
 
