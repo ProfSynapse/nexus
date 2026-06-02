@@ -13,7 +13,6 @@ import { BaseAppAgent } from '../BaseAppAgent';
 import { AppManifest } from '../../../types/apps/AppTypes';
 import { RunPythonTool } from './tools/runPython';
 import { ListCapabilitiesTool } from './tools/listCapabilities';
-import { ApplyToWorkbookTool } from './tools/applyToWorkbook';
 import { IAnalysisSandbox } from './types';
 import { PyodideSandbox } from './services/PyodideSandbox';
 import { HucreEnsurer } from './services/HucreEnsurer';
@@ -45,7 +44,6 @@ const DATA_ANALYSIS_MANIFEST: AppManifest = {
   tools: [
     { slug: 'runPython', description: 'Run pandas/Python on CSV/XLSX inputs and return a bounded result' },
     { slug: 'listCapabilities', description: 'List the available Python packages and supported input formats' },
-    { slug: 'applyToWorkbook', description: 'Apply CSV edits back into the .xlsx losslessly (charts/formulas preserved)' },
   ],
 };
 
@@ -61,7 +59,6 @@ export class DataAnalysisAgent extends BaseAppAgent {
     super(DATA_ANALYSIS_MANIFEST);
     this.registerTool(new RunPythonTool(this));
     this.registerTool(new ListCapabilitiesTool(this));
-    this.registerTool(new ApplyToWorkbookTool(this));
   }
 
   /** Lazily vendor + load the hucre xlsx engine (desktop-only runtime asset). */
