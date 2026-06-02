@@ -108,8 +108,31 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
             properties: {
               notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
               linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'input=consumed/required source, output=produced artifact, reference=related but not consumed' }
-            }
+            },
+            required: ['notePath', 'linkType']
           }
+        }
+      }
+    };
+
+    // A dependencyTree node: a task (carrying noteLinks) plus its recursive child arrays.
+    // Each node's task uses the full taskObjectSchema above, so the AI-advertised schema
+    // shows that tree nodes carry noteLinks (the runtime already returns them). The nested
+    // dependencies/dependents are described generically to avoid an infinitely-deep schema.
+    const dependencyNodeSchema: JSONSchema = {
+      type: 'object',
+      description: 'Recursive DependencyTree node',
+      properties: {
+        task: { ...taskObjectSchema, description: 'The task at this node (includes noteLinks)' },
+        dependencies: {
+          type: 'array',
+          description: 'Upstream nodes (recursive — each is a DependencyTree node with task, dependencies[], dependents[])',
+          items: { type: 'object', description: 'Recursive DependencyTree node' }
+        },
+        dependents: {
+          type: 'array',
+          description: 'Downstream nodes (recursive — each is a DependencyTree node with task, dependencies[], dependents[])',
+          items: { type: 'object', description: 'Recursive DependencyTree node' }
         }
       }
     };
@@ -143,16 +166,16 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
           type: 'object',
           description: 'Returned for dependencyTree query — recursive upstream/downstream dependency graph for the specified task',
           properties: {
-            task: { ...taskObjectSchema, description: 'The root task of the tree' },
+            task: { ...taskObjectSchema, description: 'The root task of the tree (includes noteLinks)' },
             dependencies: {
               type: 'array',
-              description: 'Upstream tasks this task depends on (recursive — each has its own dependencies/dependents)',
-              items: { type: 'object', description: 'Recursive DependencyTree node with task, dependencies[], and dependents[]' }
+              description: 'Upstream tasks this task depends on (recursive — each node carries its task with noteLinks plus its own dependencies/dependents)',
+              items: dependencyNodeSchema
             },
             dependents: {
               type: 'array',
-              description: 'Downstream tasks that depend on this task (recursive — each has its own dependencies/dependents)',
-              items: { type: 'object', description: 'Recursive DependencyTree node with task, dependencies[], and dependents[]' }
+              description: 'Downstream tasks that depend on this task (recursive — each node carries its task with noteLinks plus its own dependencies/dependents)',
+              items: dependencyNodeSchema
             }
           }
         },

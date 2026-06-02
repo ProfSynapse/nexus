@@ -30,6 +30,7 @@ import {
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
+import { logger } from '../../../utils/logger';
 
 export interface TaskBoardEventPayload {
   workspaceId: string;
@@ -54,10 +55,20 @@ export type TaskQueryReadyWaiter = () => Promise<boolean>;
  * Normalize a createTask linkedNotes item to a uniform { notePath, linkType } shape.
  * A plain string is a vault path with linkType defaulting to "reference"; an object
  * keeps its notePath and falls back to "reference" when linkType is omitted.
+ *
+ * notePath is required and must be non-empty. Tool param schemas are advisory only —
+ * they are not enforced at runtime before reaching the service — so guard here to reject
+ * a missing/empty/whitespace notePath rather than silently persist an empty link.
  */
 function normalizeLinkedNote(link: LinkedNoteInput): { notePath: string; linkType: LinkType } {
   if (typeof link === 'string') {
+    if (link.trim().length === 0) {
+      throw new Error('linkedNotes: notePath is required and cannot be empty');
+    }
     return { notePath: link, linkType: 'reference' };
+  }
+  if (!link.notePath || link.notePath.trim().length === 0) {
+    throw new Error('linkedNotes: notePath is required and cannot be empty');
   }
   return { notePath: link.notePath, linkType: link.linkType ?? 'reference' };
 }
@@ -510,15 +521,13 @@ export class TaskService {
     const blockedNodes = this.dagService.getBlockedTasks(nodes, allEdges);
     const blockedIds = new Set(blockedNodes.map(n => n.id));
 
-    // Enrich every task once with its note links, then build the result from a lookup.
-    // Both the blocked task and its blockers are AI-facing task content, so both carry links.
-    const enriched = await this.attachNoteLinks(allTasks.items);
-    const enrichedById = new Map<string, TaskWithNoteLinks>();
-    for (const t of enriched) {
-      enrichedById.set(t.id, t);
-    }
-
-    const result: TaskWithBlockers[] = [];
+    // First pass: build the result from raw tasks, recording which task IDs actually
+    // land in the response (blocked tasks ∪ their active blockers). We then enrich ONLY
+    // that subset with note links, rather than every task in the project — getNoteLinks
+    // is one query per task, so enriching all project tasks here would be O(all-tasks)
+    // even when only a handful are returned.
+    const rawResult: TaskWithBlockers[] = [];
+    const returnedIds = new Set<string>();
     for (const task of allTasks.items) {
       if (!blockedIds.has(task.id)) continue;
 
@@ -528,15 +537,30 @@ export class TaskService {
         if (edge.taskId !== task.id) continue;
         const depTask = taskMap.get(edge.dependsOnTaskId);
         if (depTask && depTask.status !== 'done' && depTask.status !== 'cancelled') {
-          const enrichedDep = enrichedById.get(depTask.id);
-          if (enrichedDep) blockers.push(enrichedDep);
+          returnedIds.add(depTask.id);
+          // Cast: placeholder until enrichment below replaces this with the enriched task.
+          blockers.push(depTask as TaskWithNoteLinks);
         }
       }
-      const enrichedTask = enrichedById.get(task.id);
-      if (enrichedTask) result.push({ task: enrichedTask, blockedBy: blockers });
+      returnedIds.add(task.id);
+      rawResult.push({ task: task as TaskWithNoteLinks, blockedBy: blockers });
     }
 
-    return result;
+    // Enrich only the tasks that appear in the result, then swap placeholders for the
+    // enriched versions via a lookup (keeps the enrich-once dedup — each returned task
+    // is fetched at most once).
+    const enriched = await this.attachNoteLinks(
+      allTasks.items.filter(t => returnedIds.has(t.id))
+    );
+    const enrichedById = new Map<string, TaskWithNoteLinks>();
+    for (const t of enriched) {
+      enrichedById.set(t.id, t);
+    }
+
+    return rawResult.map(entry => ({
+      task: enrichedById.get(entry.task.id) ?? { ...entry.task, noteLinks: [] },
+      blockedBy: entry.blockedBy.map(b => enrichedById.get(b.id) ?? { ...b, noteLinks: [] })
+    }));
   }
 
   async getDependencyTree(taskId: string): Promise<DependencyTree> {
@@ -548,17 +572,32 @@ export class TaskService {
     const allTasks = await this.taskRepo.getByProject(task.projectId, { pageSize: 10000 });
     const allEdges = await this.taskRepo.getAllDependencyEdges(task.projectId);
 
-    // Enrich the root and every project task once, then build the tree from a lookup.
-    // The root may not appear in getByProject results (e.g. cross-project edge cases),
-    // so enrich it alongside the project tasks to guarantee it carries note links.
-    const enriched = await this.attachNoteLinks([task, ...allTasks.items]);
+    const nodes: TaskNode[] = allTasks.items.map(t => ({ id: t.id, status: t.status }));
+    const { dependencies, dependents } = this.dagService.getDependencyTree(taskId, nodes, allEdges);
+
+    // Enrich ONLY the tasks that appear in the tree (root ∪ dependencies ∪ dependents),
+    // not every task in the project. getNoteLinks is one query per task, so enriching all
+    // project tasks would be O(all-tasks) even when the tree is small. The root may not
+    // appear in getByProject results (e.g. cross-project edge cases), so include it
+    // explicitly to guarantee it carries note links.
+    const treeIds = new Set<string>([task.id, ...dependencies, ...dependents]);
+    const tasksById = new Map<string, TaskMetadata>();
+    for (const t of allTasks.items) {
+      tasksById.set(t.id, t);
+    }
+    const tasksToEnrich: TaskMetadata[] = [task];
+    for (const id of treeIds) {
+      if (id === task.id) continue;
+      const t = tasksById.get(id);
+      if (t) tasksToEnrich.push(t);
+    }
+
+    const enriched = await this.attachNoteLinks(tasksToEnrich);
     const enrichedById = new Map<string, TaskWithNoteLinks>();
     for (const t of enriched) {
       enrichedById.set(t.id, t);
     }
 
-    const nodes: TaskNode[] = allTasks.items.map(t => ({ id: t.id, status: t.status }));
-    const { dependencies, dependents } = this.dagService.getDependencyTree(taskId, nodes, allEdges);
     const mapTaskIds = (taskIds: string[]): DependencyTree[] =>
       taskIds.reduce<DependencyTree[]>((acc, relatedTaskId) => {
         const relatedTask = enrichedById.get(relatedTaskId);
@@ -634,7 +673,18 @@ export class TaskService {
   private async attachNoteLinks(tasks: TaskMetadata[]): Promise<TaskWithNoteLinks[]> {
     const linkArrays = await Promise.all(
       tasks.map(task =>
-        this.getNoteLinks(task.id).catch(() => [] as NoteLink[])
+        this.getNoteLinks(task.id).catch((error) => {
+          // Degrade to [] so one bad task never sinks the whole read, but route the
+          // failure through the observability seam so a persistent getNoteLinks failure
+          // is distinguishable from a task that genuinely has no links. systemWarn is the
+          // project's centralized warn-level seam (muted by default; flipping warn on
+          // emits everywhere) — so this is latent until warn-level logging is enabled.
+          logger.systemWarn(
+            `getNoteLinks failed for task ${task.id}; returning empty noteLinks: ${error instanceof Error ? error.message : String(error)}`,
+            'TaskService.attachNoteLinks'
+          );
+          return [] as NoteLink[];
+        })
       )
     );
 

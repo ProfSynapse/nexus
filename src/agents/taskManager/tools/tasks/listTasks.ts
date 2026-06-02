@@ -116,7 +116,8 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
                   properties: {
                     notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
                     linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'input=consumed/required source, output=produced artifact, reference=related but not consumed' }
-                  }
+                  },
+                  required: ['notePath', 'linkType']
                 }
               }
             }

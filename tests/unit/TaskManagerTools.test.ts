@@ -424,6 +424,14 @@ describe('TaskManager Tools', () => {
       const result = await tool.execute({ ...baseParams, projectId: '' });
       expect(result.success).toBe(false);
     });
+
+    it('result schema advertises noteLinks items with required notePath + linkType', () => {
+      const schema = tool.getResultSchema() as Record<string, any>;
+      const taskItem = schema.properties.tasks.items;
+      expect(taskItem.properties.noteLinks).toBeDefined();
+      const noteLinkItem = taskItem.properties.noteLinks.items;
+      expect(noteLinkItem.required).toEqual(['notePath', 'linkType']);
+    });
   });
 
   // ============================================================================
@@ -699,6 +707,25 @@ describe('TaskManager Tools', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Unknown query type');
+    });
+
+    it('result schema advertises noteLinks items with required notePath + linkType', () => {
+      const schema = tool.getResultSchema() as Record<string, any>;
+      const noteLinkItem = schema.properties.tasks.items.properties.noteLinks.items;
+      expect(noteLinkItem.required).toEqual(['notePath', 'linkType']);
+    });
+
+    it('dependencyTree node schema advertises noteLinks on the recursive node task', () => {
+      const schema = tool.getResultSchema() as Record<string, any>;
+      const tree = schema.properties.tree;
+      // Root task carries noteLinks.
+      expect(tree.properties.task.properties.noteLinks).toBeDefined();
+      // Recursive dependency/dependent nodes carry a task with noteLinks (runtime returns
+      // them, so the AI-advertised schema must show them).
+      const depNode = tree.properties.dependencies.items;
+      expect(depNode.properties.task.properties.noteLinks).toBeDefined();
+      const dependentNode = tree.properties.dependents.items;
+      expect(dependentNode.properties.task.properties.noteLinks).toBeDefined();
     });
   });
 

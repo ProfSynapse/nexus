@@ -462,6 +462,49 @@ describe('TaskService', () => {
       expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'untyped.md', 'reference');
     });
 
+    it('should throw when an object-form note link is missing notePath', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await expect(
+        service.createTask('proj-1', {
+          title: 'Task',
+          // notePath omitted on the object form — must not silently persist an empty link
+          linkedNotes: [{ linkType: 'input' } as unknown as { notePath: string; linkType: 'input' }]
+        })
+      ).rejects.toThrow('notePath is required');
+
+      expect(taskRepo.addNoteLink).not.toHaveBeenCalled();
+    });
+
+    it('should throw when an object-form note link has an empty/whitespace notePath', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await expect(
+        service.createTask('proj-1', {
+          title: 'Task',
+          linkedNotes: [{ notePath: '   ', linkType: 'input' }]
+        })
+      ).rejects.toThrow('notePath is required');
+
+      expect(taskRepo.addNoteLink).not.toHaveBeenCalled();
+    });
+
+    it('should throw when a string-form note link is empty/whitespace', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await expect(
+        service.createTask('proj-1', {
+          title: 'Task',
+          linkedNotes: ['  ']
+        })
+      ).rejects.toThrow('notePath is required');
+
+      expect(taskRepo.addNoteLink).not.toHaveBeenCalled();
+    });
+
     it('should set default priority to medium', async () => {
       projectRepo.getById.mockResolvedValue(createMockProject());
       taskRepo.create.mockResolvedValue('task-new');
@@ -613,6 +656,57 @@ describe('TaskService', () => {
 
       expect(result.tasks.nextActions[0].noteLinks).toEqual([{ notePath: 'doc.md', linkType: 'reference' }]);
       expect(result.tasks.recentlyCompleted[0].noteLinks).toEqual([{ notePath: 'doc.md', linkType: 'reference' }]);
+    });
+
+    // F1: getBlockedTasks/getDependencyTree must enrich ONLY the tasks they actually
+    // return, not every task in the project (getByProject pageSize 10000). These assert
+    // the getNoteLinks fan-out is bounded by the returned subset.
+
+    it('getBlockedTasks calls getNoteLinks only for blocked tasks and their blockers, not unrelated project tasks', async () => {
+      const depTask = createMockTask({ id: 'dep', status: 'in_progress' });
+      const blockedTask = createMockTask({ id: 'blocked', status: 'todo' });
+      // Two unrelated tasks that exist in the project but are neither blocked nor blockers.
+      const unrelated1 = createMockTask({ id: 'unrelated1', status: 'todo' });
+      const unrelated2 = createMockTask({ id: 'unrelated2', status: 'done' });
+      taskRepo.getByProject.mockResolvedValue(
+        paginatedResult([depTask, blockedTask, unrelated1, unrelated2])
+      );
+      taskRepo.getAllDependencyEdges.mockResolvedValue([
+        { taskId: 'blocked', dependsOnTaskId: 'dep' }
+      ]);
+      taskRepo.getNoteLinks.mockResolvedValue([]);
+
+      await service.getBlockedTasks('proj-1');
+
+      // Only 'blocked' (returned) + 'dep' (its blocker) should be enriched.
+      const enrichedIds = taskRepo.getNoteLinks.mock.calls.map(call => call[0]).sort();
+      expect(enrichedIds).toEqual(['blocked', 'dep']);
+      expect(taskRepo.getNoteLinks).not.toHaveBeenCalledWith('unrelated1');
+      expect(taskRepo.getNoteLinks).not.toHaveBeenCalledWith('unrelated2');
+    });
+
+    it('getDependencyTree calls getNoteLinks only for the root, dependencies, and dependents, not unrelated project tasks', async () => {
+      const rootTask = createMockTask({ id: 'root', projectId: 'proj-1' });
+      const depTask = createMockTask({ id: 'dep', projectId: 'proj-1' });
+      const dependentTask = createMockTask({ id: 'dependent', projectId: 'proj-1' });
+      // Unrelated task in the same project but not in root's dependency tree.
+      const unrelated = createMockTask({ id: 'unrelated', projectId: 'proj-1' });
+
+      taskRepo.getById.mockResolvedValue(rootTask);
+      taskRepo.getByProject.mockResolvedValue(
+        paginatedResult([rootTask, depTask, dependentTask, unrelated])
+      );
+      taskRepo.getAllDependencyEdges.mockResolvedValue([
+        { taskId: 'root', dependsOnTaskId: 'dep' },
+        { taskId: 'dependent', dependsOnTaskId: 'root' }
+      ]);
+      taskRepo.getNoteLinks.mockResolvedValue([]);
+
+      await service.getDependencyTree('root');
+
+      const enrichedIds = taskRepo.getNoteLinks.mock.calls.map(call => call[0]).sort();
+      expect(enrichedIds).toEqual(['dep', 'dependent', 'root']);
+      expect(taskRepo.getNoteLinks).not.toHaveBeenCalledWith('unrelated');
     });
   });
 
