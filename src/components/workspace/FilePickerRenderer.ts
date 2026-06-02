@@ -91,7 +91,7 @@ export class FilePickerRenderer {
     });
 
     // Tree container
-    this.treeContainer = container.createDiv('nexus-folder-tree');
+    this.treeContainer = container.createDiv('ws-tree');
 
     // Render root
     this.renderRoot();
@@ -259,7 +259,7 @@ export class FilePickerRenderer {
 
     // Empty folder message (only when not searching)
     if (renderedCount === 0 && !this.searchQuery) {
-      const empty = container.createDiv({ cls: 'nexus-tree-empty' });
+      const empty = container.createDiv({ cls: 'ws-tree-empty' });
       empty.dataset.depth = String(depth + 1);
       empty.textContent = 'Empty folder';
     }
@@ -273,15 +273,15 @@ export class FilePickerRenderer {
   private renderFolderRow(folder: TFolder, container: HTMLElement, depth: number): void {
     const isExpanded = this.expandedFolders.has(folder.path);
 
-    const row = container.createDiv({ cls: 'nexus-tree-row nexus-tree-folder' });
+    const row = container.createDiv({ cls: 'ws-tree-row is-folder' });
     row.dataset.depth = String(depth);
 
     // Folder icon (changes based on expanded state)
-    const iconEl = row.createSpan({ cls: 'nexus-tree-icon' });
+    const iconEl = row.createSpan({ cls: 'ws-tree-icon' });
     setIcon(iconEl, isExpanded ? 'folder-open' : 'folder');
 
     // Folder name
-    row.createSpan({ text: folder.name, cls: 'nexus-tree-name' });
+    row.createSpan({ text: folder.name, cls: 'ws-tree-name' });
 
     // Click to expand/collapse
     const clickHandler = () => {
@@ -296,7 +296,7 @@ export class FilePickerRenderer {
 
     // Render children if expanded
     if (isExpanded) {
-      const childrenContainer = container.createDiv({ cls: 'nexus-tree-children' });
+      const childrenContainer = container.createDiv({ cls: 'ws-tree-children' });
       this.renderFolderChildren(folder, childrenContainer, depth + 1);
     }
   }
@@ -307,11 +307,11 @@ export class FilePickerRenderer {
   private renderFileRow(file: TFile, container: HTMLElement, depth: number): void {
     const isSelected = this.selectedFiles.has(file.path);
 
-    const row = container.createDiv({ cls: 'nexus-tree-row nexus-tree-file' });
+    const row = container.createDiv({ cls: 'ws-tree-row is-file' });
     row.dataset.depth = String(depth);
 
-    // Checkbox
-    const checkbox = row.createEl('input', { type: 'checkbox', cls: 'nexus-tree-checkbox' });
+    // Checkbox — backs the real `selectedFiles: Set<string>` multi-select.
+    const checkbox = row.createEl('input', { type: 'checkbox', cls: 'ws-tree-checkbox' });
     checkbox.checked = isSelected;
     const changeHandler = (e: Event) => {
       e.stopPropagation();
@@ -324,11 +324,11 @@ export class FilePickerRenderer {
     this.safeRegisterDomEvent(checkbox, 'change', changeHandler);
 
     // File icon
-    const iconEl = row.createSpan({ cls: 'nexus-tree-icon' });
+    const iconEl = row.createSpan({ cls: 'ws-tree-icon' });
     setIcon(iconEl, 'file-text');
 
     // File name
-    row.createSpan({ text: file.name, cls: 'nexus-tree-name' });
+    row.createSpan({ text: file.name, cls: 'ws-tree-name' });
 
     // Click row to toggle checkbox
     const rowClickHandler = (e: MouseEvent) => {

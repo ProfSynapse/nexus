@@ -647,7 +647,8 @@ export class WorkspacesTab {
                 this.currentView = 'detail';
                 this.render();
             },
-            async (workflowToRun) => { await this.runWorkflowFromEditor(workflowToRun); }
+            async (workflowToRun) => { await this.runWorkflowFromEditor(workflowToRun); },
+            this.services.component
         );
 
         this.workflowRenderer.render(contentContainer, workflow, isNew, { showBackButton: false });
