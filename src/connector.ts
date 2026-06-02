@@ -193,30 +193,26 @@ export class MCPConnector {
      */
     public async initializeAgents(): Promise<void> {
         try {
-            // Ensure customPromptStorage is available if settings are now loaded
-            if (!this.customPromptStorage) {
-                const pluginSettings = this.plugin && isNexusPlugin(this.plugin) ? this.plugin.settings : null;
-                if (pluginSettings) {
-                    try {
-                        // Pass null for db - connector doesn't have access to database
-                        this.customPromptStorage = new CustomPromptStorageService(null, pluginSettings);
-
-                        // Update the agent registry with the new storage service
-                        this.agentRegistry = new AgentRegistrationService(
-                            this.app,
-                            this.plugin,
-                            this.events,
-                            this.serviceManager,
-                            this.customPromptStorage
-                        );
-
-                        logger.systemLog('CustomPromptStorageService initialized during agent initialization');
-                    } catch (error) {
-                        logger.systemError(error as Error, 'Late CustomPromptStorageService Initialization');
+            // Share ONE agent stack with the native chat UI instead of building a
+            // second one here. The DI container already exposes a canonical
+            // `agentRegistrationService` (backed by a shared AgentManager), and
+            // AgentInitializationService self-provisions CustomPromptStorageService
+            // when it's absent — so the shared registry serves the MCP tools too.
+            // initializeAllAgents() is cached, so whoever initializes first wins and
+            // the other call is a no-op: one AppManager, one set of vault watchers,
+            // no duplicate spreadsheet auto-mirror/write-back. Falls back to the
+            // locally-constructed registry if the container isn't available yet.
+            if (this.serviceManager) {
+                try {
+                    const shared = await this.serviceManager.getService<AgentRegistrationService>('agentRegistrationService');
+                    if (shared) {
+                        this.agentRegistry = shared;
                     }
+                } catch (error) {
+                    logger.systemError(error as Error, 'Reuse shared AgentRegistrationService (falling back to local)');
                 }
             }
-            
+
             // Initialize connection manager first
             await this.connectionManager.initialize();
             
