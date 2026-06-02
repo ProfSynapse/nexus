@@ -24,6 +24,8 @@ Workspaces scope your sessions, traces, and operations. Every tool call is tagge
 - Archive workspaces and states for cold storage (restorable)
 - No external database required
 
+When a workspace loads, its **recent activity** is grouped by session and carries the memory, goal, and constraints captured with each trace — so the AI sees not just *what* happened recently but *why*.
+
 ---
 
 ## Workflows
@@ -85,6 +87,6 @@ Open **Settings &rarr; Nexus &rarr; Workspaces**, then:
 - **Workspace detail** &rarr; project/task entrypoint
 - **Project cards** &rarr; one card per workspace project
 - **Project detail** &rarr; task table with status, priority, due date, assignee, actions
-- **Task detail** &rarr; editor for title, description, status, priority, due date, assignee, tags, project, parent task
+- **Task detail** &rarr; editor for title, description, status, priority, due date, assignee, tags, project, parent task, plus **Dependencies** (depends-on / blocks) and **Linked notes** (with link type) sections
 
 The database is the source of truth. Edits made in chat and in settings operate on the same underlying data.

@@ -26,6 +26,31 @@ Before releasing, verify:
 
 Do not release from a feature branch. Do not create a release manually from local build artifacts unless the tag workflow failed and the user explicitly approves a fallback.
 
+## Documentation Review (before bumping)
+
+A release often ships user-facing features whose docs were never updated. Before bumping the version, review what merged and bring the docs in line.
+
+1. **See what landed since the last release:**
+
+   ```bash
+   git describe --tags --abbrev=0   # most recent release tag
+   git log --no-merges --format='%h %s' <last-tag>..HEAD
+   ```
+
+2. **Identify user-facing changes** — new apps, new tools, new UI surfaces, changed behavior, new settings. Ignore internal refactors, type fixes, and test-only commits.
+
+3. **Update only user-facing docs.** Scope is strictly **`README.md`** and the **`guide/`** folder (the README-linked canonical docs). **Never** touch anything under `docs/` — that tree (`docs/features/`, `AGENTS.md`, `TOOL_REFERENCE.md`, plans, reviews) is developer/internal material the maintainer manages separately. There is an orphaned `docs/features/` mirror of `guide/`; leave it alone.
+
+   Common surfaces that need updating when features ship:
+   - `guide/apps.md` — the **Available Apps** table (add new apps + their tools; mark desktop-only/experimental)
+   - `README.md` — the **Use Cases** table and the **Mobile Support** table
+   - `guide/task-management.md`, `guide/workspace-memory.md`, `guide/semantic-search.md`, etc. — feature-specific guides
+   - When in doubt about exact tool names or enum values, confirm against `src/` rather than guessing.
+
+4. **Confirm the changelog** (`docs/changelog.md`) has an entry for the new version — this one file under `docs/` IS part of the release and is usually already written; verify it exists and is accurate. If a doc update is large or uncertain, surface it to the user rather than guessing.
+
+Commit doc updates to `main` (separately from, or together with, the version bump) before tagging, so the release reflects current docs.
+
 ## Release Steps
 
 ### 1. Determine Version Bump
@@ -123,3 +148,5 @@ Download `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsidi
 - Missing one of the 3 version files
 - Manually attaching unsupported release artifacts such as `connector.js`
 - Manually creating a release in a way that bypasses artifact attestations
+- Shipping new features without updating `README.md` / `guide/` docs
+- Editing docs under `docs/` (developer/internal) — user-facing docs live only in `README.md` and `guide/`

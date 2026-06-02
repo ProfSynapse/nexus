@@ -33,10 +33,12 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 |---------|--------|---------|
 | Native chat | Yes | Yes |
 | Workspace memory and tasks | Yes | Yes |
+| Skills (author and load) | Yes | Yes |
 | MCP clients (Claude Desktop, Cursor, etc.) | No | Yes |
 | Semantic search (local embeddings) | No | Yes |
 | Ingestion (PDF, audio, DOCX) | No | Yes |
 | Composer and Web Tools | No | Yes |
+| Data Analysis (Python over CSV/Excel) | No | Yes |
 
 Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/nexus/issues).
 
@@ -54,6 +56,8 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 | Open webpages in Obsidian and save them as Markdown, PNG, or PDF *(experimental)* | [Apps](guide/apps.md) |
 | Convert PDFs and audio files to Markdown notes — right-click in vault or auto on add *(experimental)* | [Apps](guide/apps.md) |
 | Merge PDFs, concat markdown, or mix audio tracks into one file *(experimental)* | [Apps](guide/apps.md) |
+| Author and load reusable agent Skills straight from your vault | [Apps](guide/apps.md) |
+| Run Python/pandas analysis over your vault's CSV and Excel data *(experimental, desktop)* | [Apps](guide/apps.md) |
 | Create recurring routines and reusable workflows | [Workflow examples](guide/workflow-examples.md) |
 | Understand the MCP design and available tools | [Two-tool architecture](guide/two-tool-architecture.md) |
 | Extend Nexus with optional apps | [Apps](guide/apps.md) |
