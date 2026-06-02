@@ -13,6 +13,10 @@ import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
 import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
 import { WebToolsAgent } from '../../agents/apps/webTools/WebToolsAgent';
+import { DataAnalysisAgent } from '../../agents/apps/dataAnalysis/DataAnalysisAgent';
+import { isDesktop } from '../../utils/platform';
+import { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
+import type { AppRuntimeContext } from '../../agents/apps/AppRuntimeContext';
 import { App } from 'obsidian';
 
 export class AppManager {
@@ -21,17 +25,20 @@ export class AppManager {
   private registerCallback: (agent: IAgent) => void;
   private unregisterCallback: (agentName: string) => void;
   private app: App | null;
+  private runtimeContext: AppRuntimeContext | null;
 
   constructor(
     appsSettings: AppsSettings,
     onRegister: (agent: IAgent) => void,
     onUnregister: (agentName: string) => void,
-    app?: App
+    app?: App,
+    runtimeContext?: AppRuntimeContext
   ) {
     this.appConfigs = appsSettings.apps || {};
     this.registerCallback = onRegister;
     this.unregisterCallback = onUnregister;
     this.app = app || null;
+    this.runtimeContext = runtimeContext || null;
   }
 
   /**
@@ -50,6 +57,7 @@ export class AppManager {
         }
         this.apps.set(appId, agent);
         this.registerCallback(agent);
+        agent.onload();
         logger.systemLog(`App loaded: ${appId}`);
       } catch (error) {
         logger.systemError(error as Error, `App Load: ${appId}`);
@@ -141,6 +149,7 @@ export class AppManager {
       if (agent) {
         this.apps.set(appId, agent);
         this.registerCallback(agent);
+        agent.onload();
       }
     } else if (!enabled && this.apps.has(appId)) {
       // Unregister but keep config
@@ -227,6 +236,12 @@ export class AppManager {
     registry.set('elevenlabs', () => new ElevenLabsAgent());
     registry.set('composer', () => new ComposerAgent());
     registry.set('web-tools', () => new WebToolsAgent());
+    registry.set('skills', () => new SkillsAgent());
+
+    // Desktop-only apps (heavy/Node-dependent runtimes — not registered on mobile)
+    if (isDesktop()) {
+      registry.set('data', () => new DataAnalysisAgent());
+    }
 
     return registry;
   }
@@ -246,6 +261,9 @@ export class AppManager {
     }
     if (this.app) {
       agent.setApp(this.app);
+    }
+    if (this.runtimeContext) {
+      agent.setRuntimeContext(this.runtimeContext);
     }
     return agent;
   }

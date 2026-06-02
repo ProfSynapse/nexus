@@ -331,13 +331,13 @@ Per-file `jest.config.js` thresholds (matching existing project pattern):
 
 - New: `src/components/workspace/TaskRowBuilder.ts` (extract `buildTaskRows`, `formatTaskStatus`, `formatDate`)
 - New: `src/components/workspace/ProjectDetailRenderer.ts`
-- Modify: `WorkspaceDetailRenderer.renderProjectDetail` — transform `<table>` → flex `.setting-item.is-task` rows; **execute checkbox sweep** (CSS deletion + markup deletion + `handleTaskCheckboxChange` removal)
-- Modify: `ProjectsManagerView` — card grid → row primitives + `.ws-group-label` status grouping (Active / Completed / Archived)
-- Modify: `WorkspacesTab.ts` — verify/add `'project-detail'` view state + dispatch
+- Modify: `WorkspaceDetailRenderer.renderProjectDetail` — transform `<table>` → flex `.setting-item.is-task` rows; **execute checkbox sweep** (CSS deletion + markup deletion + `handleTaskCheckboxChange` removal — verified sole production call site at `WorkspaceDetailRenderer.ts:466`; test at `WorkspacesTab.test.ts:289` also needs adjustment per PREPARE V1)
+- Modify: `WorkspaceDetailRenderer.renderProjects` — card grid → row primitives + `.ws-group-label` status grouping (Active / Completed / Archived). **Note**: card grid actually lives in `WorkspaceDetailRenderer.renderProjects`, not `ProjectsManagerView` (which uses delegation pattern). PREPARE V5 also flagged unused `ProjectsView` type export at `ProjectsManagerView.ts:48` for cleanup consideration.
+- `WorkspacesTab.ts`: **no view-state work needed** — `'project-detail'` + `'task-detail'` states ALREADY exist in `WorkspacesView` enum and are dispatched (PREPARE V8)
 - Tests: Tier 1 routing transitions for projects→project-detail, Tier 4 checkbox sweep negative-grep regression (3 guards), `.setting-item.is-task` rendering scenarios
 - **PR1 peer-review carry-forwards** (from `docs/review/pr220-wave3-pr1-2026-05-27.md`, user-approved 2026-05-27):
   - **Group A — ConfirmModal hardening pre-task** (~30 LoC, ship before TaskRowBuilder): (M-1) make `BoxedSection` `component` parameter required, delete the `addEventListener` fallback branch at `BoxedSection.ts:74-78`; (M-2) add `onResolve` to `ConfirmModalConfig` + static `ConfirmModal.confirm(app, config): Promise<boolean>` helper, retire the `contentEl.empty(); resolve(confirmed);` boilerplate at the 3 PR1 call sites (`WorkspaceDetailRenderer:103-106`, `StatesSectionRenderer:298-302`, `WorkspacesTab:572-575`); (M-3) wrap `Promise.resolve(onConfirm()).finally(close)` with an error-handling chain so async rejection surfaces instead of being swallowed.
-  - **Group B — Polish wave** (rides on file edits already in PR2 scope): (M-4) `--space-*` token sweep across the `.ws-section` family at `styles.css:8467+` (current px values 16/12/4 → `--space-md/--space-sm/--space-xs` matching the 131 existing callsites); (M-5) wire `variant=remove` to the workflow-× and keyfile-× buttons at `WorkspaceFormRenderer:239-245, 293-299` (de-association semantic, replaces current silent splice).
+  - **Group B — Polish wave** (rides on file edits already in PR2 scope): (M-4) `--space-*` token sweep across the `.ws-section` family at `styles.css:8467+` (current px values 16/12/4 → `--space-m/--space-s/--space-xs` matching the codebase's actual 149+ existing `--space-*` callsites; PREPARE V7 corrected the plan's prior `--space-md/--space-sm` naming, which does NOT exist in the codebase); (M-5) wire `variant=remove` to the workflow-× and keyfile-× buttons at `WorkspaceFormRenderer:239-245, 293-299` (de-association semantic, replaces current silent splice).
   - **Group C — UX-outcome test layer** (test-engineer task, ~3-5 new integration tests): (M-6) 2-3 integration tests wrapping full destructive-action handlers asserting `confirmed=true → service.deleteWorkspace()` is actually called (catches inverted-conditional regressions); (M-7) StatesSectionRenderer toggle-flip persistence test (false→true→assert `listStates` called twice with `includeArchived` flipped); (M-8) BoxedSection re-instantiation test for `WorkspaceDetailRenderer.renderStatesSection`'s placeholder→success/error 3-construct sequence.
 - **Risk**: largest visual change. Manual VR critical at this boundary.
 
@@ -393,6 +393,15 @@ Per-file `jest.config.js` thresholds (matching existing project pattern):
 - [x] ~~Confirm `WorkspacesView` enum currently includes `'project-detail'` and `'task-detail'` literals~~ — **Resolved 2026-05-27 (PR2 Commit 2 / Task #48).** `'project-detail'` verified + wired in `WorkspacesTab.ts`; `'task-detail'` remains pending PR3 per slicing.
 - [x] ~~Pre-PR2 grep verification: `handleTaskCheckboxChange` has no other call sites~~ — **Resolved 2026-05-27 (PR2 Commit 2 / Task #48).** Grep confirmed sole call site at `WorkspaceDetailRenderer.ts:460`; safely deleted in checkbox sweep.
 - [ ] Confirm `Setting` framework primitive fits Task detail + Workflow editor form rows; fall back to custom `.ws-field` only where layout doesn't fit. *(deferred to PR3/PR4)*
+
+### Resolved by PREPARE (Wave 3 PR2)
+PREPARE artifact: `docs/preparation/wave3-pr2-projects-rows.md` (worktree-only, 586 lines). 6 open questions surfaced for ARCHITECT phase decision:
+- **Q1 ConfirmModal onClose chain-vs-override** — architect M-2 design call
+- **Q2 data-depth attribute vs em-dash literal** for subtask indent — architect to decide PR2-vs-defer
+- **Q3 token naming** — RESOLVED above: plan updated to `--space-m/--space-s/--space-xs`
+- **Q4 ProjectsView type cleanup** — cleanup-tier, architect to decide bundle-vs-defer
+- **Q5 workflow-× vs keyfile-× re-render asymmetry** — architect to decide keep-asymmetric or unify
+- **Q6 10px → spacing-token rounding** at `styles.css:8512` `.ws-section-action` — architect to decide round-down vs preserve
 
 ---
 

@@ -11,6 +11,11 @@ export interface WorkspaceContext {
   workspaceId: string;
   workspacePath?: string[];
   activeWorkspace?: boolean;
+  // For type-completeness only — the per-session active-skill set is NOT stored
+  // here. The frequent `setWorkspaceContext({workspaceId})` call at
+  // ToolCallTraceService:88 would clobber it. Storage lives in the dedicated
+  // `sessionActiveSkillsMap` instead (see getActiveSkills/addActiveSkill below).
+  activeSkills?: string[];
 }
 
 interface SessionServiceLike {
@@ -48,6 +53,13 @@ export class SessionContextManager {
   
   // Map of sessionId -> workspace context
   private sessionContextMap: Map<string, WorkspaceContext> = new Map();
+
+  // Map of sessionId -> active skill ids (e.g. "claude/essay-editor").
+  // Dedicated map (NOT folded into WorkspaceContext) so the frequent
+  // setWorkspaceContext({workspaceId}) call at ToolCallTraceService:88 cannot
+  // clobber it. Used for trace attribution only (§9) — it does NOT scope or
+  // route tools, unlike workspaceId.
+  private sessionActiveSkillsMap: Map<string, string[]> = new Map();
 
   // Map of model-facing session handles to internal unique session IDs.
   // Keyed by `${workspaceId}::${handle}` so the same friendly handle ("research")
@@ -105,6 +117,7 @@ export class SessionContextManager {
       }
     }
     this.sessionContextMap.delete(sessionId);
+    this.sessionActiveSkillsMap.delete(sessionId);
     this.instructedSessions.delete(sessionId);
   }
   
@@ -160,6 +173,42 @@ export class SessionContextManager {
    */
   clearWorkspaceContext(sessionId: string): void {
     this.sessionContextMap.delete(sessionId);
+    this.sessionActiveSkillsMap.delete(sessionId);
+  }
+
+  /**
+   * Get the active skill ids for a session (for trace attribution, §9).
+   *
+   * @param sessionId The session ID
+   * @returns The active skill ids, or an empty array if none
+   */
+  getActiveSkills(sessionId: string): string[] {
+    return this.sessionActiveSkillsMap.get(sessionId) ?? [];
+  }
+
+  /**
+   * Mark a skill as active for a session (deduped). Called by loadSkill so
+   * subsequent tool-call traces are attributed to the skill.
+   *
+   * @param sessionId The session ID
+   * @param skillId The skill id (e.g. "claude/essay-editor")
+   */
+  addActiveSkill(sessionId: string, skillId: string): void {
+    const existing = this.sessionActiveSkillsMap.get(sessionId) ?? [];
+    if (existing.includes(skillId)) {
+      return;
+    }
+    this.sessionActiveSkillsMap.set(sessionId, [...existing, skillId]);
+  }
+
+  /**
+   * Replace the active skill set for a session.
+   *
+   * @param sessionId The session ID
+   * @param skillIds The skill ids to set as active
+   */
+  setActiveSkills(sessionId: string, skillIds: string[]): void {
+    this.sessionActiveSkillsMap.set(sessionId, [...skillIds]);
   }
   
   /**
@@ -230,6 +279,7 @@ export class SessionContextManager {
    */
   clearAll(): void {
     this.sessionContextMap.clear();
+    this.sessionActiveSkillsMap.clear();
     this.sessionHandleMap.clear();
     this.instructedSessions.clear();
     this.defaultWorkspaceContext = null;

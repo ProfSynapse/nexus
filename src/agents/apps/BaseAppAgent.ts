@@ -10,6 +10,7 @@ import { BaseAgent } from '../baseAgent';
 import { AppManifest, AppCredentialField, ElevenLabsModel } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
 import { App, Vault } from 'obsidian';
+import type { AppRuntimeContext } from './AppRuntimeContext';
 
 /**
  * Result type for fetchTTSModels. Defined here so subclasses and consumers
@@ -27,6 +28,7 @@ export abstract class BaseAppAgent extends BaseAgent {
   protected appSettings: Record<string, string> = {};
   private _app: App | null = null;
   private _vault: Vault | null = null;
+  private _runtimeContext: AppRuntimeContext | null = null;
 
   constructor(manifest: AppManifest) {
     super(
@@ -150,6 +152,23 @@ export abstract class BaseAppAgent extends BaseAgent {
   }
 
   /**
+   * Inject optional runtime services (settings + storage adapter). Called by
+   * AppManager after construction for apps that declare a runtime context.
+   * Apps that don't need it (most) simply never have it set.
+   */
+  setRuntimeContext(ctx: AppRuntimeContext): void {
+    this._runtimeContext = ctx;
+  }
+
+  /**
+   * Get the injected runtime context, or null if none was provided.
+   * Tools that need settings/storage (e.g. Skills) call this.
+   */
+  getRuntimeContext(): AppRuntimeContext | null {
+    return this._runtimeContext;
+  }
+
+  /**
    * Fetch available TTS models from the provider API.
    * Override in subclasses that support model selection.
    * Returns undefined by default (no model fetching support).
@@ -165,6 +184,16 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getDefaultModelId(): string | undefined {
     return undefined;
+  }
+
+  /**
+   * Lifecycle hook called by AppManager once the agent is fully configured
+   * (app/vault/credentials/runtime injected) and registered as a live app.
+   * Override to start background work (e.g. file watchers). The matching
+   * teardown is {@link BaseAgent.onunload}. Default: no-op.
+   */
+  onload(): void {
+    // Default: no-op
   }
 
   /**

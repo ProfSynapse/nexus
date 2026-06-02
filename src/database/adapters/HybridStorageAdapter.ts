@@ -670,6 +670,15 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.sqliteCache;
   }
 
+  /**
+   * Get the underlying SQLite cache manager (typed accessor).
+   * Used by the Skills app's index service to query/upsert the derived
+   * `skills` table without depending on the `cache` getter's exact shape.
+   */
+  getSqliteCache(): SQLiteCacheManager {
+    return this.sqliteCache;
+  }
+
   getStartupHydrationState(): StartupHydrationState {
     return this.hydration.getState();
   }

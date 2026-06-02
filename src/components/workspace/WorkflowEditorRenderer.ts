@@ -1,4 +1,4 @@
-import { ButtonComponent, Notice, Setting } from 'obsidian';
+import { ButtonComponent, Component, Notice, Setting } from 'obsidian';
 import type {
   WorkflowCatchUpPolicy,
   WorkflowFrequency,
@@ -7,6 +7,7 @@ import type {
 } from '../../database/types/workspace/WorkspaceTypes';
 import type { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { v4 as uuidv4 } from '../../utils/uuid';
+import { BoxedSection } from '../../settings/components/BoxedSection';
 
 export type Workflow = WorkspaceWorkflow;
 
@@ -42,7 +43,8 @@ export class WorkflowEditorRenderer {
     private availablePrompts: CustomPrompt[],
     private onSave: SaveOrRunHandler,
     private onCancel: () => void,
-    private onRunNow: SaveOrRunHandler
+    private onRunNow: SaveOrRunHandler,
+    private component: Component
   ) {}
 
   render(container: HTMLElement, workflow: Workflow, isNew: boolean, options?: { showBackButton?: boolean }): void {
@@ -65,74 +67,105 @@ export class WorkflowEditorRenderer {
 
     const form = container.createDiv('nexus-workflow-form');
 
-    new Setting(form)
-      .setName('Workflow name')
-      .setDesc('Name this workflow.')
-      .addText(text => text
-        .setPlaceholder('For example, weekly blog planning')
-        .setValue(this.workflow.name)
-        .onChange(value => {
-          this.workflow.name = value;
-        }));
+    // Identity section — workflow name + when.
+    new BoxedSection(form, {
+      title: 'Identity',
+      titleId: 'wf-id-h',
+      unbounded: true,
+      body: body => {
+        new Setting(body)
+          .setName('Workflow name')
+          .setDesc('Name this workflow.')
+          .addText(text => text
+            .setPlaceholder('For example, weekly blog planning')
+            .setValue(this.workflow.name)
+            .onChange(value => {
+              this.workflow.name = value;
+            }));
 
-    new Setting(form)
-      .setName('When')
-      .setDesc('Describe when this workflow should be used.')
-      .addText(text => text
-        .setPlaceholder('Plan next week\'s posts.')
-        .setValue(this.workflow.when)
-        .onChange(value => {
-          this.workflow.when = value;
-        }));
+        new Setting(body)
+          .setName('When')
+          .setDesc('Describe when this workflow should be used.')
+          .addText(text => text
+            .setPlaceholder('Plan next week\'s posts.')
+            .setValue(this.workflow.when)
+            .onChange(value => {
+              this.workflow.when = value;
+            }));
+      }
+    }, this.component);
 
-    new Setting(form)
-      .setName('Prompt')
-      .setDesc('Optional saved prompt/agent to bind to this workflow.')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', 'None');
-        this.availablePrompts.forEach(prompt => {
-          dropdown.addOption(prompt.id, prompt.name);
+    // Prompt section — optional saved-prompt binding.
+    new BoxedSection(form, {
+      title: 'Prompt',
+      titleId: 'wf-prompt-h',
+      unbounded: true,
+      body: body => {
+        new Setting(body)
+          .setName('Prompt')
+          .setDesc('Optional saved prompt/agent to bind to this workflow.')
+          .addDropdown(dropdown => {
+            dropdown.addOption('', 'None');
+            this.availablePrompts.forEach(prompt => {
+              dropdown.addOption(prompt.id, prompt.name);
+            });
+            dropdown.setValue(this.workflow.promptId || '');
+            dropdown.onChange(value => {
+              const selectedPrompt = this.availablePrompts.find(prompt => prompt.id === value);
+              this.workflow.promptId = selectedPrompt?.id;
+              this.workflow.promptName = selectedPrompt?.name;
+            });
+          });
+      }
+    }, this.component);
+
+    // Steps section — workflow-specific extra context.
+    new BoxedSection(form, {
+      title: 'Steps',
+      titleId: 'wf-steps-h',
+      unbounded: true,
+      body: body => {
+        new Setting(body)
+          .setName('Steps')
+          .setDesc('These instructions are sent as the workflow-specific extra context.')
+          .addTextArea(text => {
+            text.setPlaceholder('Research the topic, draft an outline, and write the first section.');
+            text.setValue(this.workflow.steps);
+            text.inputEl.rows = 8;
+            text.onChange(value => {
+              this.workflow.steps = value;
+            });
+          });
+      }
+    }, this.component);
+
+    // Schedule section — the Enabled toggle lives in the header toolbar; the
+    // conditional frequency fields live in the body and re-render in place.
+    let scheduleFields!: HTMLElement;
+    new BoxedSection(form, {
+      title: 'Schedule',
+      titleId: 'wf-sched-h',
+      unbounded: true,
+      toolbar: toolbar => {
+        const toggleLabel = toolbar.createEl('label', { cls: 'ws-section-toggle' });
+        const toggle = toggleLabel.createEl('input', {
+          type: 'checkbox',
+          attr: { 'aria-label': 'Enable schedule' }
         });
-        dropdown.setValue(this.workflow.promptId || '');
-        dropdown.onChange(value => {
-          const selectedPrompt = this.availablePrompts.find(prompt => prompt.id === value);
-          this.workflow.promptId = selectedPrompt?.id;
-          this.workflow.promptName = selectedPrompt?.name;
-        });
-      });
-
-    new Setting(form)
-      .setName('Steps')
-      .setDesc('These instructions are sent as the workflow-specific extra context.')
-      .addTextArea(text => {
-        text.setPlaceholder('Research the topic, draft an outline, and write the first section.');
-        text.setValue(this.workflow.steps);
-        text.inputEl.rows = 8;
-        text.onChange(value => {
-          this.workflow.steps = value;
-        });
-      });
-
-    const scheduleSection = form.createDiv('nexus-workflow-schedule');
-    scheduleSection.createEl('h3', {
-      text: 'Schedule',
-      cls: 'nexus-workflow-section-title'
-    });
-
-    const scheduleFields = scheduleSection.createDiv('nexus-workflow-schedule-fields');
-
-    new Setting(scheduleSection)
-      .setName('Enable schedule')
-      .setDesc('Run this workflow automatically on a recurring schedule.')
-      .addToggle(toggle => {
-        toggle.setValue(this.workflow.schedule?.enabled ?? false);
-        toggle.onChange(value => {
-          this.workflow.schedule = value ? this.buildEnabledSchedule(this.workflow.schedule) : undefined;
+        toggle.checked = this.workflow.schedule?.enabled ?? false;
+        toggleLabel.createSpan({ text: 'Enabled' });
+        this.component.registerDomEvent(toggle, 'change', () => {
+          this.workflow.schedule = toggle.checked
+            ? this.buildEnabledSchedule(this.workflow.schedule)
+            : undefined;
           this.renderScheduleFields(scheduleFields);
         });
-      });
-
-    this.renderScheduleFields(scheduleFields);
+      },
+      body: body => {
+        scheduleFields = body.createDiv('nexus-workflow-schedule-fields');
+        this.renderScheduleFields(scheduleFields);
+      }
+    }, this.component);
 
     const actions = container.createDiv('nexus-form-actions');
 

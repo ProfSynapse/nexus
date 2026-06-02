@@ -366,8 +366,20 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           type: 'object',
           properties: {
             context: {
-              type: 'string',
-              description: 'Formatted contextual briefing about the workspace'
+              type: 'object',
+              description: 'Contextual briefing about the workspace, including recent activity narrated in the context it happened under.',
+              properties: {
+                name: { type: 'string', description: 'Workspace name' },
+                description: { type: 'string', description: 'Workspace description' },
+                purpose: { type: 'string', description: 'What this workspace is for' },
+                rootFolder: { type: 'string', description: 'Workspace root folder path' },
+                recentActivity: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Recent tool activity as natural-language sentences, newest first. Each sentence couches the action in the memory/goal/constraints captured with that activity, so what happened is grounded in why it happened.'
+                }
+              },
+              required: ['name', 'rootFolder', 'recentActivity']
             },
             workflows: {
               type: 'array',

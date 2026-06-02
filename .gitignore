@@ -1,5 +1,10 @@
 node_modules/
 
+# Runtime-vendored engine assets (downloaded once at runtime from the pinned CDN,
+# never committed — see HucreEnsurer / PyodideEnsurer).
+hucre/
+pyodide/
+
 cline_docs/
 
 main.js

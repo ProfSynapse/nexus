@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Workspace detail — v2 (Obsidian-native)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* v2 — Obsidian-native workspace detail. Settings-row language, no
+     stat strip, no badges, no glass. Spacing mirrors styles.css :5-12. */
+  :root {
+    --space-xxs: 2px;
+    --space-xs: 4px;
+    --space-s: 8px;
+    --space-m: 12px;
+    --space-l: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+
+    /* Obsidian theme variables — dark default. Switching `data-theme`
+       on <html> flips the values below. */
+    --background-primary: #1e1e1e;
+    --background-primary-alt: #1a1a1a;
+    --background-secondary: #262626;
+    --background-secondary-alt: #2a2a2a;
+    --background-modifier-border: #363636;
+    --background-modifier-border-hover: #444;
+    --background-modifier-hover: rgba(255,255,255,0.04);
+    --background-modifier-error: #5a1d1d;
+    --background-modifier-error-hover: #7a2424;
+    --background-modifier-error-rgb: 90, 29, 29;
+    --text-normal: #dcddde;
+    --text-muted: #999;
+    --text-faint: #6b6b6b;
+    --text-on-accent: #fff;
+    --text-error: #ff6b6b;
+    --interactive-accent: #7f6df2;
+    --interactive-accent-hover: #8b7df2;
+    --interactive-accent-rgb: 127, 109, 242;
+    --interactive-normal: #2a2a2a;
+    --interactive-hover: #333;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  html[data-theme="light"] {
+    --background-primary: #ffffff;
+    --background-primary-alt: #f6f6f6;
+    --background-secondary: #f2f3f5;
+    --background-secondary-alt: #e9eaec;
+    --background-modifier-border: #e2e3e5;
+    --background-modifier-border-hover: #c8c9cb;
+    --background-modifier-hover: rgba(0,0,0,0.04);
+    --background-modifier-error: #fbe9e9;
+    --background-modifier-error-hover: #f5d4d4;
+    --background-modifier-error-rgb: 251, 233, 233;
+    --text-normal: #2e2e2e;
+    --text-muted: #6b6b6b;
+    --text-faint: #999;
+    --text-error: #b3261e;
+    --interactive-normal: #f2f3f5;
+    --interactive-hover: #e9eaec;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* --- Page chrome (host emulation; not part of the design) ---------- */
+  .demo-chrome {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: var(--space-s) var(--space-l);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .demo-chrome strong { color: var(--text-normal); font-weight: 500; }
+  .demo-theme-toggle {
+    appearance: none;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 2px var(--space-s);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .demo-theme-toggle:hover {
+    border-color: var(--background-modifier-border-hover);
+    color: var(--text-normal);
+  }
+
+  /* --- Page container ----------------------------------------------- */
+  .ws-page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: var(--space-xl) var(--space-l) var(--space-xxl);
+  }
+
+  /* --- Breadcrumb --------------------------------------------------- */
+  .ws-breadcrumb {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-s);
+  }
+  .ws-breadcrumb a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 2px var(--space-xs);
+    margin: 0 -2px;
+    border-radius: 3px;
+  }
+  .ws-breadcrumb a:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+  }
+  .ws-breadcrumb-sep {
+    margin: 0 var(--space-xs);
+    color: var(--text-faint);
+  }
+
+  /* --- Page header -------------------------------------------------- */
+  .ws-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-bottom: var(--space-l);
+  }
+  .ws-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0;
+    line-height: 1.2;
+  }
+  /* --- Buttons (Obsidian-shaped) ------------------------------------ */
+  .btn {
+    appearance: none;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .btn:hover {
+    background: var(--interactive-hover);
+    border-color: var(--background-modifier-border-hover);
+  }
+  .btn.is-cta {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+  }
+  .btn.is-cta:hover { background: var(--interactive-accent-hover); }
+  .btn.is-warning { color: var(--text-error); }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* --- Section box ---------------------------------------------------
+     Each major section is its own boxed container. Subtle Obsidian-style:
+     secondary fill + 1px border + radius. No shadow, no elevation. */
+  .ws-section {
+    margin-top: var(--space-l);
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    overflow: hidden; /* clip inner scroll area to box corners */
+  }
+  .ws-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-l);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    /* Sticky so the section title stays visible while the row list scrolls. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .ws-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0;
+  }
+  .ws-section-action {
+    appearance: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: 1px solid var(--interactive-accent);
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1.3;
+  }
+  .ws-section-action:hover {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent-hover);
+  }
+  /* Header-row utility: inline filter toggle (e.g., "Show archived" on
+     States). Mirrors the production ToggleComponent shape from
+     StatesSectionRenderer.ts but uses a native checkbox for the mockup. */
+  .ws-section-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+  }
+  .ws-section-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .ws-section-toggle input[type="checkbox"] {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .ws-section-toggle:hover { color: var(--text-normal); }
+  /* Scrollable row list inside the box. Header stays put; list scrolls. */
+  .ws-section-body {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 0 var(--space-l);
+  }
+  /* Subtle scrollbar tinting so it reads as part of the box */
+  .ws-section-body::-webkit-scrollbar { width: 10px; }
+  .ws-section-body::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 5px;
+    border: 2px solid var(--background-secondary);
+  }
+  .ws-section-body::-webkit-scrollbar-thumb:hover {
+    background: var(--background-modifier-border-hover);
+  }
+
+  /* --- Setting-item row (the design's primary primitive) -------------
+     Selectors mirror Obsidian's: .setting-item, .setting-item-info,
+     .setting-item-name, .setting-item-description, .setting-item-control */
+  .setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    padding: var(--space-m) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .setting-item:last-child { border-bottom: none; }
+  .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .setting-item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-item-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-item-description.is-mono {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .setting-item-control {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex: 0 0 auto;
+  }
+
+  /* Dim row while a control action is in-flight (F3 demo) */
+  .setting-item.is-busy { opacity: 0.6; }
+  .setting-item.is-busy .setting-item-control .clickable-icon {
+    pointer-events: none;
+  }
+
+  /* Archived row treatment — faint, but not a colored badge */
+  .setting-item.is-archived .setting-item-name {
+    color: var(--text-muted);
+  }
+  .setting-item.is-archived .setting-item-name::after {
+    content: " · archived";
+    font-weight: 400;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  /* --- clickable-icon (Obsidian-shaped icon button) ----------------- */
+  .clickable-icon {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .clickable-icon:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+  .clickable-icon svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .clickable-icon.is-danger:hover { color: var(--text-error); }
+
+  /* --- Inline meta value (value sits where a control would) --------- */
+  .setting-value {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 320px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-value.is-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* --- Footer note (e.g., production-only behaviors annotation) ----- */
+  .ws-footnote {
+    margin-top: var(--space-xxl);
+    padding-top: var(--space-m);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 12px;
+    color: var(--text-faint);
+    line-height: 1.5;
+  }
+  .ws-footnote code {
+    font-family: var(--font-mono);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  /* --- Modal (state delete confirm) --------------------------------- */
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .modal-bg.is-open { display: flex; }
+  .modal {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    width: min(440px, calc(100vw - 32px));
+    padding: var(--space-l);
+    box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+  }
+  .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 var(--space-s);
+  }
+  .modal-body {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-l);
+  }
+  .modal-body strong { color: var(--text-normal); font-weight: 500; }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-s);
+  }
+  .modal .btn.is-warning {
+    background: var(--background-modifier-error);
+    border-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+  }
+  .modal .btn.is-warning:hover { background: var(--background-modifier-error-hover); }
+
+</style>
+</head>
+<body>
+
+<!-- Host chrome (not part of the design — present so the mockup mirrors a real plugin tab) -->
+<div class="demo-chrome">
+  <span>Mockup · <strong>Workspace detail (v2)</strong> · Obsidian-native row language</span>
+  <button id="themeToggle" class="demo-theme-toggle" type="button">Toggle light theme</button>
+</div>
+
+<main class="ws-page">
+
+  <!-- Breadcrumb (real component will be BreadcrumbNav from src/ui) -->
+  <nav class="ws-breadcrumb" aria-label="Breadcrumb">
+    <a href="#" data-nav="home">Settings</a>
+    <span class="ws-breadcrumb-sep">/</span>
+    <a href="#" data-nav="list">Workspaces</a>
+    <span class="ws-breadcrumb-sep">/</span>
+    <span>Product systems</span>
+  </nav>
+
+  <!-- Header: name + small edit button. No hero, no stat strip, no subtitle. -->
+  <header class="ws-header">
+    <h2 class="ws-title">Product systems</h2>
+    <button class="btn" type="button" id="editWorkspaceBtn">Edit workspace</button>
+  </header>
+
+  <!-- ============================================================= -->
+  <!-- Section 1 — Workspace meta (Root folder, Description)          -->
+  <!-- Plain setting-item rows. No badges. Value sits inline right.   -->
+  <!-- ============================================================= -->
+  <section class="ws-section" aria-labelledby="meta-h">
+    <div class="ws-section-header">
+      <h3 class="ws-section-title" id="meta-h">Workspace</h3>
+    </div>
+    <div class="ws-section-body">
+      <div class="setting-item">
+        <div class="setting-item-info">
+          <div class="setting-item-name">Root folder</div>
+          <div class="setting-item-description">Notes inside this folder belong to the workspace.</div>
+        </div>
+        <div class="setting-item-control">
+          <span class="setting-value is-mono">Projects/Product systems</span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-item-info">
+          <div class="setting-item-name">Description</div>
+          <div class="setting-item-description">Shown when AI agents load the workspace.</div>
+        </div>
+        <div class="setting-item-control">
+          <span class="setting-value">Backend platform team — payments, billing, ledger</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- Section 2 — Projects                                            -->
+  <!-- ============================================================= -->
+  <section class="ws-section" aria-labelledby="projects-h">
+    <div class="ws-section-header">
+      <h3 class="ws-section-title" id="projects-h">Projects</h3>
+      <button class="ws-section-action" type="button">+ New project</button>
+    </div>
+    <div class="ws-section-body" id="projectsList">
+      <!-- rendered by JS -->
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- Section 3 — States                                              -->
+  <!-- Demonstrates F1 (empty-name validation lives in modal — see     -->
+  <!-- footnote), F3 (in-flight disable during archive/restore/delete) -->
+  <!-- ============================================================= -->
+  <section class="ws-section" aria-labelledby="states-h">
+    <div class="ws-section-header">
+      <h3 class="ws-section-title" id="states-h">States</h3>
+      <div class="ws-section-toolbar">
+        <label class="ws-section-toggle">
+          <input type="checkbox" id="showArchivedStates" />
+          <span>Show archived</span>
+        </label>
+        <button class="ws-section-action" type="button">+ New state</button>
+      </div>
+    </div>
+    <div class="ws-section-body" id="statesList">
+      <!-- rendered by JS -->
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- Section 4 — Workflows                                           -->
+  <!-- ============================================================= -->
+  <section class="ws-section" aria-labelledby="workflows-h">
+    <div class="ws-section-header">
+      <h3 class="ws-section-title" id="workflows-h">Workflows</h3>
+      <button class="ws-section-action" type="button">+ New workflow</button>
+    </div>
+    <div class="ws-section-body" id="workflowsList">
+      <!-- rendered by JS -->
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- Section 5 — Key files                                           -->
+  <!-- ============================================================= -->
+  <section class="ws-section" aria-labelledby="keyfiles-h">
+    <div class="ws-section-header">
+      <h3 class="ws-section-title" id="keyfiles-h">Key files</h3>
+      <button class="ws-section-action" type="button">+ New file</button>
+    </div>
+    <div class="ws-section-body" id="keyfilesList">
+      <!-- rendered by JS -->
+    </div>
+  </section>
+
+  <!-- Footnote: production behaviors not visible in a static mockup -->
+  <p class="ws-footnote">
+    Production also handles <strong>F1</strong> (empty state name in the edit modal → red border + inline error, save disabled),
+    <strong>F2</strong> (no-op save suppresses the <code>state_updated</code> event), and
+    <strong>F4</strong> (per-workspace fetch token guards rapid re-renders so a late promise can&rsquo;t stomp a fresh one).
+    F2 / F4 are invisible internal-race fixes; F1 lives in the StateEditModal which is not in this view.
+  </p>
+</main>
+
+<!-- Confirm modal — copy + confirm-button label rewritten per call site -->
+<div class="modal-bg" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal">
+    <h3 class="modal-title" id="confirmTitle">Delete state?</h3>
+    <p class="modal-body" id="confirmBody">
+      <strong id="confirmName">Pre-migration baseline</strong> will be permanently deleted from this workspace. This cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="btn" type="button" data-action="cancel">Cancel</button>
+      <button class="btn is-warning" type="button" data-action="confirm" id="confirmAction">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- Sample data -----------------------------------------------------
+  // Names match v1 so the user can compare the language directly.
+  const PROJECTS = [
+    { id: 'p1', name: 'Ledger refactor',             tasksOpen: 6, tasksTotal: 14 },
+    { id: 'p2', name: 'Onboarding redesign',         tasksOpen: 2, tasksTotal: 11 },
+    { id: 'p3', name: 'Search relevance v2',         tasksOpen: 9, tasksTotal: 9  },
+    { id: 'p4', name: 'Mobile lab — sync',           tasksOpen: 0, tasksTotal: 7, done: true },
+    { id: 'p5', name: 'Research notes index',        tasksOpen: 1, tasksTotal: 3  },
+    { id: 'p6', name: 'Webhook receiver hardening',  tasksOpen: 4, tasksTotal: 8  },
+    { id: 'p7', name: 'Q2 reporting pipeline',       tasksOpen: 3, tasksTotal: 12 },
+  ];
+
+  const STATES = [
+    { id: 's1', name: 'Pre-migration baseline',   savedAt: 'Mar 14 · 9:42 am',  isArchived: false },
+    { id: 's2', name: 'After v9 schema cut',      savedAt: 'Mar 19 · 4:15 pm',  isArchived: false },
+    { id: 's3', name: 'Demo build — investors',   savedAt: 'Apr 02 · 11:08 am', isArchived: false, tags: ['demo'] },
+    { id: 's4', name: 'Q1 retro snapshot',        savedAt: 'Apr 08 · 6:30 pm',  isArchived: true  },
+    { id: 's5', name: 'Pre-PR-216 archive copy',  savedAt: 'Apr 22 · 2:11 pm',  isArchived: true  },
+  ];
+
+  // Trigger labels mirror formatWorkflowScheduleSummary() in
+  // src/services/workflows/types.ts: "Manual only" / "Daily at HH:MM" /
+  // "Weekly on <Day> at HH:MM" / "Every N hour(s)" / "Monthly on day N at HH:MM".
+  const WORKFLOWS = [
+    { id: 'w1', name: 'Daily standup digest',  triggers: 'Daily at 09:00' },
+    { id: 'w2', name: 'Code review prep',      triggers: 'Manual only' },
+    { id: 'w3', name: 'Ingest weekly notes',   triggers: 'Weekly on Monday at 09:00' },
+  ];
+
+  const KEYFILES = [
+    { id: 'f1', path: 'Projects/Product systems/ARCHITECTURE.md' },
+    { id: 'f2', path: 'Projects/Product systems/payments/ledger-design.md' },
+    { id: 'f3', path: 'Projects/Product systems/playbooks/oncall.md' },
+  ];
+
+  // ---- Tiny DOM helpers -----------------------------------------------
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      for (const k in attrs) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'text') node.textContent = attrs[k];
+        else if (k.startsWith('on') && typeof attrs[k] === 'function') node.addEventListener(k.slice(2), attrs[k]);
+        else node.setAttribute(k, attrs[k]);
+      }
+    }
+    if (children) {
+      for (const c of children) {
+        if (c == null) continue;
+        node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      }
+    }
+    return node;
+  }
+  function icon(name) {
+    // Icon shapes track Obsidian's Lucide icon set: 'edit' (pencil), 'archive',
+    // 'archive-restore' (used by StatesSectionRenderer.ts when state.isArchived),
+    // 'trash' (delete), 'play' (workflow run — matches WorkflowEditorRenderer's
+    // runNowButton.setIcon('play')).
+    const paths = {
+      'pencil':          '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+      'archive':         '<path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>',
+      'archive-restore': '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+      'trash':           '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+      'play':            '<polygon points="6 4 20 12 6 20 6 4"/>',
+    };
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.innerHTML = paths[name] || '';
+    return svg;
+  }
+  function iconBtn(name, label, opts) {
+    const btn = el('button', {
+      class: 'clickable-icon' + (opts && opts.danger ? ' is-danger' : ''),
+      type: 'button',
+      'aria-label': label,
+      title: label,
+    });
+    btn.appendChild(icon(name));
+    if (opts && opts.onClick) btn.addEventListener('click', opts.onClick);
+    return btn;
+  }
+
+  function settingRow(opts) {
+    /* opts: { name, description, control: HTMLElement | null, modifierClass? } */
+    const row = el('div', { class: 'setting-item' + (opts.modifierClass ? ' ' + opts.modifierClass : '') });
+    const info = el('div', { class: 'setting-item-info' });
+    info.appendChild(el('div', { class: 'setting-item-name', text: opts.name }));
+    if (opts.description) {
+      info.appendChild(el('div', {
+        class: 'setting-item-description' + (opts.descriptionMono ? ' is-mono' : ''),
+        text: opts.description,
+      }));
+    }
+    row.appendChild(info);
+
+    const control = el('div', { class: 'setting-item-control' });
+    if (opts.control instanceof HTMLElement) control.appendChild(opts.control);
+    else if (Array.isArray(opts.control)) opts.control.forEach(c => control.appendChild(c));
+    row.appendChild(control);
+    return row;
+  }
+
+  // ---- F3 helper: in-flight disable demo -------------------------------
+  function runWithInFlight(row, work) {
+    row.classList.add('is-busy');
+    setTimeout(function () {
+      row.classList.remove('is-busy');
+      if (typeof work === 'function') work();
+    }, 700);
+  }
+
+  // ---- Confirm modal ---------------------------------------------------
+  // Two copy variants:
+  //   'delete' — permanent destructive action (projects, states)
+  //   'remove' — drop reference, underlying file/data is preserved (key files)
+  let confirmResolver = null;
+  const CONFIRM_COPY = {
+    'delete': {
+      title: 'Delete?',
+      body:  function (name) { return [name, ' will be permanently deleted from this workspace. This cannot be undone.']; },
+      action: 'Delete',
+    },
+    'remove': {
+      title: 'Remove file?',
+      body:  function (name) { return [name, ' will be removed from this workspace. The file itself will not be deleted from your vault.']; },
+      action: 'Remove',
+    },
+  };
+  function confirm(name, kind) {
+    const copy = CONFIRM_COPY[kind || 'delete'];
+    $('#confirmTitle').textContent = copy.title;
+    const body = $('#confirmBody');
+    body.replaceChildren();
+    const parts = copy.body(name);
+    const strong = document.createElement('strong');
+    strong.textContent = parts[0];
+    body.appendChild(strong);
+    body.appendChild(document.createTextNode(parts[1]));
+    $('#confirmAction').textContent = copy.action;
+    $('#confirmModal').classList.add('is-open');
+    return new Promise(function (resolve) { confirmResolver = resolve; });
+  }
+  // Back-compat alias for existing call sites that don't pass a kind.
+  function confirmDelete(name) { return confirm(name, 'delete'); }
+  $('#confirmModal').addEventListener('click', function (ev) {
+    const action = ev.target.dataset && ev.target.dataset.action;
+    if (!action) return;
+    $('#confirmModal').classList.remove('is-open');
+    if (confirmResolver) { confirmResolver(action === 'confirm'); confirmResolver = null; }
+  });
+
+  // ---- Renderers -------------------------------------------------------
+  function renderProjects() {
+    const root = $('#projectsList');
+    root.replaceChildren();
+    PROJECTS.forEach(function (p) {
+      const desc = p.done
+        ? p.tasksTotal + ' tasks · all complete'
+        : p.tasksOpen + ' open · ' + p.tasksTotal + ' total';
+      const editBtn = iconBtn('pencil', 'Edit project');
+      const deleteBtn = iconBtn('trash', 'Delete project', {
+        danger: true,
+        onClick: function () {
+          confirmDelete(p.name).then(function (ok) {
+            if (!ok) return;
+            runWithInFlight(row, function () {
+              const idx = PROJECTS.indexOf(p);
+              if (idx >= 0) PROJECTS.splice(idx, 1);
+              renderProjects();
+            });
+          });
+        },
+      });
+      var row = settingRow({
+        name: p.name,
+        description: desc,
+        control: [editBtn, deleteBtn],
+      });
+      root.appendChild(row);
+    });
+  }
+
+  // Toggle state — mirrors production StatesSectionRenderer.ts which
+  // defaults to OFF (active states only).
+  let showArchivedStates = false;
+
+  function renderStates() {
+    const root = $('#statesList');
+    root.replaceChildren();
+    const visible = STATES.filter(function (s) { return showArchivedStates || !s.isArchived; });
+    if (visible.length === 0) {
+      // Matches StatesSectionRenderer.ts:159-162 empty-state copy.
+      const empty = el('p', { class: 'setting-item-description' });
+      empty.style.padding = 'var(--space-m) 0';
+      empty.textContent = showArchivedStates
+        ? 'No states yet.'
+        : 'No active states. Toggle "Show archived" to see archived states.';
+      root.appendChild(empty);
+      return;
+    }
+    visible.forEach(function (s) {
+      const desc = s.savedAt + (s.tags && s.tags.length ? ' · #' + s.tags.join(' #') : '');
+      const archiveBtn = iconBtn(s.isArchived ? 'archive-restore' : 'archive', s.isArchived ? 'Restore' : 'Archive', {
+        onClick: function () {
+          // F3 demo
+          runWithInFlight(row, function () {
+            s.isArchived = !s.isArchived;
+            renderStates();
+          });
+        },
+      });
+      const editBtn = iconBtn('pencil', 'Edit name', {
+        onClick: function () { /* opens StateEditModal in real impl */ },
+      });
+      const deleteBtn = iconBtn('trash', 'Delete', {
+        danger: true,
+        onClick: function () {
+          confirmDelete(s.name).then(function (ok) {
+            if (!ok) return;
+            runWithInFlight(row, function () {
+              const idx = STATES.indexOf(s);
+              if (idx >= 0) STATES.splice(idx, 1);
+              renderStates();
+            });
+          });
+        },
+      });
+      var row = settingRow({
+        name: s.name,
+        description: desc,
+        modifierClass: s.isArchived ? 'is-archived' : '',
+        control: [editBtn, archiveBtn, deleteBtn],
+      });
+      root.appendChild(row);
+    });
+  }
+
+  function renderWorkflows() {
+    const root = $('#workflowsList');
+    root.replaceChildren();
+    WORKFLOWS.forEach(function (w) {
+      // Run is the primary action — leftmost icon. Maps to
+      // WorkflowRunService.start() in src/services/workflows/WorkflowRunService.ts.
+      const runBtn = iconBtn('play', 'Run workflow now', {
+        onClick: function () { runWithInFlight(row, function () { /* would open run in chat */ }); },
+      });
+      const editBtn = iconBtn('pencil', 'Edit workflow');
+      const deleteBtn = iconBtn('trash', 'Delete workflow', { danger: true });
+      var row = settingRow({
+        name: w.name,
+        description: w.triggers,
+        control: [runBtn, editBtn, deleteBtn],
+      });
+      root.appendChild(row);
+    });
+  }
+
+  function renderKeyFiles() {
+    const root = $('#keyfilesList');
+    root.replaceChildren();
+    KEYFILES.forEach(function (f) {
+      const segments = f.path.split('/');
+      const fileName = segments[segments.length - 1];
+      const folderPath = segments.slice(0, -1).join('/');
+      // Key files are just a string[] on workspace.context.keyFiles.
+      // The only operation is "remove the entry from the array" — this
+      // removes the workspace reference, NOT the file from the vault.
+      // To change the path, remove this entry and add a new one via
+      // the "+ New file" picker. No per-row edit.
+      const removeBtn = iconBtn('trash', 'Remove from workspace', {
+        danger: true,
+        onClick: function () {
+          confirm(fileName, 'remove').then(function (ok) {
+            if (!ok) return;
+            runWithInFlight(row, function () {
+              const idx = KEYFILES.indexOf(f);
+              if (idx >= 0) KEYFILES.splice(idx, 1);
+              renderKeyFiles();
+            });
+          });
+        },
+      });
+      var row = settingRow({
+        name: fileName,
+        description: folderPath,
+        descriptionMono: true,
+        control: [removeBtn],
+      });
+      root.appendChild(row);
+    });
+  }
+
+  // ---- Theme toggle ----------------------------------------------------
+  $('#themeToggle').addEventListener('click', function () {
+    const root = document.documentElement;
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    this.textContent = next === 'dark' ? 'Toggle light theme' : 'Toggle dark theme';
+  });
+
+  // ---- Edit button placeholder ----------------------------------------
+  $('#editWorkspaceBtn').addEventListener('click', function () {
+    /* Real implementation routes to WorkspaceFormRenderer */
+  });
+
+  // ---- States "Show archived" toggle ----------------------------------
+  $('#showArchivedStates').addEventListener('change', function (ev) {
+    showArchivedStates = ev.target.checked;
+    renderStates();
+  });
+
+  // ---- Boot ------------------------------------------------------------
+  renderProjects();
+  renderStates();
+  renderWorkflows();
+  renderKeyFiles();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,2075 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<title>Workspace sub-pages — v3 (Obsidian-native)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* v3 — Workspace sub-pages. Reuses the locked v2-detail language:
+     boxed ws-section + sticky header + scrollable body + setting-item row
+     primitive + clickable-icon row actions + dual-variant confirm modal.
+     Adds: production-faithful nexus-breadcrumb (chevron separators) and
+     a left-rail page switcher for jumping between the 5 sub-pages. */
+  :root {
+    --space-xxs: 2px;
+    --space-xs: 4px;
+    --space-s: 8px;
+    --space-m: 12px;
+    --space-l: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+
+    --background-primary: #1e1e1e;
+    --background-primary-alt: #1a1a1a;
+    --background-secondary: #262626;
+    --background-secondary-alt: #2a2a2a;
+    --background-modifier-border: #363636;
+    --background-modifier-border-hover: #444;
+    --background-modifier-hover: rgba(255,255,255,0.04);
+    --background-modifier-error: #5a1d1d;
+    --background-modifier-error-hover: #7a2424;
+    --text-normal: #dcddde;
+    --text-muted: #999;
+    --text-faint: #6b6b6b;
+    --text-accent: #a191ff;
+    --text-on-accent: #fff;
+    --text-error: #ff6b6b;
+    --interactive-accent: #7f6df2;
+    --interactive-accent-hover: #8b7df2;
+    --interactive-normal: #2a2a2a;
+    --interactive-hover: #333;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  html[data-theme="light"] {
+    --background-primary: #ffffff;
+    --background-primary-alt: #f6f6f6;
+    --background-secondary: #f2f3f5;
+    --background-secondary-alt: #e9eaec;
+    --background-modifier-border: #e2e3e5;
+    --background-modifier-border-hover: #c8c9cb;
+    --background-modifier-hover: rgba(0,0,0,0.04);
+    --background-modifier-error: #fbe9e9;
+    --background-modifier-error-hover: #f5d4d4;
+    --text-normal: #2e2e2e;
+    --text-muted: #6b6b6b;
+    --text-faint: #999;
+    --text-accent: #5849c4;
+    --text-error: #b3261e;
+    --interactive-normal: #f2f3f5;
+    --interactive-hover: #e9eaec;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* --- Demo chrome (host emulation only) ---------------------------- */
+  .demo-chrome {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: var(--space-s) var(--space-l);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .demo-chrome strong { color: var(--text-normal); font-weight: 500; }
+  .demo-theme-toggle {
+    appearance: none;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 2px var(--space-s);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .demo-theme-toggle:hover {
+    border-color: var(--background-modifier-border-hover);
+    color: var(--text-normal);
+  }
+
+  /* --- Layout: left rail + page area -------------------------------- */
+  .ws-shell {
+    display: flex;
+    min-height: calc(100vh - 33px);
+  }
+  .ws-rail {
+    flex: 0 0 220px;
+    border-right: 1px solid var(--background-modifier-border);
+    background: var(--background-primary-alt);
+    padding: var(--space-l) var(--space-s);
+  }
+  .ws-rail-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    padding: 0 var(--space-s) var(--space-s);
+  }
+  .ws-rail-item {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    text-align: left;
+    width: 100%;
+    padding: var(--space-s) var(--space-s);
+    border-radius: 4px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    display: block;
+  }
+  .ws-rail-item:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+  .ws-rail-item.is-active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    font-weight: 500;
+  }
+  .ws-rail-hint {
+    margin-top: var(--space-l);
+    padding: 0 var(--space-s);
+    font-size: 11px;
+    color: var(--text-faint);
+    line-height: 1.5;
+  }
+  .ws-page-host {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-y: auto;
+  }
+  .ws-page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: var(--space-xl) var(--space-l) var(--space-xxl);
+  }
+  /* Page visibility — JS toggles .is-active to show one at a time */
+  .ws-page-block { display: none; }
+  .ws-page-block.is-active { display: block; }
+
+  /* --- Breadcrumb (production-faithful: matches src/settings/components/
+     BreadcrumbNav.ts + styles.css :5039-5081). Chevron-right SVG between
+     each item; links accent, current bold/normal-text. ---------------- */
+  .nexus-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+    margin-bottom: var(--space-m);
+    font-size: 12px;
+  }
+  .nexus-breadcrumb-link {
+    appearance: none;
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    min-height: unset;
+    font: inherit;
+    color: var(--text-accent);
+    cursor: pointer;
+  }
+  .nexus-breadcrumb-link:hover {
+    color: var(--interactive-accent);
+    text-decoration: underline;
+  }
+  .nexus-breadcrumb-current {
+    color: var(--text-normal);
+    font-weight: 500;
+  }
+  .nexus-breadcrumb-separator {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+  }
+  .nexus-breadcrumb-separator svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  /* --- Page header -------------------------------------------------- */
+  .ws-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-bottom: var(--space-l);
+  }
+  .ws-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0;
+    line-height: 1.2;
+  }
+  .ws-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+  }
+
+  /* --- Buttons (Obsidian-shaped) ------------------------------------ */
+  .btn {
+    appearance: none;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .btn:hover {
+    background: var(--interactive-hover);
+    border-color: var(--background-modifier-border-hover);
+  }
+  .btn.is-cta {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+  }
+  .btn.is-cta:hover { background: var(--interactive-accent-hover); }
+  .btn.is-warning { color: var(--text-error); }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* --- Section box (locked language from v2-detail) ------------------ */
+  .ws-section {
+    margin-top: var(--space-l);
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .ws-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-l);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .ws-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0;
+  }
+  .ws-section-action {
+    appearance: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: 1px solid var(--interactive-accent);
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1.3;
+  }
+  .ws-section-action:hover {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent-hover);
+  }
+  .ws-section-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+  }
+  .ws-section-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .ws-section-toggle input[type="checkbox"] {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+  }
+  .ws-section-toggle:hover { color: var(--text-normal); }
+  /* Inline dropdown filter / sort in the section header right cluster */
+  .ws-section-select {
+    appearance: none;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 2px var(--space-s);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .ws-section-select:hover { color: var(--text-normal); border-color: var(--background-modifier-border-hover); }
+  /* Scrollable body. Projects manager opts out (set to unbounded). */
+  .ws-section-body {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 0 var(--space-l);
+  }
+  .ws-section-body.is-unbounded {
+    max-height: none;
+  }
+  .ws-section-body::-webkit-scrollbar { width: 10px; }
+  .ws-section-body::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 5px;
+    border: 2px solid var(--background-secondary);
+  }
+  .ws-section-body::-webkit-scrollbar-thumb:hover {
+    background: var(--background-modifier-border-hover);
+  }
+  /* Group label inside a Projects-manager-style scrollable body for
+     Active / Completed grouping. Not a row; just a divider. */
+  .ws-group-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    padding: var(--space-m) 0 var(--space-xs);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .ws-group-label:first-child { padding-top: var(--space-s); }
+
+  /* --- Setting-item row (the design's primary primitive) ------------- */
+  .setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    padding: var(--space-m) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .setting-item:last-child { border-bottom: none; }
+  .setting-item-info {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .setting-item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-item-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-item-description.is-mono {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .setting-item-control {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex: 0 0 auto;
+  }
+  .setting-item.is-busy { opacity: 0.6; }
+  .setting-item.is-busy .setting-item-control .clickable-icon {
+    pointer-events: none;
+  }
+  .setting-item.is-archived .setting-item-name {
+    color: var(--text-muted);
+  }
+  .setting-item.is-archived .setting-item-name::after {
+    content: " · archived";
+    font-weight: 400;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+  /* Task row variant: row click opens Task detail; row primitive otherwise
+     identical to .setting-item. No leading checkbox — backend has no bulk
+     task op, so a multi-select affordance would be speculative. */
+  .setting-item.is-task.is-done .setting-item-name {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+  /* Subtask depth indent (production uses `'— '.repeat(depth)` literal
+     dashes in WorkspaceDetailRenderer.ts:466 — we use padding so it
+     looks cleaner without the em-dash artifacts) */
+  .setting-item.is-task[data-depth="1"] { padding-left: var(--space-xl); }
+  .setting-item.is-task[data-depth="2"] { padding-left: calc(var(--space-xl) * 2); }
+  /* Inline task meta chip cluster (priority / due / assignee) under name */
+  .task-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .task-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xxs);
+  }
+  .task-meta-item.is-overdue { color: var(--text-error); }
+  .task-meta-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .task-meta-dot.is-critical { background: var(--text-error); }
+  .task-meta-dot.is-high { background: #e6a23c; }
+  .task-meta-dot.is-medium { background: var(--text-muted); }
+  .task-meta-dot.is-low { background: var(--text-faint); }
+  /* Status dots used by dependency rows: muted for done, accent for active,
+     faint for todo/cancelled. Same 5px primitive as priority dots. */
+  .task-meta-dot.is-status-done        { background: var(--text-muted); }
+  .task-meta-dot.is-status-in_progress { background: var(--interactive-accent); }
+  .task-meta-dot.is-status-todo        { background: var(--text-faint); }
+  .task-meta-dot.is-status-cancelled   { background: var(--text-faint); opacity: 0.6; }
+  /* Inline icon inside a setting-item-name (used by Linked notes rows).
+     Mirrors clickable-icon SVG sizing but renders as static glyph. */
+  .setting-item-name.is-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  .setting-item-name.is-with-icon svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    stroke: var(--text-muted);
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* Empty / placeholder hint inside ws-section-body. Muted single-line. */
+  .ws-empty {
+    margin: 0;
+    padding: var(--space-m) 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* --- clickable-icon ------------------------------------------------- */
+  .clickable-icon {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .clickable-icon:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+  .clickable-icon svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .clickable-icon.is-danger:hover { color: var(--text-error); }
+
+  /* --- Inline meta value -------------------------------------------- */
+  .setting-value {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 320px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setting-value.is-mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* --- Form fields (used by Workflow editor, Project detail header,
+     Task detail header). Mirrors production nexus-form-* shapes. ----- */
+  .ws-field {
+    padding: var(--space-m) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .ws-field:last-child { border-bottom: none; }
+  .ws-field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+    margin-bottom: 2px;
+  }
+  .ws-field-desc {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-s);
+  }
+  .ws-input,
+  .ws-textarea,
+  .ws-select {
+    width: 100%;
+    appearance: none;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 6px var(--space-s);
+    font: inherit;
+    font-size: 13px;
+  }
+  .ws-textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+  .ws-input:focus,
+  .ws-textarea:focus,
+  .ws-select:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+  }
+  .ws-select { cursor: pointer; }
+  /* Form-grid for paired short fields (e.g., Hour + Minute in workflow) */
+  .ws-field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-m);
+  }
+  .ws-field-grid .ws-field { padding-top: 0; border-bottom: none; }
+  /* Form-actions row (Save / Run / Cancel cluster) */
+  .ws-form-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    margin-top: var(--space-l);
+  }
+  .ws-form-actions .is-spacer { flex: 1 1 auto; }
+
+  /* --- File picker view (matches production FilePickerRenderer shape) -- */
+  .ws-picker-search {
+    padding: var(--space-m) var(--space-l);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .ws-picker-search input {
+    width: 100%;
+    appearance: none;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 6px var(--space-s);
+    font: inherit;
+    font-size: 13px;
+  }
+  .ws-picker-search input:focus { outline: none; border-color: var(--interactive-accent); }
+  .ws-tree {
+    padding: var(--space-s) 0;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .ws-tree::-webkit-scrollbar { width: 10px; }
+  .ws-tree::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 5px;
+    border: 2px solid var(--background-secondary);
+  }
+  .ws-tree-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    padding: 4px var(--space-l);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-normal);
+  }
+  .ws-tree-row:hover { background: var(--background-modifier-hover); }
+  .ws-tree-row[data-depth="0"] { padding-left: var(--space-l); }
+  .ws-tree-row[data-depth="1"] { padding-left: calc(var(--space-l) + 20px); }
+  .ws-tree-row[data-depth="2"] { padding-left: calc(var(--space-l) + 40px); }
+  .ws-tree-row[data-depth="3"] { padding-left: calc(var(--space-l) + 60px); }
+  .ws-tree-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+  }
+  .ws-tree-icon svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ws-tree-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ws-tree-row.is-folder .ws-tree-name { font-weight: 500; }
+  .ws-tree-row input[type="checkbox"] {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    margin: 0;
+  }
+  .ws-picker-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-m) var(--space-l);
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .ws-picker-footer-actions {
+    display: flex;
+    gap: var(--space-s);
+  }
+
+  /* --- Schedule conditional fields (workflow editor) ---------------- */
+  .ws-schedule-fields {
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: var(--space-m);
+    margin-top: var(--space-m);
+  }
+  .ws-schedule-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  /* --- Footer note -------------------------------------------------- */
+  .ws-footnote {
+    margin-top: var(--space-xxl);
+    padding-top: var(--space-m);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 12px;
+    color: var(--text-faint);
+    line-height: 1.5;
+  }
+  .ws-footnote code {
+    font-family: var(--font-mono);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  /* --- Modal -------------------------------------------------------- */
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .modal-bg.is-open { display: flex; }
+  .modal {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    width: min(440px, calc(100vw - 32px));
+    padding: var(--space-l);
+    box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+  }
+  .modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 var(--space-s);
+  }
+  .modal-body {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-l);
+  }
+  .modal-body strong { color: var(--text-normal); font-weight: 500; }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-s);
+  }
+  .modal .btn.is-warning {
+    background: var(--background-modifier-error);
+    border-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+  }
+  .modal .btn.is-warning:hover { background: var(--background-modifier-error-hover); }
+</style>
+</head>
+<body>
+
+<!-- Host chrome (not part of the design) -->
+<div class="demo-chrome">
+  <span>Mockup · <strong>Workspace sub-pages (v3)</strong> · breadcrumb navigation</span>
+  <button id="themeToggle" class="demo-theme-toggle" type="button">Toggle light theme</button>
+</div>
+
+<div class="ws-shell">
+
+  <!-- Left rail — page switcher (demo-only navigation aid) -->
+  <aside class="ws-rail" aria-label="Sub-page switcher">
+    <div class="ws-rail-label">Sub-pages</div>
+    <button class="ws-rail-item is-active" data-page="projects" type="button">Projects manager</button>
+    <button class="ws-rail-item" data-page="project-detail" type="button">Project detail</button>
+    <button class="ws-rail-item" data-page="task-detail" type="button">Task detail</button>
+    <button class="ws-rail-item" data-page="workflow" type="button">Workflow editor</button>
+    <button class="ws-rail-item" data-page="filepicker" type="button">File picker</button>
+    <div class="ws-rail-hint">
+      Demo aid only. In production each sub-page is reached via breadcrumb
+      navigation from the workspace detail view.
+    </div>
+  </aside>
+
+  <div class="ws-page-host">
+
+    <!-- ================================================================== -->
+    <!-- PAGE 1 — Projects manager (WorkspacesView = 'projects')             -->
+    <!-- Source: WorkspaceDetailRenderer.renderProjects() :277-349           -->
+    <!-- Production uses SearchableCardManager. This mockup applies the      -->
+    <!-- locked v2-detail row primitive instead, with grouping by status.    -->
+    <!-- ================================================================== -->
+    <section class="ws-page-block is-active" data-page="projects">
+      <main class="ws-page">
+        <nav class="nexus-breadcrumb" aria-label="Breadcrumb" data-crumb-host="projects"></nav>
+
+        <header class="ws-header">
+          <div>
+            <h2 class="ws-title">Product systems projects</h2>
+            <p class="ws-subtitle">All projects in this workspace.</p>
+          </div>
+        </header>
+
+        <section class="ws-section" aria-labelledby="proj-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="proj-h">Projects</h3>
+            <div class="ws-section-toolbar">
+              <select class="ws-section-select" id="projectsSort" aria-label="Sort projects">
+                <option value="updated">Recently updated</option>
+                <option value="created">Recently created</option>
+                <option value="name">Name (A–Z)</option>
+              </select>
+              <label class="ws-section-toggle">
+                <input type="checkbox" id="showArchivedProjects" />
+                <span>Show archived</span>
+              </label>
+              <button class="ws-section-action" type="button" data-action="new-project">+ New project</button>
+            </div>
+          </div>
+          <div class="ws-section-body is-unbounded" id="projectsList"></div>
+        </section>
+
+        <p class="ws-footnote">
+          Production source: <code>ProjectsManagerView.openProjectsPage()</code> +
+          <code>WorkspaceDetailRenderer.renderProjects()</code>. Row actions wire
+          to <code>onOpenProjectDetail</code> (edit), <code>updateProject({status:'archived'})</code>
+          (archive — toggleable), and <code>deleteProject</code> (hard delete).
+        </p>
+      </main>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- PAGE 2 — Project detail (WorkspacesView = 'project-detail')         -->
+    <!-- Source: WorkspaceDetailRenderer.renderProjectDetail() :351-485      -->
+    <!-- Header fields: name, description, status dropdown.                  -->
+    <!-- Then a tasks section with the production sort                       -->
+    <!-- (status → priority → created — see buildTaskRows() :642-685).       -->
+    <!-- ================================================================== -->
+    <section class="ws-page-block" data-page="project-detail">
+      <main class="ws-page">
+        <nav class="nexus-breadcrumb" aria-label="Breadcrumb" data-crumb-host="project-detail"></nav>
+
+        <header class="ws-header">
+          <div>
+            <h2 class="ws-title">Q2 reporting pipeline</h2>
+            <p class="ws-subtitle">Quarterly metrics + revenue rollup for the executive review.</p>
+          </div>
+          <button class="btn is-warning" type="button" data-action="delete-project">Delete project</button>
+        </header>
+
+        <!-- Project meta: Name / Description / Status -->
+        <section class="ws-section" aria-labelledby="pd-meta-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="pd-meta-h">Project</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field">
+              <label class="ws-field-label" for="proj-name">Name</label>
+              <input class="ws-input" id="proj-name" type="text" value="Q2 reporting pipeline" />
+            </div>
+            <div class="ws-field">
+              <label class="ws-field-label" for="proj-desc">Description</label>
+              <textarea class="ws-textarea" id="proj-desc" rows="3">Quarterly metrics + revenue rollup for the executive review. Owns the ETL into Snowflake and the dashboard refresh schedule.</textarea>
+            </div>
+            <div class="ws-field">
+              <label class="ws-field-label" for="proj-status">Status</label>
+              <span class="ws-field-desc">Archived projects hide from the default Projects list.</span>
+              <select class="ws-select" id="proj-status">
+                <option value="active" selected>Active</option>
+                <option value="completed">Completed</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tasks section -->
+        <section class="ws-section" aria-labelledby="pd-tasks-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="pd-tasks-h">Tasks</h3>
+            <div class="ws-section-toolbar">
+              <select class="ws-section-select" id="taskStatusFilter" aria-label="Filter by status">
+                <option value="open" selected>Open</option>
+                <option value="all">All</option>
+                <option value="done">Done only</option>
+              </select>
+              <button class="ws-section-action" type="button" data-action="new-task">+ New task</button>
+            </div>
+          </div>
+          <div class="ws-section-body" id="tasksList"></div>
+        </section>
+
+        <p class="ws-footnote">
+          Production sort: <code>todo → in_progress → done → cancelled</code>,
+          then <code>critical → high → medium → low</code>, then created
+          ascending (<code>buildTaskRows()</code>). Subtasks indent under parent
+          via <code>parentTaskId</code> recursion.
+        </p>
+      </main>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- PAGE 3 — Task detail (WorkspacesView = 'task-detail')               -->
+    <!-- Source: WorkspaceDetailRenderer.renderTaskDetail() :487-593         -->
+    <!-- Fields rendered in production: title, description,                  -->
+    <!--   status / priority / project / parentTask (grid),                  -->
+    <!--   assignee / dueDate (grid), tags.                                  -->
+    <!-- PRODUCTION-AHEAD additions (backend API exists, no UI today):       -->
+    <!--   Dependencies (DAG): addDependency / removeDependency /            -->
+    <!--     getDependencies / getDependents on TaskService.                 -->
+    <!--   Linked notes: addNoteLink / removeNoteLink / getNoteLinks on      -->
+    <!--     TaskService; MCP tool linkNote.                                 -->
+    <!-- ================================================================== -->
+    <section class="ws-page-block" data-page="task-detail">
+      <main class="ws-page">
+        <nav class="nexus-breadcrumb" aria-label="Breadcrumb" data-crumb-host="task-detail"></nav>
+
+        <header class="ws-header">
+          <div>
+            <h2 class="ws-title">Edit task</h2>
+            <p class="ws-subtitle">Wire up dashboard widget</p>
+          </div>
+          <button class="btn is-warning" type="button" data-action="delete-task">Delete task</button>
+        </header>
+
+        <section class="ws-section" aria-labelledby="td-meta-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="td-meta-h">Task details</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field">
+              <label class="ws-field-label" for="task-title">Title</label>
+              <input class="ws-input" id="task-title" type="text" value="Wire up dashboard widget" />
+            </div>
+            <div class="ws-field">
+              <label class="ws-field-label" for="task-desc">Description</label>
+              <textarea class="ws-textarea" id="task-desc" rows="4">Replace the placeholder revenue tile on the Q2 dashboard with the live widget bound to the new Snowflake materialized view. Verify decimal formatting matches the spec from finance.</textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="ws-section" aria-labelledby="td-props-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="td-props-h">Properties</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field-grid">
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-status">Status</label>
+                <select class="ws-select" id="task-status">
+                  <option value="todo">Todo</option>
+                  <option value="in_progress" selected>In progress</option>
+                  <option value="done">Done</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-priority">Priority</label>
+                <select class="ws-select" id="task-priority">
+                  <option value="critical">Critical</option>
+                  <option value="high" selected>High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <div class="ws-field-grid">
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-project">Project</label>
+                <select class="ws-select" id="task-project">
+                  <option value="qrp" selected>Q2 reporting pipeline</option>
+                  <option value="onboard">Onboarding revamp</option>
+                  <option value="auth">Auth migration</option>
+                </select>
+              </div>
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-parent">Parent task</label>
+                <select class="ws-select" id="task-parent">
+                  <option value="" selected>None</option>
+                  <option value="t-snowflake">Stand up Snowflake materialized view</option>
+                  <option value="t-spec">Finalize dashboard layout spec</option>
+                </select>
+              </div>
+            </div>
+            <div class="ws-field-grid">
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-assignee">Assignee</label>
+                <input class="ws-input" id="task-assignee" type="text" value="jamie" />
+              </div>
+              <div class="ws-field">
+                <label class="ws-field-label" for="task-due">Due date</label>
+                <input class="ws-input" id="task-due" type="date" value="2026-06-12" />
+              </div>
+            </div>
+            <div class="ws-field">
+              <label class="ws-field-label" for="task-tags">Tags</label>
+              <span class="ws-field-desc">Comma-separated.</span>
+              <input class="ws-input" id="task-tags" type="text" value="dashboard, snowflake, finance" />
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- Dependencies (production-ahead — DAG API exists, no UI today)  -->
+        <!-- Backend: addDependency / removeDependency / getDependencies /  -->
+        <!--   getDependents on TaskService. Two sub-lists rendered as      -->
+        <!--   ws-group-label groups: "Depends on" (upstream) and "Blocks"  -->
+        <!--   (downstream / reverse edges).                                 -->
+        <!-- ============================================================== -->
+        <section class="ws-section" aria-labelledby="td-deps-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="td-deps-h">Dependencies</h3>
+            <button class="ws-section-action" type="button" data-action="add-dependency">+ Add dependency</button>
+          </div>
+          <div class="ws-section-body" id="depsList"></div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- Linked notes (production-ahead — note-link API exists)         -->
+        <!-- Backend: addNoteLink / removeNoteLink / getNoteLinks on        -->
+        <!--   TaskService; MCP tool linkNote (LinkType =                    -->
+        <!--   'reference' | 'output' | 'input').                            -->
+        <!-- ============================================================== -->
+        <section class="ws-section" aria-labelledby="td-notes-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="td-notes-h">Linked notes</h3>
+            <button class="ws-section-action" type="button" data-action="link-note">+ Link note</button>
+          </div>
+          <div class="ws-section-body" id="linkedNotesList"></div>
+        </section>
+
+        <div class="ws-form-actions">
+          <button class="btn is-cta" type="button">Save task</button>
+          <span class="is-spacer"></span>
+        </div>
+
+        <p class="ws-footnote">
+          Production source: <code>WorkspaceDetailRenderer.renderTaskDetail()</code>.
+          Dependencies and Linked notes are new in this redesign — backend
+          supports them (<code>addDependency</code>/<code>removeDependency</code>/<code>getDependencies</code>
+          on the DAG side; <code>addNoteLink</code>/<code>removeNoteLink</code> on the
+          note-link side); current production UI does not surface them yet.
+        </p>
+      </main>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- PAGE 4 — Workflow editor (WorkspacesView = 'workflow')              -->
+    <!-- Source: WorkflowEditorRenderer.render() :48-165                     -->
+    <!-- Schema (WorkspaceTypes.ts:20-28):                                   -->
+    <!--   name, when, steps, promptId?, promptName?, schedule?              -->
+    <!-- WorkflowSchedule:                                                   -->
+    <!--   enabled, frequency (hourly/daily/weekly/monthly),                 -->
+    <!--   intervalHours?, hour?, minute?, dayOfWeek?, dayOfMonth?, catchUp  -->
+    <!-- ================================================================== -->
+    <section class="ws-page-block" data-page="workflow">
+      <main class="ws-page">
+        <nav class="nexus-breadcrumb" aria-label="Breadcrumb" data-crumb-host="workflow"></nav>
+
+        <header class="ws-header">
+          <div>
+            <h2 class="ws-title">Edit workflow</h2>
+            <p class="ws-subtitle">Weekly metrics roll-up</p>
+          </div>
+        </header>
+
+        <section class="ws-section" aria-labelledby="wf-id-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="wf-id-h">Identity</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field">
+              <label class="ws-field-label" for="wf-name">Workflow name</label>
+              <span class="ws-field-desc">Name this workflow.</span>
+              <input class="ws-input" id="wf-name" type="text" value="Weekly metrics roll-up" />
+            </div>
+            <div class="ws-field">
+              <label class="ws-field-label" for="wf-when">When</label>
+              <span class="ws-field-desc">Describe when this workflow should be used.</span>
+              <input class="ws-input" id="wf-when" type="text" value="Every Monday morning before the standup, summarize last week's metrics." />
+            </div>
+          </div>
+        </section>
+
+        <section class="ws-section" aria-labelledby="wf-prompt-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="wf-prompt-h">Prompt</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field">
+              <label class="ws-field-label" for="wf-prompt">Bind to a saved prompt</label>
+              <span class="ws-field-desc">Optional. Pulled from the Prompt manager.</span>
+              <select class="ws-select" id="wf-prompt">
+                <option value="">None</option>
+                <option value="p-metrics" selected>Metrics digest writer</option>
+                <option value="p-research">Research summarizer</option>
+                <option value="p-triage">Inbox triage</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="ws-section" aria-labelledby="wf-steps-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="wf-steps-h">Steps</h3>
+          </div>
+          <div class="ws-section-body is-unbounded">
+            <div class="ws-field">
+              <label class="ws-field-label" for="wf-steps">Workflow-specific extra context</label>
+              <span class="ws-field-desc">These instructions are sent on each run.</span>
+              <textarea class="ws-textarea" id="wf-steps" rows="6">1. Pull this week's metrics from the dashboard.
+2. Compare against last week and quarter-to-date.
+3. Flag any metric that moved more than 15%.
+4. Draft a 5-line summary suitable for Slack.</textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="ws-section" aria-labelledby="wf-sched-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="wf-sched-h">Schedule</h3>
+            <div class="ws-section-toolbar">
+              <label class="ws-section-toggle">
+                <input type="checkbox" id="wf-schedule-enabled" checked />
+                <span>Enabled</span>
+              </label>
+            </div>
+          </div>
+          <div class="ws-section-body is-unbounded" id="wf-schedule-body">
+            <!-- Populated by JS based on enabled + frequency -->
+          </div>
+        </section>
+
+        <div class="ws-form-actions">
+          <button class="btn is-cta" type="button" id="wf-save">Save workflow</button>
+          <button class="btn" type="button" id="wf-run" aria-label="Run workflow now">
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+              Run now
+            </span>
+          </button>
+          <span class="is-spacer"></span>
+          <button class="btn" type="button">Cancel</button>
+        </div>
+
+        <p class="ws-footnote">
+          Production source: <code>WorkflowEditorRenderer.render()</code>. Frequency
+          options are exhaustive: <code>hourly</code>, <code>daily</code>,
+          <code>weekly</code>, <code>monthly</code>. Catch-up policies (when
+          Obsidian was closed during a scheduled run): <code>skip</code>,
+          <code>latest</code>, <code>all</code>.
+        </p>
+      </main>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- PAGE 5 — File picker (WorkspacesView = 'filepicker')                -->
+    <!-- Source: FilePickerRenderer.render() :65-98 + renderFolderRow,       -->
+    <!-- renderFileRow. Workspace-scoped tree, multi-select with checkboxes, -->
+    <!-- search input, lazy-expanded folders. Tree depth indentation.       -->
+    <!-- ================================================================== -->
+    <section class="ws-page-block" data-page="filepicker">
+      <main class="ws-page">
+        <nav class="nexus-breadcrumb" aria-label="Breadcrumb" data-crumb-host="filepicker"></nav>
+
+        <header class="ws-header">
+          <div>
+            <h2 class="ws-title">Add key files</h2>
+            <p class="ws-subtitle">Select files from <code style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);">Projects/Product systems</code> to add to the workspace.</p>
+          </div>
+        </header>
+
+        <section class="ws-section" aria-labelledby="fp-h">
+          <div class="ws-section-header">
+            <h3 class="ws-section-title" id="fp-h">Files</h3>
+            <div class="ws-section-toolbar">
+              <span id="fpSelectionCount" style="font-size:12px;color:var(--text-muted);">0 selected</span>
+            </div>
+          </div>
+          <div class="ws-picker-search">
+            <input id="fpSearch" type="search" placeholder="Filter files and folders..." />
+          </div>
+          <div class="ws-tree" id="fpTree"></div>
+          <div class="ws-picker-footer">
+            <span>Files outside the workspace root folder are not shown.</span>
+            <div class="ws-picker-footer-actions">
+              <button class="btn" type="button" data-action="fp-cancel">Cancel</button>
+              <button class="btn is-cta" type="button" id="fpDone">Add to workspace</button>
+            </div>
+          </div>
+        </section>
+
+        <p class="ws-footnote">
+          Production source: <code>FilePickerRenderer.render()</code>. Tree
+          lazy-loads <code>TFolder.children</code> on expand; checkbox state
+          persisted in <code>selectedFiles: Set&lt;string&gt;</code>. Search
+          debounced 150ms and auto-expands folders with matches.
+        </p>
+      </main>
+    </section>
+
+  </div>
+</div>
+
+<!-- Confirm modal (dual-variant: delete | remove) -->
+<div class="modal-bg" id="confirmModal" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 class="modal-title" id="confirmTitle">Delete?</h3>
+    <p class="modal-body" id="confirmBody">
+      <strong id="confirmName"></strong> will be permanently deleted. This cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button class="btn" type="button" data-action="cancel">Cancel</button>
+      <button class="btn is-warning" type="button" data-action="confirm" id="confirmAction">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // -------------------------------------------------------------------------
+  // Sample data — continuous across sub-pages so navigation feels coherent.
+  // Workspace "Product systems" → project "Q2 reporting pipeline" → task
+  // "Wire up dashboard widget".
+  // -------------------------------------------------------------------------
+  const WORKSPACE_NAME = 'Product systems';
+  const CURRENT_PROJECT_NAME = 'Q2 reporting pipeline';
+  const CURRENT_TASK_NAME = 'Wire up dashboard widget';
+
+  // ProjectMetadata shape (IProjectRepository.ts:20-29)
+  const PROJECTS = [
+    { id: 'p1', name: 'Q2 reporting pipeline', description: 'Quarterly metrics + revenue rollup', status: 'active', tasks: { open: 4, done: 2, total: 6 }, updated: 'today' },
+    { id: 'p2', name: 'Onboarding revamp', description: 'New-user activation flow + welcome emails', status: 'active', tasks: { open: 7, done: 1, total: 8 }, updated: '2d ago' },
+    { id: 'p3', name: 'Auth migration', description: 'Move from session cookies to JWT', status: 'active', tasks: { open: 2, done: 3, total: 5 }, updated: '5d ago' },
+    { id: 'p4', name: 'Mobile push notifications', description: 'iOS + Android push for tier-1 alerts', status: 'active', tasks: { open: 9, done: 0, total: 9 }, updated: '1w ago' },
+    { id: 'p5', name: 'Billing UI refresh', description: 'New invoice + receipt flow', status: 'completed', tasks: { open: 0, done: 12, total: 12 }, updated: '2w ago' },
+    { id: 'p6', name: 'Legacy reports cleanup', description: 'Retire old quarterly PDFs', status: 'completed', tasks: { open: 0, done: 4, total: 4 }, updated: '3w ago' },
+    { id: 'p7', name: 'Sunset payments v1', description: 'Migrate remaining customers to payments v2', status: 'archived', tasks: { open: 0, done: 8, total: 8 }, updated: '2mo ago' },
+  ];
+
+  // TaskMetadata shape (ITaskRepository.ts:35-51). Sort is production-faithful:
+  // status order then priority order then created ascending.
+  const STATUS_ORDER = { todo: 0, in_progress: 1, done: 2, cancelled: 3 };
+  const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+
+  const TASKS = [
+    { id: 't1', title: 'Wire up dashboard widget', status: 'in_progress', priority: 'high', dueDate: '2026-06-12', assignee: 'jamie', parentTaskId: null, created: 1 },
+    { id: 't2', title: 'Stand up Snowflake materialized view', status: 'done', priority: 'high', dueDate: '2026-05-20', assignee: 'taylor', parentTaskId: null, created: 2 },
+    { id: 't3', title: 'Sanity-check decimal formatting', status: 'todo', priority: 'medium', dueDate: null, assignee: 'jamie', parentTaskId: 't1', created: 3 },
+    { id: 't4', title: 'Confirm spec with finance', status: 'todo', priority: 'low', dueDate: '2026-06-08', assignee: 'sam', parentTaskId: 't1', created: 4 },
+    { id: 't5', title: 'Finalize dashboard layout spec', status: 'todo', priority: 'critical', dueDate: '2026-06-05', assignee: 'taylor', parentTaskId: null, created: 5 },
+    { id: 't6', title: 'Schedule weekly metrics review', status: 'done', priority: 'medium', dueDate: null, assignee: 'sam', parentTaskId: null, created: 6 },
+  ];
+
+  // Folder/file tree — workspace-scoped to Projects/Product systems
+  const FILE_TREE = {
+    name: 'Product systems',
+    path: 'Projects/Product systems',
+    children: [
+      { name: 'specs', type: 'folder', children: [
+        { name: 'dashboard-layout.md', type: 'file' },
+        { name: 'metrics-glossary.md', type: 'file' },
+        { name: 'q2-report-template.md', type: 'file' },
+      ]},
+      { name: 'meeting notes', type: 'folder', children: [
+        { name: '2026-05-19 standup.md', type: 'file' },
+        { name: '2026-05-22 finance sync.md', type: 'file' },
+      ]},
+      { name: 'README.md', type: 'file' },
+      { name: 'roadmap.md', type: 'file' },
+    ],
+  };
+
+  // -------------------------------------------------------------------------
+  // DOM helpers
+  // -------------------------------------------------------------------------
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        if (k === 'class') node.className = attrs[k];
+        else if (k === 'text') node.textContent = attrs[k];
+        else if (k === 'html') node.innerHTML = attrs[k];
+        else if (k.indexOf('data-') === 0) node.setAttribute(k, attrs[k]);
+        else node.setAttribute(k, attrs[k]);
+      });
+    }
+    if (children) {
+      children.forEach(function (c) { if (c) node.appendChild(c); });
+    }
+    return node;
+  }
+
+  // Lucide-aligned inline SVGs (stroke-only, matches Obsidian icon style)
+  const ICONS = {
+    'chevron-right': '<polyline points="9 18 15 12 9 6"/>',
+    'edit':          '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>',
+    'archive':       '<polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/>',
+    'archive-restore':'<rect x="2" y="4" width="20" height="5"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M12 22V13"/><polyline points="8 17 12 13 16 17"/>',
+    'trash':         '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+    'play':          '<polygon points="6 3 20 12 6 21 6 3"/>',
+    'folder':        '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+    'folder-open':   '<path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/>',
+    'file-text':     '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  };
+  function svg(name) {
+    const wrap = document.createElement('span');
+    wrap.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || '') + '</svg>';
+    return wrap.firstChild;
+  }
+  function iconBtn(name, label, opts) {
+    opts = opts || {};
+    const btn = el('button', {
+      type: 'button',
+      class: 'clickable-icon' + (opts.danger ? ' is-danger' : ''),
+      'aria-label': label,
+      title: label,
+    });
+    btn.appendChild(svg(name));
+    if (opts.onClick) btn.addEventListener('click', opts.onClick);
+    return btn;
+  }
+
+  // -------------------------------------------------------------------------
+  // Breadcrumb rendering — production-faithful (BreadcrumbNav.ts shape)
+  // items: [{label, page?}], where page navigates back via switchPage(page).
+  // The LAST item is the current page (rendered as span, not button).
+  // -------------------------------------------------------------------------
+  function renderBreadcrumb(host, items) {
+    host.replaceChildren();
+    items.forEach(function (item, index) {
+      if (index < items.length - 1) {
+        const link = el('button', { type: 'button', class: 'nexus-breadcrumb-link', text: item.label });
+        if (item.page) {
+          link.addEventListener('click', function () { switchPage(item.page); });
+        }
+        host.appendChild(link);
+      } else {
+        host.appendChild(el('span', { class: 'nexus-breadcrumb-current', text: item.label }));
+      }
+      if (index < items.length - 1) {
+        const sep = el('span', { class: 'nexus-breadcrumb-separator' });
+        sep.appendChild(svg('chevron-right'));
+        host.appendChild(sep);
+      }
+    });
+  }
+
+  // Per-sub-page breadcrumb trail. Earlier crumbs link back via switchPage.
+  // The first two crumbs (Workspaces, Product systems) point at v2-detail
+  // territory which isn't in scope here — they're rendered as links with no
+  // handler (cursor remains pointer; click is a no-op in the mockup).
+  function breadcrumbFor(page) {
+    const base = [
+      { label: 'Workspaces' },
+      { label: WORKSPACE_NAME },
+    ];
+    if (page === 'projects') {
+      return base.concat([{ label: 'Projects' }]);
+    }
+    if (page === 'project-detail') {
+      return base.concat([
+        { label: 'Projects', page: 'projects' },
+        { label: CURRENT_PROJECT_NAME },
+      ]);
+    }
+    if (page === 'task-detail') {
+      return base.concat([
+        { label: 'Projects', page: 'projects' },
+        { label: CURRENT_PROJECT_NAME, page: 'project-detail' },
+        { label: CURRENT_TASK_NAME },
+      ]);
+    }
+    if (page === 'workflow') {
+      return base.concat([{ label: 'Workflow editor' }]);
+    }
+    if (page === 'filepicker') {
+      return base.concat([{ label: 'Add key files' }]);
+    }
+    return base;
+  }
+
+  // -------------------------------------------------------------------------
+  // Page switcher
+  // -------------------------------------------------------------------------
+  let currentPage = 'projects';
+  function switchPage(page) {
+    currentPage = page;
+    $$('.ws-rail-item').forEach(function (b) {
+      b.classList.toggle('is-active', b.getAttribute('data-page') === page);
+    });
+    $$('.ws-page-block').forEach(function (b) {
+      b.classList.toggle('is-active', b.getAttribute('data-page') === page);
+    });
+    // Re-render the crumbs for the visible page (idempotent for already-rendered ones)
+    const host = $('.ws-page-block.is-active .nexus-breadcrumb');
+    if (host) renderBreadcrumb(host, breadcrumbFor(page));
+    // Scroll page area back to top
+    $('.ws-page-host').scrollTop = 0;
+  }
+  $$('.ws-rail-item').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      switchPage(btn.getAttribute('data-page'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Confirm modal (dual-variant: delete | remove)
+  // -------------------------------------------------------------------------
+  const CONFIRM_COPY = {
+    'delete': {
+      title: 'Delete?',
+      body:  function (name) { return [name, ' will be permanently deleted. This cannot be undone.']; },
+      action: 'Delete',
+    },
+    'remove': {
+      title: 'Remove file?',
+      body:  function (name) { return [name, ' will be removed from this workspace. The file itself will not be deleted from your vault.']; },
+      action: 'Remove',
+    },
+  };
+  function confirm(name, kind) {
+    const copy = CONFIRM_COPY[kind] || CONFIRM_COPY['delete'];
+    $('#confirmTitle').textContent = copy.title;
+    const parts = copy.body(name);
+    const body = $('#confirmBody');
+    body.replaceChildren();
+    const strong = el('strong', { text: parts[0] });
+    strong.id = 'confirmName';
+    body.appendChild(strong);
+    body.appendChild(document.createTextNode(parts[1]));
+    $('#confirmAction').textContent = copy.action;
+    return new Promise(function (resolve) {
+      const modal = $('#confirmModal');
+      modal.classList.add('is-open');
+      modal.setAttribute('aria-hidden', 'false');
+      function cleanup(ok) {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        cancelBtn.removeEventListener('click', onCancel);
+        confirmBtn.removeEventListener('click', onConfirm);
+        resolve(ok);
+      }
+      const cancelBtn = modal.querySelector('[data-action="cancel"]');
+      const confirmBtn = modal.querySelector('[data-action="confirm"]');
+      function onCancel() { cleanup(false); }
+      function onConfirm() { cleanup(true); }
+      cancelBtn.addEventListener('click', onCancel);
+      confirmBtn.addEventListener('click', onConfirm);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // F3 in-flight wrapper — pattern repeated from v2-detail. While a row's
+  // mutation is in flight, the row dims and its row-icons are pointer-locked.
+  // -------------------------------------------------------------------------
+  function runWithInFlight(row, work) {
+    row.classList.add('is-busy');
+    Promise.resolve()
+      .then(work)
+      .finally(function () { row.classList.remove('is-busy'); });
+  }
+
+  // =========================================================================
+  // PAGE 1 — Projects manager
+  // =========================================================================
+  let showArchivedProjects = false;
+
+  function renderProjectsList() {
+    const root = $('#projectsList');
+    root.replaceChildren();
+
+    const sort = $('#projectsSort').value;
+    const visible = PROJECTS.filter(function (p) {
+      return showArchivedProjects || p.status !== 'archived';
+    });
+
+    if (visible.length === 0) {
+      const empty = el('p', { class: 'setting-item-description', text: 'No projects yet. Create one to get started.' });
+      empty.style.padding = 'var(--space-m) 0';
+      root.appendChild(empty);
+      return;
+    }
+
+    // Group by status: active, completed, archived (only if shown)
+    const groups = [
+      { key: 'active', label: 'Active' },
+      { key: 'completed', label: 'Completed' },
+      { key: 'archived', label: 'Archived' },
+    ];
+
+    groups.forEach(function (g) {
+      const inGroup = visible.filter(function (p) { return p.status === g.key; });
+      if (inGroup.length === 0) return;
+      // Sort within group
+      inGroup.sort(function (a, b) {
+        if (sort === 'name') return a.name.localeCompare(b.name);
+        return 0; // updated/created — accept sample order
+      });
+      const label = el('div', { class: 'ws-group-label', text: g.label + ' · ' + inGroup.length });
+      root.appendChild(label);
+      inGroup.forEach(function (p) { root.appendChild(projectRow(p)); });
+    });
+  }
+
+  function projectRow(p) {
+    const row = el('div', { class: 'setting-item' + (p.status === 'archived' ? ' is-archived' : '') });
+    const info = el('div', { class: 'setting-item-info' });
+    info.appendChild(el('div', { class: 'setting-item-name', text: p.name }));
+    const desc = el('div', { class: 'setting-item-description' });
+    desc.textContent = p.description + ' · ' + p.tasks.total + ' tasks · ' + p.tasks.open + ' open · ' + p.tasks.done + ' done';
+    info.appendChild(desc);
+    row.appendChild(info);
+
+    const control = el('div', { class: 'setting-item-control' });
+    // Edit (pencil) — navigate to project-detail
+    control.appendChild(iconBtn('edit', 'Edit project', {
+      onClick: function () { switchPage('project-detail'); },
+    }));
+    // Archive / Restore toggleable. Maps to taskService.updateProject({status: ...})
+    const archiveIcon = p.status === 'archived' ? 'archive-restore' : 'archive';
+    const archiveLabel = p.status === 'archived' ? 'Restore project' : 'Archive project';
+    control.appendChild(iconBtn(archiveIcon, archiveLabel, {
+      onClick: function () {
+        runWithInFlight(row, function () {
+          p.status = p.status === 'archived' ? 'active' : 'archived';
+          renderProjectsList();
+        });
+      },
+    }));
+    // Delete — hard delete via taskService.deleteProject
+    control.appendChild(iconBtn('trash', 'Delete project', {
+      danger: true,
+      onClick: function () {
+        confirm(p.name, 'delete').then(function (ok) {
+          if (!ok) return;
+          runWithInFlight(row, function () {
+            const idx = PROJECTS.indexOf(p);
+            if (idx >= 0) PROJECTS.splice(idx, 1);
+            renderProjectsList();
+          });
+        });
+      },
+    }));
+    row.appendChild(control);
+    return row;
+  }
+
+  $('#projectsSort').addEventListener('change', renderProjectsList);
+  $('#showArchivedProjects').addEventListener('change', function (ev) {
+    showArchivedProjects = ev.target.checked;
+    renderProjectsList();
+  });
+
+  // =========================================================================
+  // PAGE 2 — Project detail (Tasks list with production sort + grouping)
+  // =========================================================================
+  let taskFilter = 'open';
+
+  function buildTaskRows(tasks) {
+    // Production sort + subtask flatten (WorkspaceDetailRenderer.buildTaskRows)
+    const childrenMap = new Map();
+    const roots = [];
+    tasks.forEach(function (t) {
+      if (t.parentTaskId) {
+        const list = childrenMap.get(t.parentTaskId) || [];
+        list.push(t);
+        childrenMap.set(t.parentTaskId, list);
+      } else {
+        roots.push(t);
+      }
+    });
+    function sortList(list) {
+      list.sort(function (a, b) {
+        const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+        if (s !== 0) return s;
+        const p = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+        if (p !== 0) return p;
+        return a.created - b.created;
+      });
+    }
+    sortList(roots);
+    Array.from(childrenMap.values()).forEach(sortList);
+    const rows = [];
+    function visit(task, depth) {
+      rows.push({ task: task, depth: depth });
+      (childrenMap.get(task.id) || []).forEach(function (c) { visit(c, depth + 1); });
+    }
+    roots.forEach(function (r) { visit(r, 0); });
+    return rows;
+  }
+
+  function renderTasksList() {
+    const root = $('#tasksList');
+    root.replaceChildren();
+    const allRows = buildTaskRows(TASKS);
+    const visible = allRows.filter(function (r) {
+      if (taskFilter === 'all') return true;
+      if (taskFilter === 'open') return r.task.status === 'todo' || r.task.status === 'in_progress';
+      if (taskFilter === 'done') return r.task.status === 'done';
+      return true;
+    });
+    if (visible.length === 0) {
+      const empty = el('p', { class: 'setting-item-description', text: 'No tasks match this filter.' });
+      empty.style.padding = 'var(--space-m) 0';
+      root.appendChild(empty);
+      return;
+    }
+    visible.forEach(function (r) { root.appendChild(taskRow(r.task, r.depth)); });
+  }
+
+  function taskRow(t, depth) {
+    const row = el('div', {
+      class: 'setting-item is-task' + (t.status === 'done' ? ' is-done' : ''),
+      'data-depth': String(depth),
+    });
+    // Info: title + meta line
+    const info = el('div', { class: 'setting-item-info' });
+    info.appendChild(el('div', { class: 'setting-item-name', text: t.title }));
+    const meta = el('div', { class: 'task-meta' });
+    // Priority dot + label
+    const pri = el('span', { class: 'task-meta-item' });
+    pri.appendChild(el('span', { class: 'task-meta-dot is-' + t.priority }));
+    pri.appendChild(document.createTextNode(t.priority));
+    meta.appendChild(pri);
+    // Due date
+    if (t.dueDate) {
+      const overdue = new Date(t.dueDate) < new Date('2026-05-26');
+      const due = el('span', { class: 'task-meta-item' + (overdue && t.status !== 'done' ? ' is-overdue' : ''), text: 'Due ' + t.dueDate });
+      meta.appendChild(due);
+    }
+    if (t.assignee) {
+      meta.appendChild(el('span', { class: 'task-meta-item', text: '@' + t.assignee }));
+    }
+    info.appendChild(meta);
+    row.appendChild(info);
+    // Control: edit + delete (no archive — production has no task archive)
+    const control = el('div', { class: 'setting-item-control' });
+    control.appendChild(iconBtn('edit', 'Edit task', {
+      onClick: function () { switchPage('task-detail'); },
+    }));
+    control.appendChild(iconBtn('trash', 'Delete task', {
+      danger: true,
+      onClick: function () {
+        confirm(t.title, 'delete').then(function (ok) {
+          if (!ok) return;
+          runWithInFlight(row, function () {
+            const idx = TASKS.indexOf(t);
+            if (idx >= 0) TASKS.splice(idx, 1);
+            renderTasksList();
+          });
+        });
+      },
+    }));
+    row.appendChild(control);
+    return row;
+  }
+
+  $('#taskStatusFilter').addEventListener('change', function (ev) {
+    taskFilter = ev.target.value;
+    renderTasksList();
+  });
+
+  // =========================================================================
+  // PAGE 3 — Task detail: Dependencies + Linked notes (production-ahead)
+  // =========================================================================
+  // DAG sample data: upstream (this task depends on) + downstream (blocks).
+  // Production maps to addDependency / removeDependency / getDependencies /
+  // getDependents on TaskService. Status drives the leading dot + optional
+  // mini-pill suffix on non-done rows.
+  const DEPENDS_ON = [
+    { id: 'dep-1', title: 'Stand up Snowflake materialized view', status: 'done' },
+    { id: 'dep-2', title: 'Finalize dashboard layout spec',        status: 'in_progress' },
+  ];
+  const BLOCKS = [
+    { id: 'blk-1', title: 'QA sweep on Q2 dashboard release',      status: 'todo' },
+  ];
+
+  function statusDot(status) {
+    return el('span', { class: 'task-meta-dot is-status-' + status, 'aria-label': status });
+  }
+  function statusPill(status) {
+    // Mini-pill only when not done — surfaces a not-yet-resolved edge inline.
+    if (status === 'done') return null;
+    const map = { todo: 'todo', in_progress: 'in progress', cancelled: 'cancelled' };
+    return el('span', { class: 'task-meta-item', text: map[status] || status });
+  }
+
+  function depRow(d, listRef, list, label) {
+    const row = el('div', { class: 'setting-item' });
+    const info = el('div', { class: 'setting-item-info' });
+    const name = el('div', { class: 'setting-item-name' });
+    name.appendChild(statusDot(d.status));
+    name.appendChild(document.createTextNode(' ' + d.title));
+    info.appendChild(name);
+    const meta = el('div', { class: 'task-meta' });
+    const pill = statusPill(d.status);
+    if (pill) meta.appendChild(pill);
+    if (meta.children.length) info.appendChild(meta);
+    row.appendChild(info);
+    const control = el('div', { class: 'setting-item-control' });
+    control.appendChild(iconBtn('trash', 'Remove ' + label, {
+      danger: true,
+      onClick: function () {
+        confirm(d.title, 'remove').then(function (ok) {
+          if (!ok) return;
+          runWithInFlight(row, function () {
+            const idx = list.indexOf(d);
+            if (idx >= 0) list.splice(idx, 1);
+            renderDepsList();
+          });
+        });
+      },
+    }));
+    row.appendChild(control);
+    return row;
+  }
+
+  function renderDepsList() {
+    const root = $('#depsList');
+    root.replaceChildren();
+    // --- "Depends on" group (upstream) ---
+    root.appendChild(el('div', { class: 'ws-group-label', text: 'Depends on' }));
+    if (DEPENDS_ON.length === 0) {
+      root.appendChild(el('p', { class: 'ws-empty', text: 'No upstream dependencies.' }));
+    } else {
+      DEPENDS_ON.forEach(function (d) {
+        root.appendChild(depRow(d, '#depsList', DEPENDS_ON, 'dependency'));
+      });
+    }
+    // --- "Blocks" group (downstream / reverse edges) ---
+    root.appendChild(el('div', { class: 'ws-group-label', text: 'Blocks' }));
+    if (BLOCKS.length === 0) {
+      root.appendChild(el('p', { class: 'ws-empty', text: 'No tasks blocked by this one.' }));
+    } else {
+      BLOCKS.forEach(function (d) {
+        root.appendChild(depRow(d, '#depsList', BLOCKS, 'blocked task'));
+      });
+    }
+  }
+
+  $('[data-action="add-dependency"]').addEventListener('click', function () {
+    // Placeholder hint row: in production this opens a task picker affordance.
+    // Mockup flashes intent for 1.8s and auto-dismisses.
+    const root = $('#depsList');
+    const hint = el('p', { class: 'ws-empty', text: 'Task picker would open here (search across workspace tasks).' });
+    root.insertBefore(hint, root.firstChild);
+    setTimeout(function () { hint.remove(); }, 1800);
+  });
+
+  // Note-link sample data — addNoteLink / removeNoteLink / getNoteLinks.
+  // LinkType ('reference' | 'output' | 'input') renders as a muted `· {type}`
+  // suffix on the path line. Lightest possible surfacing — no chip, no color.
+  // Sample shows 'reference' + 'output'; 'input' variant omitted for brevity.
+  const LINKED_NOTES = [
+    { id: 'ln-1', basename: 'dashboard-layout.md',        path: 'Product systems/Q2 reporting/dashboard-layout.md', linkType: 'reference' },
+    { id: 'ln-2', basename: '2026-05-22 finance sync.md', path: 'Meetings/2026-05/2026-05-22 finance sync.md',     linkType: 'output' },
+  ];
+
+  function noteRow(n) {
+    const row = el('div', { class: 'setting-item' });
+    const info = el('div', { class: 'setting-item-info' });
+    const nameWrap = el('div', { class: 'setting-item-name is-with-icon' });
+    nameWrap.appendChild(svg('file-text'));
+    nameWrap.appendChild(document.createTextNode(' ' + n.basename));
+    info.appendChild(nameWrap);
+    // Muted single line: path · linkType.
+    const descText = n.linkType ? (n.path + ' · ' + n.linkType) : n.path;
+    info.appendChild(el('div', { class: 'setting-item-description', text: descText }));
+    row.appendChild(info);
+    const control = el('div', { class: 'setting-item-control' });
+    control.appendChild(iconBtn('trash', 'Remove linked note', {
+      danger: true,
+      onClick: function () {
+        confirm(n.basename, 'remove').then(function (ok) {
+          if (!ok) return;
+          runWithInFlight(row, function () {
+            const idx = LINKED_NOTES.indexOf(n);
+            if (idx >= 0) LINKED_NOTES.splice(idx, 1);
+            renderLinkedNotesList();
+          });
+        });
+      },
+    }));
+    row.appendChild(control);
+    return row;
+  }
+
+  function renderLinkedNotesList() {
+    const root = $('#linkedNotesList');
+    root.replaceChildren();
+    if (LINKED_NOTES.length === 0) {
+      root.appendChild(el('p', { class: 'ws-empty', text: 'No linked notes yet.' }));
+      return;
+    }
+    LINKED_NOTES.forEach(function (n) { root.appendChild(noteRow(n)); });
+  }
+
+  $('[data-action="link-note"]').addEventListener('click', function () {
+    const root = $('#linkedNotesList');
+    const hint = el('p', { class: 'ws-empty', text: 'Note picker would open here (vault file search).' });
+    root.insertBefore(hint, root.firstChild);
+    setTimeout(function () { hint.remove(); }, 1800);
+  });
+
+  // =========================================================================
+  // PAGE 4 — Workflow editor: schedule fields (re-render on enable/freq change)
+  // =========================================================================
+  const schedule = {
+    enabled: true,
+    frequency: 'weekly',
+    intervalHours: 1,
+    dayOfWeek: 1,
+    dayOfMonth: 1,
+    hour: 9,
+    minute: 0,
+    catchUp: 'latest',
+  };
+
+  function renderScheduleFields() {
+    const host = $('#wf-schedule-body');
+    host.replaceChildren();
+    if (!schedule.enabled) {
+      const hint = el('p', { class: 'ws-schedule-hint', text: 'Scheduling is off. This workflow can still be run manually.' });
+      hint.style.padding = 'var(--space-m) 0';
+      host.appendChild(hint);
+      return;
+    }
+    // Frequency selector
+    host.appendChild(fieldRow('Frequency', null, function (field) {
+      const sel = el('select', { class: 'ws-select' });
+      [['hourly','Hourly'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly']].forEach(function (opt) {
+        const o = el('option', { value: opt[0], text: opt[1] });
+        if (opt[0] === schedule.frequency) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', function () { schedule.frequency = sel.value; renderScheduleFields(); });
+      field.appendChild(sel);
+    }));
+
+    if (schedule.frequency === 'hourly') {
+      host.appendChild(fieldRow('Every', 'Choose how many hours between runs.', function (field) {
+        const sel = el('select', { class: 'ws-select' });
+        for (let h = 1; h <= 24; h++) {
+          const o = el('option', { value: String(h), text: h + ' hour' + (h === 1 ? '' : 's') });
+          if (h === schedule.intervalHours) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', function () { schedule.intervalHours = Number(sel.value); });
+        field.appendChild(sel);
+      }));
+    } else {
+      if (schedule.frequency === 'weekly') {
+        host.appendChild(fieldRow('Day of week', null, function (field) {
+          const sel = el('select', { class: 'ws-select' });
+          ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach(function (d, i) {
+            const o = el('option', { value: String(i), text: d });
+            if (i === schedule.dayOfWeek) o.selected = true;
+            sel.appendChild(o);
+          });
+          sel.addEventListener('change', function () { schedule.dayOfWeek = Number(sel.value); });
+          field.appendChild(sel);
+        }));
+      }
+      if (schedule.frequency === 'monthly') {
+        host.appendChild(fieldRow('Day of month', null, function (field) {
+          const sel = el('select', { class: 'ws-select' });
+          for (let d = 1; d <= 31; d++) {
+            const o = el('option', { value: String(d), text: String(d) });
+            if (d === schedule.dayOfMonth) o.selected = true;
+            sel.appendChild(o);
+          }
+          sel.addEventListener('change', function () { schedule.dayOfMonth = Number(sel.value); });
+          field.appendChild(sel);
+        }));
+      }
+      // Hour + Minute paired
+      const grid = el('div', { class: 'ws-field-grid' });
+      grid.appendChild(buildField('Hour', null, function (field) {
+        const sel = el('select', { class: 'ws-select' });
+        for (let h = 0; h <= 23; h++) {
+          const o = el('option', { value: String(h), text: String(h).padStart(2, '0') });
+          if (h === schedule.hour) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', function () { schedule.hour = Number(sel.value); });
+        field.appendChild(sel);
+      }));
+      grid.appendChild(buildField('Minute', null, function (field) {
+        const sel = el('select', { class: 'ws-select' });
+        for (let m = 0; m <= 59; m += 5) {
+          const o = el('option', { value: String(m), text: String(m).padStart(2, '0') });
+          if (m === schedule.minute) o.selected = true;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', function () { schedule.minute = Number(sel.value); });
+        field.appendChild(sel);
+      }));
+      host.appendChild(grid);
+    }
+    host.appendChild(fieldRow('Catch up', 'What happens if Obsidian was closed during a scheduled run.', function (field) {
+      const sel = el('select', { class: 'ws-select' });
+      [['skip','Skip missed runs'],['latest','Run latest missed'],['all','Run all missed']].forEach(function (opt) {
+        const o = el('option', { value: opt[0], text: opt[1] });
+        if (opt[0] === schedule.catchUp) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', function () { schedule.catchUp = sel.value; });
+      field.appendChild(sel);
+    }));
+  }
+  function buildField(label, desc, mount) {
+    const field = el('div', { class: 'ws-field' });
+    field.appendChild(el('label', { class: 'ws-field-label', text: label }));
+    if (desc) field.appendChild(el('span', { class: 'ws-field-desc', text: desc }));
+    mount(field);
+    return field;
+  }
+  function fieldRow(label, desc, mount) {
+    return buildField(label, desc, mount);
+  }
+  $('#wf-schedule-enabled').addEventListener('change', function (ev) {
+    schedule.enabled = ev.target.checked;
+    renderScheduleFields();
+  });
+  $('#wf-run').addEventListener('click', function () {
+    // Demo only: brief visual ack via the button text
+    const btn = $('#wf-run');
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);">Running…</span>';
+    btn.setAttribute('aria-disabled', 'true');
+    setTimeout(function () {
+      btn.innerHTML = original;
+      btn.removeAttribute('aria-disabled');
+    }, 1200);
+  });
+
+  // =========================================================================
+  // PAGE 5 — File picker tree
+  // =========================================================================
+  const expanded = new Set(['Projects/Product systems/specs']);
+  const selected = new Set();
+  let fpSearch = '';
+
+  function pathFor(parentPath, node) { return parentPath + '/' + node.name; }
+
+  function matches(name) {
+    if (!fpSearch) return true;
+    return name.toLowerCase().indexOf(fpSearch) !== -1;
+  }
+  function folderHasMatch(folder, fullPath) {
+    if (!fpSearch) return true;
+    for (let i = 0; i < folder.children.length; i++) {
+      const c = folder.children[i];
+      const childPath = pathFor(fullPath, c);
+      if (c.type === 'folder') {
+        if (matches(c.name) || folderHasMatch(c, childPath)) return true;
+      } else {
+        if (matches(c.name)) return true;
+      }
+    }
+    return false;
+  }
+
+  function renderTree() {
+    const root = $('#fpTree');
+    root.replaceChildren();
+    renderFolderChildren(FILE_TREE, FILE_TREE.path, root, 0);
+    updateSelectionCount();
+  }
+
+  function renderFolderChildren(folder, fullPath, container, depth) {
+    // Sort: folders first, then files, alphabetical
+    const children = folder.children.slice().sort(function (a, b) {
+      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    let rendered = 0;
+    children.forEach(function (c) {
+      const childPath = pathFor(fullPath, c);
+      if (c.type === 'folder') {
+        if (matches(c.name) || folderHasMatch(c, childPath)) {
+          renderFolderRow(c, childPath, container, depth);
+          rendered++;
+        }
+      } else {
+        if (matches(c.name)) {
+          renderFileRow(c, childPath, container, depth);
+          rendered++;
+        }
+      }
+    });
+    if (rendered === 0 && fpSearch) {
+      const empty = el('div', { class: 'setting-item-description', text: 'No matches.' });
+      empty.style.padding = '4px var(--space-l)';
+      container.appendChild(empty);
+    }
+  }
+  function renderFolderRow(folder, fullPath, container, depth) {
+    const isOpen = expanded.has(fullPath) || !!fpSearch;
+    const row = el('div', { class: 'ws-tree-row is-folder', 'data-depth': String(depth) });
+    const icon = el('span', { class: 'ws-tree-icon' });
+    icon.appendChild(svg(isOpen ? 'folder-open' : 'folder'));
+    row.appendChild(icon);
+    row.appendChild(el('span', { class: 'ws-tree-name', text: folder.name }));
+    row.addEventListener('click', function () {
+      if (isOpen) expanded.delete(fullPath);
+      else expanded.add(fullPath);
+      renderTree();
+    });
+    container.appendChild(row);
+    if (isOpen) {
+      renderFolderChildren(folder, fullPath, container, depth + 1);
+    }
+  }
+  function renderFileRow(file, fullPath, container, depth) {
+    const row = el('div', { class: 'ws-tree-row', 'data-depth': String(depth) });
+    const cb = el('input', { type: 'checkbox', 'aria-label': 'Select ' + file.name });
+    cb.checked = selected.has(fullPath);
+    cb.addEventListener('click', function (e) { e.stopPropagation(); });
+    cb.addEventListener('change', function () {
+      if (cb.checked) selected.add(fullPath);
+      else selected.delete(fullPath);
+      updateSelectionCount();
+    });
+    row.appendChild(cb);
+    const icon = el('span', { class: 'ws-tree-icon' });
+    icon.appendChild(svg('file-text'));
+    row.appendChild(icon);
+    row.appendChild(el('span', { class: 'ws-tree-name', text: file.name }));
+    row.addEventListener('click', function () {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    });
+    container.appendChild(row);
+  }
+  function updateSelectionCount() {
+    const n = selected.size;
+    $('#fpSelectionCount').textContent = n + (n === 1 ? ' selected' : ' selected');
+    $('#fpDone').textContent = n === 0 ? 'Add to workspace' : 'Add ' + n + ' to workspace';
+    $('#fpDone').setAttribute('aria-disabled', n === 0 ? 'true' : 'false');
+  }
+  $('#fpSearch').addEventListener('input', function (ev) {
+    fpSearch = ev.target.value.toLowerCase().trim();
+    renderTree();
+  });
+  $('#fpDone').addEventListener('click', function () {
+    if (selected.size === 0) return;
+    // Demo: bounce back to the workspace detail view (would normally close the picker modal)
+    const btn = $('#fpDone');
+    const original = btn.textContent;
+    btn.textContent = 'Added ' + selected.size + ' files';
+    setTimeout(function () { btn.textContent = original; selected.clear(); updateSelectionCount(); renderTree(); }, 1200);
+  });
+
+  // -------------------------------------------------------------------------
+  // Theme toggle (demo chrome)
+  // -------------------------------------------------------------------------
+  $('#themeToggle').addEventListener('click', function () {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    $('#themeToggle').textContent = next === 'light' ? 'Toggle dark theme' : 'Toggle light theme';
+  });
+
+  // -------------------------------------------------------------------------
+  // Initial render
+  // -------------------------------------------------------------------------
+  // Render all 5 breadcrumbs so they're ready when each page is shown
+  $$('.nexus-breadcrumb').forEach(function (host) {
+    const page = host.getAttribute('data-crumb-host');
+    renderBreadcrumb(host, breadcrumbFor(page));
+  });
+
+  renderProjectsList();
+  renderTasksList();
+  renderDepsList();
+  renderLinkedNotesList();
+  renderScheduleFields();
+  renderTree();
+  switchPage('projects');
+})();
+</script>
+</body>
+</html>
