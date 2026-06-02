@@ -22,7 +22,9 @@ import {
   ProjectSummary,
   WorkspaceTaskSummary,
   LinkType,
-  TaskStatus
+  TaskStatus,
+  TaskWithNoteLinks,
+  TaskNoteLink
 } from '../types';
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
@@ -280,10 +282,10 @@ export class TaskService {
     return taskId;
   }
 
-  async listTasks(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
+  async listTasks(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskWithNoteLinks>> {
     await this.ensureQueryReady();
 
-    return this.taskRepo.getByProject(projectId, {
+    const result = await this.taskRepo.getByProject(projectId, {
       page: options?.page,
       pageSize: options?.pageSize,
       status: options?.status,
@@ -293,6 +295,11 @@ export class TaskService {
       sortBy: options?.sortBy,
       sortOrder: options?.sortOrder
     });
+
+    return {
+      ...result,
+      items: await this.attachNoteLinks(result.items)
+    };
   }
 
   async listWorkspaceTasks(workspaceId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
@@ -450,7 +457,7 @@ export class TaskService {
   // DAG Queries
   // ────────────────────────────────────────────────────────────────
 
-  async getNextActions(projectId: string): Promise<TaskMetadata[]> {
+  async getNextActions(projectId: string): Promise<TaskWithNoteLinks[]> {
     await this.ensureQueryReady();
 
     const allTasks = await this.taskRepo.getByProject(projectId, { pageSize: 10000 });
@@ -462,12 +469,14 @@ export class TaskService {
 
     // Sort by priority then creation date
     const priorityOrder: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 };
-    return allTasks.items
+    const ready = allTasks.items
       .filter(t => readyIds.has(t.id))
       .sort((a, b) => {
         const pDiff = (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3);
         return pDiff !== 0 ? pDiff : a.created - b.created;
       });
+
+    return this.attachNoteLinks(ready);
   }
 
   async getBlockedTasks(projectId: string): Promise<TaskWithBlockers[]> {
@@ -485,20 +494,30 @@ export class TaskService {
     const blockedNodes = this.dagService.getBlockedTasks(nodes, allEdges);
     const blockedIds = new Set(blockedNodes.map(n => n.id));
 
+    // Enrich every task once with its note links, then build the result from a lookup.
+    // Both the blocked task and its blockers are AI-facing task content, so both carry links.
+    const enriched = await this.attachNoteLinks(allTasks.items);
+    const enrichedById = new Map<string, TaskWithNoteLinks>();
+    for (const t of enriched) {
+      enrichedById.set(t.id, t);
+    }
+
     const result: TaskWithBlockers[] = [];
     for (const task of allTasks.items) {
       if (!blockedIds.has(task.id)) continue;
 
       // Find which dependencies are blocking
-      const blockers: TaskMetadata[] = [];
+      const blockers: TaskWithNoteLinks[] = [];
       for (const edge of allEdges) {
         if (edge.taskId !== task.id) continue;
         const depTask = taskMap.get(edge.dependsOnTaskId);
         if (depTask && depTask.status !== 'done' && depTask.status !== 'cancelled') {
-          blockers.push(depTask);
+          const enrichedDep = enrichedById.get(depTask.id);
+          if (enrichedDep) blockers.push(enrichedDep);
         }
       }
-      result.push({ task, blockedBy: blockers });
+      const enrichedTask = enrichedById.get(task.id);
+      if (enrichedTask) result.push({ task: enrichedTask, blockedBy: blockers });
     }
 
     return result;
@@ -513,16 +532,20 @@ export class TaskService {
     const allTasks = await this.taskRepo.getByProject(task.projectId, { pageSize: 10000 });
     const allEdges = await this.taskRepo.getAllDependencyEdges(task.projectId);
 
-    const taskMap = new Map<string, TaskMetadata>();
-    for (const t of allTasks.items) {
-      taskMap.set(t.id, t);
+    // Enrich the root and every project task once, then build the tree from a lookup.
+    // The root may not appear in getByProject results (e.g. cross-project edge cases),
+    // so enrich it alongside the project tasks to guarantee it carries note links.
+    const enriched = await this.attachNoteLinks([task, ...allTasks.items]);
+    const enrichedById = new Map<string, TaskWithNoteLinks>();
+    for (const t of enriched) {
+      enrichedById.set(t.id, t);
     }
 
     const nodes: TaskNode[] = allTasks.items.map(t => ({ id: t.id, status: t.status }));
     const { dependencies, dependents } = this.dagService.getDependencyTree(taskId, nodes, allEdges);
-    const mapTaskIds = (taskIds: string[]): Array<{ task: TaskMetadata; dependencies: never[]; dependents: never[] }> =>
-      taskIds.reduce<Array<{ task: TaskMetadata; dependencies: never[]; dependents: never[] }>>((acc, relatedTaskId) => {
-        const relatedTask = taskMap.get(relatedTaskId);
+    const mapTaskIds = (taskIds: string[]): DependencyTree[] =>
+      taskIds.reduce<DependencyTree[]>((acc, relatedTaskId) => {
+        const relatedTask = enrichedById.get(relatedTaskId);
         if (relatedTask) {
           acc.push({ task: relatedTask, dependencies: [], dependents: [] });
         }
@@ -530,7 +553,7 @@ export class TaskService {
       }, []);
 
     return {
-      task,
+      task: enrichedById.get(task.id) ?? { ...task, noteLinks: [] },
       dependencies: mapTaskIds(dependencies),
       dependents: mapTaskIds(dependents)
     };
@@ -578,6 +601,34 @@ export class TaskService {
     await this.ensureQueryReady();
 
     return this.taskRepo.getNoteLinks(taskId);
+  }
+
+  /**
+   * Enrich a batch of tasks with their linked-note metadata for AI-facing read surfaces.
+   *
+   * Note links live in a separate table from tasks, so they must be joined per task.
+   * Fetches are parallelized with Promise.all (no batch repo method exists) and each
+   * task's lookup falls back to an empty array on failure so one bad task never sinks
+   * the whole read. Mirrors the UI enrichment in TaskBoardDataController.
+   *
+   * N+1 note: this issues one getNoteLinks call per task. Parallelization keeps it to a
+   * single await; an aggregate repo method (e.g. getNoteLinksForTasks) would reduce the
+   * round-trip count if list sizes grow — documented as acceptable for current scale.
+   */
+  private async attachNoteLinks(tasks: TaskMetadata[]): Promise<TaskWithNoteLinks[]> {
+    const linkArrays = await Promise.all(
+      tasks.map(task =>
+        this.getNoteLinks(task.id).catch(() => [] as NoteLink[])
+      )
+    );
+
+    return tasks.map((task, index) => ({
+      ...task,
+      noteLinks: linkArrays[index].map((link): TaskNoteLink => ({
+        notePath: link.notePath,
+        linkType: link.linkType
+      }))
+    }));
   }
 
   async getTasksForNote(notePath: string): Promise<TaskMetadata[]> {
@@ -655,6 +706,14 @@ export class TaskService {
       .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
       .slice(0, 5);
 
+    // Enrich only the two short lists surfaced to the AI (max 5 each) with note links —
+    // enriching the entire workspace task set would be wasteful since the summary only
+    // returns these slices.
+    const [nextActionsWithLinks, completedWithLinks] = await Promise.all([
+      this.attachNoteLinks(topNextActions),
+      this.attachNoteLinks(completed)
+    ]);
+
     return {
       projects: {
         total: projects.totalItems,
@@ -665,8 +724,8 @@ export class TaskService {
         total: allTasks.totalItems,
         byStatus,
         overdue,
-        nextActions: topNextActions,
-        recentlyCompleted: completed
+        nextActions: nextActionsWithLinks,
+        recentlyCompleted: completedWithLinks
       }
     };
   }

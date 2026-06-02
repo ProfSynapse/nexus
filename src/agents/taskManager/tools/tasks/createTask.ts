@@ -69,7 +69,7 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
         assignee: { type: 'string', description: 'Assignee name or identifier (optional)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization (optional)' },
         dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error.' },
-        linkedNotes: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to link to this task (link type defaults to reference)' },
+        linkedNotes: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to link to this task. Each link is created with linkType=reference (related/contextual note the task does NOT consume — association only). To create input links (the task DEPENDS ON / CONSUMES the note — a precondition, data-flow edge) or output links (the task PRODUCES the note — the artifact/result, data-flow edge), use the linkNote tool or updateTask addNoteLinks, which accept an explicit linkType.' },
         metadata: { type: 'object', description: 'Custom metadata key-value pairs (optional)', additionalProperties: true }
       },
       required: ['projectId', 'title']

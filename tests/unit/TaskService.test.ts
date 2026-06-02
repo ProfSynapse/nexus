@@ -109,6 +109,11 @@ describe('TaskService', () => {
     taskBoardNotifier = {
       notify: jest.fn()
     };
+    // Read surfaces (listTasks, getNextActions, getBlockedTasks, getDependencyTree,
+    // getWorkspaceSummary) enrich tasks with note links via getNoteLinks; default to
+    // an empty array so unrelated tests don't trip the enrichment. Tests that assert
+    // noteLinks override this per-task.
+    taskRepo.getNoteLinks.mockResolvedValue([]);
     service = new TaskService(projectRepo, taskRepo, dagService, undefined, taskBoardNotifier, waitForQueryReady);
   });
 
@@ -440,6 +445,124 @@ describe('TaskService', () => {
         status: 'todo',
         priority: 'high'
       }));
+    });
+  });
+
+  // ============================================================================
+  // Note Links enrichment on AI-facing read surfaces
+  // ============================================================================
+
+  describe('noteLinks enrichment on read surfaces', () => {
+    it('listTasks attaches noteLinks (notePath + linkType) to each task', async () => {
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([
+        createMockTask({ id: 't1' })
+      ]));
+      taskRepo.getNoteLinks.mockResolvedValue([
+        { taskId: 't1', notePath: 'notes/source.md', linkType: 'input', created: 1 },
+        { taskId: 't1', notePath: 'notes/result.md', linkType: 'output', created: 2 }
+      ]);
+
+      const result = await service.listTasks('proj-1');
+
+      expect(taskRepo.getNoteLinks).toHaveBeenCalledWith('t1');
+      expect(result.items[0].noteLinks).toEqual([
+        { notePath: 'notes/source.md', linkType: 'input' },
+        { notePath: 'notes/result.md', linkType: 'output' }
+      ]);
+    });
+
+    it('listTasks returns an empty noteLinks array when a task has no links', async () => {
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([createMockTask({ id: 't1' })]));
+      taskRepo.getNoteLinks.mockResolvedValue([]);
+
+      const result = await service.listTasks('proj-1');
+
+      expect(result.items[0].noteLinks).toEqual([]);
+    });
+
+    it('listTasks falls back to an empty noteLinks array when the lookup rejects', async () => {
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([createMockTask({ id: 't1' })]));
+      taskRepo.getNoteLinks.mockRejectedValue(new Error('lookup failed'));
+
+      const result = await service.listTasks('proj-1');
+
+      expect(result.items[0].noteLinks).toEqual([]);
+    });
+
+    it('getNextActions attaches noteLinks to ready tasks', async () => {
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([
+        createMockTask({ id: 't1', status: 'todo', priority: 'high' })
+      ]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+      taskRepo.getNoteLinks.mockResolvedValue([
+        { taskId: 't1', notePath: 'spec.md', linkType: 'reference', created: 1 }
+      ]);
+
+      const result = await service.getNextActions('proj-1');
+
+      expect(result[0].noteLinks).toEqual([{ notePath: 'spec.md', linkType: 'reference' }]);
+    });
+
+    it('getBlockedTasks attaches noteLinks to both the blocked task and its blockers', async () => {
+      const depTask = createMockTask({ id: 'dep', status: 'in_progress' });
+      const blockedTask = createMockTask({ id: 'blocked', status: 'todo' });
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([depTask, blockedTask]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([
+        { taskId: 'blocked', dependsOnTaskId: 'dep' }
+      ]);
+      taskRepo.getNoteLinks.mockImplementation(async (taskId: string) =>
+        taskId === 'blocked'
+          ? [{ taskId: 'blocked', notePath: 'out.md', linkType: 'output', created: 1 }]
+          : [{ taskId: 'dep', notePath: 'in.md', linkType: 'input', created: 1 }]
+      );
+
+      const result = await service.getBlockedTasks('proj-1');
+
+      expect(result[0].task.noteLinks).toEqual([{ notePath: 'out.md', linkType: 'output' }]);
+      expect(result[0].blockedBy[0].noteLinks).toEqual([{ notePath: 'in.md', linkType: 'input' }]);
+    });
+
+    it('getDependencyTree attaches noteLinks to root, dependencies, and dependents', async () => {
+      const rootTask = createMockTask({ id: 'root', projectId: 'proj-1' });
+      const depTask = createMockTask({ id: 'dep', projectId: 'proj-1' });
+      const dependentTask = createMockTask({ id: 'dependent', projectId: 'proj-1' });
+
+      taskRepo.getById.mockResolvedValue(rootTask);
+      taskRepo.getByProject.mockResolvedValue(paginatedResult([rootTask, depTask, dependentTask]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([
+        { taskId: 'root', dependsOnTaskId: 'dep' },
+        { taskId: 'dependent', dependsOnTaskId: 'root' }
+      ]);
+      taskRepo.getNoteLinks.mockResolvedValue([
+        { taskId: 'x', notePath: 'n.md', linkType: 'reference', created: 1 }
+      ]);
+
+      const result = await service.getDependencyTree('root');
+
+      expect(result.task.noteLinks).toEqual([{ notePath: 'n.md', linkType: 'reference' }]);
+      expect(result.dependencies[0].task.noteLinks).toEqual([{ notePath: 'n.md', linkType: 'reference' }]);
+      expect(result.dependents[0].task.noteLinks).toEqual([{ notePath: 'n.md', linkType: 'reference' }]);
+    });
+
+    it('getWorkspaceSummary attaches noteLinks to nextActions and recentlyCompleted', async () => {
+      const project = createMockProject({ id: 'proj-1', status: 'active' });
+      const tasks = [
+        createMockTask({ id: 'ready', status: 'todo', priority: 'high', projectId: 'proj-1' }),
+        createMockTask({ id: 'done', status: 'done', completedAt: 5000, projectId: 'proj-1' })
+      ];
+
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult([project]));
+      taskRepo.getByWorkspace.mockResolvedValue(paginatedResult(tasks));
+      taskRepo.getByProject.mockResolvedValue(paginatedResult(tasks));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+      taskRepo.getNoteLinks.mockResolvedValue([
+        { taskId: 'x', notePath: 'doc.md', linkType: 'reference', created: 1 }
+      ]);
+
+      const result = await service.getWorkspaceSummary('ws-1');
+
+      expect(result.tasks.nextActions[0].noteLinks).toEqual([{ notePath: 'doc.md', linkType: 'reference' }]);
+      expect(result.tasks.recentlyCompleted[0].noteLinks).toEqual([{ notePath: 'doc.md', linkType: 'reference' }]);
     });
   });
 

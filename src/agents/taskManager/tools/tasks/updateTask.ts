@@ -103,7 +103,7 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
             type: 'object',
             properties: {
               notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
-              linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'Type of link (default: reference)' }
+              linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'Type of link (default: reference). input=the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output=the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference=related/contextual note the task does NOT consume (association only, not part of the data flow).' }
             },
             required: ['notePath']
           }
