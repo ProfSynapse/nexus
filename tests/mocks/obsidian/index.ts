@@ -35,6 +35,7 @@ export {
   ToggleComponent,
   SliderComponent,
   ButtonComponent,
+  AbstractInputSuggest,
   Notice,
   setIcon,
   debounce,

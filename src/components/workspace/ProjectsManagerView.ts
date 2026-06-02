@@ -4,15 +4,17 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { Notice } from 'obsidian';
+import { App, Component, Notice } from 'obsidian';
 import { WorkspaceDetailRenderer, DetailCallbacks } from './WorkspaceDetailRenderer';
+import { TaskDetailRenderer, TaskDeps, TaskDetailCallbacks } from './TaskDetailRenderer';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { TaskService } from '../../agents/taskManager/services/TaskService';
 import { DAGService } from '../../agents/taskManager/services/DAGService';
 import type { ServiceManager } from '../../core/ServiceManager';
+import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
-import type { TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
+import type { LinkType, NoteLink, TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
 
 type ProjectStatus = ProjectMetadata['status'];
 
@@ -41,14 +43,19 @@ export interface ProjectsManagerCallbacks {
     getCurrentWorkspace: () => Partial<ProjectWorkspace> | null;
     onNavigateList: () => void;
     onNavigateDetail: () => void;
+    onNavigateProjectDetail: () => void;
+    onNavigateTaskDetail: () => void;
     onRender: () => void;
     buildDetailCallbacks: () => DetailCallbacks;
+    getApp: () => App;
+    getComponent: () => Component;
 }
 
 export type ProjectsView = 'projects' | 'project-detail' | 'task-detail';
 
 export class ProjectsManagerView {
     private detailRenderer: WorkspaceDetailRenderer;
+    private taskDetailRenderer?: TaskDetailRenderer;
     private serviceManager?: ServiceManager;
     private callbacks: ProjectsManagerCallbacks;
 
@@ -58,6 +65,8 @@ export class ProjectsManagerView {
     private currentTasks: TaskMetadata[] = [];
     private currentTask: TaskEditorState | null = null;
     private editingTaskOriginal: TaskMetadata | null = null;
+    private currentTaskDeps: TaskDeps = { upstream: [], downstream: [] };
+    private currentTaskLinkedNotes: NoteLink[] = [];
     private taskService: TaskService | null | undefined;
 
     constructor(
@@ -97,7 +106,7 @@ export class ProjectsManagerView {
             this.currentProjects,
             this.callbacks.buildDetailCallbacks(),
             () => this.saveProjectDetail(),
-            (task?) => this.openTaskDetail(task)
+            (task?) => { void this.openTaskDetailAndRender(task); }
         );
     }
 
@@ -105,17 +114,37 @@ export class ProjectsManagerView {
         const workspace = this.callbacks.getCurrentWorkspace();
         if (!workspace || !this.currentProject || !this.currentTask) return;
 
-        this.detailRenderer.renderTaskDetail(
-            container,
-            workspace,
-            this.currentProject,
-            this.currentTask,
-            this.editingTaskOriginal,
-            this.currentProjects,
-            this.currentTasks,
-            this.callbacks.buildDetailCallbacks(),
-            () => this.saveTaskDetail()
+        this.taskDetailRenderer ??= new TaskDetailRenderer(
+            this.callbacks.getApp(),
+            this.callbacks.getComponent()
         );
+        this.taskDetailRenderer.render(container, this.buildTaskDetailCallbacks());
+    }
+
+    private buildTaskDetailCallbacks(): TaskDetailCallbacks {
+        return {
+            getWorkspace: () => this.callbacks.getCurrentWorkspace() ?? {},
+            getProject: () => this.currentProject ?? { name: '' },
+            getTask: () => this.currentTask as TaskEditorState,
+            getAllProjects: () => this.currentProjects,
+            getAllTasks: () => this.currentTasks,
+            getDeps: () => this.currentTaskDeps,
+            getLinkedNotes: () => this.currentTaskLinkedNotes,
+            onNavigateList: () => this.callbacks.onNavigateList(),
+            onNavigateDetail: () => this.callbacks.onNavigateDetail(),
+            onNavigateProjects: () => this.callbacks.onNavigateList(),
+            onNavigateProjectDetail: () => this.callbacks.onNavigateProjectDetail(),
+            onOpenTaskDetail: (task) => { void this.openTaskDetailAndRender(task); },
+            onSaveTask: () => this.saveTaskDetail(),
+            onDeleteTask: (taskId) => this.deleteTaskDetail(taskId),
+            onAddTaskDep: (taskId, dependsOnTaskId) => this.addTaskDep(taskId, dependsOnTaskId),
+            onRemoveTaskDep: (taskId, dependsOnTaskId) => this.removeTaskDep(taskId, dependsOnTaskId),
+            onLinkNote: (taskId, notePath, linkType) => this.linkNote(taskId, notePath, linkType),
+            onUnlinkNote: (taskId, notePath) => this.unlinkNote(taskId, notePath),
+            getApp: () => this.callbacks.getApp(),
+            getEmbeddingService: () =>
+                this.serviceManager?.getServiceIfReady<EmbeddingService>('embeddingService') ?? null
+        };
     }
 
     // --- Navigation entry points ---
@@ -178,7 +207,7 @@ export class ProjectsManagerView {
         return true;
     }
 
-    openTaskDetail(task?: TaskMetadata): void {
+    async openTaskDetail(task?: TaskMetadata): Promise<void> {
         const workspace = this.callbacks.getCurrentWorkspace();
         if (!this.currentProject?.id || !workspace?.id) {
             new Notice('Save the project before editing tasks');
@@ -187,6 +216,18 @@ export class ProjectsManagerView {
 
         this.editingTaskOriginal = task ?? null;
         this.currentTask = this.createTaskEditorState(task, this.currentProject.id);
+
+        // N+1-safe: fetch deps + linked notes ONCE at navigation (only for saved
+        // tasks — a new task has no id, so no edges/links exist).
+        await this.loadCurrentTaskRelations(task?.id);
+    }
+
+    /** Opens a task detail AND switches the view to it (used by dep-row jumps). */
+    async openTaskDetailAndRender(task?: TaskMetadata): Promise<void> {
+        await this.openTaskDetail(task);
+        if (this.currentTask) {
+            this.callbacks.onNavigateTaskDetail();
+        }
     }
 
     // --- CRUD operations ---
@@ -304,6 +345,158 @@ export class ProjectsManagerView {
         }
     }
 
+    // --- Task-detail deps + linked-notes (N+1-safe fetch + immediate per-edge mutation) ---
+
+    /**
+     * Single-call fetch of the task's dependency tree + note links, flattened to
+     * the renderer-facing shape. O(1) in edge/link count (getDependencyTree makes
+     * exactly 2 repo reads internally regardless of dependency count).
+     */
+    private async loadCurrentTaskRelations(taskId?: string): Promise<void> {
+        if (!taskId) {
+            this.currentTaskDeps = { upstream: [], downstream: [] };
+            this.currentTaskLinkedNotes = [];
+            return;
+        }
+
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            this.currentTaskDeps = { upstream: [], downstream: [] };
+            this.currentTaskLinkedNotes = [];
+            return;
+        }
+
+        try {
+            const tree = await taskService.getDependencyTree(taskId);
+            this.currentTaskDeps = {
+                upstream: tree.dependencies.map(node => node.task),
+                downstream: tree.dependents.map(node => node.task)
+            };
+            this.currentTaskLinkedNotes = await taskService.getNoteLinks(taskId);
+        } catch (error) {
+            console.error('[ProjectsManagerView] Failed to load task relations:', error);
+            this.currentTaskDeps = { upstream: [], downstream: [] };
+            this.currentTaskLinkedNotes = [];
+        }
+    }
+
+    private async addTaskDep(taskId: string, dependsOnTaskId: string): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        try {
+            // Surfaces the server's cycle / cross-project throw at click-time,
+            // attributable to the exact edge the user tried to add.
+            await taskService.addDependency(taskId, dependsOnTaskId);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to add dependency';
+            new Notice(message);
+            return;
+        }
+
+        await this.refetchCurrentTaskDeps();
+        this.callbacks.onRender();
+    }
+
+    private async removeTaskDep(taskId: string, dependsOnTaskId: string): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        try {
+            await taskService.removeDependency(taskId, dependsOnTaskId);
+        } catch (error) {
+            console.error('[ProjectsManagerView] Failed to remove dependency:', error);
+            new Notice('Failed to remove dependency');
+            return;
+        }
+
+        await this.refetchCurrentTaskDeps();
+        this.callbacks.onRender();
+    }
+
+    private async linkNote(taskId: string, notePath: string, linkType: LinkType): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        try {
+            await taskService.linkNote(taskId, notePath, linkType);
+        } catch (error) {
+            console.error('[ProjectsManagerView] Failed to link note:', error);
+            new Notice('Failed to link note');
+            return;
+        }
+
+        await this.refetchCurrentTaskNotes(taskId);
+        this.callbacks.onRender();
+    }
+
+    private async unlinkNote(taskId: string, notePath: string): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        try {
+            await taskService.unlinkNote(taskId, notePath);
+        } catch (error) {
+            console.error('[ProjectsManagerView] Failed to unlink note:', error);
+            new Notice('Failed to unlink note');
+            return;
+        }
+
+        await this.refetchCurrentTaskNotes(taskId);
+        this.callbacks.onRender();
+    }
+
+    private async refetchCurrentTaskDeps(): Promise<void> {
+        if (!this.currentTask?.id) return;
+        const taskService = await this.getTaskService();
+        if (!taskService) return;
+        const tree = await taskService.getDependencyTree(this.currentTask.id);
+        this.currentTaskDeps = {
+            upstream: tree.dependencies.map(node => node.task),
+            downstream: tree.dependents.map(node => node.task)
+        };
+    }
+
+    private async refetchCurrentTaskNotes(taskId: string): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) return;
+        this.currentTaskLinkedNotes = await taskService.getNoteLinks(taskId);
+    }
+
+    private async deleteTaskDetail(taskId: string): Promise<void> {
+        const taskService = await this.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        try {
+            await taskService.deleteTask(taskId);
+            await this.refreshProjects();
+            const activeProject = this.currentProjects.find(project => project.id === this.currentProject?.id);
+            if (activeProject) {
+                await this.openProjectDetail(activeProject);
+            }
+            this.callbacks.onNavigateProjectDetail();
+            new Notice('Task deleted');
+        } catch (error) {
+            console.error('[ProjectsManagerView] Failed to delete task:', error);
+            new Notice('Failed to delete task');
+        }
+    }
+
     // --- Data access (for WorkspacesTab to read current view state) ---
 
     getCurrentProject(): ProjectEditorState | null {
@@ -366,6 +559,8 @@ export class ProjectsManagerView {
         this.currentProjects = [];
         this.currentTasks = [];
         this.editingTaskOriginal = null;
+        this.currentTaskDeps = { upstream: [], downstream: [] };
+        this.currentTaskLinkedNotes = [];
     }
 
     // --- Helpers ---

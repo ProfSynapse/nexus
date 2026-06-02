@@ -263,6 +263,39 @@ export class Notice {
   }
 }
 
+// AbstractInputSuggest<T> — minimal base for input autocompleters (e.g.
+// NoteInputSuggester). Real Obsidian wires popover lifecycle; the mock only
+// needs to be a constructible base so subclasses load, plus the handful of
+// instance methods consumers call (setValue/close/limit).
+export class AbstractInputSuggest<T> {
+  limit = 10;
+  constructor(
+    protected app: unknown,
+    protected inputEl: HTMLInputElement
+  ) {}
+
+  setValue(value: string): void {
+    if (this.inputEl) this.inputEl.value = value;
+  }
+
+  close(): void {
+    // Mock implementation
+  }
+
+  // Subclasses override; base provides no-op defaults.
+  async getSuggestions(_query: string): Promise<T[]> {
+    return [];
+  }
+
+  renderSuggestion(_value: T, _el: HTMLElement): void {
+    // Mock implementation
+  }
+
+  selectSuggestion(_value: T, _evt: MouseEvent | KeyboardEvent): void {
+    // Mock implementation
+  }
+}
+
 // setIcon mock
 export function setIcon(_element: HTMLElement, _iconId: string): void {
   // Mock implementation
