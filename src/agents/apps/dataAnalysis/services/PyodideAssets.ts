@@ -3,12 +3,11 @@
  *
  * Delivery follows the SQLite `WasmEnsurer` ethos: the heavy runtime + wheels
  * live next to main.js (never bundled into it) and are loaded at runtime. The
- * worker loads Pyodide from a local file:// indexURL so execution is offline.
+ * worker loads Pyodide from a local app:// indexURL so execution is offline —
+ * file:// is blocked in Electron worker contexts ("not allowed to load local
+ * resource"), but Obsidian's app:// resource scheme is permitted.
  *
  * Desktop-only — requires a FileSystemAdapter.
- *
- * ⚠️ PENDING Electron validation: file:// URL shape for importScripts/indexURL,
- * and auto-download of missing assets (currently presence is required).
  */
 
 import { App, FileSystemAdapter } from 'obsidian';
@@ -17,7 +16,7 @@ const KNOWN_PLUGIN_FOLDERS = ['nexus', 'claudesidian-mcp'];
 const MICROPIP_WHEEL_RE = /^(openpyxl|et_xmlfile)-.*\.whl$/;
 
 export interface PyodideAssetInfo {
-  /** file:// URL to the pyodide asset directory, trailing slash included. */
+  /** app:// URL to the pyodide asset directory, trailing slash included. */
   indexUrl: string;
   /** Exact wheel filenames to install via micropip (pure-Python, not in dist). */
   micropipWheels: string[];
@@ -80,13 +79,14 @@ export async function resolvePyodideAssets(app: App): Promise<PyodideAssetInfo> 
     .map((p) => p.split('/').pop() || '')
     .filter((name) => MICROPIP_WHEEL_RE.test(name));
 
-  const absDir = `${adapter.getBasePath()}/${dir}`;
-  return { indexUrl: `${toFileUrl(absDir)}/`, micropipWheels };
-}
-
-/** Minimal absolute-path → file:// URL. Encodes spaces; handles Windows drives. */
-function toFileUrl(absPath: string): string {
-  let p = absPath.replace(/\\/g, '/');
-  if (!p.startsWith('/')) p = `/${p}`; // Windows "C:/..." -> "/C:/..."
-  return `file://${p.replace(/ /g, '%20')}`;
+  // Electron blocks file:// loads from a Worker ("Not allowed to load local
+  // resource"), which is fatal for `importScripts(indexURL + 'pyodide.js')` and
+  // Pyodide's own asset fetches. Address the vendored files through Obsidian's
+  // app:// resource scheme instead — the renderer and its workers are permitted
+  // to fetch it. Derive the directory base from a probe file's resource path by
+  // stripping the filename and the cache-busting query (Pyodide appends bare
+  // filenames to indexURL, and app:// resolves by path regardless of query).
+  const probe = adapter.getResourcePath(`${dir}/pyodide.js`);
+  const indexUrl = probe.replace(/pyodide\.js(\?.*)?$/, '');
+  return { indexUrl, micropipWheels };
 }

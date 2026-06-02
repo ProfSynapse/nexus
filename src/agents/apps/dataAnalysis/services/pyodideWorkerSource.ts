@@ -2,7 +2,10 @@
  * Builds the Web Worker source for the Pyodide sandbox.
  *
  * The worker runs entirely off the main thread with NO Node integration. It:
- *   1. loads Pyodide + pandas from the local file:// indexURL (offline),
+ *   0. hides Node globals so Pyodide uses its web loader (Electron worker contexts
+ *      expose `process`, which otherwise makes it dynamic-import node: modules),
+ *   1. loads Pyodide + pandas from the local app:// indexURL (offline; file://
+ *      is blocked in Electron workers, and micropip wheels install via emfs:),
  *   2. micropip-installs openpyxl (pure-Python, not in the Pyodide dist),
  *   3. HARDENS the realm: deletes the network surface across self / globalThis /
  *      the prototype chain and drops Python network modules (the lockdown,
@@ -64,6 +67,16 @@ const INDEX_URL = ${JSON.stringify(opts.indexUrl)};
 const LOAD_PACKAGES = ${JSON.stringify(opts.loadPackages)};
 const MICROPIP_WHEELS = ${JSON.stringify(opts.micropipWheels)};
 
+// Force Pyodide's BROWSER loader path. Electron worker contexts expose Node
+// globals (process/require), so Pyodide misdetects Node and dynamic-imports
+// node:fs / node:url — which fail here ("Failed to fetch ... node:url"). Hiding
+// the Node signals makes it use the web path: importScripts + fetch over the
+// app:// indexURL, both of which work in the Obsidian renderer's workers.
+try { delete self.process; } catch (e) { /* non-configurable */ }
+try { Object.defineProperty(self, 'process', { value: undefined, configurable: true, writable: true }); } catch (e) { /* frozen */ }
+try { delete self.require; } catch (e) { /* non-configurable */ }
+try { Object.defineProperty(self, 'require', { value: undefined, configurable: true, writable: true }); } catch (e) { /* frozen */ }
+
 // Best-effort realm hardening: remove the network surface from every reachable
 // global target. Runs AFTER load (which needs fetch) and BEFORE any user code.
 function __hardenRealm() {
@@ -87,7 +100,20 @@ async function init() {
   await pyodide.loadPackage([...LOAD_PACKAGES, 'micropip']);
   if (MICROPIP_WHEELS.length) {
     const micropip = pyodide.pyimport('micropip');
-    await micropip.install(MICROPIP_WHEELS.map(function (w) { return INDEX_URL + w; }), false);
+    // micropip's fetcher rejects our app:// indexURL ("non-remote location") even
+    // though Pyodide's own loadPackage accepts it. Stage each wheel into the
+    // Pyodide MEMFS via fetch (app:// fetch works here) and install through the
+    // emfs: scheme so the wheels install fully offline.
+    pyodide.FS.mkdirTree('/wheels');
+    for (let i = 0; i < MICROPIP_WHEELS.length; i++) {
+      const w = MICROPIP_WHEELS[i];
+      const resp = await fetch(INDEX_URL + w);
+      if (!resp || !resp.ok) {
+        throw new Error('Failed to fetch wheel ' + w + ' (HTTP ' + (resp && resp.status) + ')');
+      }
+      pyodide.FS.writeFile('/wheels/' + w, new Uint8Array(await resp.arrayBuffer()));
+    }
+    await micropip.install(MICROPIP_WHEELS.map(function (w) { return 'emfs:/wheels/' + w; }), false);
   }
   pyodide.runPython(${JSON.stringify(MARSHAL_PY)});
   try { pyodide.runPython(${JSON.stringify(DROP_NET_PY)}); } catch (e) { /* best effort */ }
