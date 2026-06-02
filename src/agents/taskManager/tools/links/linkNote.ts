@@ -19,7 +19,7 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
     super(
       'linkNote',
       'Link Note',
-      'Create or remove a bidirectional link between a vault note and a task. Link types: reference (related note), output (task produces this note), input (task consumes this note). Use action=unlink to remove an existing link.',
+      'Create or remove a bidirectional link between a vault note and a task. Link types: input (task depends on / consumes the note — a required source / precondition, forms a data-flow edge), output (task produces the note — the artifact/result, forms a data-flow edge), reference (related/contextual note the task does NOT consume — association only, not part of the data flow). Use action=unlink to remove an existing link.',
       '1.0.0'
     );
   }
@@ -57,7 +57,7 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
         linkType: {
           type: 'string',
           enum: ['reference', 'output', 'input'],
-          description: 'Type of link (default: reference). reference=related note, output=task produces this note, input=task consumes this note'
+          description: 'Type of link (default: reference). input=the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output=the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference=related/contextual note the task does NOT consume (association only, not part of the data flow).'
         },
         action: {
           type: 'string',

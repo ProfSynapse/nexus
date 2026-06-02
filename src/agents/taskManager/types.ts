@@ -38,19 +38,52 @@ export interface TaskNode {
 }
 
 export interface DependencyTree {
-  task: TaskMetadata;
+  task: TaskWithNoteLinks;
   dependencies: DependencyTree[];
   dependents: DependencyTree[];
 }
 
 export interface TaskWithBlockers {
-  task: TaskMetadata;
-  blockedBy: TaskMetadata[];
+  task: TaskWithNoteLinks;
+  blockedBy: TaskWithNoteLinks[];
 }
 
 // NoteLink is re-exported from ITaskRepository above via the LinkType re-export line.
 // Re-export it explicitly here for consumers importing from this file.
 export type { NoteLink } from '../../database/repositories/interfaces/ITaskRepository';
+
+/**
+ * A single linked-note reference as surfaced on AI-facing task read shapes.
+ * Projected from the stored NoteLink record down to the two fields the AI needs:
+ * the vault path and the relationship type. See TaskWithNoteLinks.
+ */
+export interface TaskNoteLink {
+  notePath: string;
+  linkType: LinkType;
+}
+
+/**
+ * A task enriched with its linked-note metadata for AI-facing read surfaces.
+ *
+ * TaskMetadata is the pure SQLite storage shape (no joined data); note links live
+ * in a separate table. This derived view tacks the joined noteLinks onto the task
+ * object at the service/result layer so every surface the AI reads tasks back from
+ * (listTasks, queryTasks, loadWorkspace summary) can carry them without polluting
+ * the storage interface. Mirrors the UI's TaskBoardDataController enrichment pattern.
+ */
+export interface TaskWithNoteLinks extends TaskMetadata {
+  noteLinks: TaskNoteLink[];
+}
+
+/**
+ * A linked-note argument accepted by createTask. Either:
+ *  - a plain string (vault path) → linkType defaults to "reference", or
+ *  - an object { notePath, linkType? } → linkType defaults to "reference" when omitted.
+ * Normalized to { notePath, linkType } early in TaskService.createTask so the
+ * link-creation loop has a single shape. The string form preserves all existing
+ * callers and the CLI/CSV parser path.
+ */
+export type LinkedNoteInput = string | { notePath: string; linkType?: LinkType };
 
 // ────────────────────────────────────────────────────────────────
 // CRUD DTOs
@@ -78,7 +111,7 @@ export interface CreateTaskData {
   assignee?: string;
   tags?: string[];
   dependsOn?: string[];
-  linkedNotes?: string[];
+  linkedNotes?: LinkedNoteInput[];
   metadata?: Record<string, unknown>;
 }
 
@@ -136,8 +169,8 @@ export interface WorkspaceTaskSummary {
     total: number;
     byStatus: Record<TaskStatus, number>;
     overdue: number;
-    nextActions: TaskMetadata[];
-    recentlyCompleted: TaskMetadata[];
+    nextActions: TaskWithNoteLinks[];
+    recentlyCompleted: TaskWithNoteLinks[];
   };
 }
 
@@ -181,7 +214,7 @@ export interface CreateTaskParameters extends CommonParameters {
   assignee?: string;
   tags?: string[];
   dependsOn?: string[];
-  linkedNotes?: string[];
+  linkedNotes?: LinkedNoteInput[];
   metadata?: Record<string, unknown>;
 }
 
@@ -268,7 +301,7 @@ export interface CreateTaskResult extends CommonResult {
 }
 
 export interface ListTasksResult extends CommonResult {
-  tasks?: TaskMetadata[];
+  tasks?: TaskWithNoteLinks[];
   pagination?: {
     page: number;
     pageSize: number;
@@ -284,7 +317,7 @@ export type MoveTaskResult = CommonResult
 
 export interface QueryTasksResult extends CommonResult {
   query?: string;
-  tasks?: TaskMetadata[];
+  tasks?: TaskWithNoteLinks[];
   tree?: DependencyTree;
   blockedTasks?: TaskWithBlockers[];
 }

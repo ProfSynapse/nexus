@@ -19,7 +19,7 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
     super(
       'list',
       'List Tasks',
-      'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including dependencies and timestamps.',
+      'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including timestamps and linked vault notes (noteLinks, each with notePath + linkType: input/output/reference).',
       '1.0.0'
     );
   }
@@ -107,7 +107,19 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
               dueDate: { type: 'number', description: 'Due date timestamp (ms since epoch)' },
               assignee: { type: 'string', description: 'Assigned person or identifier' },
               tags: { type: 'array', items: { type: 'string' }, description: 'Categorization tags' },
-              metadata: { type: 'object', description: 'Custom metadata key-value pairs' }
+              metadata: { type: 'object', description: 'Custom metadata key-value pairs' },
+              noteLinks: {
+                type: 'array',
+                description: 'Vault notes linked to this task. notePath is the vault path; linkType is the relationship: input=task depends on/consumes the note (a precondition/data-flow source), output=task produces the note (a data-flow result), reference=related/contextual note the task does not consume.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
+                    linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'input=consumed/required source, output=produced artifact, reference=related but not consumed' }
+                  },
+                  required: ['notePath', 'linkType']
+                }
+              }
             }
           }
         },
