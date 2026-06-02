@@ -10,6 +10,7 @@
  */
 
 import { normalizePath } from 'obsidian';
+import type { DataAdapter } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
@@ -20,6 +21,7 @@ import { SkillUsageService, type SkillUsageHistory } from '../services/SkillUsag
 interface LoadSkillParams extends CommonParameters {
   name: string;
   source?: string;
+  recursive?: boolean;
   includeHistory?: boolean;
   // Injected at the top level by ToolBatchExecutionService.applyContextDefaults
   // (CLI-first contract) — used to attribute usage history to the session (§9).
@@ -70,15 +72,15 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
         `Could not read SKILL.md for skill "${record.name}" (${record.provider}) at ${skillMdPath}`);
     }
 
-    // List the skill folder's files for navigation.
-    let files: string[] = [];
-    try {
-      const listing = await r.rt.vaultAdapter.list(record.vaultPath);
-      files = listing.files;
-    } catch {
-      // Folder listing is best-effort — a missing listing should not fail the load.
-      files = [];
-    }
+    // Build the skill folder structure for navigation (loadWorkspace-shaped):
+    // top-level items by default (folders marked with a trailing `/`), or the
+    // full recursive file tree when `recursive` is true. Best-effort — a missing
+    // listing should not fail the load.
+    const structure = await this.buildStructure(
+      r.rt.vaultAdapter,
+      record.vaultPath,
+      params.recursive === true
+    );
 
     // Stamp recency so this load surfaces first next time.
     await r.rt.index.touchLoaded(record.id);
@@ -108,10 +110,12 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
       }
     }
 
-    // loadWorkspace-shaped payload (§12): instructions + files nested in `skill`,
-    // top-level nudge. `alternatives` surfaces the other recency-ordered matches
-    // when a bare name was ambiguous across providers. `usageHistory` is omitted
-    // when includeHistory:false or on fetch error.
+    // loadWorkspace-shaped payload (§12): instructions + folder structure nested
+    // in `skill`, top-level nudge. `structure` mirrors loadWorkspace's
+    // `workspaceStructure` (string[], folders trailing `/`, recursive opt-in).
+    // `alternatives` surfaces the other recency-ordered matches when a bare name
+    // was ambiguous across providers. `usageHistory` is omitted when
+    // includeHistory:false or on fetch error.
     return this.prepareResult(true, {
       skill: {
         name: record.name,
@@ -119,12 +123,11 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
         description: record.description,
         vaultPath: record.vaultPath,
         instructions,
-        files: files.map((path) => ({
-          path,
-          type: path.endsWith('/SKILL.md') ? 'skill' : 'resource',
-        })),
+        structure,
       },
-      nudge: 'Use your normal `content read` tool to open any of the files listed above.',
+      nudge: 'Skill folder structure is in `skill.structure` (paths relative to the skill folder; ' +
+        'folders end with `/`). Use your normal `content read` tool — prefixing paths with ' +
+        '`skill.vaultPath` — to open any bundled file. Pass `recursive: true` for the full file tree.',
       alternatives: matches.slice(1).map((m) => ({
         name: m.name,
         provider: m.provider,
@@ -132,6 +135,62 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
       })),
       ...(usageHistory ? { usageHistory } : {}),
     });
+  }
+
+  /**
+   * Build a loadWorkspace-shaped folder structure for the skill folder, read via
+   * `vault.adapter` (so it sees the same dot/hidden-safe tree the scanner walks).
+   *
+   * - top-level (default): item basenames, folders marked with a trailing `/`.
+   * - recursive: flat, sorted relative file paths (folders are descended into,
+   *   not listed) — matching WorkspaceFileCollector's recursive output.
+   *
+   * `_`/`.`-prefixed entries (e.g. co-located `_archive/` sync snapshots) are
+   * excluded at every level, consistent with the scanner. Best-effort: any
+   * adapter failure yields `[]` rather than failing the load.
+   */
+  private async buildStructure(
+    adapter: DataAdapter,
+    root: string,
+    recursive: boolean
+  ): Promise<string[]> {
+    const isIgnored = (base: string): boolean => base.startsWith('_') || base.startsWith('.');
+    try {
+      if (recursive) {
+        const out: string[] = [];
+        const walk = async (dir: string): Promise<void> => {
+          const listing = await adapter.list(dir);
+          for (const file of listing.files) {
+            out.push(file.replace(`${root}/`, ''));
+          }
+          for (const folder of listing.folders) {
+            if (isIgnored(LoadSkillTool.basename(folder))) {
+              continue;
+            }
+            await walk(folder);
+          }
+        };
+        await walk(root);
+        return out.sort();
+      }
+
+      const listing = await adapter.list(root);
+      const folders = listing.folders
+        .map((f) => LoadSkillTool.basename(f))
+        .filter((base) => !isIgnored(base))
+        .map((base) => `${base}/`);
+      const files = listing.files.map((f) => LoadSkillTool.basename(f));
+      return [...folders, ...files].sort();
+    } catch {
+      return [];
+    }
+  }
+
+  /** Basename of a vault-relative path (handles trailing slash). */
+  private static basename(path: string): string {
+    const trimmed = path.replace(/\/+$/, '');
+    const idx = trimmed.lastIndexOf('/');
+    return idx === -1 ? trimmed : trimmed.slice(idx + 1);
   }
 
   getParameterSchema(): JSONSchema {
@@ -145,6 +204,12 @@ export class LoadSkillTool extends BaseTool<LoadSkillParams, CommonResult> {
         source: {
           type: 'string',
           description: 'Optional provider id. Required only when the name is ambiguous across providers.',
+        },
+        recursive: {
+          type: 'boolean',
+          description: 'Show the full recursive file tree (true) or top-level items only (false). ' +
+            'Default: false (top-level only, folders marked with a trailing /).',
+          default: false,
         },
         includeHistory: {
           type: 'boolean',
