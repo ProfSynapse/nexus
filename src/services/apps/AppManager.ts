@@ -57,6 +57,7 @@ export class AppManager {
         }
         this.apps.set(appId, agent);
         this.registerCallback(agent);
+        agent.onload();
         logger.systemLog(`App loaded: ${appId}`);
       } catch (error) {
         logger.systemError(error as Error, `App Load: ${appId}`);
@@ -148,6 +149,7 @@ export class AppManager {
       if (agent) {
         this.apps.set(appId, agent);
         this.registerCallback(agent);
+        agent.onload();
       }
     } else if (!enabled && this.apps.has(appId)) {
       // Unregister but keep config
