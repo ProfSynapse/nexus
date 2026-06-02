@@ -252,11 +252,41 @@ function buildStubRegistry(): Map<string, IAgent> {
     }),
   ]);
 
+  // unionItemsAgent → create(linkedNotes: array<oneOf[string, object]>)
+  // Mirrors the real createTask.linkedNotes union schema so the CLI coercion
+  // path for the widened linkedNotes (string CSV back-compat + object JSON
+  // literal) is exercised end-to-end through normalizeExecutionCalls.
+  const unionItemsAgent = makeStubAgent('unionItemsAgent', [
+    makeStubTool('create', {
+      type: 'object',
+      properties: {
+        linkedNotes: {
+          type: 'array',
+          items: {
+            oneOf: [
+              { type: 'string' },
+              {
+                type: 'object',
+                properties: {
+                  notePath: { type: 'string' },
+                  linkType: { type: 'string', enum: ['reference', 'output', 'input'] },
+                },
+                required: ['notePath'],
+              },
+            ],
+          },
+        },
+      },
+      required: [],
+    }),
+  ]);
+
   return new Map<string, IAgent>([
     ['contentManager', contentAgent],
     ['storageManager', storageAgent],
     ['numericAgent', coerceAgent],
     ['oneOfAgent', oneOfAgent],
+    ['unionItemsAgent', unionItemsAgent],
     ['toolManager', makeStubAgent('toolManager', [])], // excluded from --help
   ]);
 }
@@ -294,7 +324,7 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
     it('"--help" expands to all agents except toolManager', () => {
       const result = makeNormalizer().normalizeDiscoveryRequests({ tool: '--help' });
       const agents = result.map(r => r.agent).sort();
-      expect(agents).toEqual(['contentManager', 'numericAgent', 'oneOfAgent', 'storageManager']);
+      expect(agents).toEqual(['contentManager', 'numericAgent', 'oneOfAgent', 'storageManager', 'unionItemsAgent']);
     });
 
     it('throws on unknown agent token', () => {
@@ -1400,6 +1430,48 @@ describe('EC-3: array<X> coerces every element to X', () => {
       tool: 'numeric convert --pages "1,not-a-number,3"',
     });
     expect(call.params.pages).toEqual([1, 'not-a-number', 3]);
+  });
+});
+
+describe('union-items array (createTask.linkedNotes shape): string CSV back-compat + object JSON literal', () => {
+  // The widened createTask.linkedNotes uses items: { oneOf: [string, object] },
+  // so getSchemaType derives array<unknown> (no single items.type). That routes
+  // through the array<...> branch: JSON array literals parse (preserving object
+  // items) and bare CSV splits into strings. This guards both the back-compat
+  // string path and the new object-item path at the CLI layer.
+
+  it('string CSV form still parses to a string[] (back-compat)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'union-items create --linked-notes "a.md,b.md"',
+    });
+    expect(call.params.linkedNotes).toEqual(['a.md', 'b.md']);
+  });
+
+  it('string JSON-array form still parses to a string[] (back-compat)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'union-items create --linked-notes \'["a.md","b.md"]\'',
+    });
+    expect(call.params.linkedNotes).toEqual(['a.md', 'b.md']);
+  });
+
+  it('object JSON-literal form parses to objects with linkType', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'union-items create --linked-notes \'[{"notePath":"src.md","linkType":"input"},{"notePath":"out.md","linkType":"output"}]\'',
+    });
+    expect(call.params.linkedNotes).toEqual([
+      { notePath: 'src.md', linkType: 'input' },
+      { notePath: 'out.md', linkType: 'output' },
+    ]);
+  });
+
+  it('mixed JSON-literal array (string + object items) is preserved per item', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'union-items create --linked-notes \'["plain.md",{"notePath":"consumed.md","linkType":"input"}]\'',
+    });
+    expect(call.params.linkedNotes).toEqual([
+      'plain.md',
+      { notePath: 'consumed.md', linkType: 'input' },
+    ]);
   });
 });
 

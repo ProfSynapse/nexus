@@ -75,6 +75,16 @@ export interface TaskWithNoteLinks extends TaskMetadata {
   noteLinks: TaskNoteLink[];
 }
 
+/**
+ * A linked-note argument accepted by createTask. Either:
+ *  - a plain string (vault path) → linkType defaults to "reference", or
+ *  - an object { notePath, linkType? } → linkType defaults to "reference" when omitted.
+ * Normalized to { notePath, linkType } early in TaskService.createTask so the
+ * link-creation loop has a single shape. The string form preserves all existing
+ * callers and the CLI/CSV parser path.
+ */
+export type LinkedNoteInput = string | { notePath: string; linkType?: LinkType };
+
 // ────────────────────────────────────────────────────────────────
 // CRUD DTOs
 // ────────────────────────────────────────────────────────────────
@@ -101,7 +111,7 @@ export interface CreateTaskData {
   assignee?: string;
   tags?: string[];
   dependsOn?: string[];
-  linkedNotes?: string[];
+  linkedNotes?: LinkedNoteInput[];
   metadata?: Record<string, unknown>;
 }
 
@@ -204,7 +214,7 @@ export interface CreateTaskParameters extends CommonParameters {
   assignee?: string;
   tags?: string[];
   dependsOn?: string[];
-  linkedNotes?: string[];
+  linkedNotes?: LinkedNoteInput[];
   metadata?: Record<string, unknown>;
 }
 

@@ -412,6 +412,56 @@ describe('TaskService', () => {
       expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'path/to/note2.md', 'reference');
     });
 
+    it('should create note links from object form with explicit linkType', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await service.createTask('proj-1', {
+        title: 'Task with typed notes',
+        linkedNotes: [
+          { notePath: 'src.md', linkType: 'input' },
+          { notePath: 'out.md', linkType: 'output' },
+          { notePath: 'ctx.md', linkType: 'reference' }
+        ]
+      });
+
+      expect(taskRepo.addNoteLink).toHaveBeenCalledTimes(3);
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'src.md', 'input');
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'out.md', 'output');
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'ctx.md', 'reference');
+    });
+
+    it('should default object-form linkType to reference when omitted', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await service.createTask('proj-1', {
+        title: 'Task',
+        linkedNotes: [{ notePath: 'note.md' }]
+      });
+
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'note.md', 'reference');
+    });
+
+    it('should handle a mixed array of string and object note links', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      taskRepo.create.mockResolvedValue('task-new');
+
+      await service.createTask('proj-1', {
+        title: 'Task with mixed notes',
+        linkedNotes: [
+          'plain.md',
+          { notePath: 'consumed.md', linkType: 'input' },
+          { notePath: 'untyped.md' }
+        ]
+      });
+
+      expect(taskRepo.addNoteLink).toHaveBeenCalledTimes(3);
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'plain.md', 'reference');
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'consumed.md', 'input');
+      expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-new', 'untyped.md', 'reference');
+    });
+
     it('should set default priority to medium', async () => {
       projectRepo.getById.mockResolvedValue(createMockProject());
       taskRepo.create.mockResolvedValue('task-new');

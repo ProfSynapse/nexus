@@ -24,7 +24,8 @@ import {
   LinkType,
   TaskStatus,
   TaskWithNoteLinks,
-  TaskNoteLink
+  TaskNoteLink,
+  LinkedNoteInput
 } from '../types';
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
@@ -48,6 +49,18 @@ export interface TaskBoardNotifier {
  */
 export type WorkspaceResolver = (workspaceId: string) => Promise<string | null>;
 export type TaskQueryReadyWaiter = () => Promise<boolean>;
+
+/**
+ * Normalize a createTask linkedNotes item to a uniform { notePath, linkType } shape.
+ * A plain string is a vault path with linkType defaulting to "reference"; an object
+ * keeps its notePath and falls back to "reference" when linkType is omitted.
+ */
+function normalizeLinkedNote(link: LinkedNoteInput): { notePath: string; linkType: LinkType } {
+  if (typeof link === 'string') {
+    return { notePath: link, linkType: 'reference' };
+  }
+  return { notePath: link.notePath, linkType: link.linkType ?? 'reference' };
+}
 
 export class TaskService {
   private resolveWorkspace: WorkspaceResolver | null;
@@ -264,10 +277,13 @@ export class TaskService {
       }
     }
 
-    // Create initial note links
+    // Create initial note links. Each item is either a plain string (vault path,
+    // linkType defaults to "reference") or an object { notePath, linkType? }.
+    // Normalize to { notePath, linkType } first so the link-creation loop has a
+    // single shape.
     if (data.linkedNotes && data.linkedNotes.length > 0) {
-      for (const notePath of data.linkedNotes) {
-        await this.taskRepo.addNoteLink(taskId, notePath, 'reference');
+      for (const link of data.linkedNotes.map(normalizeLinkedNote)) {
+        await this.taskRepo.addNoteLink(taskId, link.notePath, link.linkType);
       }
     }
 

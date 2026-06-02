@@ -19,7 +19,7 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
     super(
       'create',
       'Create Task',
-      'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.',
+      'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links (each as a plain path string defaulting to reference, or an object { notePath, linkType } to set input/output/reference at creation). Returns the new taskId.',
       '1.0.0'
     );
   }
@@ -69,7 +69,23 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
         assignee: { type: 'string', description: 'Assignee name or identifier (optional)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization (optional)' },
         dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error.' },
-        linkedNotes: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to link to this task. Each link is created with linkType=reference (related/contextual note the task does NOT consume — association only). To create input links (the task DEPENDS ON / CONSUMES the note — a precondition, data-flow edge) or output links (the task PRODUCES the note — the artifact/result, data-flow edge), use the linkNote tool or updateTask addNoteLinks, which accept an explicit linkType.' },
+        linkedNotes: {
+          type: 'array',
+          description: 'Vault notes to link to this task. Each item is EITHER a plain string vault path (linkType defaults to "reference") OR an object { notePath, linkType } to set the relationship explicitly. linkType values: input = the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output = the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference = related/contextual note the task does NOT consume (association only, not part of the data flow). Links can also be added or changed after creation via the linkNote tool or updateTask addNoteLinks.',
+          items: {
+            oneOf: [
+              { type: 'string', description: 'Vault note path, e.g. "folder/note.md" (linkType defaults to reference)' },
+              {
+                type: 'object',
+                properties: {
+                  notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
+                  linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'input=consumed/required source, output=produced artifact, reference=related but not consumed (default: reference)' }
+                },
+                required: ['notePath']
+              }
+            ]
+          }
+        },
         metadata: { type: 'object', description: 'Custom metadata key-value pairs (optional)', additionalProperties: true }
       },
       required: ['projectId', 'title']
