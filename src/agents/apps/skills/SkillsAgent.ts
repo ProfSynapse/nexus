@@ -20,6 +20,8 @@ import { CreateSkillTool } from './tools/createSkill';
 import { UpdateSkillTool } from './tools/updateSkill';
 import { ArchiveSkillTool } from './tools/archiveSkill';
 import { SyncSkillsTool } from './tools/syncSkills';
+import { SkillSyncWatcher } from './services/SkillSyncWatcher';
+import { resolveSkillsRuntime } from './services/SkillsContext';
 
 const SKILLS_MANIFEST: AppManifest = {
   id: 'skills',
@@ -43,6 +45,9 @@ const SKILLS_MANIFEST: AppManifest = {
 };
 
 export class SkillsAgent extends BaseAppAgent {
+  /** Automatic, debounced import + index-refresh. Null until onload(). */
+  private syncWatcher: SkillSyncWatcher | null = null;
+
   constructor() {
     super(SKILLS_MANIFEST);
     this.registerTool(new ListSkillsTool(this));
@@ -51,5 +56,29 @@ export class SkillsAgent extends BaseAppAgent {
     this.registerTool(new UpdateSkillTool(this));
     this.registerTool(new ArchiveSkillTool(this));
     this.registerTool(new SyncSkillsTool(this));
+  }
+
+  /**
+   * Start the automatic skill sync once the app is live (app/vault/runtime
+   * injected). The watcher resolves the runtime lazily on each run, so it's
+   * safe to start even if storage is still warming up.
+   */
+  onload(): void {
+    const app = this.getApp();
+    if (!app || this.syncWatcher) {
+      return;
+    }
+    this.syncWatcher = new SkillSyncWatcher(app, () => {
+      const r = resolveSkillsRuntime(this);
+      return r.ok ? r.rt : null;
+    });
+    this.syncWatcher.start();
+  }
+
+  /** Tear down the watcher when the app is disabled/uninstalled. */
+  onunload(): void {
+    this.syncWatcher?.stop();
+    this.syncWatcher = null;
+    super.onunload();
   }
 }
