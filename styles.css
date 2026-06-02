@@ -5259,119 +5259,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     border-top: 1px solid var(--background-modifier-border);
 }
 
-/* Folder Tree */
-.nexus-folder-tree {
-    max-height: 400px;
-    overflow-y: auto;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s);
-    margin-top: var(--space-m);
-    padding: var(--space-s) 0;
-}
-
-.nexus-tree-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-s);
-    padding: var(--space-xs) var(--space-l);
-    cursor: pointer;
-    transition: background 0.1s ease;
-}
-
-.nexus-tree-row:hover {
-    background: var(--background-modifier-hover);
-}
-
-.nexus-tree-folder {
-    font-weight: var(--font-medium);
-}
-
-.nexus-tree-file {
-    color: var(--text-normal);
-}
-
-.nexus-tree-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
-.nexus-tree-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.nexus-tree-folder .nexus-tree-icon {
-    color: var(--text-accent);
-}
-
-.nexus-tree-checkbox {
-    width: 16px;
-    height: 16px;
-    margin: 0;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.nexus-tree-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.nexus-tree-children {
-    /* Children container - no special styling needed */
-}
-
-/* Depth-based indentation using data attributes */
-.nexus-tree-row[data-depth="0"],
-.nexus-tree-empty[data-depth="1"] { padding-left: 16px; }
-
-.nexus-tree-row[data-depth="1"],
-.nexus-tree-empty[data-depth="2"] { padding-left: 36px; }
-
-.nexus-tree-row[data-depth="2"],
-.nexus-tree-empty[data-depth="3"] { padding-left: 56px; }
-
-.nexus-tree-row[data-depth="3"],
-.nexus-tree-empty[data-depth="4"] { padding-left: 76px; }
-
-.nexus-tree-row[data-depth="4"],
-.nexus-tree-empty[data-depth="5"] { padding-left: 96px; }
-
-.nexus-tree-row[data-depth="5"],
-.nexus-tree-empty[data-depth="6"] { padding-left: 116px; }
-
-.nexus-tree-row[data-depth="6"],
-.nexus-tree-empty[data-depth="7"] { padding-left: 136px; }
-
-.nexus-tree-row[data-depth="7"],
-.nexus-tree-empty[data-depth="8"] { padding-left: 156px; }
-
-.nexus-tree-row[data-depth="8"],
-.nexus-tree-empty[data-depth="9"] { padding-left: 176px; }
-
-.nexus-tree-row[data-depth="9"],
-.nexus-tree-empty[data-depth="10"] { padding-left: 196px; }
-
-.nexus-tree-row[data-depth="10"],
-.nexus-tree-empty[data-depth="11"] { padding-left: 216px; }
-
-.nexus-tree-empty {
-    padding-top: var(--space-s);
-    padding-bottom: var(--space-s);
-    padding-right: var(--space-m);
-    color: var(--text-faint);
-    font-size: var(--font-ui-smaller);
-    font-style: italic;
-}
-
 .nexus-file-picker-info {
     margin-bottom: var(--space-s);
 }
@@ -8771,7 +8658,8 @@ body.is-mobile .nexus-task-board-shell {
     background: var(--interactive-accent);
     color: var(--text-on-accent);
     border: 1px solid var(--interactive-accent);
-    padding: var(--space-xs) var(--space-s);
+    /* Tap-target floor: 6px 12px → ~30px tall for mobile parity (WCAG 2.5.5). */
+    padding: 6px var(--space-m);
     font-size: 12px;
     font-family: inherit;
     font-weight: 500;
@@ -8853,4 +8741,169 @@ body.is-mobile .nexus-task-board-shell {
 .ws-section-select:hover {
     color: var(--text-normal);
     border-color: var(--background-modifier-border-hover);
+}
+
+/* =====================================================================
+ * Workspace settings — file-picker tree (.ws-tree family)
+ *
+ * Mockup: docs/mockups/workspace-tab-redesign-v3-subpages.html
+ * Used by: src/components/workspace/FilePickerRenderer.ts
+ * Multi-select tree with lazy-expanded folders + checkbox selection.
+ * Depth indentation via [data-depth] caps with clamp() on mobile.
+ * ===================================================================== */
+
+.ws-tree {
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    margin-top: var(--space-m);
+    padding: var(--space-s) 0;
+}
+
+.ws-tree::-webkit-scrollbar {
+    width: 10px;
+}
+
+.ws-tree::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 5px;
+    border: 2px solid var(--background-secondary);
+}
+
+.ws-tree-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-l);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-normal);
+    transition: background 0.1s ease;
+}
+
+.ws-tree-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.ws-tree-row.is-folder .ws-tree-name {
+    font-weight: var(--font-medium);
+}
+
+.ws-tree-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.ws-tree-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.ws-tree-row.is-folder .ws-tree-icon {
+    color: var(--text-accent);
+}
+
+.ws-tree-checkbox {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.ws-tree-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Depth-based indentation via [data-depth]. The base indent (--space-l) plus a
+ * clamp()-bounded per-level step keeps deep trees from overflowing on narrow
+ * (mobile) viewports while preserving hierarchy on desktop. */
+.ws-tree-row[data-depth="0"],
+.ws-tree-empty[data-depth="1"] { padding-left: var(--space-l); }
+.ws-tree-row[data-depth="1"],
+.ws-tree-empty[data-depth="2"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px)); }
+.ws-tree-row[data-depth="2"],
+.ws-tree-empty[data-depth="3"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 2); }
+.ws-tree-row[data-depth="3"],
+.ws-tree-empty[data-depth="4"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 3); }
+.ws-tree-row[data-depth="4"],
+.ws-tree-empty[data-depth="5"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 4); }
+.ws-tree-row[data-depth="5"],
+.ws-tree-empty[data-depth="6"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 5); }
+.ws-tree-row[data-depth="6"],
+.ws-tree-empty[data-depth="7"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 6); }
+.ws-tree-row[data-depth="7"],
+.ws-tree-empty[data-depth="8"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 7); }
+.ws-tree-row[data-depth="8"],
+.ws-tree-empty[data-depth="9"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 8); }
+.ws-tree-row[data-depth="9"],
+.ws-tree-empty[data-depth="10"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 9); }
+.ws-tree-row[data-depth="10"],
+.ws-tree-empty[data-depth="11"] { padding-left: calc(var(--space-l) + clamp(10px, 5vw, 20px) * 10); }
+
+.ws-tree-empty {
+    padding-top: var(--space-s);
+    padding-bottom: var(--space-s);
+    padding-right: var(--space-m);
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+}
+
+/* Paired short form fields (e.g., Hour + Minute in the workflow schedule).
+ * Collapses to a single column under the mobile breakpoint below. */
+.ws-field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-m);
+}
+
+.ws-field-grid .ws-field {
+    margin-top: 0;
+}
+
+/* Graceful degradation: only pin the sticky section header on browsers that
+ * support position: sticky (older iOS WebView lacks reliable support). */
+@supports not (position: sticky) {
+    .ws-section-header {
+        position: static;
+    }
+}
+
+/* =====================================================================
+ * Mobile breakpoint (~480px) — workspace settings primitives
+ *
+ * isDesktopOnly: false — production runs on Obsidian mobile. Let the tab
+ * scroll naturally instead of nesting an internal scroll context, collapse
+ * paired fields to a single column, and tighten meta clusters.
+ * ===================================================================== */
+@media (max-width: 480px) {
+    .ws-field-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ws-section-body {
+        max-height: none;
+        overflow: visible;
+    }
+
+    .task-meta {
+        gap: var(--space-s);
+    }
+
+    .ws-tree {
+        max-height: none;
+        overflow: visible;
+    }
 }
