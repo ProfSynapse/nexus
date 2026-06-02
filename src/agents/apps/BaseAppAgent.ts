@@ -187,6 +187,16 @@ export abstract class BaseAppAgent extends BaseAgent {
   }
 
   /**
+   * Lifecycle hook called by AppManager once the agent is fully configured
+   * (app/vault/credentials/runtime injected) and registered as a live app.
+   * Override to start background work (e.g. file watchers). The matching
+   * teardown is {@link BaseAgent.onunload}. Default: no-op.
+   */
+  onload(): void {
+    // Default: no-op
+  }
+
+  /**
    * Hook called when credentials change.
    * Override to reinitialize HTTP clients, etc.
    */
