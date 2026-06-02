@@ -67,9 +67,22 @@ export class HucreEnsurer {
     const notice = new Notice('Setting up the spreadsheet engine — downloading once…', 0);
     try {
       const res = await requestUrl({ url: HUCRE_XLSX_ASSET.url, method: 'GET' });
-      if (res.status !== 200 || res.arrayBuffer.byteLength < HUCRE_XLSX_ASSET.minBytes) {
+      const bytes = res.arrayBuffer?.byteLength ?? 0;
+      if (res.status !== 200) {
         notice.hide();
         return { ok: false, error: `Failed to download the spreadsheet engine (HTTP ${res.status}).` };
+      }
+      // A 200 with a tiny body means the CDN served a re-export shim rather than
+      // the bundled module — distinguish it from a transport failure so the cause
+      // is obvious (the shim's relative imports can't resolve from a blob: URL).
+      if (bytes < HUCRE_XLSX_ASSET.minBytes) {
+        notice.hide();
+        return {
+          ok: false,
+          error:
+            `Spreadsheet engine download too small (${bytes}B < ${HUCRE_XLSX_ASSET.minBytes}B min) — ` +
+            `the CDN returned a shim, not the bundled module. URL: ${HUCRE_XLSX_ASSET.url}`,
+        };
       }
       await adapter.writeBinary(path, res.arrayBuffer);
       notice.hide();

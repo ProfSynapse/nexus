@@ -13,6 +13,9 @@ export default defineConfig([
             "main.js",
             "coverage/",
             "connector.js",
+            // Vendored runtime assets (downloaded engines) — not source
+            "hucre/",
+            "pyodide/",
             "mlc-venv/",
             ".codex-temp/",
             ".history/",

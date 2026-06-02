@@ -9,10 +9,11 @@
  * is reused, so a queue guarantees one analysis at a time. A timeout terminates
  * the worker and rejects the in-flight run; queued runs re-bootstrap on their turn.
  *
- * ⚠️ PENDING Electron runtime validation: Blob-worker creation, file://
- * importScripts of the vendored pyodide.js, local indexURL load, and the
- * terminate-timeout path must be verified in a real Obsidian desktop build.
- * The data-flow, marshalling, and network-scrub mechanics were validated in the
+ * Loading (validated in a real Obsidian desktop build): a Blob worker hides Node
+ * globals (so Pyodide uses its web loader), importScripts + loadPyodide read the
+ * vendored runtime from an app:// indexURL (file:// is blocked in Electron
+ * workers), and micropip wheels install offline via the emfs: scheme. The
+ * data-flow, marshalling, and network-scrub mechanics were validated in the
  * Phase 0 spike (docs/plans/spike-findings-pyodide-2026-05-31.md).
  */
 

@@ -27,9 +27,12 @@ export interface HucreAssetSpec {
 
 export const HUCRE_XLSX_ASSET: HucreAssetSpec = {
   file: 'hucre-xlsx.mjs',
-  // `?bundle` inlines hucre's internal `./xlsx/*` parts into one self-contained
-  // ESM file so the vendored asset loads offline (no further network fetches).
-  url: `https://esm.sh/hucre@${HUCRE_VERSION}/xlsx?bundle&target=es2022`,
+  // jsDelivr's `/+esm` endpoint Rollup-bundles the subpath into ONE self-contained,
+  // minified ESM file (no relative/bare imports) — required because the asset is
+  // loaded via a `blob:` URL, where the relative imports of esm.sh's `?bundle`
+  // re-export shim cannot resolve. esm.sh returns only a ~580B shim here; jsDelivr
+  // inlines the whole graph (~309 KB). See HucreEnsurer for the load path.
+  url: `https://cdn.jsdelivr.net/npm/hucre@${HUCRE_VERSION}/xlsx/+esm`,
   minBytes: 50_000,
 };
 
