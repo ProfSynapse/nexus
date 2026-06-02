@@ -5037,6 +5037,53 @@ body.is-mobile .message-action-btn.message-branch-next {
     color: var(--text-muted);
 }
 
+/* Dependency + note-link rows (task detail) reuse the .setting-item shell. */
+.setting-item.is-dep,
+.setting-item.is-note-link {
+    padding: var(--space-s) 0;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.setting-item.is-dep:first-child,
+.setting-item.is-note-link:first-child {
+    border-top: none;
+}
+
+/* Status pill on dependency rows (no pill for 'done' — rendered conditionally). */
+.ws-status-pill {
+    display: inline-block;
+    padding: var(--space-xxs) var(--space-s);
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: var(--space-s);
+    color: var(--text-muted);
+    background: var(--background-modifier-border);
+}
+
+.ws-status-pill.is-in_progress {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.ws-status-pill.is-cancelled {
+    opacity: 0.6;
+    text-decoration: line-through;
+}
+
+/* Inline add-control row primitive (deps / notes "Add" rows). */
+.ws-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-top: var(--space-m);
+}
+
+.ws-field-inline {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-s);
+}
+
 .task-meta {
     display: flex;
     flex-wrap: wrap;
@@ -8473,6 +8520,13 @@ body.is-mobile .nexus-task-board-shell {
 }
 
 .nexus-states-error {
+    color: var(--text-error);
+}
+
+/* Danger icon button (workspace rows): transparent clickable-icon that turns
+   red on hover — mirrors the StatesSectionRenderer delete idiom. Avoids
+   Obsidian's `mod-warning` filled-red-square background that swamps the glyph. */
+.clickable-icon.nexus-icon-danger:hover {
     color: var(--text-error);
 }
 

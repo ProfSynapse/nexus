@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workspace tab redesign — Nexus mockup</title>
+  <link rel="stylesheet" href="./workspace-tab-redesign.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="page-header">
+      <div class="page-header-text">
+        <div class="page-kicker">Nexus settings · UI mockup</div>
+        <h1>Workspace tab redesign</h1>
+        <p class="page-subtitle">
+          Side-by-side preview of the proposed workspace settings surface. Filters,
+          navigation, and CRUD interactions simulate behavior in-memory — nothing
+          persists, and no plugin code is wired. Use the left rail to step through
+          sub-views; use the material toggle to compare surface treatments.
+        </p>
+        <ul class="page-notes">
+          <li><strong>Excluded from this pass:</strong> workflow editor, file picker. Deferred to a second mockup if needed.</li>
+          <li><strong>Not redesigned:</strong> workspace list view — already shipped via SearchableCardManager. The list above projects/tasks/states intentionally matches its visual language.</li>
+          <li><strong>Mobile hint:</strong> a 390 px viewport preview is rendered alongside the desktop view. Icon-only buttons sized 40×40 px for ≥WCAG 2.5.5 tap targets.</li>
+          <li><strong>Issue #217 coverage:</strong> F1 (empty-name validation) and F3 (in-flight disable on Archive/Restore/Delete) are demonstrable. F2 (no-op no-event) and F4 (stale-render guard) are invisible to a mockup — see the annotation card on the States view.</li>
+          <li><strong>Material caveat:</strong> the project pivoted to <em>faux-glass</em> for production (no backdrop-filter on most workspace-tab chrome — Android FPS + Obsidian flat-theme constraints). <strong>Flat</strong> and <strong>Faux-glass</strong> map directly to what production will ship; <strong>Liquid glass</strong> is a visual-reference variant that uses backdrop-filter and will NOT ship as-is on workspace surfaces. The glass tokens (<code>--glass-fill</code>, <code>--glass-rim</code>, etc.) mirror <code>styles.css</code> names so the production migration is a name-swap, not a value-swap.</li>
+        </ul>
+      </div>
+
+      <div class="material-toggle" role="radiogroup" aria-label="Surface material">
+        <span class="material-toggle-label">Material</span>
+        <div class="material-toggle-options">
+          <button type="button" class="material-button is-active" data-material="flat" role="radio" aria-checked="true">Flat</button>
+          <button type="button" class="material-button" data-material="faux" role="radio" aria-checked="false">Faux-glass</button>
+          <button type="button" class="material-button" data-material="liquid" role="radio" aria-checked="false" title="Visual reference only — production uses faux-glass">Liquid glass<span class="material-button-caveat" aria-hidden="true">demo</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-body" data-material="flat">
+      <nav class="page-nav" aria-label="Mockup views">
+        <button type="button" class="nav-item is-active" data-view="detail">
+          <span class="nav-item-label">Workspace detail</span>
+          <span class="nav-item-sub">Dashboard overview</span>
+        </button>
+        <button type="button" class="nav-item" data-view="form">
+          <span class="nav-item-label">Workspace form</span>
+          <span class="nav-item-sub">Create / edit</span>
+        </button>
+        <button type="button" class="nav-item" data-view="projects">
+          <span class="nav-item-label">Projects & tasks</span>
+          <span class="nav-item-sub">List + detail</span>
+        </button>
+        <button type="button" class="nav-item" data-view="states">
+          <span class="nav-item-label">States</span>
+          <span class="nav-item-sub">#217 F1/F3 coverage</span>
+        </button>
+      </nav>
+
+      <!-- =================== Workspace detail view =================== -->
+      <main class="view view-detail is-active" data-view="detail" aria-labelledby="detail-title">
+        <div class="breadcrumb">
+          <button type="button" class="breadcrumb-link">Workspaces</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <span class="breadcrumb-current">Product systems</span>
+        </div>
+
+        <header class="surface surface-hero">
+          <div class="hero-main">
+            <div class="hero-title-row">
+              <h2 id="detail-title">Product systems</h2>
+              <span class="status-pill status-pill-active">Active</span>
+            </div>
+            <p class="hero-description">Plugin store compliance, agent registry, MCP transports. Default workspace for plugin-side eng.</p>
+            <div class="hero-meta">
+              <span class="meta-chip"><span class="meta-chip-key">Root</span><span class="meta-chip-value">/projects/nexus</span></span>
+              <span class="meta-chip"><span class="meta-chip-key">Agent</span><span class="meta-chip-value">PACT lead</span></span>
+              <span class="meta-chip"><span class="meta-chip-key">Updated</span><span class="meta-chip-value">2 hours ago</span></span>
+            </div>
+          </div>
+
+          <div class="hero-actions">
+            <button type="button" class="button button-ghost" data-action="edit-workspace">Edit</button>
+            <button type="button" class="button button-primary">Save</button>
+          </div>
+        </header>
+
+        <section class="summary-strip" aria-label="Workspace stats">
+          <article class="stat-card">
+            <span class="stat-label">Projects</span>
+            <span class="stat-value">3</span>
+            <span class="stat-sub">2 active · 1 archived</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Open tasks</span>
+            <span class="stat-value">14</span>
+            <span class="stat-sub">5 in progress</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">States</span>
+            <span class="stat-value">8</span>
+            <span class="stat-sub">2 archived</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Workflows</span>
+            <span class="stat-value">2</span>
+            <span class="stat-sub">1 scheduled</span>
+          </article>
+        </section>
+
+        <div class="detail-grid">
+          <section class="surface surface-section">
+            <header class="section-header">
+              <div>
+                <h3>Projects</h3>
+                <p class="section-sub">Workspace-scoped projects with task summaries.</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-ghost" data-action="view-projects">View all</button>
+                <button type="button" class="button button-secondary">+ New project</button>
+              </div>
+            </header>
+
+            <ul class="row-list">
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Plugin store compliance</div>
+                  <div class="row-meta">5 tasks · 2 open · 3 done</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Edit project">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                </div>
+              </li>
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Subagent stability</div>
+                  <div class="row-meta">6 tasks · 3 open · 3 done</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Edit project">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                </div>
+              </li>
+              <li class="row-item is-muted">
+                <div class="row-main">
+                  <div class="row-title">Mobile parity <span class="inline-badge">Archived</span></div>
+                  <div class="row-meta">3 tasks · 0 open · 3 done</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Edit project">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section class="surface surface-section">
+            <header class="section-header">
+              <div>
+                <h3>Recent states</h3>
+                <p class="section-sub">Resumable snapshots of workspace context.</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-ghost" data-action="view-states">Manage states</button>
+              </div>
+            </header>
+
+            <ul class="row-list">
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Pre-merge sanity sweep</div>
+                  <div class="row-meta">2 hours ago · #pre-merge #review</div>
+                </div>
+              </li>
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Subagent loading overlay session</div>
+                  <div class="row-meta">Yesterday · #ui #subagents</div>
+                </div>
+              </li>
+              <li class="row-item is-muted">
+                <div class="row-main">
+                  <div class="row-title">Mobile audit notes <span class="inline-badge">Archived</span></div>
+                  <div class="row-meta">Last week · #mobile</div>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section class="surface surface-section">
+            <header class="section-header">
+              <div>
+                <h3>Workflows</h3>
+                <p class="section-sub">Scheduled or on-demand prompt runs scoped to this workspace.</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-secondary">+ Add workflow</button>
+              </div>
+            </header>
+
+            <ul class="row-list">
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Daily PR triage</div>
+                  <div class="row-meta">Every weekday 09:00 · Prompt: pr-triage</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Run workflow now">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </button>
+                  <button type="button" class="icon-button" aria-label="Edit workflow">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                </div>
+              </li>
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">Release notes draft</div>
+                  <div class="row-meta">On demand · Prompt: changelog-writer</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Run workflow now">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </button>
+                  <button type="button" class="icon-button" aria-label="Edit workflow">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </section>
+
+          <section class="surface surface-section surface-section-narrow">
+            <header class="section-header">
+              <div>
+                <h3>Key files</h3>
+                <p class="section-sub">Pinned vault paths for fast LLM context.</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-secondary">+ Add key file</button>
+              </div>
+            </header>
+
+            <ul class="row-list row-list-compact">
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">docs/plans/settings-ui-redesign-plan.md</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Browse">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  </button>
+                </div>
+              </li>
+              <li class="row-item">
+                <div class="row-main">
+                  <div class="row-title">CLAUDE.md</div>
+                </div>
+                <div class="row-actions">
+                  <button type="button" class="icon-button" aria-label="Browse">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </main>
+
+      <!-- =================== Workspace form view =================== -->
+      <main class="view view-form" data-view="form" aria-labelledby="form-title">
+        <div class="breadcrumb">
+          <button type="button" class="breadcrumb-link">Workspaces</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <span class="breadcrumb-current">New workspace</span>
+        </div>
+
+        <header class="form-header">
+          <div>
+            <h2 id="form-title">New workspace</h2>
+            <p class="hero-description">Create a focused container for projects, tasks, states, and prompts.</p>
+          </div>
+        </header>
+
+        <form class="surface surface-form" id="workspace-form" novalidate>
+          <fieldset class="form-section">
+            <legend class="form-section-title">Basic info</legend>
+
+            <label class="field field-required" data-field="name">
+              <span class="field-label">
+                Name
+                <span class="field-required-marker" aria-hidden="true">*</span>
+              </span>
+              <input type="text" class="field-input" name="name" placeholder="My workspace" aria-required="true" aria-describedby="name-error">
+              <span class="field-error" id="name-error" role="alert" hidden>Name is required to save this workspace.</span>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Description</span>
+              <textarea class="field-input" name="description" rows="2" placeholder="Brief description of this workspace…"></textarea>
+            </label>
+
+            <label class="field">
+              <span class="field-label">Root folder</span>
+              <input type="text" class="field-input" name="rootFolder" value="/" placeholder="/">
+              <span class="field-hint">Defaults to vault root.</span>
+            </label>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend class="form-section-title">Context</legend>
+
+            <label class="field">
+              <span class="field-label">Purpose</span>
+              <input type="text" class="field-input" name="purpose" placeholder="What is this workspace for?">
+            </label>
+
+            <label class="field">
+              <span class="field-label">Preferences</span>
+              <textarea class="field-input" name="preferences" rows="3" placeholder="Guidelines: tone, focus areas, constraints…"></textarea>
+            </label>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend class="form-section-title">Agent & files</legend>
+
+            <label class="field">
+              <span class="field-label">Dedicated agent</span>
+              <select class="field-input" name="agent">
+                <option value="">None</option>
+                <option>PACT lead</option>
+                <option>Frontend coder</option>
+                <option>Backend coder</option>
+                <option>Test engineer</option>
+              </select>
+              <span class="field-hint">Used when no agent is specified at conversation time.</span>
+            </label>
+          </fieldset>
+
+          <footer class="form-footer">
+            <span class="form-footer-hint" id="form-footer-hint">All set. Save to persist this workspace.</span>
+            <div class="form-footer-actions">
+              <button type="button" class="button button-ghost">Cancel</button>
+              <button type="submit" class="button button-primary" id="form-submit">Save workspace</button>
+            </div>
+          </footer>
+        </form>
+      </main>
+
+      <!-- =================== Projects & Tasks view =================== -->
+      <main class="view view-projects" data-view="projects" aria-labelledby="projects-title">
+        <div class="breadcrumb">
+          <button type="button" class="breadcrumb-link">Workspaces</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <button type="button" class="breadcrumb-link">Product systems</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <span class="breadcrumb-current" data-projects-crumb>Projects</span>
+        </div>
+
+        <div class="projects-shell">
+          <!-- Project list pane -->
+          <section class="surface projects-pane" aria-label="Projects list">
+            <header class="section-header">
+              <div>
+                <h3 id="projects-title">Projects</h3>
+                <p class="section-sub">Within Product systems.</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-secondary" data-action="new-project">+ New project</button>
+              </div>
+            </header>
+
+            <label class="search-field">
+              <span class="visually-hidden">Search projects</span>
+              <input type="search" class="field-input" id="project-search" placeholder="Search projects…">
+            </label>
+
+            <ul class="project-list" id="project-list">
+              <li class="project-card is-selected" data-project-id="plugin-store">
+                <div class="project-card-main">
+                  <div class="project-card-title">Plugin store compliance</div>
+                  <div class="project-card-meta">5 tasks · 2 open · 3 done</div>
+                </div>
+                <span class="status-pill status-pill-active">Active</span>
+              </li>
+              <li class="project-card" data-project-id="subagents">
+                <div class="project-card-main">
+                  <div class="project-card-title">Subagent stability</div>
+                  <div class="project-card-meta">6 tasks · 3 open · 3 done</div>
+                </div>
+                <span class="status-pill status-pill-active">Active</span>
+              </li>
+              <li class="project-card is-muted" data-project-id="mobile">
+                <div class="project-card-main">
+                  <div class="project-card-title">Mobile parity</div>
+                  <div class="project-card-meta">3 tasks · 0 open · 3 done</div>
+                </div>
+                <span class="status-pill status-pill-archived">Archived</span>
+              </li>
+            </ul>
+
+            <p class="empty-state" id="project-empty" hidden>No projects match this search.</p>
+          </section>
+
+          <!-- Project detail pane -->
+          <section class="surface projects-detail" aria-label="Project detail" id="project-detail">
+            <header class="section-header">
+              <div>
+                <h3 id="project-detail-title">Plugin store compliance</h3>
+                <p class="section-sub" id="project-detail-sub">5 tasks · 2 open · 3 done</p>
+              </div>
+              <div class="section-actions">
+                <button type="button" class="button button-ghost">Edit project</button>
+                <button type="button" class="button button-secondary" data-action="new-task">+ New task</button>
+              </div>
+            </header>
+
+            <div class="task-toolbar">
+              <label class="search-field">
+                <span class="visually-hidden">Search tasks</span>
+                <input type="search" class="field-input" id="task-search" placeholder="Filter tasks in this project…">
+              </label>
+              <div class="task-filters" role="group" aria-label="Filter by status">
+                <button type="button" class="filter-pill is-active" data-status="all">All</button>
+                <button type="button" class="filter-pill" data-status="todo">Todo</button>
+                <button type="button" class="filter-pill" data-status="in_progress">In progress</button>
+                <button type="button" class="filter-pill" data-status="done">Done</button>
+              </div>
+            </div>
+
+            <table class="task-table">
+              <thead>
+                <tr>
+                  <th scope="col" class="task-col-check"><span class="visually-hidden">Done</span></th>
+                  <th scope="col" class="task-col-title">Title</th>
+                  <th scope="col" class="task-col-status">Status</th>
+                  <th scope="col" class="task-col-priority">Priority</th>
+                  <th scope="col" class="task-col-due">Due</th>
+                  <th scope="col" class="task-col-assignee">Assignee</th>
+                  <th scope="col" class="task-col-actions"><span class="visually-hidden">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="task-tbody">
+                <!-- rows injected by JS so filtering can mutate the DOM -->
+              </tbody>
+            </table>
+
+            <p class="empty-state" id="task-empty" hidden>No tasks match these filters.</p>
+          </section>
+        </div>
+
+        <!-- Inline task detail panel slides in when a task is opened -->
+        <aside class="task-detail-panel" id="task-detail-panel" aria-label="Task detail" hidden>
+          <header class="task-detail-header">
+            <div>
+              <div class="page-kicker">Task detail</div>
+              <h3 id="task-detail-title">Audit remaining inline styles</h3>
+            </div>
+            <button type="button" class="icon-button" data-action="close-task-detail" aria-label="Close task detail">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </header>
+
+          <div class="task-detail-grid">
+            <label class="field">
+              <span class="field-label">Title</span>
+              <input type="text" class="field-input" id="task-detail-title-input" value="Audit remaining inline styles">
+            </label>
+            <label class="field field-span-2">
+              <span class="field-label">Description</span>
+              <textarea class="field-input" rows="3">Review the remaining inline style cases and decide which should move into styles.css.</textarea>
+            </label>
+            <label class="field">
+              <span class="field-label">Status</span>
+              <select class="field-input">
+                <option>Todo</option>
+                <option selected>In progress</option>
+                <option>Done</option>
+                <option>Cancelled</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Priority</span>
+              <select class="field-input">
+                <option selected>Critical</option>
+                <option>High</option>
+                <option>Medium</option>
+                <option>Low</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Due</span>
+              <input type="date" class="field-input" value="2026-03-24">
+            </label>
+            <label class="field">
+              <span class="field-label">Assignee</span>
+              <input type="text" class="field-input" value="Jordan">
+            </label>
+            <label class="field field-span-2">
+              <span class="field-label">Tags</span>
+              <input type="text" class="field-input" value="ui, compliance">
+            </label>
+          </div>
+
+          <footer class="task-detail-footer">
+            <button type="button" class="button button-danger">Delete task</button>
+            <div class="form-footer-actions">
+              <button type="button" class="button button-ghost" data-action="close-task-detail">Cancel</button>
+              <button type="button" class="button button-primary" data-action="close-task-detail">Save task</button>
+            </div>
+          </footer>
+        </aside>
+      </main>
+
+      <!-- =================== States view =================== -->
+      <main class="view view-states" data-view="states" aria-labelledby="states-title">
+        <div class="breadcrumb">
+          <button type="button" class="breadcrumb-link">Workspaces</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <button type="button" class="breadcrumb-link">Product systems</button>
+          <span class="breadcrumb-sep" aria-hidden="true">›</span>
+          <span class="breadcrumb-current">States</span>
+        </div>
+
+        <header class="form-header">
+          <div>
+            <h2 id="states-title">States</h2>
+            <p class="hero-description">
+              Snapshots of workspace context that can be resumed later. Embedded inline on the
+              workspace detail view; this dedicated view shows the same component with extra
+              breathing room and the issue #217 demo affordances.
+            </p>
+          </div>
+
+          <div class="states-toolbar">
+            <label class="toggle-row">
+              <input type="checkbox" id="show-archived">
+              <span>Show archived</span>
+            </label>
+            <button type="button" class="button button-ghost" data-action="refresh-states">Refresh</button>
+            <button type="button" class="button button-secondary" data-action="new-state">+ Create state</button>
+          </div>
+        </header>
+
+        <section class="surface surface-section">
+          <ul class="state-list" id="state-list">
+            <!-- rows injected by JS -->
+          </ul>
+          <p class="empty-state" id="state-empty" hidden></p>
+        </section>
+
+        <!-- F1/F2/F4 annotation card -->
+        <aside class="annotation-card">
+          <div class="annotation-card-title">Issue #217 coverage</div>
+          <ul class="annotation-list">
+            <li>
+              <strong>F1 — empty-name validation:</strong>
+              Try editing a state and clearing the name field, then press Save. The name input shows an inline error
+              and the Save button stays disabled until non-whitespace text is entered.
+            </li>
+            <li>
+              <strong>F3 — in-flight disable on Archive / Restore / Delete:</strong>
+              The action icons display a spinner and are disabled for ~700 ms after click in this mock.
+              Production code will guard against the double-click race using the same disable-then-await pattern.
+            </li>
+            <li class="annotation-soft">
+              <strong>F2 — no-op save no-event (not demonstrable in mockup):</strong>
+              When the user saves without changing any field, production code will skip the storage write so
+              <code>state_updated</code> is not emitted. The mockup cannot show the absence of an event.
+            </li>
+            <li class="annotation-soft">
+              <strong>F4 — stale-render guard (not demonstrable in mockup):</strong>
+              Rapid workspace switching can cause an older <code>listStates</code> promise to stomp a newer
+              render. Production code will tag each in-flight load with a generation counter and discard
+              resolved results that belong to a superseded generation.
+            </li>
+          </ul>
+        </aside>
+      </main>
+
+      <!-- =================== Mobile preview viewport =================== -->
+      <aside class="mobile-preview" aria-label="Mobile preview (390 px viewport)">
+        <header class="mobile-preview-header">
+          <span class="page-kicker">Mobile (390 × 800)</span>
+          <span class="mobile-preview-hint">Same component, narrow viewport. Tap targets ≥ 40 × 40.</span>
+        </header>
+        <div class="mobile-preview-frame">
+          <div class="mobile-preview-content">
+            <div class="breadcrumb breadcrumb-compact">
+              <button type="button" class="breadcrumb-link">‹ Back</button>
+              <span class="breadcrumb-current">Product systems</span>
+            </div>
+
+            <header class="surface surface-hero surface-hero-mobile">
+              <div class="hero-title-row">
+                <h2>Product systems</h2>
+                <span class="status-pill status-pill-active">Active</span>
+              </div>
+              <p class="hero-description">Plugin store compliance, agent registry, MCP transports.</p>
+            </header>
+
+            <section class="summary-strip summary-strip-mobile">
+              <article class="stat-card stat-card-mobile">
+                <span class="stat-label">Projects</span>
+                <span class="stat-value">3</span>
+              </article>
+              <article class="stat-card stat-card-mobile">
+                <span class="stat-label">Open tasks</span>
+                <span class="stat-value">14</span>
+              </article>
+              <article class="stat-card stat-card-mobile">
+                <span class="stat-label">States</span>
+                <span class="stat-value">8</span>
+              </article>
+            </section>
+
+            <section class="surface surface-section surface-section-mobile">
+              <header class="section-header section-header-mobile">
+                <h3>States</h3>
+                <button type="button" class="icon-button icon-button-large" aria-label="Add state">+</button>
+              </header>
+              <ul class="state-list state-list-mobile">
+                <li class="state-row">
+                  <div class="state-row-main">
+                    <div class="state-row-title">Pre-merge sanity sweep</div>
+                    <div class="state-row-meta">2 h ago</div>
+                  </div>
+                  <div class="state-row-actions">
+                    <button type="button" class="icon-button icon-button-large" aria-label="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                    <button type="button" class="icon-button icon-button-large" aria-label="Archive"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v12h14V8"/><path d="M10 12h4"/></svg></button>
+                  </div>
+                </li>
+                <li class="state-row is-muted">
+                  <div class="state-row-main">
+                    <div class="state-row-title">Mobile audit notes <span class="inline-badge">Archived</span></div>
+                    <div class="state-row-meta">Last week</div>
+                  </div>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- State edit modal -->
+  <div class="modal-backdrop" id="state-modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="state-modal-title">
+      <header class="modal-header">
+        <h2 id="state-modal-title">Edit state</h2>
+        <button type="button" class="icon-button" data-modal-close aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </header>
+
+      <form class="modal-body" id="state-edit-form" novalidate>
+        <label class="field field-required" data-field="state-name">
+          <span class="field-label">
+            Name
+            <span class="field-required-marker" aria-hidden="true">*</span>
+          </span>
+          <input type="text" class="field-input" id="state-name" aria-required="true" aria-describedby="state-name-error">
+          <span class="field-error" id="state-name-error" role="alert" hidden>State name is required.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Description</span>
+          <textarea class="field-input" id="state-description" rows="3"></textarea>
+        </label>
+
+        <footer class="modal-footer">
+          <button type="button" class="button button-ghost" data-modal-close>Cancel</button>
+          <button type="submit" class="button button-primary" id="state-save-btn">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete confirmation modal -->
+  <div class="modal-backdrop" id="confirm-modal-backdrop" hidden>
+    <div class="modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <header class="modal-header">
+        <h2 id="confirm-modal-title">Delete state?</h2>
+      </header>
+      <div class="modal-body">
+        <p id="confirm-modal-body">This cannot be undone.</p>
+      </div>
+      <footer class="modal-footer">
+        <button type="button" class="button button-ghost" data-confirm-cancel>Cancel</button>
+        <button type="button" class="button button-danger" data-confirm-ok>Delete</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="./workspace-tab-redesign.js"></script>
+</body>
+</html>
