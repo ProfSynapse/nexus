@@ -1,5 +1,29 @@
 # Nexus Changelog
 
+## June 2026
+
+**v5.10.0** — Skills & Data Analysis Apps + Workspaces tab redesign
+
+**New Apps** (opt-in via Settings → Apps)
+- **Skills Protocol** (PRs #228, #233) — author, index, and load agent Skills from your vault. Discovery + SQLite v13 index, full create/update/archive lifecycle (hard delete is UI-only), an automatic sync watcher, recursive `loadSkill` structure, and a Settings → Apps management UI. Vault-local only — never reaches OS-home provider folders. Hardened by a 3-auditor pre-merge pass (path-traversal/destructive-write fixes wired at every write/copy/remove boundary).
+- **Data Analysis** (PR #229, desktop-only) — `runPython` runs pandas against vault CSV/Excel data in a sandboxed Pyodide worker, plus lossless `.xlsx` round-trip: workbooks project into editable CSVs and write back **automatically** (debounced vault watcher), preserving formulas/charts/images/pivots byte-for-byte via the vendored `hucre` engine. Mirror and write-back are fully automatic — the app exposes just `runPython` + `listCapabilities` (PRs #232, #234).
+
+**Workspaces tab redesign — Wave 3 complete** (PRs #223, #226, #235)
+- Redesigned Projects list, Project detail, and a new per-task **Task detail** page with Dependencies (Depends-on / Blocks) and Linked-notes sections.
+- New Workflow editor and File picker ported to the shared `BoxedSection` shell.
+- Mobile layout pass: responsive `@media (max-width:480px)` breakpoint, sticky-header degradation fallback, and WCAG tap-target sizing.
+
+**Smarter AI context**
+- Task linked-notes are now **readable** by the AI across `listTasks`, `queryTasks`, and `loadWorkspace`, with a documented `input`/`output`/`reference` link taxonomy and link-type assignment at task creation (PR #236).
+- Workspace recent activity is now grouped by session and carries the memory/goal/constraints captured with each trace — the model sees *why*, not just *what* (PR #227).
+
+**Integrations & infrastructure**
+- Codex MCP setup added to the integration screen (PR #225).
+- New `App.onload()` lifecycle hook so apps start background work only when genuinely loaded + enabled (PR #230).
+- Connector now reuses the shared agent registry instead of double-initializing — fixes duplicate file watchers / double spreadsheet write-back (PR #231).
+
+> **Note**: The Skills and Data Analysis apps are opt-in and dormant until enabled in Settings → Apps. Both are verified by unit tests + build; live in-Obsidian smoke-testing is ongoing.
+
 ## May 2026
 
 **v5.9.0** — Pattern-anchored `content replace` (BREAKING)
