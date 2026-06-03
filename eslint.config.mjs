@@ -124,4 +124,19 @@ export default defineConfig([
             "import/no-nodejs-modules": "off",
         },
     },
+
+    // MCP SDK low-level `Server` class: tagged @deprecated in @modelcontextprotocol/sdk
+    // >=1.26 in favor of the high-level `McpServer`, but explicitly retained for advanced
+    // use cases. This plugin's custom RequestHandlerFactory/strategy/transport architecture
+    // is exactly that advanced use case, so `Server` is used intentionally throughout the
+    // src/server layer. The minimum SDK version that patches the ReDoS / cross-client
+    // data-leak / DNS-rebinding advisories (1.26.0) already carries this deprecation, so
+    // there is no patched version without it. Scoped off here (config-level, matching the
+    // nodejs-modules pattern above) rather than 11 scattered inline disables.
+    {
+        files: ["src/server/**/*.ts"],
+        rules: {
+            "@typescript-eslint/no-deprecated": "off",
+        },
+    },
 ]);
