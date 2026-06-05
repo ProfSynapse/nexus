@@ -121,7 +121,7 @@ describe('startup rebuild large trace-store harness', () => {
       expect(cache.markedEventIds.size).toBe(fixture.eventCount);
       expect(cache.rebuiltFts).toBe(true);
       expect(cache.syncState).not.toBeNull();
-      expect(cache.saveCalls).toBeGreaterThanOrEqual(2);
+      expect(cache.saveCalls).toBe(1);
       expect(progress.some(item => item.stage === 'Processing workspace events')).toBe(true);
       expect(progress).toContainEqual({
         stage: 'Processing workspace events',
