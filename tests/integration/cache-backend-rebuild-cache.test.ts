@@ -4,10 +4,11 @@
  * This is the storage half of the split test plan (modal seam lives in
  * cache-backend-rebuild-modal-smoke.test.ts). Asserts that the rebuild call
  * sequence drives stopAutoSave -> close -> blobStore.remove -> initialize ->
- * fullRebuild -> save in order, with the REAL IndexedDB-backed blob store and
- * mocked sqliteCache + syncCoordinator. The blob store starts populated with a
- * synthesized SQLite blob; rebuild must wipe it and the post-rebuild state of
- * IDB must show the blob absent until the next save lands.
+ * fullRebuild in order, with the REAL IndexedDB-backed blob store and mocked
+ * sqliteCache + syncCoordinator. The blob store starts populated with a
+ * synthesized SQLite blob; rebuild must wipe it before replay. Successful
+ * fullRebuild owns the final save, so these tests pin that the adapter does not
+ * add a redundant save after fullRebuild returns.
  */
 
 jest.mock('@dao-xyz/sqlite3-vec/wasm', () => jest.fn(), { virtual: true });
@@ -67,6 +68,7 @@ async function buildRebuildHarness(): Promise<RebuildHarness> {
   const syncCoordinator: SyncCoordinatorMock = {
     fullRebuild: jest.fn(async () => {
       callOrder.push('fullRebuild');
+      await cacheLifecycle.save();
       return { success: true, errors: [] };
     })
   };
@@ -91,7 +93,7 @@ async function buildRebuildHarness(): Promise<RebuildHarness> {
 }
 
 describe('HybridStorageAdapter.rebuildCache (storage seam)', () => {
-  it('drives the full call sequence: stopAutoSave -> close -> remove -> initialize -> fullRebuild -> save', async () => {
+  it('drives the full call sequence: stopAutoSave -> close -> remove -> initialize -> fullRebuild save', async () => {
     const h = await buildRebuildHarness();
     const removeSpy = jest.spyOn(h.blobStore, 'remove');
 
@@ -218,6 +220,7 @@ describe('HybridStorageAdapter.rebuildCache (storage seam)', () => {
       h.syncCoordinator.fullRebuild.mockImplementation(async () => {
         await new Promise<void>((r) => setTimeout(r, 50));
         h.callOrder.push('fullRebuild');
+        await h.cacheLifecycle.save();
         return { success: true, errors: [] };
       });
 
@@ -300,7 +303,11 @@ describe('HybridStorageAdapter.rebuildCache (storage seam)', () => {
       await expect(h.adapter.rebuildCache()).rejects.toThrow(/transient replay error/);
 
       // Restore healthy fullRebuild for the retry.
-      h.syncCoordinator.fullRebuild.mockResolvedValue({ success: true, errors: [] });
+      h.syncCoordinator.fullRebuild.mockImplementation(async () => {
+        h.callOrder.push('fullRebuild');
+        await h.cacheLifecycle.save();
+        return { success: true, errors: [] };
+      });
 
       // Follow-up rebuild — must start a fresh cycle and succeed.
       await expect(h.adapter.rebuildCache()).resolves.toBeUndefined();

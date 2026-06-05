@@ -776,7 +776,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
           throw new Error(`Cache rebuild failed: ${summary}`);
         }
 
-        await this.sqliteCache.save();
         options.onProgress?.('Complete', 1, 1);
       } finally {
         // Clear on both success and failure so a follow-up rebuild can

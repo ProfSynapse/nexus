@@ -256,7 +256,8 @@ export class SyncCoordinator {
    * Full rebuild of SQLite from JSONL files.
    *
    * NOTE: Uses smaller batch size (25) to avoid OOM errors with sql.js asm.js version.
-   * Saves after each file to prevent memory accumulation.
+   * Saves once after replay and FTS rebuild so cold-start cache rebuilds do not
+   * repeatedly export and rewrite the full SQLite blob.
    */
   async fullRebuild(options: SyncOptions = {}): Promise<SyncResult> {
     const startTime = Date.now();
@@ -285,6 +286,10 @@ export class SyncCoordinator {
       eventsApplied += taskResult.applied;
       filesProcessed.push(...taskResult.files);
 
+      if (errors.length > 0) {
+        return this.createResult(false, eventsApplied, 0, errors, startTime, filesProcessed);
+      }
+
       // Rebuild FTS and save
       options.onProgress?.('Rebuilding search indexes', 0, 1);
       await this.sqliteCache.rebuildFTSIndexes();
@@ -296,13 +301,6 @@ export class SyncCoordinator {
       return this.createResult(errors.length === 0, eventsApplied, 0, errors, startTime, filesProcessed);
     } catch (error) {
       console.error('[SyncCoordinator] Full rebuild failed:', error);
-      // Still save sync state so we don't rebuild again on next restart
-      try {
-        await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
-        await this.sqliteCache.save();
-      } catch (saveError) {
-        console.error('[SyncCoordinator] Failed to save sync state:', saveError);
-      }
       return this.createResult(false, eventsApplied, 0, [...errors, `Rebuild failed: ${String(error)}`], startTime, filesProcessed);
     }
   }
@@ -472,8 +470,6 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing workspaces', i + 1, workspaceFiles.length);
 
-        // Save after each file to prevent memory accumulation (OOM prevention)
-        await this.sqliteCache.save();
       } catch (e) {
         errors.push(`Failed to process ${file}: ${String(e)}`);
       }
@@ -521,8 +517,6 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
 
-        // Save after each file to prevent memory accumulation (OOM prevention)
-        await this.sqliteCache.save();
       } catch (e) {
         errors.push(`Failed to process ${file}: ${String(e)}`);
       }
@@ -621,8 +615,6 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing tasks', i + 1, taskFiles.length);
 
-        // Save after each file to prevent memory accumulation (OOM prevention)
-        await this.sqliteCache.save();
       } catch (e) {
         errors.push(`Failed to process ${file}: ${String(e)}`);
       }
