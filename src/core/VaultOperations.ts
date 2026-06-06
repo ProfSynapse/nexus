@@ -431,7 +431,7 @@ export class VaultOperations {
         return false;
       }
       
-      await this.vault.rename(sourceFile, normalizedTarget);
+      await this.app.fileManager.renameFile(sourceFile, normalizedTarget);
       this.fileCache.delete(normalizedSource);
       
       this.logger.debug(`Moved file from ${sourcePath} to ${targetPath}`);

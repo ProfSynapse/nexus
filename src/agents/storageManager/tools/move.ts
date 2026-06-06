@@ -28,7 +28,7 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
     super(
       'move',
       'Move',
-      'Move or rename a file or folder',
+      'Move or rename a file or folder and update internal links when enabled',
       '1.0.0'
     );
 
@@ -100,7 +100,7 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
         },
         newPath: {
           type: 'string',
-          description: 'Destination path'
+          description: 'Destination path. Uses Obsidian rename semantics, so internal links are updated when enabled in Obsidian settings.'
         },
         overwrite: {
           type: 'boolean',
@@ -109,7 +109,7 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
         }
       },
       required: ['path', 'newPath'],
-      description: 'Move or rename a file or folder (auto-detects type)'
+      description: 'Move or rename a file or folder (auto-detects type). Uses Obsidian rename semantics, so internal links are updated when enabled in Obsidian settings.'
     };
 
     // Merge with common schema (sessionId and context)

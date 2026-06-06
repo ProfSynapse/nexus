@@ -197,7 +197,7 @@ export class FileOperations {
       await FileOperations.ensureFolder(app, folderPath);
     }
     
-    await app.vault.rename(file, normalizedNewPath);
+    await app.fileManager.renameFile(file, normalizedNewPath);
   }
   
   /**
@@ -244,7 +244,7 @@ export class FileOperations {
       await FileOperations.ensureFolder(app, parentPath);
     }
     
-    await app.vault.rename(folder, normalizedNewPath);
+    await app.fileManager.renameFile(folder, normalizedNewPath);
   }
   
   /**
