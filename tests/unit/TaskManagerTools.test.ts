@@ -323,6 +323,7 @@ describe('TaskManager Tools', () => {
 
       expect(result.success).toBe(true);
       expect(result.taskId).toBe('task-new');
+      expect(result.taskRef).toBe('T-tasknew');
     });
 
     it('should return error when projectId missing', async () => {
@@ -428,6 +429,7 @@ describe('TaskManager Tools', () => {
     it('result schema advertises noteLinks items with required notePath + linkType', () => {
       const schema = tool.getResultSchema() as Record<string, any>;
       const taskItem = schema.properties.tasks.items;
+      expect(taskItem.properties.taskRef).toBeDefined();
       expect(taskItem.properties.noteLinks).toBeDefined();
       const noteLinkItem = taskItem.properties.noteLinks.items;
       expect(noteLinkItem.required).toEqual(['notePath', 'linkType']);
@@ -466,6 +468,15 @@ describe('TaskManager Tools', () => {
       const result = await tool.execute({ ...baseParams, taskId: '' });
       expect(result.success).toBe(false);
       expect(result.error).toContain('taskId');
+    });
+
+    it('should shorten UUID task IDs in status labels', () => {
+      const label = tool.getStatusLabel(
+        { taskId: '12345678-90ab-cdef-1234-567890abcdef' },
+        'present'
+      );
+
+      expect(label).toBe('Updating task T-12345678');
     });
 
     it('should add dependencies', async () => {

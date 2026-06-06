@@ -72,6 +72,7 @@ export interface TaskNoteLink {
  * the storage interface. Mirrors the UI's TaskBoardDataController enrichment pattern.
  */
 export interface TaskWithNoteLinks extends TaskMetadata {
+  taskRef: string;
   noteLinks: TaskNoteLink[];
 }
 
@@ -298,6 +299,7 @@ export type ArchiveProjectResult = CommonResult
 
 export interface CreateTaskResult extends CommonResult {
   taskId?: string;
+  taskRef?: string;
 }
 
 export interface ListTasksResult extends CommonResult {

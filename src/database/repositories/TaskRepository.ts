@@ -372,6 +372,22 @@ export class TaskRepository
     return rows.map(row => this.rowToEntity(row));
   }
 
+  async getByIdPrefix(prefix: string): Promise<TaskMetadata[]> {
+    const compactPrefix = prefix.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (compactPrefix.length === 0) {
+      return [];
+    }
+
+    const rows = await this.sqliteCache.query<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE LOWER(REPLACE(id, '-', '')) LIKE ?
+       ORDER BY created ASC
+       LIMIT 2`,
+      [`${compactPrefix}%`]
+    );
+    return rows.map(row => this.rowToEntity(row));
+  }
+
   async getDependencies(taskId: string): Promise<TaskMetadata[]> {
     const rows = await this.sqliteCache.query<TaskRow>(
       `SELECT t.* FROM tasks t

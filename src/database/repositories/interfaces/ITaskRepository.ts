@@ -131,6 +131,14 @@ export interface ITaskRepository extends IRepository<TaskMetadata> {
   getByStatus(projectId: string, status: TaskStatus): Promise<TaskMetadata[]>;
 
   /**
+   * Find tasks whose normalized ID starts with the given compact prefix.
+   *
+   * Used for human-facing short task refs. Callers should treat more than one
+   * result as ambiguous and ask for a longer/full ID.
+   */
+  getByIdPrefix(prefix: string): Promise<TaskMetadata[]>;
+
+  /**
    * Get tasks that this task depends ON (upstream dependencies)
    */
   getDependencies(taskId: string): Promise<TaskMetadata[]>;
