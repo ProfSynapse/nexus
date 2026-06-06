@@ -19,7 +19,7 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
     super(
       'linkNote',
       'Link Note',
-      'Create or remove a bidirectional link between a vault note and a task. Link types: input (task depends on / consumes the note — a required source / precondition, forms a data-flow edge), output (task produces the note — the artifact/result, forms a data-flow edge), reference (related/contextual note the task does NOT consume — association only, not part of the data flow). Use action=unlink to remove an existing link.',
+      'Create or remove a bidirectional link between a vault note and a task. Accepts either the internal taskId or short taskRef. Link types: input (task depends on / consumes the note — a required source / precondition, forms a data-flow edge), output (task produces the note — the artifact/result, forms a data-flow edge), reference (related/contextual note the task does NOT consume — association only, not part of the data flow). Use action=unlink to remove an existing link.',
       '1.0.0'
     );
   }
@@ -52,7 +52,7 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to link the note to (REQUIRED — from createTask or listTasks)' },
+        taskId: { type: 'string', description: 'Task ID or short taskRef to link the note to (REQUIRED — from createTask or listTasks)' },
         notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md" (REQUIRED)' },
         linkType: {
           type: 'string',

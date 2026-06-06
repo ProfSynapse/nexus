@@ -79,6 +79,7 @@ function createMockTaskRepo(): jest.Mocked<ITaskRepository> {
     getByProject: jest.fn(),
     getByWorkspace: jest.fn(),
     getByStatus: jest.fn(),
+    getByIdPrefix: jest.fn(),
     getDependencies: jest.fn(),
     getDependents: jest.fn(),
     getChildren: jest.fn(),
@@ -558,6 +559,7 @@ describe('TaskService', () => {
       const result = await service.listTasks('proj-1');
 
       expect(taskRepo.getNoteLinks).toHaveBeenCalledWith('t1');
+      expect(result.items[0].taskRef).toBe('T-t1');
       expect(result.items[0].noteLinks).toEqual([
         { notePath: 'notes/source.md', linkType: 'input' },
         { notePath: 'notes/result.md', linkType: 'output' }
@@ -719,6 +721,35 @@ describe('TaskService', () => {
       expect(taskRepo.update).toHaveBeenCalledWith('task-1', expect.objectContaining({
         title: 'Updated Title'
       }));
+    });
+
+    it('should resolve a short taskRef before updating status', async () => {
+      const task = createMockTask({ id: '12345678-90ab-cdef-1234-567890abcdef' });
+      taskRepo.getById.mockImplementation(async (id: string) => (
+        id === task.id ? task : null
+      ));
+      taskRepo.getByIdPrefix.mockResolvedValue([task]);
+
+      await service.updateTask('T-12345678', { status: 'in_progress' });
+
+      expect(taskRepo.getByIdPrefix).toHaveBeenCalledWith('12345678');
+      expect(taskRepo.update).toHaveBeenCalledWith(task.id, expect.objectContaining({
+        status: 'in_progress'
+      }));
+    });
+
+    it('should reject ambiguous short taskRefs', async () => {
+      taskRepo.getById.mockResolvedValue(null);
+      taskRepo.getByIdPrefix.mockResolvedValue([
+        createMockTask({ id: '12345678-0000-0000-0000-000000000000' }),
+        createMockTask({ id: '12345678-ffff-ffff-ffff-ffffffffffff' })
+      ]);
+
+      await expect(
+        service.updateTask('T-12345678', { status: 'done' })
+      ).rejects.toThrow('ambiguous');
+
+      expect(taskRepo.update).not.toHaveBeenCalled();
     });
 
     it('should throw if task not found', async () => {

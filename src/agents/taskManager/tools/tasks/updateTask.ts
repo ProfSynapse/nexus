@@ -12,14 +12,15 @@ import { UpdateTaskParameters, UpdateTaskResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { ToolStatusTense } from '../../../interfaces/ITool';
-import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
+import { verbs } from '../../../utils/toolStatusLabels';
+import { formatTaskRefForLabel } from '../../utils/taskRefs';
 
 export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskResult> {
   constructor(private taskService: TaskService) {
     super(
       'update',
       'Update Task',
-      'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
+      'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId or short taskRef (from createTask or listTasks).',
       '1.0.0'
     );
   }
@@ -86,7 +87,7 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to update (REQUIRED — from createTask or listTasks)' },
+        taskId: { type: 'string', description: 'Task ID or short taskRef to update (REQUIRED — from createTask or listTasks)' },
         title: { type: 'string', description: 'New task title' },
         description: { type: 'string', description: 'New task description' },
         status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'], description: 'New task status (setting to done auto-records completedAt timestamp)' },
@@ -94,8 +95,8 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
         dueDate: { type: 'number', description: 'New due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow)' },
         assignee: { type: 'string', description: 'New assignee name or identifier' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Replace entire tags array with these values' },
-        addDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error.' },
-        removeDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to remove from this task\'s dependencies' },
+        addDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs or taskRefs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error.' },
+        removeDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs or taskRefs to remove from this task\'s dependencies' },
         addNoteLinks: {
           type: 'array',
           description: 'Vault notes to link to this task',
@@ -117,7 +118,8 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     const v = verbs('Updating task', 'Updated task', 'Failed to update task');
-    return labelWithId(v, params, tense, { keys: ['taskId'], fallback: 'task' });
+    const taskId = typeof params?.taskId === 'string' ? formatTaskRefForLabel(params.taskId) : 'task';
+    return `${v[tense]} ${taskId}`;
   }
 
   getResultSchema(): JSONSchema {

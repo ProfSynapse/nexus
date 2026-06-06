@@ -13,13 +13,14 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import { formatTaskRef } from '../../utils/taskRefs';
 
 export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskResult> {
   constructor(private taskService: TaskService) {
     super(
       'create',
       'Create Task',
-      'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links (each as a plain path string defaulting to reference, or an object { notePath, linkType } to set input/output/reference at creation). Returns the new taskId.',
+      'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links (each as a plain path string defaulting to reference, or an object { notePath, linkType } to set input/output/reference at creation). Returns the internal taskId and a short taskRef; prefer taskRef for later task operations.',
       '1.0.0'
     );
   }
@@ -50,7 +51,7 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
         metadata: params.metadata
       });
 
-      return { success: true, taskId };
+      return { success: true, taskId, taskRef: formatTaskRef(taskId) };
     } catch (error) {
       return { success: false, error: createErrorMessage('Failed to create task: ', error) };
     }
@@ -63,12 +64,12 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
         projectId: { type: 'string', description: 'Project ID to create the task in (REQUIRED — from createProject or listProjects)' },
         title: { type: 'string', description: 'Task title (REQUIRED)' },
         description: { type: 'string', description: 'Task description (optional)' },
-        parentTaskId: { type: 'string', description: 'Parent task ID to nest this task under as a subtask (optional — from createTask or listTasks)' },
+        parentTaskId: { type: 'string', description: 'Parent task ID or taskRef to nest this task under as a subtask (optional — from createTask or listTasks)' },
         priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'Task priority (default: medium)' },
         dueDate: { type: 'number', description: 'Due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow)' },
         assignee: { type: 'string', description: 'Assignee name or identifier (optional)' },
         tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization (optional)' },
-        dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error.' },
+        dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs or taskRefs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error.' },
         linkedNotes: {
           type: 'array',
           description: 'Vault notes to link to this task. Each item is EITHER a plain string vault path (linkType defaults to "reference") OR an object { notePath, linkType } to set the relationship explicitly. linkType values: input = the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output = the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference = related/contextual note the task does NOT consume (association only, not part of the data flow). Links can also be added or changed after creation via the linkNote tool or updateTask addNoteLinks.',
@@ -97,7 +98,8 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
       type: 'object',
       properties: {
         success: { type: 'boolean' },
-        taskId: { type: 'string', description: 'ID of the created task' },
+        taskId: { type: 'string', description: 'Internal UUID of the created task' },
+        taskRef: { type: 'string', description: 'Short task reference, e.g. T-1a2b3c4d. Prefer this as taskId in later task operations.' },
         error: { type: 'string' }
       }
     };

@@ -19,7 +19,7 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
     super(
       'query',
       'Query Tasks',
-      'DAG-aware queries on a project\'s tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId.',
+      'DAG-aware queries on a project\'s tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId or short taskRef.',
       '1.0.0'
     );
   }
@@ -70,7 +70,7 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
           enum: ['nextActions', 'blockedTasks', 'dependencyTree'],
           description: 'Query type (REQUIRED). nextActions: tasks with status=todo whose dependencies are all done — these are ready to start. blockedTasks: tasks waiting on incomplete dependencies, returned with their blocker details. dependencyTree: full upstream/downstream dependency graph for a specific task (requires taskId).'
         },
-        taskId: { type: 'string', description: 'Task ID (REQUIRED for dependencyTree query — from createTask or listTasks)' }
+        taskId: { type: 'string', description: 'Task ID or short taskRef (REQUIRED for dependencyTree query — from createTask or listTasks)' }
       },
       required: ['projectId', 'query']
     });
@@ -85,7 +85,8 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
     const taskObjectSchema: JSONSchema = {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Task ID' },
+        id: { type: 'string', description: 'Internal task UUID' },
+        taskRef: { type: 'string', description: 'Short task reference, e.g. T-1a2b3c4d. Prefer this as taskId in updateTask, moveTask, linkNote, and dependency operations.' },
         projectId: { type: 'string', description: 'Parent project ID' },
         workspaceId: { type: 'string', description: 'Parent workspace ID' },
         parentTaskId: { type: 'string', description: 'Parent task ID if subtask (null if top-level)' },

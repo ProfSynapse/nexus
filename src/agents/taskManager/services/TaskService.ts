@@ -31,6 +31,7 @@ import type { IProjectRepository, ProjectMetadata } from '../../../database/repo
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { logger } from '../../../utils/logger';
+import { formatTaskRef, taskRefToIdPrefix } from '../utils/taskRefs';
 
 export interface TaskBoardEventPayload {
   workspaceId: string;
@@ -116,6 +117,36 @@ export class TaskService {
     if (!ready) {
       throw new Error('Task storage is not ready yet');
     }
+  }
+
+  private async resolveTask(rawTaskId: string): Promise<TaskMetadata | null> {
+    const exact = await this.taskRepo.getById(rawTaskId);
+    if (exact) return exact;
+
+    const prefix = taskRefToIdPrefix(rawTaskId);
+    if (!prefix) return null;
+
+    const matches = await this.taskRepo.getByIdPrefix(prefix);
+    if (matches.length === 1) {
+      return matches[0];
+    }
+    if (matches.length > 1) {
+      throw new Error(`Task reference "${rawTaskId}" is ambiguous. Use a longer reference or the full taskId.`);
+    }
+
+    return null;
+  }
+
+  private async resolveTaskId(rawTaskId: string): Promise<string> {
+    const task = await this.resolveTask(rawTaskId);
+    return task?.id ?? rawTaskId;
+  }
+
+  private withTaskRef<T extends TaskMetadata>(task: T): T & { taskRef: string } {
+    return {
+      ...task,
+      taskRef: formatTaskRef(task.id)
+    };
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -244,14 +275,16 @@ export class TaskService {
     }
 
     // Verify parent task exists if specified
+    let parentTaskId: string | undefined;
     if (data.parentTaskId) {
-      const parent = await this.taskRepo.getById(data.parentTaskId);
+      const parent = await this.resolveTask(data.parentTaskId);
       if (!parent) {
         throw new Error(`Parent task "${data.parentTaskId}" not found`);
       }
       if (parent.projectId !== projectId) {
         throw new Error('Parent task must be in the same project');
       }
+      parentTaskId = parent.id;
     }
 
     const taskId = await this.taskRepo.create({
@@ -259,7 +292,7 @@ export class TaskService {
       workspaceId: project.workspaceId,
       title: data.title,
       description: data.description,
-      parentTaskId: data.parentTaskId,
+      parentTaskId,
       priority: data.priority ?? 'medium',
       dueDate: data.dueDate,
       assignee: data.assignee,
@@ -270,13 +303,14 @@ export class TaskService {
     // Create initial dependency edges
     if (data.dependsOn && data.dependsOn.length > 0) {
       const allEdges = await this.taskRepo.getAllDependencyEdges(projectId);
-      for (const depId of data.dependsOn) {
-        const depTask = await this.taskRepo.getById(depId);
+      for (const rawDepId of data.dependsOn) {
+        const depTask = await this.resolveTask(rawDepId);
         if (!depTask) {
-          throw new Error(`Dependency task "${depId}" not found`);
+          throw new Error(`Dependency task "${rawDepId}" not found`);
         }
+        const depId = depTask.id;
         if (depTask.projectId !== projectId) {
-          throw new Error(`Dependency task "${depId}" is in a different project`);
+          throw new Error(`Dependency task "${rawDepId}" is in a different project`);
         }
         // Validate no cycle (add edge to check list for subsequent checks)
         const isSafe = this.dagService.validateNoCycle(taskId, depId, allEdges);
@@ -312,13 +346,15 @@ export class TaskService {
   async listTasks(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskWithNoteLinks>> {
     await this.ensureQueryReady();
 
+    const parentTaskId = options?.parentTaskId ? await this.resolveTaskId(options.parentTaskId) : undefined;
+
     const result = await this.taskRepo.getByProject(projectId, {
       page: options?.page,
       pageSize: options?.pageSize,
       status: options?.status,
       priority: options?.priority,
       assignee: options?.assignee,
-      parentTaskId: options?.parentTaskId,
+      parentTaskId,
       sortBy: options?.sortBy,
       sortOrder: options?.sortOrder
     });
@@ -349,10 +385,11 @@ export class TaskService {
   async updateTask(taskId: string, data: UpdateTaskData): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
     }
+    taskId = task.id;
 
     const updateData: Partial<TaskMetadata> & { updated: number } = {
       ...data,
@@ -382,10 +419,11 @@ export class TaskService {
   async moveTask(taskId: string, target: { projectId?: string; parentTaskId?: string | null }): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
     }
+    taskId = task.id;
 
     const updateData: Partial<TaskMetadata> & { updated: number } = { updated: Date.now() };
 
@@ -406,15 +444,16 @@ export class TaskService {
         // Move to top-level
         updateData.parentTaskId = undefined;
       } else {
-        const parent = await this.taskRepo.getById(target.parentTaskId);
+        const parent = await this.resolveTask(target.parentTaskId);
         if (!parent) {
           throw new Error(`Parent task "${target.parentTaskId}" not found`);
         }
+        const parentTaskId = parent.id;
         // Can't make a task its own parent
-        if (target.parentTaskId === taskId) {
+        if (parentTaskId === taskId) {
           throw new Error('A task cannot be its own parent');
         }
-        updateData.parentTaskId = target.parentTaskId;
+        updateData.parentTaskId = parentTaskId;
       }
     }
 
@@ -432,10 +471,11 @@ export class TaskService {
   async deleteTask(taskId: string): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
     }
+    taskId = task.id;
 
     await this.taskRepo.delete(taskId);
 
@@ -455,11 +495,13 @@ export class TaskService {
   async addDependency(taskId: string, dependsOnTaskId: string): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
+    taskId = task.id;
 
-    const depTask = await this.taskRepo.getById(dependsOnTaskId);
+    const depTask = await this.resolveTask(dependsOnTaskId);
     if (!depTask) throw new Error(`Dependency task "${dependsOnTaskId}" not found`);
+    dependsOnTaskId = depTask.id;
 
     if (task.projectId !== depTask.projectId) {
       throw new Error('Dependencies must be within the same project');
@@ -477,6 +519,8 @@ export class TaskService {
   async removeDependency(taskId: string, dependsOnTaskId: string): Promise<void> {
     await this.ensureQueryReady();
 
+    taskId = await this.resolveTaskId(taskId);
+    dependsOnTaskId = await this.resolveTaskId(dependsOnTaskId);
     await this.taskRepo.removeDependency(taskId, dependsOnTaskId);
   }
 
@@ -558,16 +602,17 @@ export class TaskService {
     }
 
     return rawResult.map(entry => ({
-      task: enrichedById.get(entry.task.id) ?? { ...entry.task, noteLinks: [] },
-      blockedBy: entry.blockedBy.map(b => enrichedById.get(b.id) ?? { ...b, noteLinks: [] })
+      task: enrichedById.get(entry.task.id) ?? { ...this.withTaskRef(entry.task), noteLinks: [] },
+      blockedBy: entry.blockedBy.map(b => enrichedById.get(b.id) ?? { ...this.withTaskRef(b), noteLinks: [] })
     }));
   }
 
   async getDependencyTree(taskId: string): Promise<DependencyTree> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
+    taskId = task.id;
 
     const allTasks = await this.taskRepo.getByProject(task.projectId, { pageSize: 10000 });
     const allEdges = await this.taskRepo.getAllDependencyEdges(task.projectId);
@@ -608,7 +653,7 @@ export class TaskService {
       }, []);
 
     return {
-      task: enrichedById.get(task.id) ?? { ...task, noteLinks: [] },
+      task: enrichedById.get(task.id) ?? { ...this.withTaskRef(task), noteLinks: [] },
       dependencies: mapTaskIds(dependencies),
       dependents: mapTaskIds(dependents)
     };
@@ -621,8 +666,9 @@ export class TaskService {
   async linkNote(taskId: string, notePath: string, linkType: LinkType): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
+    taskId = task.id;
 
     await this.taskRepo.addNoteLink(taskId, notePath, linkType);
 
@@ -638,7 +684,8 @@ export class TaskService {
   async unlinkNote(taskId: string, notePath: string): Promise<void> {
     await this.ensureQueryReady();
 
-    const task = await this.taskRepo.getById(taskId);
+    const task = await this.resolveTask(taskId);
+    taskId = task?.id ?? taskId;
     await this.taskRepo.removeNoteLink(taskId, notePath);
 
     if (task) {
@@ -655,7 +702,8 @@ export class TaskService {
   async getNoteLinks(taskId: string): Promise<NoteLink[]> {
     await this.ensureQueryReady();
 
-    return this.taskRepo.getNoteLinks(taskId);
+    const task = await this.resolveTask(taskId);
+    return this.taskRepo.getNoteLinks(task?.id ?? taskId);
   }
 
   /**
@@ -673,7 +721,7 @@ export class TaskService {
   private async attachNoteLinks(tasks: TaskMetadata[]): Promise<TaskWithNoteLinks[]> {
     const linkArrays = await Promise.all(
       tasks.map(task =>
-        this.getNoteLinks(task.id).catch((error) => {
+        this.taskRepo.getNoteLinks(task.id).catch((error) => {
           // Degrade to [] so one bad task never sinks the whole read, but route the
           // failure through the observability seam so a persistent getNoteLinks failure
           // is distinguishable from a task that genuinely has no links. systemWarn is the
@@ -689,7 +737,7 @@ export class TaskService {
     );
 
     return tasks.map((task, index) => ({
-      ...task,
+      ...this.withTaskRef(task),
       noteLinks: linkArrays[index].map((link): TaskNoteLink => ({
         notePath: link.notePath,
         linkType: link.linkType

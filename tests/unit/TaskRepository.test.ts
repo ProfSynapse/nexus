@@ -167,6 +167,27 @@ describe('TaskRepository', () => {
     });
   });
 
+  describe('getByIdPrefix', () => {
+    it('queries normalized ID prefixes and maps matching rows', async () => {
+      (deps.sqliteCache.query as jest.Mock).mockResolvedValue([{ ...sampleRow }]);
+
+      const result = await repo.getByIdPrefix('task-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('task-1');
+      const queryCall = (deps.sqliteCache.query as jest.Mock).mock.calls[0];
+      expect(queryCall[0]).toContain("LOWER(REPLACE(id, '-', '')) LIKE ?");
+      expect(queryCall[1]).toEqual(['task1%']);
+    });
+
+    it('returns empty results for an empty prefix', async () => {
+      const result = await repo.getByIdPrefix('---');
+
+      expect(result).toEqual([]);
+      expect(deps.sqliteCache.query).not.toHaveBeenCalled();
+    });
+  });
+
   // ============================================================================
   // create
   // ============================================================================

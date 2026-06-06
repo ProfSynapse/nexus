@@ -19,7 +19,7 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
     super(
       'list',
       'List Tasks',
-      'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including timestamps and linked vault notes (noteLinks, each with notePath + linkType: input/output/reference).',
+      'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata, short taskRef, timestamps, and linked vault notes (noteLinks, each with notePath + linkType: input/output/reference).',
       '1.0.0'
     );
   }
@@ -66,7 +66,7 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
         status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'], description: 'Filter by task status' },
         priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'Filter by priority' },
         assignee: { type: 'string', description: 'Filter by assignee' },
-        parentTaskId: { type: 'string', description: 'Filter by parent task (subtasks of this task)' },
+        parentTaskId: { type: 'string', description: 'Filter by parent task ID or taskRef (subtasks of this task)' },
         includeSubtasks: { type: 'boolean', description: 'Include subtasks in results (default: true)' },
         sortBy: { type: 'string', enum: ['created', 'updated', 'priority', 'title', 'dueDate'], description: 'Sort field (default: updated)' },
         sortOrder: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction (default: desc)' },
@@ -93,7 +93,8 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string', description: 'Task ID (use as taskId in other task operations)' },
+              id: { type: 'string', description: 'Internal task UUID' },
+              taskRef: { type: 'string', description: 'Short task reference, e.g. T-1a2b3c4d. Prefer this as taskId in updateTask, moveTask, linkNote, and dependency operations.' },
               projectId: { type: 'string', description: 'Parent project ID' },
               workspaceId: { type: 'string', description: 'Parent workspace ID' },
               parentTaskId: { type: 'string', description: 'Parent task ID if this is a subtask (null if top-level)' },

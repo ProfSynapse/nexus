@@ -12,14 +12,15 @@ import { MoveTaskParameters, MoveTaskResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { ToolStatusTense } from '../../../interfaces/ITool';
-import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
+import { verbs } from '../../../utils/toolStatusLabels';
+import { formatTaskRefForLabel } from '../../utils/taskRefs';
 
 export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
   constructor(private taskService: TaskService) {
     super(
       'move',
       'Move Task',
-      'Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId (from createTask or listTasks).',
+      'Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId or short taskRef (from createTask or listTasks).',
       '1.0.0'
     );
   }
@@ -48,11 +49,11 @@ export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to move (REQUIRED — from createTask or listTasks)' },
+        taskId: { type: 'string', description: 'Task ID or short taskRef to move (REQUIRED — from createTask or listTasks)' },
         projectId: { type: 'string', description: 'Target project ID to move the task to (from createProject or listProjects — must be in the same workspace)' },
         parentTaskId: {
           type: ['string', 'null'],
-          description: 'New parent task ID (null to make top-level, string to nest under another task)'
+          description: 'New parent task ID or taskRef (null to make top-level, string to nest under another task)'
         }
       },
       required: ['taskId']
@@ -61,7 +62,8 @@ export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     const v = verbs('Moving task', 'Moved task', 'Failed to move task');
-    return labelWithId(v, params, tense, { keys: ['taskId'], fallback: 'task' });
+    const taskId = typeof params?.taskId === 'string' ? formatTaskRefForLabel(params.taskId) : 'task';
+    return `${v[tense]} ${taskId}`;
   }
 
   getResultSchema(): JSONSchema {
