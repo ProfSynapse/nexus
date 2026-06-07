@@ -1,13 +1,12 @@
 /**
  * ElevenLabsAgent — AI voice generation app.
  *
- * Provides text-to-speech, voice listing, and sound effect generation
+ * Provides voice listing, sound effect generation, and music generation
  * via the ElevenLabs API. Requires an API key from elevenlabs.io.
  */
 
 import { BaseAppAgent, FetchTTSModelsResult } from '../BaseAppAgent';
 import { AppManifest, ElevenLabsModel } from '../../../types/apps/AppTypes';
-import { TextToSpeechTool } from './tools/textToSpeech';
 import { ListVoicesTool } from './tools/listVoices';
 import { SoundEffectsTool } from './tools/soundEffects';
 import { MusicGenerationTool } from './tools/musicGeneration';
@@ -38,7 +37,7 @@ const getStatusCode = (value: unknown): number | undefined => {
 const ELEVENLABS_MANIFEST: AppManifest = {
   id: 'elevenlabs',
   name: 'ElevenLabs',
-  description: 'AI audio generation — text-to-speech, voice listing, sound effects, and music generation',
+  description: 'AI audio generation — voice listing, sound effects, and music generation',
   version: '1.0.0',
   author: 'Nexus',
   docsUrl: 'https://elevenlabs.io/docs',
@@ -57,7 +56,6 @@ const ELEVENLABS_MANIFEST: AppManifest = {
     },
   ],
   tools: [
-    { slug: 'textToSpeech', description: 'Convert text to speech audio' },
     { slug: 'listVoices', description: 'List available voices' },
     { slug: 'soundEffects', description: 'Generate sound effects from text descriptions' },
     { slug: 'generateMusic', description: 'Generate music from text prompts describing genre, mood, instruments, and lyrics' },
@@ -68,7 +66,6 @@ export class ElevenLabsAgent extends BaseAppAgent {
   constructor() {
     super(ELEVENLABS_MANIFEST);
 
-    this.registerTool(new TextToSpeechTool(this));
     this.registerTool(new ListVoicesTool(this));
     this.registerTool(new SoundEffectsTool(this));
     this.registerTool(new MusicGenerationTool(this));

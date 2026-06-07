@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice settings - Nexus mockup</title>
+  <link rel="stylesheet" href="./voice-audio-settings.css">
+</head>
+<body>
+  <main class="nexus-settings" aria-label="Nexus settings mockup">
+    <header class="nexus-settings-header">
+      <div>
+        <h1>Nexus</h1>
+        <p class="nexus-settings-desc">Configure providers, defaults, apps, workspaces, and data settings.</p>
+      </div>
+      <div class="nexus-settings-version">v5.0.0</div>
+    </header>
+
+    <nav class="nexus-settings-tabs" aria-label="Settings tabs">
+      <button type="button" class="nexus-settings-tab">Get started</button>
+      <button type="button" class="nexus-settings-tab">Providers</button>
+      <button type="button" class="nexus-settings-tab active">Defaults</button>
+      <button type="button" class="nexus-settings-tab">Workspaces</button>
+      <button type="button" class="nexus-settings-tab">Prompts</button>
+      <button type="button" class="nexus-settings-tab">Apps</button>
+      <button type="button" class="nexus-settings-tab">Data</button>
+    </nav>
+
+    <section class="nexus-settings-page-content">
+      <div class="defaults-header">
+        <div>
+          <h2>Defaults</h2>
+          <p class="setting-item-description">These settings are used when starting a new chat.</p>
+        </div>
+        <div class="scenario-bar" role="group" aria-label="Mock states">
+          <button type="button" class="scenario-button is-active" data-scenario="none">No providers</button>
+          <button type="button" class="scenario-button" data-scenario="auto">Auto</button>
+          <button type="button" class="scenario-button" data-scenario="user">User picked</button>
+          <button type="button" class="scenario-button" data-scenario="invalid">Needs fix</button>
+        </div>
+      </div>
+
+      <div class="defaults-renderer">
+        <section class="csr-section">
+          <div class="csr-section-header">Chat model</div>
+          <div class="csr-section-content">
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Provider</div>
+              </div>
+              <div class="setting-item-control">
+                <select aria-label="Chat provider">
+                  <option>OpenAI</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Model</div>
+              </div>
+              <div class="setting-item-control">
+                <select aria-label="Chat model">
+                  <option>GPT-5.3 Chat</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="csr-section voice-section">
+          <div class="csr-section-header">Voice</div>
+          <div class="csr-section-content">
+            <p class="csr-section-desc">Defaults for microphone input, note read-aloud, and future realtime voice chat.</p>
+
+            <div class="voice-group-label">Voice input</div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="transcription-provider">Transcription provider</label>
+                <div class="setting-item-description">Used for chat microphone input and audio-file transcription.</div>
+              </div>
+              <div class="setting-item-control">
+                <select id="transcription-provider" data-role="transcription-provider">
+                  <option value="">No transcription provider</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="groq">Groq</option>
+                  <option value="deepgram">Deepgram</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="transcription-model">Transcription model</label>
+              </div>
+              <div class="setting-item-control">
+                <select id="transcription-model" data-role="transcription-model">
+                  <option value="">No model</option>
+                  <option value="whisper-1">Whisper 1</option>
+                  <option value="whisper-large-v3-turbo">Whisper Large v3 Turbo</option>
+                  <option value="nova-3">Nova-3</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="voice-group-label">Read aloud</div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="speech-provider">Speech provider</label>
+                <div class="setting-item-description">Normal text-to-speech models for reading notes and selected text.</div>
+              </div>
+              <div class="setting-item-control">
+                <select id="speech-provider" data-role="speech-provider">
+                  <option value="">No speech provider</option>
+                  <option value="elevenlabs">ElevenLabs</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="google">Google</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="speech-model">Speech model</label>
+              </div>
+              <div class="setting-item-control">
+                <select id="speech-model" data-role="speech-model">
+                  <option value="">No model</option>
+                  <option value="eleven_multilingual_v2">Eleven Multilingual v2</option>
+                  <option value="gpt-4o-mini-tts">GPT-4o mini TTS</option>
+                  <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash Preview TTS</option>
+                  <option value="elevenlabs/eleven-turbo-v2">Eleven Turbo v2</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="speech-voice">Speech voice</label>
+              </div>
+              <div class="setting-item-control">
+                <select id="speech-voice" data-role="speech-voice">
+                  <option value="">Provider default</option>
+                  <option value="marin">Marin</option>
+                  <option value="cedar">Cedar</option>
+                  <option value="kore">Kore</option>
+                  <option value="sarah">Sarah</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="voice-group-label">Live voice</div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="realtime-provider">Live voice provider</label>
+                <div class="setting-item-description">Only true realtime voice providers appear here.</div>
+              </div>
+              <div class="setting-item-control">
+                <select id="realtime-provider" data-role="realtime-provider">
+                  <option value="">No live voice provider</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="google">Google</option>
+                  <option value="elevenlabs">ElevenLabs</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="realtime-model">Live voice model</label>
+              </div>
+              <div class="setting-item-control">
+                <select id="realtime-model" data-role="realtime-model">
+                  <option value="">No model</option>
+                  <option value="gpt-realtime-2">GPT Realtime 2</option>
+                  <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview</option>
+                  <option value="eleven-agents-conversation">ElevenAgents conversation</option>
+                </select>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <label class="setting-item-name" for="realtime-voice">Live voice</label>
+              </div>
+              <div class="setting-item-control">
+                <select id="realtime-voice" data-role="realtime-voice">
+                  <option value="">Provider default</option>
+                  <option value="marin">Marin</option>
+                  <option value="cedar">Cedar</option>
+                  <option value="agent">Configured agent voice</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="voice-warning is-hidden" data-role="warning"></div>
+          </div>
+        </section>
+
+        <section class="csr-section">
+          <div class="csr-section-header">Ingestion</div>
+          <div class="csr-section-content">
+            <div class="setting-item">
+              <div class="setting-item-info">
+                <div class="setting-item-name">Enable ingestion</div>
+                <div class="setting-item-description">Show PDF ingestion settings and enable drag-and-drop ingestion in chat.</div>
+              </div>
+              <div class="setting-item-control">
+                <label class="toggle">
+                  <input type="checkbox" checked>
+                  <span aria-hidden="true"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="./voice-audio-settings.js"></script>
+</body>
+</html>

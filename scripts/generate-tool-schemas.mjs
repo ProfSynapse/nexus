@@ -321,11 +321,19 @@ function instantiateAgents() {
   const llmSettings = JSON.parse(JSON.stringify(DEFAULT_LLM_PROVIDER_SETTINGS));
   llmSettings.providers.google.apiKey = 'mock-google-key';
   llmSettings.providers.google.enabled = true;
+  llmSettings.providers.openai.apiKey = 'mock-openai-key';
+  llmSettings.providers.openai.enabled = true;
   llmSettings.providers.openrouter.apiKey = 'mock-openrouter-key';
   llmSettings.providers.openrouter.enabled = true;
   llmSettings.defaultImageModel = {
     provider: 'google',
     model: 'gemini-2.5-flash-image'
+  };
+  llmSettings.defaultSpeechModel = {
+    provider: 'openai',
+    model: 'gpt-4o-mini-tts',
+    voice: 'marin',
+    source: 'user'
   };
 
   const settings = {

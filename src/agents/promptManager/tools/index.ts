@@ -7,6 +7,7 @@ export { ArchivePromptTool } from './archivePrompt';
 export { ListModelsTool } from './listModels';
 export { ExecutePromptsTool } from './executePrompts';
 export { GenerateImageTool } from './generateImage';
+export { GenerateAudioTool } from './generateAudio';
 
 // Subagent tool (internal chat only - supports spawn and cancel actions)
 export { SubagentTool } from './subagent';

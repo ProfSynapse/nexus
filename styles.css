@@ -3996,6 +3996,37 @@ body.is-mobile .message-action-btn.message-branch-next {
     padding-bottom: 0;
 }
 
+.nexus-voice-section-desc {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.nexus-voice-group-label {
+    margin-top: var(--space-m);
+    padding-top: var(--space-s);
+    border-top: 1px solid var(--background-modifier-border);
+    color: var(--text-faint);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.nexus-voice-section-desc + .nexus-voice-group-label {
+    margin-top: var(--space-s);
+    border-top: none;
+}
+
+.nexus-voice-warning {
+    margin-top: var(--space-s);
+    padding: var(--space-s);
+    border: 1px solid var(--background-modifier-error);
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-error);
+    color: var(--text-error);
+    font-size: 12px;
+}
+
 /* Effort slider row */
 .csr-effort-row {
     padding-left: var(--space-s);

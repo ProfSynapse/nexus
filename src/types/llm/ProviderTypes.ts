@@ -68,6 +68,26 @@ export interface DefaultImageModelSettings {
   model: string;
 }
 
+export type VoiceDefaultSelectionSource = 'auto' | 'user';
+
+export interface DefaultSpeechModelSettings {
+  provider?: string;
+  model?: string;
+  voice?: string;
+  source?: VoiceDefaultSelectionSource;
+  lastAutoProvider?: string;
+  lastAutoModel?: string;
+}
+
+export interface DefaultRealtimeVoiceModelSettings {
+  provider?: string;
+  model?: string;
+  voice?: string;
+  source?: VoiceDefaultSelectionSource;
+  lastAutoProvider?: string;
+  lastAutoModel?: string;
+}
+
 /**
  * LLM provider settings
  */
@@ -86,6 +106,8 @@ export interface LLMProviderSettings {
   defaultPdfMode?: 'text' | 'vision'; // Default PDF processing mode
   defaultOcrModel?: DefaultModelSettings; // Default provider+model for vision OCR
   defaultTranscriptionModel?: DefaultModelSettings; // Default provider+model for audio transcription
+  defaultSpeechModel?: DefaultSpeechModelSettings; // Default provider+model/voice for read aloud
+  defaultRealtimeVoiceModel?: DefaultRealtimeVoiceModelSettings; // Default provider+model/voice for live voice
 }
 
 /**

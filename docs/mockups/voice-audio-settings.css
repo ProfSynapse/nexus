@@ -1,0 +1,325 @@
+:root {
+  --background-primary: #202124;
+  --background-secondary: #282a2e;
+  --background-secondary-alt: #303238;
+  --background-modifier-border: #3f4249;
+  --background-modifier-hover: #34373d;
+  --background-modifier-error: #533237;
+  --interactive-accent: #8ab4f8;
+  --interactive-accent-hover: #a8c7fa;
+  --text-normal: #eef1f6;
+  --text-muted: #b3bac5;
+  --text-faint: #858c98;
+  --text-accent: #b9d4ff;
+  --text-error: #f28b92;
+  --text-on-accent: #172335;
+  --radius-s: 6px;
+  --radius-m: 8px;
+  --radius-l: 10px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  padding: 24px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: "Inter", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+.nexus-settings {
+  max-width: 1060px;
+  margin: 0 auto;
+}
+
+.nexus-settings-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 16px;
+}
+
+.nexus-settings-header h1 {
+  margin: 0 0 4px;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.nexus-settings-desc,
+.setting-item-description,
+.csr-section-desc {
+  color: var(--text-muted);
+}
+
+.nexus-settings-desc,
+.setting-item-description {
+  margin: 0;
+  font-size: 13px;
+}
+
+.nexus-settings-version {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding-top: 6px;
+}
+
+.nexus-settings-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.nexus-settings-tab {
+  min-height: 38px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nexus-settings-tab:hover {
+  color: var(--text-normal);
+}
+
+.nexus-settings-tab.active {
+  color: var(--text-accent);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.defaults-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.defaults-header h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.scenario-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.scenario-button {
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--radius-s);
+  padding: 0 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.scenario-button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.scenario-button.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.defaults-renderer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.csr-section {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  overflow: hidden;
+}
+
+.csr-section-header {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-normal);
+  background: var(--background-secondary-alt);
+}
+
+.csr-section-content {
+  padding: 0 14px;
+}
+
+.csr-section-desc {
+  margin: 12px 0 2px;
+  font-size: 13px;
+}
+
+.voice-group-label {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.csr-section-desc + .voice-group-label {
+  margin-top: 10px;
+  border-top: 0;
+}
+
+.setting-item {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 16px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+}
+
+.setting-item:last-child {
+  border-bottom: 0;
+}
+
+.setting-item-info {
+  min-width: 0;
+}
+
+.setting-item-name {
+  display: block;
+  margin: 0;
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.setting-item-description {
+  margin-top: 3px;
+}
+
+.setting-item-control {
+  min-width: 0;
+}
+
+select {
+  width: 100%;
+  min-height: 34px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 0 9px;
+}
+
+select:disabled,
+input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+select:focus-visible,
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.toggle {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 24px;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+}
+
+.toggle span {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-accent);
+}
+
+.toggle span::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 20px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-on-accent);
+}
+
+.voice-warning {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(242, 139, 146, 0.45);
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-error);
+  color: var(--text-error);
+  font-size: 13px;
+}
+
+.is-hidden {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 14px;
+  }
+
+  .nexus-settings-header,
+  .defaults-header {
+    flex-direction: column;
+  }
+
+  .setting-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .setting-item-control {
+    width: 100%;
+  }
+}

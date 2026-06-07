@@ -7,6 +7,7 @@ import {
   ArchivePromptTool,
   ListModelsTool,
   ExecutePromptsTool,
+  GenerateAudioTool,
   GenerateImageTool,
   SubagentTool,
 } from './tools';
@@ -69,6 +70,11 @@ export class PromptManagerAgent extends BaseAgent {
   private readonly vault: Vault;
 
   /**
+   * Settings manager for provider/app-backed generation defaults
+   */
+  private readonly settings: Settings;
+
+  /**
    * EventRef for settings change listener (Obsidian Events API)
    */
   private settingsEventRef: EventRef | null = null;
@@ -103,6 +109,7 @@ export class PromptManagerAgent extends BaseAgent {
     );
 
     // Store injected dependencies
+    this.settings = settings;
     this.providerManager = providerManager;
     this.parentAgentManager = parentAgentManager;
     this.usageTracker = usageTracker;
@@ -178,6 +185,20 @@ export class PromptManagerAgent extends BaseAgent {
       });
     }
 
+    if (this.shouldHaveGenerateAudio(llmProviders)) {
+      this.registerLazyTool({
+        slug: 'generateAudio', name: 'Generate Audio',
+        description: 'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.',
+        version: '1.0.0',
+        factory: () => new GenerateAudioTool({
+          app: this.app,
+          vault: this.vault,
+          llmSettings: this.settings.settings.llmProviders ?? null,
+          appsSettings: this.settings.settings.apps
+        }),
+      });
+    }
+
     // Register subagent tool (internal chat only - executor wired up separately)
     // Supports both spawn and cancel actions via action parameter
     this.subagentTool = new SubagentTool();
@@ -198,7 +219,8 @@ export class PromptManagerAgent extends BaseAgent {
     const hasOpenRouterKey = settings.providers?.openrouter?.apiKey && settings.providers?.openrouter?.enabled;
     const shouldHaveGenerateImage = hasGoogleKey || hasOpenRouterKey;
     const hasGenerateImage = this.hasTool('generateImage');
-
+    const shouldHaveGenerateAudio = this.shouldHaveGenerateAudio(settings);
+    const hasGenerateAudio = this.hasTool('generateAudio');
     if (shouldHaveGenerateImage && !hasGenerateImage) {
       // Register the tool - API key now available
       this.registerTool(new GenerateImageTool({
@@ -216,6 +238,40 @@ export class PromptManagerAgent extends BaseAgent {
         llmSettings: settings
       }));
     }
+
+    if (shouldHaveGenerateAudio && !hasGenerateAudio) {
+      this.registerTool(new GenerateAudioTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        appsSettings: this.settings.settings.apps
+      }));
+    } else if (!shouldHaveGenerateAudio && hasGenerateAudio) {
+      this.unregisterTool('generateAudio');
+    } else if (shouldHaveGenerateAudio && hasGenerateAudio) {
+      this.unregisterTool('generateAudio');
+      this.registerTool(new GenerateAudioTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        appsSettings: this.settings.settings.apps
+      }));
+    }
+
+  }
+
+  private shouldHaveGenerateAudio(settings: LLMProviderSettings | undefined): boolean {
+    const openAIConfig = settings?.providers?.openai;
+    const hasOpenAISpeech = openAIConfig?.enabled === true && !!openAIConfig.apiKey?.trim();
+    const googleConfig = settings?.providers?.google;
+    const hasGoogleSpeech = googleConfig?.enabled === true && !!googleConfig.apiKey?.trim();
+    const mistralConfig = settings?.providers?.mistral;
+    const hasMistralSpeech = mistralConfig?.enabled === true && !!mistralConfig.apiKey?.trim();
+    const openRouterConfig = settings?.providers?.openrouter;
+    const hasOpenRouterSpeech = openRouterConfig?.enabled === true && !!openRouterConfig.apiKey?.trim();
+    const elevenLabsConfig = this.settings.settings.apps?.apps.elevenlabs;
+    const hasElevenLabsSpeech = elevenLabsConfig?.enabled === true && !!elevenLabsConfig.credentials.apiKey?.trim();
+    return hasOpenAISpeech || hasGoogleSpeech || hasMistralSpeech || hasOpenRouterSpeech || hasElevenLabsSpeech;
   }
 
   /**
