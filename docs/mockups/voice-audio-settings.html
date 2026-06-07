@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice & audio settings — Nexus mockup</title>
+  <link rel="stylesheet" href="./voice-audio-settings.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="page-header">
+      <div>
+        <div class="page-kicker">Nexus settings · UI mockup</div>
+        <h1>Voice & audio</h1>
+        <p>
+          Production settings shape for voice input, note read-aloud, and live voice.
+          Interaction state is simulated in-memory for review only.
+        </p>
+      </div>
+
+      <div class="scenario-bar" role="group" aria-label="Mock states">
+        <button type="button" class="scenario-button is-active" data-scenario="none">No providers</button>
+        <button type="button" class="scenario-button" data-scenario="auto">Auto defaults</button>
+        <button type="button" class="scenario-button" data-scenario="user">User picked</button>
+        <button type="button" class="scenario-button" data-scenario="invalid">Invalid pick</button>
+      </div>
+    </header>
+
+    <main class="settings-shell" aria-label="Voice and audio settings mockup">
+      <section class="settings-main">
+        <section class="settings-section" aria-labelledby="voice-input-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="voice-input-title">Voice input</h2>
+              <p>Speech-to-text for chat microphone input and audio-file transcription.</p>
+            </div>
+            <span class="status-chip" data-role="voice-input-status">Locked</span>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="transcription-default">Transcription default</label>
+              <span>Used when a chat or ingestion flow needs speech-to-text.</span>
+            </div>
+            <select id="transcription-default" data-role="transcription-select">
+              <option value="">No transcription provider</option>
+              <option value="openai">OpenAI · Whisper 1</option>
+              <option value="groq">Groq · Whisper Large v3 Turbo</option>
+              <option value="deepgram">Deepgram · Nova-3</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="voice-input-mode">Default mode</label>
+              <span>Automatic keeps using the first available configured transcription provider.</span>
+            </div>
+            <select id="voice-input-mode" data-role="voice-input-mode">
+              <option value="auto">Use automatic default</option>
+              <option value="user">Keep selected provider</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="read-aloud-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="read-aloud-title">Read aloud</h2>
+              <p>Text-to-speech for active notes, selected text, and Markdown files.</p>
+            </div>
+            <span class="status-chip" data-role="read-aloud-status">Locked</span>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="speech-default">Speech default</label>
+              <span>Normal TTS models are available here; realtime-only models are excluded.</span>
+            </div>
+            <select id="speech-default" data-role="speech-select">
+              <option value="">No speech provider</option>
+              <option value="elevenlabs">ElevenLabs · Eleven Multilingual v2</option>
+              <option value="openai">OpenAI · GPT-4o mini TTS</option>
+              <option value="google">Google · Gemini 2.5 Flash Preview TTS</option>
+              <option value="openrouter">OpenRouter · Eleven Turbo v2</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="speech-voice">Voice</label>
+              <span>Voice options come from the selected provider or app.</span>
+            </div>
+            <select id="speech-voice" data-role="speech-voice">
+              <option value="">No voice</option>
+              <option value="marin">Marin</option>
+              <option value="cedar">Cedar</option>
+              <option value="kore">Kore</option>
+              <option value="sarah">Sarah</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="speech-speed">Speed</label>
+              <span>Ignored by providers that do not support speed controls.</span>
+            </div>
+            <div class="range-field">
+              <input id="speech-speed" type="range" min="0.75" max="1.25" step="0.05" value="1" data-role="speech-speed">
+              <span data-role="speech-speed-label">1.00x</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="speech-style">Style</label>
+              <span>Used as provider-specific speech instructions when supported.</span>
+            </div>
+            <input id="speech-style" type="text" value="Read clearly and naturally." data-role="speech-style">
+          </div>
+
+          <div class="setting-row compact-row">
+            <div class="setting-copy">
+              <label for="skip-frontmatter">Skip frontmatter</label>
+              <span>YAML metadata is omitted from note narration.</span>
+            </div>
+            <label class="toggle">
+              <input id="skip-frontmatter" type="checkbox" checked data-role="skip-frontmatter">
+              <span aria-hidden="true"></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="settings-section" aria-labelledby="live-voice-title">
+          <div class="section-heading">
+            <div>
+              <h2 id="live-voice-title">Live voice</h2>
+              <p>Realtime speech-to-speech chat. TTS-only and transcription-only providers stay out of this picker.</p>
+            </div>
+            <span class="status-chip" data-role="live-voice-status">Locked</span>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="realtime-default">Realtime default</label>
+              <span>Unlocked only by true realtime voice providers or apps.</span>
+            </div>
+            <select id="realtime-default" data-role="realtime-select">
+              <option value="">No realtime provider</option>
+              <option value="openai">OpenAI · GPT Realtime 2</option>
+              <option value="google">Google · Gemini 3.1 Flash Live Preview</option>
+              <option value="elevenlabs">ElevenLabs · ElevenAgents conversation</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-copy">
+              <label for="realtime-voice">Voice</label>
+              <span>Voice changes apply when a new live session starts.</span>
+            </div>
+            <select id="realtime-voice" data-role="realtime-voice">
+              <option value="">No voice</option>
+              <option value="marin">Marin</option>
+              <option value="cedar">Cedar</option>
+              <option value="agent">Configured agent voice</option>
+            </select>
+          </div>
+
+          <div class="live-preview" data-role="live-preview">
+            <button type="button" class="icon-button" aria-label="Start live voice">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"></path>
+                <path d="M19 10a7 7 0 0 1-14 0"></path>
+                <path d="M12 17v4"></path>
+                <path d="M8 21h8"></path>
+              </svg>
+            </button>
+            <div>
+              <strong data-role="live-preview-title">Live voice unavailable</strong>
+              <span data-role="live-preview-copy">Enable a realtime-capable provider to unlock this control.</span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="settings-side" aria-label="Provider status">
+        <section class="side-panel">
+          <h2>Configured capabilities</h2>
+          <div class="provider-list" data-role="provider-list"></div>
+        </section>
+
+        <section class="side-panel">
+          <h2>Resolution</h2>
+          <dl class="resolution-list">
+            <div>
+              <dt>Voice input</dt>
+              <dd data-role="transcription-resolution">No configured provider</dd>
+            </div>
+            <div>
+              <dt>Read aloud</dt>
+              <dd data-role="speech-resolution">No configured provider</dd>
+            </div>
+            <div>
+              <dt>Live voice</dt>
+              <dd data-role="realtime-resolution">No configured provider</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="side-panel warning-panel" data-role="warning-panel">
+          <h2>Attention</h2>
+          <p data-role="warning-copy">No providers are configured for voice or audio.</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="./voice-audio-settings.js"></script>
+</body>
+</html>
