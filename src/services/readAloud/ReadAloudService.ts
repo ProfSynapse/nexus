@@ -1,4 +1,5 @@
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
+import type { AppsSettings } from '../../types/apps/AppTypes';
 import { MarkdownSpeechPreprocessor, SpeechTextChunk } from './MarkdownSpeechPreprocessor';
 import { SpeechSynthesisService } from './SpeechSynthesisService';
 
@@ -85,9 +86,16 @@ export class ReadAloudService {
 
   constructor(
     llmSettings: LLMProviderSettings | null,
+    appsSettingsOrPlaybackFactory?: AppsSettings | AudioPlaybackFactory,
     private playbackFactory: AudioPlaybackFactory = new BrowserAudioPlaybackFactory()
   ) {
-    this.speechService = new SpeechSynthesisService(llmSettings);
+    const appsSettings = isAudioPlaybackFactory(appsSettingsOrPlaybackFactory)
+      ? undefined
+      : appsSettingsOrPlaybackFactory;
+    if (isAudioPlaybackFactory(appsSettingsOrPlaybackFactory)) {
+      this.playbackFactory = appsSettingsOrPlaybackFactory;
+    }
+    this.speechService = new SpeechSynthesisService(llmSettings, { appsSettings });
   }
 
   isPlaying(): boolean {
@@ -144,4 +152,8 @@ export class ReadAloudService {
       throw new Error('Read aloud playback was stopped.');
     }
   }
+}
+
+function isAudioPlaybackFactory(value: AppsSettings | AudioPlaybackFactory | undefined): value is AudioPlaybackFactory {
+  return typeof value === 'object' && value !== null && typeof (value as AudioPlaybackFactory).create === 'function';
 }

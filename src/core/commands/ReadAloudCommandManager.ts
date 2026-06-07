@@ -154,11 +154,13 @@ export class ReadAloudCommandManager {
 
   private getReadAloudService(): ReadAloudService {
     const llmSettings = this.config.plugin.settings?.settings.llmProviders ?? null;
+    const appsSettings = this.config.plugin.settings?.settings.apps;
     const fingerprint = JSON.stringify(llmSettings?.defaultSpeechModel ?? {}) +
-      JSON.stringify(llmSettings?.providers?.openai ?? {});
+      JSON.stringify(llmSettings?.providers?.openai ?? {}) +
+      JSON.stringify(appsSettings?.apps.elevenlabs ?? {});
     if (!this.readAloudService || this.settingsFingerprint !== fingerprint) {
       this.readAloudService?.stop();
-      this.readAloudService = new ReadAloudService(llmSettings);
+      this.readAloudService = new ReadAloudService(llmSettings, appsSettings);
       this.settingsFingerprint = fingerprint;
     }
     return this.readAloudService;
