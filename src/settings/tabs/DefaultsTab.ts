@@ -39,6 +39,7 @@ import {
   RealtimeVoiceProviderAvailability,
   resolveDefaultRealtimeVoiceSelection,
 } from '../../services/llm/types/RealtimeVoiceTypes';
+import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogService';
 
 export interface DefaultsTabServices {
   app: App;
@@ -346,6 +347,8 @@ export class DefaultsTab {
   ): void {
     let modelDropdown: HTMLSelectElement | null = null;
     let voiceDropdown: HTMLSelectElement | null = null;
+    let voiceRequestId = 0;
+    const voiceCatalogService = new VoiceCatalogService();
 
     const getAvailability = (): SpeechProviderAvailability[] =>
       buildSpeechProviderAvailability(llmSettings, this.getSpeechAppStates());
@@ -365,11 +368,24 @@ export class DefaultsTab {
       };
     };
 
-    const updateVoiceOptions = (): void => {
+    const updateVoiceOptions = async (): Promise<void> => {
       if (!voiceDropdown) return;
+      const requestId = ++voiceRequestId;
       const selection = getSelection();
-      const model = getSpeechModel(selection.provider, selection.model);
-      const voices = model?.voices ?? [];
+
+      voiceDropdown.empty();
+      if (selection.provider === 'elevenlabs') {
+        voiceDropdown.createEl('option', { value: '', text: 'Loading voices...' });
+        voiceDropdown.disabled = true;
+      }
+
+      const voices = await voiceCatalogService.getVoices(selection.provider, selection.model, {
+        appsSettings: this.services.appManager?.getAppsSettings() ?? this.services.settings.settings.apps
+      }).catch(() => []);
+
+      if (requestId !== voiceRequestId || !voiceDropdown) {
+        return;
+      }
 
       voiceDropdown.empty();
       voiceDropdown.createEl('option', { value: '', text: 'Provider default' });
@@ -403,7 +419,7 @@ export class DefaultsTab {
           text: 'Select a speech provider first'
         });
         modelDropdown.disabled = true;
-        updateVoiceOptions();
+        void updateVoiceOptions();
         return;
       }
 
@@ -423,7 +439,7 @@ export class DefaultsTab {
       modelDropdown.value = selection.model && selectedModelExists
         ? selection.model
         : models[0]?.id || '';
-      updateVoiceOptions();
+      void updateVoiceOptions();
     };
 
     new Setting(parentEl)
@@ -477,7 +493,7 @@ export class DefaultsTab {
             llmSettings.defaultSpeechModel = this.buildSpeechDefault(model, selection.voice);
           }
           void this.services.settings.saveSettings().then(() => {
-            updateVoiceOptions();
+            void updateVoiceOptions();
             onSelectionChange();
           });
         });
@@ -487,7 +503,7 @@ export class DefaultsTab {
       .setName('Speech voice')
       .addDropdown(dropdown => {
         voiceDropdown = dropdown.selectEl;
-        updateVoiceOptions();
+        void updateVoiceOptions();
         dropdown.onChange((voice) => {
           const selection = getSelection();
           if (selection.provider && selection.model) {
