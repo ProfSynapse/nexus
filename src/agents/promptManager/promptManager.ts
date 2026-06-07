@@ -9,6 +9,8 @@ import {
   ExecutePromptsTool,
   GenerateAudioTool,
   GenerateImageTool,
+  GenerateVideoTool,
+  CheckGeneratedArtifactTool,
   SubagentTool,
 } from './tools';
 import type { SubagentExecutor } from '../../services/chat/SubagentExecutor';
@@ -24,6 +26,7 @@ import { App, Vault, EventRef } from 'obsidian';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
+import { resolveVaultRoot } from '../../database/storage/VaultRootResolver';
 
 /**
  * PromptManager Agent for custom prompt operations
@@ -199,6 +202,33 @@ export class PromptManagerAgent extends BaseAgent {
       });
     }
 
+    if (this.shouldHaveGenerateVideo(llmProviders)) {
+      const artifactJobsPath = this.getArtifactJobsPath();
+      this.registerLazyTool({
+        slug: 'generateVideo', name: 'Generate Video',
+        description: 'Generate text-to-video MP4 files in the vault using Google Veo or OpenRouter video models.',
+        version: '1.0.0',
+        factory: () => new GenerateVideoTool({
+          app: this.app,
+          vault: this.vault,
+          llmSettings: this.settings.settings.llmProviders ?? null,
+          artifactJobsPath,
+        }),
+      });
+
+      this.registerLazyTool({
+        slug: 'checkGeneratedArtifact', name: 'Check Generated Artifact',
+        description: 'Check a previously timed-out generated artifact job and save the completed output to its requested vault path.',
+        version: '1.0.0',
+        factory: () => new CheckGeneratedArtifactTool({
+          app: this.app,
+          vault: this.vault,
+          llmSettings: this.settings.settings.llmProviders ?? null,
+          artifactJobsPath,
+        }),
+      });
+    }
+
     // Register subagent tool (internal chat only - executor wired up separately)
     // Supports both spawn and cancel actions via action parameter
     this.subagentTool = new SubagentTool();
@@ -221,6 +251,10 @@ export class PromptManagerAgent extends BaseAgent {
     const hasGenerateImage = this.hasTool('generateImage');
     const shouldHaveGenerateAudio = this.shouldHaveGenerateAudio(settings);
     const hasGenerateAudio = this.hasTool('generateAudio');
+    const shouldHaveGenerateVideo = this.shouldHaveGenerateVideo(settings);
+    const hasGenerateVideo = this.hasTool('generateVideo');
+    const hasCheckGeneratedArtifact = this.hasTool('checkGeneratedArtifact');
+
     if (shouldHaveGenerateImage && !hasGenerateImage) {
       // Register the tool - API key now available
       this.registerTool(new GenerateImageTool({
@@ -258,6 +292,54 @@ export class PromptManagerAgent extends BaseAgent {
       }));
     }
 
+    if (shouldHaveGenerateVideo && !hasGenerateVideo) {
+      const artifactJobsPath = this.getArtifactJobsPath();
+      this.registerTool(new GenerateVideoTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        artifactJobsPath
+      }));
+    } else if (!shouldHaveGenerateVideo && hasGenerateVideo) {
+      this.unregisterTool('generateVideo');
+    } else if (shouldHaveGenerateVideo && hasGenerateVideo) {
+      const artifactJobsPath = this.getArtifactJobsPath();
+      this.unregisterTool('generateVideo');
+      this.registerTool(new GenerateVideoTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        artifactJobsPath
+      }));
+    }
+
+    if (shouldHaveGenerateVideo && !hasCheckGeneratedArtifact) {
+      const artifactJobsPath = this.getArtifactJobsPath();
+      this.registerTool(new CheckGeneratedArtifactTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        artifactJobsPath
+      }));
+    } else if (!shouldHaveGenerateVideo && hasCheckGeneratedArtifact) {
+      this.unregisterTool('checkGeneratedArtifact');
+    } else if (shouldHaveGenerateVideo && hasCheckGeneratedArtifact) {
+      const artifactJobsPath = this.getArtifactJobsPath();
+      this.unregisterTool('checkGeneratedArtifact');
+      this.registerTool(new CheckGeneratedArtifactTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings,
+        artifactJobsPath
+      }));
+    }
+  }
+
+  private getArtifactJobsPath(): string {
+    const resolution = resolveVaultRoot(this.settings.settings, {
+      configDir: this.app.vault.configDir
+    });
+    return `${resolution.dataPath}/artifact-jobs.jsonl`;
   }
 
   private shouldHaveGenerateAudio(settings: LLMProviderSettings | undefined): boolean {
@@ -272,6 +354,14 @@ export class PromptManagerAgent extends BaseAgent {
     const elevenLabsConfig = this.settings.settings.apps?.apps.elevenlabs;
     const hasElevenLabsSpeech = elevenLabsConfig?.enabled === true && !!elevenLabsConfig.credentials.apiKey?.trim();
     return hasOpenAISpeech || hasGoogleSpeech || hasMistralSpeech || hasOpenRouterSpeech || hasElevenLabsSpeech;
+  }
+
+  private shouldHaveGenerateVideo(settings: LLMProviderSettings | undefined): boolean {
+    const googleConfig = settings?.providers?.google;
+    const hasGoogleVideo = googleConfig?.enabled === true && !!googleConfig.apiKey?.trim();
+    const openRouterConfig = settings?.providers?.openrouter;
+    const hasOpenRouterVideo = openRouterConfig?.enabled === true && !!openRouterConfig.apiKey?.trim();
+    return hasGoogleVideo || hasOpenRouterVideo;
   }
 
   /**

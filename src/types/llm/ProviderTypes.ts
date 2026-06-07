@@ -4,6 +4,7 @@
  */
 
 import type { OAuthState } from '../../services/oauth/IOAuthProvider';
+import type { VideoAspectRatio, VideoResolution } from '../../services/llm/types/VideoTypes';
 
 /**
  * Thinking effort levels - unified across all providers
@@ -68,6 +69,13 @@ export interface DefaultImageModelSettings {
   model: string;
 }
 
+export interface DefaultVideoModelSettings {
+  provider: 'google' | 'openrouter';
+  model: string;
+  aspectRatio?: VideoAspectRatio;
+  resolution?: VideoResolution;
+}
+
 export type VoiceDefaultSelectionSource = 'auto' | 'user';
 
 export interface DefaultSpeechModelSettings {
@@ -99,6 +107,7 @@ export interface LLMProviderSettings {
   agentModel?: DefaultModelSettings; // Model for executePrompt (API-only, used when chat model is local)
   agentThinking?: DefaultThinkingSettings; // Thinking settings for agent model (separate from chat model)
   defaultImageModel?: DefaultImageModelSettings; // Default image generation model
+  defaultVideoModel?: DefaultVideoModelSettings; // Default video generation model
   defaultThinking?: DefaultThinkingSettings; // Default thinking settings for chat model
   defaultTemperature?: number; // Default temperature (0.0-1.0, default 0.5)
   monthlyBudget?: number; // Monthly budget in USD for LLM usage
@@ -200,6 +209,12 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
   defaultImageModel: {
     provider: 'google',
     model: 'gemini-2.5-flash-image'
+  },
+  defaultVideoModel: {
+    provider: 'google',
+    model: 'veo-3.1-generate-preview',
+    aspectRatio: '16:9',
+    resolution: '720p'
   },
   defaultThinking: {
     enabled: false,
