@@ -74,9 +74,6 @@ export interface DefaultSpeechModelSettings {
   provider?: string;
   model?: string;
   voice?: string;
-  speed?: number;
-  instructions?: string;
-  skipFrontmatter?: boolean;
   source?: VoiceDefaultSelectionSource;
   lastAutoProvider?: string;
   lastAutoModel?: string;

@@ -1,11 +1,11 @@
-# Implementation Plan: Voice & Audio Defaults, Read Aloud, and Live Voice
+# Implementation Plan: Voice Defaults, Read Aloud, and Live Voice
 
 > Created on 2026-06-07
 > Status: SCOPED
 
 ## Summary
 
-Add a first-class **Voice & audio** settings area for Nexus and use it to support two related but separate product surfaces:
+Add a first-class **Voice** settings section for Nexus and use it to support two related but separate product surfaces:
 
 - **Read aloud**: read Markdown notes or selected text using normal speech/TTS models.
 - **Live voice**: turn chat into a true realtime voice session only for providers/apps that support realtime audio conversations.
@@ -19,9 +19,9 @@ This plan is scope only. No production code changes are included here.
 - Read aloud and live voice are separate capabilities.
 - Read aloud may use normal TTS/speech-generation models.
 - Live voice only unlocks for true realtime voice providers or apps.
-- Existing transcription settings should move under a broader **Voice & audio** settings area.
+- Existing transcription settings should move under a broader **Voice** section.
 - PDF/OCR/file conversion defaults should remain under **Ingestion**.
-- Provider/app setup still belongs in **Providers** and **Apps**. The Voice & audio section only selects defaults from configured capabilities.
+- Provider/app setup still belongs in **Providers** and **Apps**. The Voice section only selects defaults from configured capabilities.
 - App-backed voice capabilities should unlock when the app is installed, enabled, and configured.
 
 ## Existing Repo Context
@@ -51,7 +51,7 @@ Keep file conversion defaults here:
 
 Do not keep read-aloud or live voice controls here.
 
-### Voice & Audio
+### Voice
 
 New top-level defaults area, probably still inside the Defaults tab at first:
 
@@ -68,7 +68,7 @@ New top-level defaults area, probably still inside the Defaults tab at first:
 - Voice
 - Speed
 - Style/instructions
-- Skip frontmatter, default `true`
+- YAML frontmatter is always skipped for note read-aloud.
 
 Read aloud should be enabled when at least one configured speech provider is available.
 
@@ -82,7 +82,7 @@ Live voice should be locked unless at least one configured realtime voice provid
 
 ## Default Resolution Policy
 
-Voice & audio defaults must be deterministic and must not silently drift when the user enables more providers.
+Voice defaults must be deterministic and must not silently drift when the user enables more providers.
 
 ### States
 
@@ -166,7 +166,7 @@ Runtime should follow the same rules:
 
 Example messages:
 
-- `Read aloud is set to OpenAI, but OpenAI speech is not configured. Update Voice & audio settings.`
+- `Read aloud is set to OpenAI, but OpenAI speech is not configured. Update Voice settings.`
 - `Live voice is set to Gemini Live, but Google is disabled. Re-enable Google or choose another realtime provider.`
 
 ## Provider Capability Buckets
@@ -208,7 +208,7 @@ Do not include transcription-only providers here.
 
 ## Current Realtime Provider Docs Snapshot
 
-> Verified against official provider docs on 2026-06-07. Re-check these docs immediately before implementing PR 6/PR 7 because realtime voice APIs are changing quickly.
+> Verified against official provider docs on 2026-06-07. Re-check these docs immediately before implementing PR 7/PR 8 because realtime voice APIs are changing quickly.
 
 ### OpenAI Realtime
 
@@ -381,15 +381,12 @@ Extend `LLMProviderSettings` or introduce a nested voice settings object. Prefer
 Recommended shape:
 
 ```ts
-interface VoiceAudioSettings {
+interface VoiceSettings {
   defaultTranscriptionModel?: DefaultModelSettings;
   defaultSpeechModel?: {
     provider: string;
     model: string;
     voice?: string;
-    speed?: number;
-    instructions?: string;
-    skipFrontmatter?: boolean;
   };
   defaultRealtimeVoiceModel?: {
     provider: string;
@@ -402,7 +399,7 @@ interface VoiceAudioSettings {
 Migration options:
 
 - Low-churn v1: keep `defaultTranscriptionModel` where it is and add `defaultSpeechModel` / `defaultRealtimeVoiceModel` beside it.
-- Cleaner v2: move the three settings under `voiceAudio`, with backward-compatible loading from the old `defaultTranscriptionModel`.
+- Cleaner v2: move the three settings under `voice`, with backward-compatible loading from the old `defaultTranscriptionModel`.
 
 Recommendation: use the low-churn v1 shape first, then consolidate once the UI and services stabilize.
 
@@ -667,20 +664,23 @@ Possible tests:
 - Add provider/app gating helpers.
 - Add tests for default resolution and locked/unlocked states.
 
-### Phase 2: Settings UI Mockup
+### Phase 2: Voice Settings UI Mockup
 
 - Create `docs/mockups/voice-audio-settings.html`.
-- Model the three sections: Voice input, Read aloud, Live voice.
-- Include disabled states and configured examples.
+- Model one Defaults tab `Voice` section with ordinary settings rows.
+- Include Voice input, Read aloud, and Live voice controls inside that section.
+- Use labels that match the setting being chosen: Transcription provider, Speech provider, Live voice provider.
+- Include disabled states and configured examples without exposing internal capability/resolution panels.
 - Review before production settings changes.
 
 ### Phase 3: Production Settings UI
 
 - Keep Ingestion focused on PDF/OCR/file conversion.
-- Add Voice & audio section.
-- Move transcription dropdowns under Voice input.
+- Add a single Voice section.
+- Move transcription dropdowns under Voice.
 - Add read-aloud speech model/voice controls.
 - Add live voice controls, locked behind realtime capability availability.
+- Do not add speed/style controls in the first production pass.
 
 ### Phase 4: Read-Aloud V1
 
@@ -692,19 +692,31 @@ Possible tests:
 
 Recommended first adapter: ElevenLabs if app-backed unlock is the priority, or OpenAI if provider-backed setup is simpler in current provider settings.
 
-### Phase 5: Additional Speech Providers
+### Phase 5: Unified Audio Tool Design
+
+- Decide whether Nexus should add a `generateAudio` tool that absorbs the current ElevenLabs audio tools.
+- Proposed mode shape: `voice`, `music`, and `sfx`.
+- Keep read-aloud tied to `voice`/TTS only; do not let music or SFX leak into note playback.
+- Gate modes by provider/app capabilities:
+  - `voice`: ElevenLabs, OpenAI, Google, OpenRouter, depending on configured speech support.
+  - `music`: ElevenLabs only until another configured provider supports music generation.
+  - `sfx`: ElevenLabs only until another configured provider supports sound effects.
+- Decide whether existing ElevenLabs `textToSpeech`, `musicGeneration`, and `soundEffects` tools are deprecated, wrapped, or left as app-specific advanced tools.
+- Decide whether generated audio always requires an `outputPath`, or whether read-aloud remains playback-only and `generateAudio` is artifact-first.
+
+### Phase 6: Additional Speech Providers
 
 - Add remaining speech adapters.
 - Add dynamic voice/model loading where provider APIs support it.
 - Add provider-specific request-limit chunking.
 
-### Phase 6: Live Voice Settings And Spike
+### Phase 7: Live Voice Settings And Spike
 
 - Keep UI gated but non-functional until at least one native realtime adapter is implemented.
 - Spike OpenAI Realtime or Gemini Live first.
 - Validate how tool calls, transcripts, interruptions, and conversation persistence map into Nexus.
 
-### Phase 7: Live Voice Implementation
+### Phase 8: Live Voice Implementation
 
 - Implement one realtime adapter.
 - Add chat live-mode controller.
@@ -714,7 +726,7 @@ Recommended first adapter: ElevenLabs if app-backed unlock is the priority, or O
 
 ## Proposed PR Breakdown
 
-### PR 1: Voice & Audio Capability Foundation
+### PR 1: Voice Capability Foundation
 
 Scope:
 
@@ -736,16 +748,18 @@ Why this PR exists:
 - It creates the shared rules before UI and services depend on them.
 - It keeps the most error-prone conflict logic small and testable.
 
-### PR 2: Voice & Audio Settings Mockup
+### PR 2: Voice Settings Mockup
 
 Scope:
 
 - Add `docs/mockups/voice-audio-settings.html`.
-- Show Voice input, Read aloud, and Live voice sections.
+- Show one Defaults tab `Voice` section.
+- Put Voice input, Read aloud, and Live voice settings inside that section.
 - Include auto/user default states.
 - Include invalid selected default state.
 - Include locked/unlocked app-backed provider examples.
 - Include mobile layout.
+- Avoid speed/style controls, configured capability panels, and default-resolution panels.
 
 Non-goals:
 
@@ -755,20 +769,22 @@ Why this PR exists:
 
 - The settings state model is complex enough that it should be reviewed before wiring production controls.
 
-### PR 3: Production Voice & Audio Settings
+### PR 3: Production Voice Settings
 
 Scope:
 
-- Add the production Voice & audio section.
-- Move transcription controls under Voice input.
+- Add the production Voice section.
+- Move transcription controls under Voice.
 - Keep Ingestion focused on file conversion and OCR.
 - Add read-aloud and live-voice controls with locked states.
 - Persist `auto` vs `user` selection state.
+- Keep internal capability/default resolution logic out of the visible settings UI unless a selected value needs repair.
 
 Non-goals:
 
 - No read-aloud command execution.
 - No live voice session.
+- No speed/style controls.
 
 Why this PR exists:
 
@@ -800,7 +816,26 @@ Why this PR exists:
 
 - It delivers the first user-visible value while still limiting provider surface area.
 
-### PR 5: Additional Read-Aloud Providers
+### PR 5: Unified Audio Tool Design
+
+Scope:
+
+- Decide whether to add a provider-aware `generateAudio` tool.
+- Decide whether it should absorb current ElevenLabs audio tools.
+- Define `mode: voice | music | sfx` unlock behavior.
+- Define output behavior and whether `outputPath` is required.
+- Define compatibility/deprecation path for app-specific ElevenLabs tools.
+
+Non-goals:
+
+- No live voice implementation.
+- No production migration unless the design is settled.
+
+Why this PR exists:
+
+- A broad generated-audio tool changes the app/tool boundary and should not be hidden inside read-aloud work.
+
+### PR 6: Additional Read-Aloud Providers
 
 Scope:
 
@@ -817,7 +852,7 @@ Why this PR exists:
 
 - Provider APIs differ enough that adding all of them in PR 4 would obscure the core read-aloud behavior.
 
-### PR 6: Live Voice UX Mockup And Technical Spike
+### PR 7: Live Voice UX Mockup And Technical Spike
 
 Scope:
 
@@ -840,7 +875,7 @@ Why this PR exists:
 
 - Realtime voice is a different product surface from read aloud. The unknowns are transport/session semantics, not just UI controls.
 
-### PR 7: Live Voice V1
+### PR 8: Live Voice V1
 
 Scope:
 
@@ -859,11 +894,11 @@ Why this PR exists:
 
 - This is the first complete realtime feature and should be reviewable on its own.
 
-### PR 8: Additional Realtime Providers
+### PR 9: Additional Realtime Providers
 
 Scope:
 
-- Add Google Gemini Live and/or ElevenLabs realtime after PR 7 proves the abstraction.
+- Add Google Gemini Live and/or ElevenLabs realtime after PR 8 proves the abstraction.
 - Add provider-specific settings and tests.
 
 Non-goals:

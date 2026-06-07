@@ -410,7 +410,8 @@ export class SettingsView extends PluginSettingTab {
                 settings: this.settingsManager,
                 llmProviderSettings: this.settingsManager.settings.llmProviders,
                 workspaceService: services.workspaceService,
-                customPromptStorage: services.customPromptStorage
+                customPromptStorage: services.customPromptStorage,
+                appManager: this.appManager
             }
         );
     }

@@ -93,6 +93,8 @@ export interface ChatSettingsRendererConfig {
   initialSettings: ChatSettings;
   options: ChatSettingsOptions;
   callbacks: ChatSettingsCallbacks;
+  showTranscriptionSection?: boolean;
+  renderAfterImageSection?: (parent: HTMLElement) => void;
 }
 
 const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high'];
@@ -155,7 +157,10 @@ export class ChatSettingsRenderer {
     this.renderModelSection(this.container);
     this.renderAgentModelSection(this.container);
     this.renderImageSection(this.container);
-    this.renderTranscriptionSection(this.container);
+    this.config.renderAfterImageSection?.(this.container);
+    if (this.config.showTranscriptionSection !== false) {
+      this.renderTranscriptionSection(this.container);
+    }
     this.renderTemperatureSection(this.container);
     this.renderContextSection(this.container);
   }
