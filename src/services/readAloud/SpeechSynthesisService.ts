@@ -8,6 +8,7 @@ import {
   type SpeechProvider,
 } from '../llm/types/SpeechTypes';
 import { ElevenLabsSpeechAdapter } from './ElevenLabsSpeechAdapter';
+import { GoogleSpeechAdapter } from './GoogleSpeechAdapter';
 import { MistralSpeechAdapter } from './MistralSpeechAdapter';
 import { OpenAISpeechAdapter } from './OpenAISpeechAdapter';
 import { OpenRouterSpeechAdapter } from './OpenRouterSpeechAdapter';
@@ -144,6 +145,13 @@ export class SpeechSynthesisService {
     if (openAIConfig?.enabled && openAIConfig.apiKey) {
       this.adapters.set('openai', new OpenAISpeechAdapter({
         apiKey: openAIConfig.apiKey
+      }));
+    }
+
+    const googleConfig = this.llmSettings?.providers?.google;
+    if (googleConfig?.enabled && googleConfig.apiKey) {
+      this.adapters.set('google', new GoogleSpeechAdapter({
+        apiKey: googleConfig.apiKey
       }));
     }
 

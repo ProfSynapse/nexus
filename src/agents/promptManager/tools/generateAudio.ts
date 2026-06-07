@@ -14,7 +14,7 @@ import {
 export interface GenerateAudioParams extends CommonParameters {
   mode?: AudioGenerationMode;
   prompt: string;
-  provider?: 'openai' | 'elevenlabs' | 'mistral' | 'openrouter';
+  provider?: 'openai' | 'elevenlabs' | 'google' | 'mistral' | 'openrouter';
   model?: string;
   voice?: string;
   outputPath: string;
@@ -33,7 +33,7 @@ export class GenerateAudioTool extends BaseTool<GenerateAudioParams, CommonResul
     super(
       'generateAudio',
       'Generate Audio',
-      'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Mistral, or OpenRouter speech.',
+      'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.',
       '1.0.0'
     );
 
@@ -84,7 +84,7 @@ export class GenerateAudioTool extends BaseTool<GenerateAudioParams, CommonResul
         },
         provider: {
           type: 'string',
-          enum: ['openai', 'elevenlabs', 'mistral', 'openrouter'],
+          enum: ['openai', 'elevenlabs', 'google', 'mistral', 'openrouter'],
           description: 'Optional speech provider. Defaults to Voice settings.',
         },
         model: {

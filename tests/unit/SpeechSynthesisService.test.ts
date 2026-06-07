@@ -151,6 +151,76 @@ describe('SpeechSynthesisService', () => {
     expect(result.audioData.byteLength).toBe(3);
   });
 
+  it('synthesizes Google speech through Gemini TTS and wraps PCM as WAV', async () => {
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new ArrayBuffer(0),
+      text: '',
+      json: {
+        candidates: [{
+          content: {
+            parts: [{
+              inlineData: {
+                data: globalThis.btoa('abcd')
+              }
+            }]
+          }
+        }]
+      },
+    });
+
+    const service = new SpeechSynthesisService(makeSettings({
+      providers: {
+        ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+        google: providerConfig({ apiKey: 'google-key' })
+      },
+      defaultSpeechModel: {
+        provider: 'google',
+        model: 'gemini-3.1-flash-tts-preview',
+        voice: 'Puck',
+        source: 'user'
+      }
+    }));
+
+    const result = await service.synthesize({ text: 'Read this.' });
+
+    expect(requestUrlMock).toHaveBeenCalledWith({
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent',
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': 'google-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: 'Read this.' }]
+        }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: 'Puck',
+              },
+            },
+          },
+        },
+        model: 'gemini-3.1-flash-tts-preview',
+      }),
+    });
+    expect(result).toMatchObject({
+      provider: 'google',
+      model: 'gemini-3.1-flash-tts-preview',
+      voice: 'Puck',
+      mimeType: 'audio/wav',
+    });
+    const bytes = new Uint8Array(result.audioData);
+    expect(String.fromCharCode(...bytes.slice(0, 4))).toBe('RIFF');
+    expect(String.fromCharCode(...bytes.slice(8, 12))).toBe('WAVE');
+    expect(result.audioData.byteLength).toBe(48);
+  });
+
   it('synthesizes OpenRouter speech through the dedicated speech endpoint', async () => {
     requestUrlMock.mockResolvedValue({
       status: 200,

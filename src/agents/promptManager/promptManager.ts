@@ -188,7 +188,7 @@ export class PromptManagerAgent extends BaseAgent {
     if (this.shouldHaveGenerateAudio(llmProviders)) {
       this.registerLazyTool({
         slug: 'generateAudio', name: 'Generate Audio',
-        description: 'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Mistral, or OpenRouter speech.',
+        description: 'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.',
         version: '1.0.0',
         factory: () => new GenerateAudioTool({
           app: this.app,
@@ -263,13 +263,15 @@ export class PromptManagerAgent extends BaseAgent {
   private shouldHaveGenerateAudio(settings: LLMProviderSettings | undefined): boolean {
     const openAIConfig = settings?.providers?.openai;
     const hasOpenAISpeech = openAIConfig?.enabled === true && !!openAIConfig.apiKey?.trim();
+    const googleConfig = settings?.providers?.google;
+    const hasGoogleSpeech = googleConfig?.enabled === true && !!googleConfig.apiKey?.trim();
     const mistralConfig = settings?.providers?.mistral;
     const hasMistralSpeech = mistralConfig?.enabled === true && !!mistralConfig.apiKey?.trim();
     const openRouterConfig = settings?.providers?.openrouter;
     const hasOpenRouterSpeech = openRouterConfig?.enabled === true && !!openRouterConfig.apiKey?.trim();
     const elevenLabsConfig = this.settings.settings.apps?.apps.elevenlabs;
     const hasElevenLabsSpeech = elevenLabsConfig?.enabled === true && !!elevenLabsConfig.credentials.apiKey?.trim();
-    return hasOpenAISpeech || hasMistralSpeech || hasOpenRouterSpeech || hasElevenLabsSpeech;
+    return hasOpenAISpeech || hasGoogleSpeech || hasMistralSpeech || hasOpenRouterSpeech || hasElevenLabsSpeech;
   }
 
   /**

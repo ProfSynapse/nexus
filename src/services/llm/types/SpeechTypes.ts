@@ -11,7 +11,7 @@ import type {
   VoiceDefaultSelectionSource
 } from '../../../types/llm/ProviderTypes';
 
-export type SpeechProvider = 'elevenlabs' | 'openai' | 'mistral' | 'openrouter';
+export type SpeechProvider = 'elevenlabs' | 'openai' | 'google' | 'mistral' | 'openrouter';
 
 export type SpeechResponseFormat = 'mp3' | 'wav' | 'pcm';
 
@@ -82,6 +82,39 @@ const OPENAI_VOICES: SpeechVoiceDeclaration[] = [
   { id: 'cedar', name: 'Cedar' }
 ];
 
+const GOOGLE_TTS_VOICES: SpeechVoiceDeclaration[] = [
+  { id: 'Zephyr', name: 'Zephyr', description: 'Bright' },
+  { id: 'Puck', name: 'Puck', description: 'Upbeat' },
+  { id: 'Charon', name: 'Charon', description: 'Informative' },
+  { id: 'Kore', name: 'Kore', description: 'Firm' },
+  { id: 'Fenrir', name: 'Fenrir', description: 'Excitable' },
+  { id: 'Leda', name: 'Leda', description: 'Youthful' },
+  { id: 'Orus', name: 'Orus', description: 'Firm' },
+  { id: 'Aoede', name: 'Aoede', description: 'Breezy' },
+  { id: 'Callirrhoe', name: 'Callirrhoe', description: 'Easy-going' },
+  { id: 'Autonoe', name: 'Autonoe', description: 'Bright' },
+  { id: 'Enceladus', name: 'Enceladus', description: 'Breathy' },
+  { id: 'Iapetus', name: 'Iapetus', description: 'Clear' },
+  { id: 'Umbriel', name: 'Umbriel', description: 'Easy-going' },
+  { id: 'Algieba', name: 'Algieba', description: 'Smooth' },
+  { id: 'Despina', name: 'Despina', description: 'Smooth' },
+  { id: 'Erinome', name: 'Erinome', description: 'Clear' },
+  { id: 'Algenib', name: 'Algenib', description: 'Gravelly' },
+  { id: 'Rasalgethi', name: 'Rasalgethi', description: 'Informative' },
+  { id: 'Laomedeia', name: 'Laomedeia', description: 'Upbeat' },
+  { id: 'Achernar', name: 'Achernar', description: 'Soft' },
+  { id: 'Alnilam', name: 'Alnilam', description: 'Firm' },
+  { id: 'Schedar', name: 'Schedar', description: 'Even' },
+  { id: 'Gacrux', name: 'Gacrux', description: 'Mature' },
+  { id: 'Pulcherrima', name: 'Pulcherrima', description: 'Forward' },
+  { id: 'Achird', name: 'Achird', description: 'Friendly' },
+  { id: 'Zubenelgenubi', name: 'Zubenelgenubi', description: 'Casual' },
+  { id: 'Vindemiatrix', name: 'Vindemiatrix', description: 'Gentle' },
+  { id: 'Sadachbia', name: 'Sadachbia', description: 'Lively' },
+  { id: 'Sadaltager', name: 'Sadaltager', description: 'Knowledgeable' },
+  { id: 'Sulafat', name: 'Sulafat', description: 'Warm' },
+];
+
 const SPEECH_MODELS: SpeechModelDeclaration[] = [
   {
     provider: 'elevenlabs',
@@ -145,6 +178,45 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     responseFormats: ['mp3', 'wav', 'pcm']
   },
   {
+    provider: 'google',
+    id: 'gemini-3.1-flash-tts-preview',
+    name: 'Gemini 3.1 Flash TTS Preview',
+    execution: 'speech-api',
+    defaultVoice: 'Kore',
+    voices: GOOGLE_TTS_VOICES,
+    supportsStreaming: false,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['wav', 'pcm'],
+    maxInputTokens: 8192
+  },
+  {
+    provider: 'google',
+    id: 'gemini-2.5-flash-preview-tts',
+    name: 'Gemini 2.5 Flash Preview TTS',
+    execution: 'speech-api',
+    defaultVoice: 'Kore',
+    voices: GOOGLE_TTS_VOICES,
+    supportsStreaming: false,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['wav', 'pcm'],
+    maxInputTokens: 8192
+  },
+  {
+    provider: 'google',
+    id: 'gemini-2.5-pro-preview-tts',
+    name: 'Gemini 2.5 Pro Preview TTS',
+    execution: 'speech-api',
+    defaultVoice: 'Kore',
+    voices: GOOGLE_TTS_VOICES,
+    supportsStreaming: false,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['wav', 'pcm'],
+    maxInputTokens: 8192
+  },
+  {
     provider: 'mistral',
     id: 'voxtral-mini-tts-2603',
     name: 'Voxtral Mini TTS',
@@ -195,6 +267,7 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
 export const SPEECH_PROVIDER_PRIORITY: SpeechProvider[] = [
   'elevenlabs',
   'openai',
+  'google',
   'mistral',
   'openrouter'
 ];

@@ -47,6 +47,20 @@ describe('SpeechTypes', () => {
     expect(getSpeechModel('openai', 'gpt-realtime-2')).toBeUndefined();
   });
 
+  it('declares Google Gemini TTS voices separately from realtime voice', () => {
+    expect(getSpeechModel('google', 'gemini-3.1-flash-tts-preview')).toEqual(expect.objectContaining({
+      provider: 'google',
+      defaultVoice: 'Kore',
+      supportsInstructions: true,
+      responseFormats: expect.arrayContaining(['wav', 'pcm'])
+    }));
+    expect(getSpeechModel('google', 'gemini-3.1-flash-tts-preview')?.voices?.map(voice => voice.id)).toEqual(
+      expect.arrayContaining(['Kore', 'Puck', 'Zephyr', 'Sulafat'])
+    );
+
+    expect(getSpeechModel('google', 'gemini-3.1-flash-live-preview')).toBeUndefined();
+  });
+
   it('auto-selects the highest-priority configured speech provider', () => {
     const settings = makeSettings({
       providers: {
@@ -168,6 +182,7 @@ describe('SpeechTypes', () => {
   });
 
   it('keeps model declarations scoped by provider', () => {
+    expect(getSpeechModelsForProvider('google').map(model => model.id)).toContain('gemini-3.1-flash-tts-preview');
     expect(getSpeechModelsForProvider('mistral').map(model => model.id)).toContain('voxtral-mini-tts-2603');
     expect(getSpeechModelsForProvider('openrouter').map(model => model.id)).toContain('mistralai/voxtral-mini-tts-2603');
     expect(getSpeechModelsForProvider('groq')).toEqual([]);

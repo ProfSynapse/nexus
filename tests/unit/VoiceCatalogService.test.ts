@@ -23,6 +23,19 @@ describe('VoiceCatalogService', () => {
     expect(requestUrlMock).not.toHaveBeenCalled();
   });
 
+  it('returns static Google Gemini TTS voices from the model catalog', async () => {
+    const service = new VoiceCatalogService();
+
+    const voices = await service.getVoices('google', 'gemini-3.1-flash-tts-preview');
+
+    expect(voices).toEqual(expect.arrayContaining([
+      { id: 'Kore', name: 'Kore', description: 'Firm' },
+      { id: 'Puck', name: 'Puck', description: 'Upbeat' },
+      { id: 'Sulafat', name: 'Sulafat', description: 'Warm' },
+    ]));
+    expect(requestUrlMock).not.toHaveBeenCalled();
+  });
+
   it('loads ElevenLabs voices from configured app credentials', async () => {
     requestUrlMock.mockResolvedValue({
       status: 200,
