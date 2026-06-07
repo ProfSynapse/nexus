@@ -7,6 +7,9 @@ export type {
   ModelConfig,
   LLMProviderConfig,
   DefaultModelSettings,
+  DefaultRealtimeVoiceModelSettings,
+  DefaultSpeechModelSettings,
+  VoiceDefaultSelectionSource,
   LLMProviderSettings
 } from './ProviderTypes';
 
