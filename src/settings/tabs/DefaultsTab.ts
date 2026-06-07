@@ -41,6 +41,13 @@ import {
   resolveDefaultRealtimeVoiceSelection,
 } from '../../services/llm/types/RealtimeVoiceTypes';
 import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogService';
+import {
+  buildVideoProviderAvailability,
+  getVideoModel,
+  type VideoAspectRatio,
+  type VideoModelDeclaration,
+  type VideoResolution,
+} from '../../services/llm/types/VideoTypes';
 import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
 
 export interface DefaultsTabServices {
@@ -217,6 +224,7 @@ export class DefaultsTab {
       options: { workspaces, prompts },
       showTranscriptionSection: false,
       renderAfterImageSection: (parent) => {
+        this.renderVideoSection(parent);
         void this.renderVoiceSection(parent);
       },
       callbacks: {
@@ -252,6 +260,191 @@ export class DefaultsTab {
 
       rendererContainer.appendChild(embeddingsSection);
     }
+  }
+
+  /**
+   * Render text-to-video defaults.
+   */
+  private renderVideoSection(parentEl: HTMLElement): void {
+    const llmSettings = this.services.llmProviderSettings;
+    if (!llmSettings) return;
+
+    const section = createDiv({ cls: 'csr-section nexus-video-section' });
+    section.createDiv({ cls: 'csr-section-header', text: 'Video generation' });
+    const content = section.createDiv({ cls: 'csr-section-content' });
+    content.createDiv({
+      cls: 'csr-section-desc',
+      text: 'Defaults for generated MP4 files created by PromptManager video tools.'
+    });
+    parentEl.appendChild(section);
+
+    let modelDropdown: HTMLSelectElement | null = null;
+    let aspectRatioDropdown: HTMLSelectElement | null = null;
+    let resolutionDropdown: HTMLSelectElement | null = null;
+
+    const getAvailability = () => buildVideoProviderAvailability(llmSettings);
+    const getSelection = () => {
+      const configured = llmSettings.defaultVideoModel;
+      const availability = getAvailability();
+      const provider = configured?.provider || availability.find(item => item.enabled && item.configured && item.models.length > 0)?.provider;
+      const providerAvailability = availability.find(item => item.provider === provider);
+      const model = configured?.model && providerAvailability?.models.some(candidate => candidate.id === configured.model)
+        ? configured.model
+        : providerAvailability?.models[0]?.id;
+      const modelDeclaration = getVideoModel(provider, model) || providerAvailability?.models.find(candidate => candidate.id === model);
+      return {
+        provider,
+        model,
+        modelDeclaration,
+        aspectRatio: configured?.aspectRatio || modelDeclaration?.defaultAspectRatio,
+        resolution: configured?.resolution || modelDeclaration?.defaultResolution,
+      };
+    };
+
+    const saveVideoDefault = async (
+      model: VideoModelDeclaration,
+      aspectRatio?: VideoAspectRatio,
+      resolution?: VideoResolution
+    ): Promise<void> => {
+      llmSettings.defaultVideoModel = {
+        provider: model.provider,
+        model: model.id,
+        aspectRatio: aspectRatio || model.defaultAspectRatio,
+        resolution: resolution || model.defaultResolution,
+      };
+      await this.services.settings.saveSettings();
+    };
+
+    const updateOptionDropdowns = (): void => {
+      const selection = getSelection();
+      const model = selection.modelDeclaration;
+
+      if (aspectRatioDropdown) {
+        aspectRatioDropdown.empty();
+        if (!model) {
+          aspectRatioDropdown.createEl('option', { value: '', text: 'Select a video model first' });
+          aspectRatioDropdown.disabled = true;
+        } else {
+          model.aspectRatios.forEach(value => {
+            aspectRatioDropdown?.createEl('option', { value, text: value });
+          });
+          aspectRatioDropdown.disabled = false;
+          aspectRatioDropdown.value = selection.aspectRatio || model.defaultAspectRatio;
+        }
+      }
+
+      if (resolutionDropdown) {
+        resolutionDropdown.empty();
+        if (!model) {
+          resolutionDropdown.createEl('option', { value: '', text: 'Select a video model first' });
+          resolutionDropdown.disabled = true;
+        } else {
+          model.resolutions.forEach(value => {
+            resolutionDropdown?.createEl('option', { value, text: value });
+          });
+          resolutionDropdown.disabled = false;
+          resolutionDropdown.value = selection.resolution || model.defaultResolution;
+        }
+      }
+    };
+
+    const updateModelOptions = (): void => {
+      if (!modelDropdown) return;
+      const selection = getSelection();
+      const providerAvailability = getAvailability().find(item => item.provider === selection.provider);
+      const models = providerAvailability?.models ?? [];
+
+      modelDropdown.empty();
+      if (!selection.provider || models.length === 0) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: 'Select a video provider first'
+        });
+        modelDropdown.disabled = true;
+        updateOptionDropdowns();
+        return;
+      }
+
+      models.forEach(model => {
+        modelDropdown?.createEl('option', { value: model.id, text: model.name });
+      });
+
+      modelDropdown.disabled = providerAvailability?.enabled !== true || providerAvailability.configured !== true;
+      modelDropdown.value = selection.model || models[0]?.id || '';
+      updateOptionDropdowns();
+    };
+
+    new Setting(content)
+      .setName('Video provider')
+      .setDesc('Used by the generateVideo tool.')
+      .addDropdown(dropdown => {
+        const availability = getAvailability();
+        const selection = getSelection();
+        const usableProviders = availability.filter(item => item.enabled && item.configured && item.models.length > 0);
+
+        if (usableProviders.length === 0 && !selection.provider) {
+          dropdown.addOption('', 'No video providers available');
+          dropdown.setDisabled(true);
+          return;
+        }
+
+        usableProviders.forEach(provider => {
+          dropdown.addOption(provider.provider, this.getProviderDisplayName(provider.provider));
+        });
+
+        if (selection.provider && !usableProviders.some(provider => provider.provider === selection.provider)) {
+          dropdown.addOption(selection.provider, `${this.getProviderDisplayName(selection.provider)} (unavailable)`);
+        }
+
+        dropdown.setValue(selection.provider || usableProviders[0]?.provider || '');
+        dropdown.onChange((provider) => {
+          const providerAvailability = getAvailability().find(item => item.provider === provider);
+          const model = providerAvailability?.models[0];
+          if (model) {
+            void saveVideoDefault(model).then(updateModelOptions);
+          }
+        });
+      });
+
+    new Setting(content)
+      .setName('Video model')
+      .addDropdown(dropdown => {
+        modelDropdown = dropdown.selectEl;
+        updateModelOptions();
+        dropdown.onChange((modelId) => {
+          const selection = getSelection();
+          const model = getVideoModel(selection.provider, modelId);
+          if (model) {
+            void saveVideoDefault(model, selection.aspectRatio, selection.resolution).then(updateOptionDropdowns);
+          }
+        });
+      });
+
+    new Setting(content)
+      .setName('Aspect ratio')
+      .addDropdown(dropdown => {
+        aspectRatioDropdown = dropdown.selectEl;
+        updateOptionDropdowns();
+        dropdown.onChange((aspectRatio) => {
+          const selection = getSelection();
+          if (selection.modelDeclaration) {
+            void saveVideoDefault(selection.modelDeclaration, aspectRatio as VideoAspectRatio, selection.resolution);
+          }
+        });
+      });
+
+    new Setting(content)
+      .setName('Resolution')
+      .addDropdown(dropdown => {
+        resolutionDropdown = dropdown.selectEl;
+        updateOptionDropdowns();
+        dropdown.onChange((resolution) => {
+          const selection = getSelection();
+          if (selection.modelDeclaration) {
+            void saveVideoDefault(selection.modelDeclaration, selection.aspectRatio, resolution as VideoResolution);
+          }
+        });
+      });
   }
 
   /**

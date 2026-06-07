@@ -8,6 +8,8 @@ export { ListModelsTool } from './listModels';
 export { ExecutePromptsTool } from './executePrompts';
 export { GenerateImageTool } from './generateImage';
 export { GenerateAudioTool } from './generateAudio';
+export { GenerateVideoTool } from './generateVideo';
+export { CheckGeneratedArtifactTool } from './checkGeneratedArtifact';
 
 // Subagent tool (internal chat only - supports spawn and cancel actions)
 export { SubagentTool } from './subagent';

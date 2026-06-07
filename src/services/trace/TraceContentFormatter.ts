@@ -60,6 +60,8 @@ const modeVerbs: Record<string, { success: string; failure: string }> = {
   promptManager_archive: { success: 'Archived prompt', failure: 'Failed to archive prompt' },
   promptManager_execute: { success: 'Executed prompt', failure: 'Failed to execute prompt' },
   generateImage: { success: 'Generated image', failure: 'Failed to generate image' },
+  generateVideo: { success: 'Generated video', failure: 'Failed to generate video' },
+  checkGeneratedArtifact: { success: 'Checked generated artifact', failure: 'Failed to check generated artifact' },
   listModels: { success: 'Listed models', failure: 'Failed to list models' },
   subagent: { success: 'Ran subagent', failure: 'Subagent failed' },
 
