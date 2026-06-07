@@ -83,4 +83,41 @@ describe('VoiceCatalogService', () => {
     expect(voices).toEqual([]);
     expect(requestUrlMock).not.toHaveBeenCalled();
   });
+
+  it('loads Mistral saved voices from configured provider credentials', async () => {
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new ArrayBuffer(0),
+      text: '',
+      json: {
+        items: [
+          { id: 'mistral-voice-1', name: 'Narrator' },
+          { id: 'mistral-voice-2', name: 'Guide' },
+        ]
+      },
+    });
+
+    const service = new VoiceCatalogService();
+    const voices = await service.getVoices('mistral', 'voxtral-mini-tts-2603', {
+      llmSettings: {
+        providers: {
+          mistral: { enabled: true, apiKey: 'mistral-key' }
+        },
+        defaultModel: { provider: 'openai', model: 'gpt-4o' },
+      }
+    });
+
+    expect(requestUrlMock).toHaveBeenCalledWith({
+      url: 'https://api.mistral.ai/v1/audio/voices',
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer mistral-key',
+      },
+    });
+    expect(voices).toEqual([
+      { id: 'mistral-voice-1', name: 'Narrator' },
+      { id: 'mistral-voice-2', name: 'Guide' },
+    ]);
+  });
 });

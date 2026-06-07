@@ -102,22 +102,99 @@ describe('SpeechSynthesisService', () => {
     })).toThrow('Speech provider is required when a model is specified.');
   });
 
-  it('throws for configured speech providers not implemented in read-aloud V1', async () => {
+  it('synthesizes Mistral speech through Voxtral TTS', async () => {
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new ArrayBuffer(0),
+      text: '',
+      json: {
+        audio_data: globalThis.btoa('abc')
+      },
+    });
+
     const service = new SpeechSynthesisService(makeSettings({
       providers: {
         ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
-        google: providerConfig()
+        mistral: providerConfig({ apiKey: 'mistral-key' })
       },
       defaultSpeechModel: {
-        provider: 'google',
-        model: 'gemini-2.5-flash-preview-tts',
+        provider: 'mistral',
+        model: 'voxtral-mini-tts-2603',
+        voice: 'saved-voice-id',
         source: 'user'
       }
     }));
 
-    await expect(service.synthesize({ text: 'Read this.' })).rejects.toThrow(
-      'Speech provider "google" is not supported for read aloud yet.'
-    );
+    const result = await service.synthesize({ text: 'Read this.' });
+
+    expect(requestUrlMock).toHaveBeenCalledWith({
+      url: 'https://api.mistral.ai/v1/audio/speech',
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer mistral-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'voxtral-mini-tts-2603',
+        input: 'Read this.',
+        response_format: 'mp3',
+        voice_id: 'saved-voice-id',
+      }),
+    });
+    expect(result).toMatchObject({
+      provider: 'mistral',
+      model: 'voxtral-mini-tts-2603',
+      voice: 'saved-voice-id',
+      mimeType: 'audio/mpeg',
+    });
+    expect(result.audioData.byteLength).toBe(3);
+  });
+
+  it('synthesizes OpenRouter speech through the dedicated speech endpoint', async () => {
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new Uint8Array([1, 2, 3]).buffer,
+      text: '',
+      json: {},
+    });
+
+    const service = new SpeechSynthesisService(makeSettings({
+      providers: {
+        ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+        openrouter: providerConfig({ apiKey: 'openrouter-key' })
+      },
+      defaultSpeechModel: {
+        provider: 'openrouter',
+        model: 'mistralai/voxtral-mini-tts-2603',
+        source: 'user'
+      }
+    }));
+
+    const result = await service.synthesize({ text: 'Read this.' });
+
+    expect(requestUrlMock).toHaveBeenCalledWith({
+      url: 'https://openrouter.ai/api/v1/audio/speech',
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer openrouter-key',
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg',
+      },
+      body: JSON.stringify({
+        model: 'mistralai/voxtral-mini-tts-2603',
+        input: 'Read this.',
+        voice: 'alloy',
+        response_format: 'mp3',
+      }),
+    });
+    expect(result).toMatchObject({
+      provider: 'openrouter',
+      model: 'mistralai/voxtral-mini-tts-2603',
+      voice: 'alloy',
+      mimeType: 'audio/mpeg',
+    });
   });
 
   it('synthesizes ElevenLabs speech with app credentials', async () => {

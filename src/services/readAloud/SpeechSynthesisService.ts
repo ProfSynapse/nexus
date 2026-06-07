@@ -8,7 +8,9 @@ import {
   type SpeechProvider,
 } from '../llm/types/SpeechTypes';
 import { ElevenLabsSpeechAdapter } from './ElevenLabsSpeechAdapter';
+import { MistralSpeechAdapter } from './MistralSpeechAdapter';
 import { OpenAISpeechAdapter } from './OpenAISpeechAdapter';
+import { OpenRouterSpeechAdapter } from './OpenRouterSpeechAdapter';
 import type {
   ResolvedSpeechSynthesisRequest,
   SpeechAdapter,
@@ -31,9 +33,6 @@ export class SpeechSynthesisService {
     const resolved = this.resolveRequest(request);
     const adapter = this.adapters.get(resolved.provider);
     if (!adapter || !adapter.isAvailable()) {
-      if (resolved.provider !== 'openai' && resolved.provider !== 'elevenlabs') {
-        throw new Error(`Speech provider "${resolved.provider}" is not supported for read aloud yet.`);
-      }
       throw new Error(`Speech provider "${resolved.provider}" is not configured or not enabled.`);
     }
 
@@ -51,7 +50,7 @@ export class SpeechSynthesisService {
     }
 
     const model = getSpeechModel(selection.provider, selection.model);
-    if (!model) {
+    if (!model && selection.provider !== 'openrouter') {
       throw new Error(`Unsupported speech model "${selection.model}" for provider "${selection.provider}".`);
     }
 
@@ -59,7 +58,7 @@ export class SpeechSynthesisService {
       text: request.text,
       provider: selection.provider,
       model: selection.model,
-      voice: request.voice || selection.voice || model.defaultVoice || '',
+      voice: request.voice || selection.voice || model?.defaultVoice || getProviderDefaultVoice(selection.provider, selection.model),
     };
   }
 
@@ -115,7 +114,7 @@ export class SpeechSynthesisService {
       };
     }
 
-    if (!providerAvailability.models?.some(candidate => candidate.id === model)) {
+    if (provider !== 'openrouter' && !providerAvailability.models?.some(candidate => candidate.id === model)) {
       return {
         provider,
         model,
@@ -148,6 +147,20 @@ export class SpeechSynthesisService {
       }));
     }
 
+    const mistralConfig = this.llmSettings?.providers?.mistral;
+    if (mistralConfig?.enabled && mistralConfig.apiKey) {
+      this.adapters.set('mistral', new MistralSpeechAdapter({
+        apiKey: mistralConfig.apiKey
+      }));
+    }
+
+    const openRouterConfig = this.llmSettings?.providers?.openrouter;
+    if (openRouterConfig?.enabled && openRouterConfig.apiKey) {
+      this.adapters.set('openrouter', new OpenRouterSpeechAdapter({
+        apiKey: openRouterConfig.apiKey
+      }));
+    }
+
     const elevenLabsConfig = this.options.appsSettings?.apps.elevenlabs;
     const elevenLabsApiKey = elevenLabsConfig?.credentials.apiKey;
     if (elevenLabsConfig?.enabled && elevenLabsApiKey) {
@@ -170,4 +183,16 @@ export class SpeechSynthesisService {
       }
     };
   }
+}
+
+function getProviderDefaultVoice(provider: SpeechProvider, model: string): string {
+  if (provider === 'openrouter') {
+    if (model.startsWith('microsoft/')) {
+      return 'en-US-Harper:MAI-Voice-2';
+    }
+
+    return 'alloy';
+  }
+
+  return '';
 }

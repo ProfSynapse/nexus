@@ -51,7 +51,7 @@ describe('SpeechTypes', () => {
     const settings = makeSettings({
       providers: {
         ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
-        google: providerConfig(),
+        mistral: providerConfig(),
         openai: providerConfig()
       }
     });
@@ -92,12 +92,12 @@ describe('SpeechTypes', () => {
       providers: {
         ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
         openai: providerConfig(),
-        google: providerConfig()
+        mistral: providerConfig()
       },
       defaultSpeechModel: {
-        provider: 'google',
-        model: 'gemini-2.5-flash-preview-tts',
-        voice: 'Puck',
+        provider: 'mistral',
+        model: 'voxtral-mini-tts-2603',
+        voice: 'saved-voice-id',
         source: 'user'
       }
     });
@@ -105,9 +105,9 @@ describe('SpeechTypes', () => {
     const selection = resolveDefaultSpeechSelection(settings);
 
     expect(selection).toEqual(expect.objectContaining({
-      provider: 'google',
-      model: 'gemini-2.5-flash-preview-tts',
-      voice: 'Puck',
+      provider: 'mistral',
+      model: 'voxtral-mini-tts-2603',
+      voice: 'saved-voice-id',
       source: 'user',
       status: 'resolved'
     }));
@@ -118,11 +118,11 @@ describe('SpeechTypes', () => {
       providers: {
         ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
         openai: providerConfig(),
-        google: providerConfig({ enabled: false })
+        mistral: providerConfig({ enabled: false })
       },
       defaultSpeechModel: {
-        provider: 'google',
-        model: 'gemini-2.5-flash-preview-tts',
+        provider: 'mistral',
+        model: 'voxtral-mini-tts-2603',
         source: 'user'
       }
     });
@@ -130,8 +130,8 @@ describe('SpeechTypes', () => {
     const selection = resolveDefaultSpeechSelection(settings);
 
     expect(selection).toEqual(expect.objectContaining({
-      provider: 'google',
-      model: 'gemini-2.5-flash-preview-tts',
+      provider: 'mistral',
+      model: 'voxtral-mini-tts-2603',
       source: 'user',
       status: 'invalid'
     }));
@@ -168,7 +168,8 @@ describe('SpeechTypes', () => {
   });
 
   it('keeps model declarations scoped by provider', () => {
-    expect(getSpeechModelsForProvider('openrouter').map(model => model.id)).toContain('elevenlabs/eleven-turbo-v2');
+    expect(getSpeechModelsForProvider('mistral').map(model => model.id)).toContain('voxtral-mini-tts-2603');
+    expect(getSpeechModelsForProvider('openrouter').map(model => model.id)).toContain('mistralai/voxtral-mini-tts-2603');
     expect(getSpeechModelsForProvider('groq')).toEqual([]);
   });
 });

@@ -27,6 +27,7 @@ import {
   buildSpeechProviderAvailability,
   getSpeechModel,
   resolveDefaultSpeechSelection,
+  type SpeechProvider,
   SpeechAppCapabilityStates,
   SpeechModelDeclaration,
   SpeechProviderAvailability,
@@ -40,6 +41,7 @@ import {
   resolveDefaultRealtimeVoiceSelection,
 } from '../../services/llm/types/RealtimeVoiceTypes';
 import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogService';
+import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
 
 export interface DefaultsTabServices {
   app: App;
@@ -347,8 +349,10 @@ export class DefaultsTab {
   ): void {
     let modelDropdown: HTMLSelectElement | null = null;
     let voiceDropdown: HTMLSelectElement | null = null;
+    let modelRequestId = 0;
     let voiceRequestId = 0;
     const voiceCatalogService = new VoiceCatalogService();
+    const speechModelCatalogService = new SpeechModelCatalogService();
 
     const getAvailability = (): SpeechProviderAvailability[] =>
       buildSpeechProviderAvailability(llmSettings, this.getSpeechAppStates());
@@ -380,6 +384,7 @@ export class DefaultsTab {
       }
 
       const voices = await voiceCatalogService.getVoices(selection.provider, selection.model, {
+        llmSettings,
         appsSettings: this.services.appManager?.getAppsSettings() ?? this.services.settings.settings.apps
       }).catch(() => []);
 
@@ -404,19 +409,44 @@ export class DefaultsTab {
       voiceDropdown.value = selection.voice || '';
     };
 
-    const updateModelOptions = (): void => {
+    const updateModelOptions = async (): Promise<void> => {
       if (!modelDropdown) return;
+      const requestId = ++modelRequestId;
       const selection = getSelection();
       const availability = getAvailability();
       const providerAvailability = availability.find(item => item.provider === selection.provider);
       const providerUsable = providerAvailability?.enabled === true && providerAvailability.configured === true;
-      const models = providerAvailability?.models ?? [];
 
       modelDropdown.empty();
-      if (!selection.provider || models.length === 0) {
+      if (!selection.provider) {
         modelDropdown.createEl('option', {
           value: '',
           text: 'Select a speech provider first'
+        });
+        modelDropdown.disabled = true;
+        void updateVoiceOptions();
+        return;
+      }
+
+      if (selection.provider === 'openrouter') {
+        modelDropdown.createEl('option', { value: '', text: 'Loading OpenRouter speech models...' });
+        modelDropdown.disabled = true;
+      }
+
+      const models = await speechModelCatalogService.getModels(
+        selection.provider as SpeechProvider,
+        llmSettings
+      ).catch(() => providerAvailability?.models ?? []);
+
+      if (requestId !== modelRequestId || !modelDropdown) {
+        return;
+      }
+
+      modelDropdown.empty();
+      if (models.length === 0) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: 'No speech models available'
         });
         modelDropdown.disabled = true;
         void updateVoiceOptions();
@@ -475,7 +505,7 @@ export class DefaultsTab {
             ? this.buildSpeechDefault(model, undefined)
             : undefined;
           void this.services.settings.saveSettings().then(() => {
-            updateModelOptions();
+            void updateModelOptions();
             onSelectionChange();
           });
         });
@@ -485,12 +515,19 @@ export class DefaultsTab {
       .setName('Speech model')
       .addDropdown(dropdown => {
         modelDropdown = dropdown.selectEl;
-        updateModelOptions();
+        void updateModelOptions();
         dropdown.onChange((modelId) => {
           const selection = getSelection();
           const model = getSpeechModel(selection.provider, modelId);
-          if (model) {
-            llmSettings.defaultSpeechModel = this.buildSpeechDefault(model, selection.voice);
+          if (model || (selection.provider === 'openrouter' && modelId)) {
+            llmSettings.defaultSpeechModel = model
+              ? this.buildSpeechDefault(model, selection.voice)
+              : {
+                provider: selection.provider,
+                model: modelId,
+                voice: selection.voice,
+                source: 'user'
+              };
           }
           void this.services.settings.saveSettings().then(() => {
             void updateVoiceOptions();

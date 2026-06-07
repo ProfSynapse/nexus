@@ -11,7 +11,7 @@ import type {
   VoiceDefaultSelectionSource
 } from '../../../types/llm/ProviderTypes';
 
-export type SpeechProvider = 'elevenlabs' | 'openai' | 'google' | 'openrouter';
+export type SpeechProvider = 'elevenlabs' | 'openai' | 'mistral' | 'openrouter';
 
 export type SpeechResponseFormat = 'mp3' | 'wav' | 'pcm';
 
@@ -82,21 +82,6 @@ const OPENAI_VOICES: SpeechVoiceDeclaration[] = [
   { id: 'cedar', name: 'Cedar' }
 ];
 
-const GEMINI_TTS_VOICES: SpeechVoiceDeclaration[] = [
-  { id: 'Zephyr', name: 'Zephyr', description: 'Bright' },
-  { id: 'Puck', name: 'Puck', description: 'Upbeat' },
-  { id: 'Charon', name: 'Charon', description: 'Informative' },
-  { id: 'Kore', name: 'Kore', description: 'Firm' },
-  { id: 'Fenrir', name: 'Fenrir', description: 'Excitable' },
-  { id: 'Leda', name: 'Leda', description: 'Youthful' },
-  { id: 'Aoede', name: 'Aoede', description: 'Breezy' },
-  { id: 'Callirrhoe', name: 'Callirrhoe', description: 'Easy-going' },
-  { id: 'Iapetus', name: 'Iapetus', description: 'Clear' },
-  { id: 'Algieba', name: 'Algieba', description: 'Smooth' },
-  { id: 'Achird', name: 'Achird', description: 'Friendly' },
-  { id: 'Sulafat', name: 'Sulafat', description: 'Warm' }
-];
-
 const SPEECH_MODELS: SpeechModelDeclaration[] = [
   {
     provider: 'elevenlabs',
@@ -160,30 +145,38 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     responseFormats: ['mp3', 'wav', 'pcm']
   },
   {
-    provider: 'google',
-    id: 'gemini-2.5-flash-preview-tts',
-    name: 'Gemini 2.5 Flash Preview TTS',
+    provider: 'mistral',
+    id: 'voxtral-mini-tts-2603',
+    name: 'Voxtral Mini TTS',
     execution: 'speech-api',
-    defaultVoice: 'Kore',
-    voices: GEMINI_TTS_VOICES,
-    supportsStreaming: false,
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
     supportsInstructions: true,
     supportsSpeed: false,
-    responseFormats: ['wav', 'pcm'],
-    maxInputTokens: 32000
+    responseFormats: ['mp3', 'wav', 'pcm']
   },
   {
-    provider: 'google',
-    id: 'gemini-2.5-pro-preview-tts',
-    name: 'Gemini 2.5 Pro Preview TTS',
+    provider: 'openrouter',
+    id: 'openai/gpt-4o-mini-tts-2025-12-15',
+    name: 'GPT-4o mini TTS via OpenRouter',
     execution: 'speech-api',
-    defaultVoice: 'Kore',
-    voices: GEMINI_TTS_VOICES,
-    supportsStreaming: false,
+    defaultVoice: 'alloy',
+    voices: OPENAI_VOICES,
+    supportsStreaming: true,
     supportsInstructions: true,
+    supportsSpeed: true,
+    responseFormats: ['mp3', 'pcm']
+  },
+  {
+    provider: 'openrouter',
+    id: 'mistralai/voxtral-mini-tts-2603',
+    name: 'Voxtral Mini TTS via OpenRouter',
+    execution: 'speech-api',
+    defaultVoice: 'alloy',
+    supportsStreaming: true,
+    supportsInstructions: false,
     supportsSpeed: false,
-    responseFormats: ['wav', 'pcm'],
-    maxInputTokens: 32000
+    responseFormats: ['mp3', 'pcm']
   },
   {
     provider: 'openrouter',
@@ -202,7 +195,7 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
 export const SPEECH_PROVIDER_PRIORITY: SpeechProvider[] = [
   'elevenlabs',
   'openai',
-  'google',
+  'mistral',
   'openrouter'
 ];
 
@@ -293,7 +286,7 @@ function resolveUserSpeechSelection(
     };
   }
 
-  if (!providerAvailability.models?.some(candidate => candidate.id === model)) {
+  if (provider !== 'openrouter' && !providerAvailability.models?.some(candidate => candidate.id === model)) {
     return {
       provider,
       model,
