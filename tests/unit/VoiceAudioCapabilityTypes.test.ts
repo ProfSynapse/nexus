@@ -40,6 +40,9 @@ describe('SpeechTypes', () => {
       provider: 'openai',
       supportsInstructions: true
     }));
+    expect(getSpeechModel('openai', 'gpt-4o-mini-tts')?.voices?.map(voice => voice.id)).toEqual(
+      expect.arrayContaining(['fable', 'nova', 'onyx', 'marin', 'cedar'])
+    );
 
     expect(getSpeechModel('openai', 'gpt-realtime-2')).toBeUndefined();
   });

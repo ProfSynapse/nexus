@@ -14,6 +14,7 @@ import { Settings } from '../settings';
 import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
 import { InlineEditCommandManager } from './commands/InlineEditCommandManager';
+import { ReadAloudCommandManager } from './commands/ReadAloudCommandManager';
 import { ChatUIManager } from './ui/ChatUIManager';
 import { TaskBoardUIManager } from './ui/TaskBoardUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
@@ -72,6 +73,7 @@ export class PluginLifecycleManager {
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
     private inlineEditCommandManager: InlineEditCommandManager;
+    private readAloudCommandManager: ReadAloudCommandManager;
     private vaultIngestionManager: VaultIngestionManager;
     private embeddingManager: EmbeddingManager | null = null;
 
@@ -143,6 +145,11 @@ export class PluginLifecycleManager {
             plugin: config.plugin,
             app: config.app,
             getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
+        });
+
+        this.readAloudCommandManager = new ReadAloudCommandManager({
+            plugin: config.plugin,
+            app: config.app
         });
 
         this.vaultIngestionManager = new VaultIngestionManager({
@@ -239,6 +246,9 @@ export class PluginLifecycleManager {
 
             // Register inline edit commands and context menu
             this.inlineEditCommandManager.registerCommands();
+
+            // Register read-aloud commands and context menus
+            this.readAloudCommandManager.registerCommands();
 
             // Register vault-level ingestion triggers
             this.vaultIngestionManager.register();
