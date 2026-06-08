@@ -32,6 +32,19 @@ interface GoogleOperation {
   response?: unknown;
 }
 
+/**
+ * Hosts that legitimately serve a Google video/file download URL which REQUIRES
+ * the user's API key (`x-goog-api-key`). The Gemini/Veo Files API returns a
+ * download URI on `generativelanguage.googleapis.com` that must be fetched with
+ * the key. Any other host (e.g. a pre-signed `storage.googleapis.com` URL) does
+ * NOT need the key, so the credential is dropped there — this both blocks
+ * credential exfiltration to an attacker-controlled host scraped from the
+ * response body (SEC-M1) and remains safe for legitimate pre-signed downloads.
+ */
+const GOOGLE_CREDENTIALED_DOWNLOAD_HOSTS = new Set<string>([
+  'generativelanguage.googleapis.com',
+]);
+
 export class GoogleVideoAdapter implements VideoGenerationAdapter {
   readonly provider: VideoProvider = 'google';
   private readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
@@ -204,12 +217,16 @@ export class GoogleVideoAdapter implements VideoGenerationAdapter {
       throw new Error('Google video generation completed but no downloadable video was found.');
     }
 
+    // Only attach the API key when the resolved download host is a Google host
+    // that requires it. For any other host the credential is dropped (SEC-M1) —
+    // a malicious or unexpected URL never receives the key, and legitimate
+    // pre-signed URLs download fine without it.
     const response = await requestUrl({
       url: uri,
       method: 'GET',
-      headers: {
-        'x-goog-api-key': this.config.apiKey,
-      },
+      headers: this.shouldAttachApiKey(uri)
+        ? { 'x-goog-api-key': this.config.apiKey }
+        : undefined,
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -239,7 +256,25 @@ export class GoogleVideoAdapter implements VideoGenerationAdapter {
       }
     }
 
-    return this.findFirstStringKey(response, new Set(['uri', 'downloadUri', 'gcsUri']));
+    // Intentionally NO recursive key-scrape fallback: previously a recursive
+    // search returned ANY string under uri/downloadUri/gcsUri anywhere in the
+    // response, which let a poisoned response point the credentialed download
+    // GET at an arbitrary host (SEC-M1). Parse only the documented paths above.
+    return undefined;
+  }
+
+  /**
+   * Whether the user's API key should be attached when downloading from `url`.
+   * Returns true only when the resolved host is on the Google credentialed-host
+   * allowlist; an unparseable URL is treated as off-allowlist (no credential).
+   */
+  private shouldAttachApiKey(url: string): boolean {
+    try {
+      const host = new URL(url).hostname;
+      return GOOGLE_CREDENTIALED_DOWNLOAD_HOSTS.has(host);
+    } catch {
+      return false;
+    }
   }
 
   private findInlineVideoData(response: unknown): Omit<VideoGenerationAdapterResult, 'providerJobId' | 'durationSeconds'> | undefined {
@@ -256,34 +291,6 @@ export class GoogleVideoAdapter implements VideoGenerationAdapter {
           videoData: base64ToArrayBuffer(data),
           mimeType: 'video/mp4',
         };
-      }
-    }
-
-    return undefined;
-  }
-
-  private findFirstStringKey(value: unknown, keys: Set<string>): string | undefined {
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = this.findFirstStringKey(item, keys);
-        if (found) {
-          return found;
-        }
-      }
-      return undefined;
-    }
-
-    if (!isRecord(value)) {
-      return undefined;
-    }
-
-    for (const [key, child] of Object.entries(value)) {
-      if (keys.has(key) && typeof child === 'string') {
-        return child;
-      }
-      const found = this.findFirstStringKey(child, keys);
-      if (found) {
-        return found;
       }
     }
 

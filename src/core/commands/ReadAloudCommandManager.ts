@@ -155,14 +155,65 @@ export class ReadAloudCommandManager {
   private getReadAloudService(): ReadAloudService {
     const llmSettings = this.config.plugin.settings?.settings.llmProviders ?? null;
     const appsSettings = this.config.plugin.settings?.settings.apps;
-    const fingerprint = JSON.stringify(llmSettings?.defaultSpeechModel ?? {}) +
-      JSON.stringify(llmSettings?.providers?.openai ?? {}) +
-      JSON.stringify(appsSettings?.apps.elevenlabs ?? {});
+    const fingerprint = this.computeSettingsFingerprint(llmSettings, appsSettings);
     if (!this.readAloudService || this.settingsFingerprint !== fingerprint) {
       this.readAloudService?.stop();
       this.readAloudService = new ReadAloudService(llmSettings, appsSettings);
       this.settingsFingerprint = fingerprint;
     }
     return this.readAloudService;
+  }
+
+  /**
+   * Build a change-detection fingerprint for the read-aloud settings WITHOUT
+   * retaining any raw API key. The fingerprint stays in memory only (never
+   * logged or persisted) and is used solely to decide whether the cached
+   * ReadAloudService must be rebuilt.
+   *
+   * SEC-m2: the previous implementation JSON.stringify'd the full provider/app
+   * configs (which include `apiKey`/`credentials.apiKey`) into this long-lived
+   * field, leaving a plaintext key copy in memory. We now compose only
+   * non-secret fields (provider/model/voice + enabled) plus a non-reversible
+   * hash of each key. Hashing the key (rather than dropping it) preserves
+   * change-detection across same-provider key rotation, which a plain
+   * presence boolean would miss.
+   */
+  private computeSettingsFingerprint(
+    llmSettings: Settings['settings']['llmProviders'] | null,
+    appsSettings: Settings['settings']['apps'] | undefined
+  ): string {
+    const speech = llmSettings?.defaultSpeechModel;
+    const openai = llmSettings?.providers?.openai;
+    const elevenlabs = appsSettings?.apps.elevenlabs;
+
+    const parts = [
+      speech?.provider ?? '',
+      speech?.model ?? '',
+      speech?.voice ?? '',
+      openai?.enabled ? '1' : '0',
+      this.hashSecret(openai?.apiKey),
+      elevenlabs?.enabled ? '1' : '0',
+      this.hashSecret(elevenlabs?.credentials.apiKey),
+    ];
+
+    return parts.join('|');
+  }
+
+  /**
+   * Non-cryptographic djb2 hash of a secret. Returns a short hex digest that
+   * changes when the secret changes but never exposes the plaintext. Empty/
+   * absent secrets collapse to a stable sentinel so an unset key is
+   * distinguishable from a set one.
+   */
+  private hashSecret(secret: string | undefined): string {
+    if (!secret) {
+      return '0';
+    }
+
+    let hash = 5381;
+    for (let index = 0; index < secret.length; index += 1) {
+      hash = ((hash << 5) + hash + secret.charCodeAt(index)) | 0;
+    }
+    return (hash >>> 0).toString(16);
   }
 }
