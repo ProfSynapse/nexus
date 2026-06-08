@@ -11,11 +11,9 @@
  *     into a co-located `_archive/<ts>/` before any overwrite (last-writer-wins).
  *   - The CRUA `is_archived` soft-delete lives in the SQLite index, NOT here.
  *
- * `yaml` is dynamically imported inside {@link composeSkillMd} so module init
- * stays mobile-safe (no Node API at import time).
  */
 
-import { normalizePath } from 'obsidian';
+import { normalizePath, stringifyYaml } from 'obsidian';
 import type { DataAdapter } from 'obsidian';
 import { SnapshotArchiveService } from '../../../../services/storage/SnapshotArchiveService';
 
@@ -67,11 +65,10 @@ export class SkillWriteService {
 
   /**
    * Build a well-formed SKILL.md string: `name`/`description` frontmatter (YAML)
-   * followed by the trimmed body. `yaml` is dynamically imported (mobile-safe).
+   * followed by the trimmed body.
    */
-  async composeSkillMd(name: string, description: string, body: string): Promise<string> {
-    const { stringify } = await import('yaml');
-    const frontmatter = stringify({ name, description });
+  composeSkillMd(name: string, description: string, body: string): string {
+    const frontmatter = stringifyYaml({ name, description });
     return `---\n${frontmatter}---\n\n${body.trim()}\n`;
   }
 

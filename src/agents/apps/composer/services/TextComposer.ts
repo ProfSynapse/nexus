@@ -8,7 +8,7 @@
  * Used by: compose.ts tool when format='markdown'.
  */
 
-import { Vault } from 'obsidian';
+import { Vault, parseYaml, stringifyYaml } from 'obsidian';
 import { IFormatComposer, ComposeInput, ComposeOptions, ComposerError } from '../types';
 
 export class TextComposer implements IFormatComposer {
@@ -37,7 +37,7 @@ export class TextComposer implements IFormatComposer {
     for (const file of files) {
       let content = await vault.read(file);
 
-      const fmResult = await extractFrontmatter(content);
+      const fmResult = extractFrontmatter(content);
 
       switch (frontmatterHandling) {
         case 'first':
@@ -72,7 +72,7 @@ export class TextComposer implements IFormatComposer {
     let result = sections.join(separator);
 
     if (frontmatterHandling === 'merge' && Object.keys(mergedFrontmatter).length > 0) {
-      const fmYaml = await serializeFrontmatter(mergedFrontmatter);
+      const fmYaml = serializeFrontmatter(mergedFrontmatter);
       result = fmYaml + '\n' + result;
     }
 
@@ -82,13 +82,12 @@ export class TextComposer implements IFormatComposer {
 
 /**
  * Extract YAML frontmatter from markdown content.
- * Uses the 'yaml' package for robust parsing of nested structures,
- * arrays, and multi-line values.
+ * Uses Obsidian's YAML helpers for nested structures, arrays, and multi-line values.
  */
-async function extractFrontmatter(content: string): Promise<{
+function extractFrontmatter(content: string): {
   frontmatter: Record<string, unknown> | null;
   body: string;
-}> {
+} {
   // Strip BOM if present
   const trimmed = content.replace(/^\uFEFF/, '');
 
@@ -98,8 +97,7 @@ async function extractFrontmatter(content: string): Promise<{
   const body = trimmed.slice(match[0].length);
 
   try {
-    const { parse: yamlParse } = await import('yaml');
-    const parsed: unknown = yamlParse(match[1]);
+    const parsed: unknown = parseYaml(match[1]);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return { frontmatter: parsed as Record<string, unknown>, body };
     }
@@ -113,7 +111,6 @@ async function extractFrontmatter(content: string): Promise<{
 /**
  * Serialize a frontmatter object back to YAML format.
  */
-async function serializeFrontmatter(fm: Record<string, unknown>): Promise<string> {
-  const { stringify: yamlStringify } = await import('yaml');
-  return '---\n' + yamlStringify(fm).trimEnd() + '\n---';
+function serializeFrontmatter(fm: Record<string, unknown>): string {
+  return '---\n' + stringifyYaml(fm).trimEnd() + '\n---';
 }

@@ -66,7 +66,7 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       return this.prepareResult(false, undefined,
         `Could not read SKILL.md for skill "${existing.name}" (${provider}) at ${existing.vaultPath}/SKILL.md`);
     }
-    const current = await parseSkillFrontmatter(currentContent);
+    const current = parseSkillFrontmatter(currentContent);
 
     // Merge: caller values win, else fall back to the current on-disk values.
     const newName = params.rename ?? existing.name;
@@ -102,7 +102,7 @@ export class UpdateSkillTool extends BaseTool<UpdateSkillParams, CommonResult> {
       return this.prepareResult(false, undefined, `Skill already exists: ${provider}/${newName}`);
     }
 
-    const skillMd = await write.composeSkillMd(newName, newDescription, newBody);
+    const skillMd = write.composeSkillMd(newName, newDescription, newBody);
 
     let archivedVersion: string | null;
     if (isRename) {

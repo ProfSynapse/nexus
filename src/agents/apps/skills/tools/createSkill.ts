@@ -83,7 +83,7 @@ export class CreateSkillTool extends BaseTool<CreateSkillParams, CommonResult> {
       return this.prepareResult(false, undefined, `Skill already exists: ${provider}/${params.name}`);
     }
 
-    const skillMd = await write.composeSkillMd(params.name, params.description, params.body);
+    const skillMd = write.composeSkillMd(params.name, params.description, params.body);
     await write.writeSkill(folder, skillMd);
 
     await r.rt.index.upsertOne({

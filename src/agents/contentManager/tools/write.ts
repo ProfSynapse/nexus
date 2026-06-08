@@ -1,4 +1,4 @@
-import { App, TFile } from 'obsidian';
+import { App, TFile, parseYaml } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { WriteParams, WriteResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
@@ -17,7 +17,7 @@ interface YamlParseError {
  * lists, and scalar document roots are rejected because Obsidian properties
  * are map-shaped.
  */
-async function validateFrontmatter(content: string): Promise<string | null> {
+function validateFrontmatter(content: string): string | null {
   const withoutBom = content.replace(/^\uFEFF/, '');
   const match = withoutBom.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
 
@@ -28,8 +28,7 @@ async function validateFrontmatter(content: string): Promise<string | null> {
   const frontmatterBody = match[1];
 
   try {
-    const { parse } = await import('yaml');
-    const parsed: unknown = parse(frontmatterBody);
+    const parsed: unknown = parseYaml(frontmatterBody);
 
     if (parsed === null || parsed === undefined) {
       return null;
@@ -131,7 +130,7 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         return this.prepareResult(false, undefined, 'Content is required');
       }
 
-      const frontmatterError = await validateFrontmatter(content);
+      const frontmatterError = validateFrontmatter(content);
       if (frontmatterError) {
         return this.prepareResult(false, undefined, frontmatterError);
       }

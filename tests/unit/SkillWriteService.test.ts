@@ -94,8 +94,8 @@ describe('SkillWriteService', () => {
       const match = /^---\n([\s\S]*?)\n---\n\n([\s\S]*)$/.exec(content);
       expect(match).not.toBeNull();
 
-      const { parse } = await import('yaml');
-      const fm = parse(match![1]) as Record<string, unknown>;
+      const { parseYaml } = await import('obsidian');
+      const fm = parseYaml(match![1]) as Record<string, unknown>;
       expect(fm.name).toBe('essay-editor');
       expect(fm.description).toBe('Edit essays for clarity.');
       expect(match![2].trim()).toBe('# Body\nText.');

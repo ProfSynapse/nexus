@@ -71,7 +71,7 @@ export class SkillScanner {
           }
 
           const content = await this.adapter.read(skillMdPath);
-          const frontmatter = await parseSkillFrontmatter(content);
+          const frontmatter = parseSkillFrontmatter(content);
 
           // The (provider, name) index key is the on-disk FOLDER identity —
           // the same identity vaultPath/originPath are built from. The

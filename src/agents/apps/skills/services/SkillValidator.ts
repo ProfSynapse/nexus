@@ -1,9 +1,8 @@
 /**
  * SkillValidator — pure, dependency-free validation of SKILL.md formatting conventions.
  *
- * No Obsidian imports, no Node imports. Pure TypeScript so it is trivially
- * unit-testable and mobile-safe. The only external dependency (`yaml`) is loaded
- * via a DYNAMIC import inside the async path so module init stays mobile-safe.
+ * Uses Obsidian's YAML helper for frontmatter parsing so no production YAML
+ * parser dependency is bundled.
  *
  * Validation rules (from docs/plans/skills-protocol-integration-plan.md §7):
  *   - `name` is required, non-empty, and lowercase-hyphenated.
@@ -17,6 +16,7 @@
  * All errors are collected (validation does not short-circuit at the first error).
  */
 
+import { parseYaml } from 'obsidian';
 import type { SkillValidationResult, SkillFrontmatterInput } from '../types';
 
 // Re-exported so callers can import the result/input shapes alongside the validator.
@@ -105,9 +105,9 @@ export class SkillValidator {
    *
    * The content must begin with a YAML frontmatter block delimited by `---`
    * lines. The `name`/`description` are extracted from it and validated via the
-   * same rules as {@link validate}. Async because YAML is dynamically imported.
+   * same rules as {@link validate}.
    */
-  async validateSkillMd(content: string): Promise<SkillValidationResult> {
+  validateSkillMd(content: string): SkillValidationResult {
     const errors: string[] = [];
     const raw = typeof content === 'string' ? content : '';
 
@@ -119,8 +119,7 @@ export class SkillValidator {
 
     let parsed: unknown;
     try {
-      const { parse } = await import('yaml');
-      parsed = parse(frontmatter);
+      parsed = parseYaml(frontmatter);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       errors.push(`SKILL.md frontmatter is not valid YAML: ${message}`);

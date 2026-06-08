@@ -175,7 +175,7 @@ export class SkillSyncService {
             result.archived.push(archived);
           }
 
-          const fm = await parseSkillFrontmatter(content);
+          const fm = parseSkillFrontmatter(content);
           const description =
             typeof fm.description === 'string' && fm.description.trim().length > 0
               ? fm.description.trim()

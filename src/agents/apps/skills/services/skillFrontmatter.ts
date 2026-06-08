@@ -4,8 +4,8 @@
  * Located at: src/agents/apps/skills/services/skillFrontmatter.ts
  * Extracted so the scanner, the CRUA tools, and the SkillSyncService share ONE
  * implementation of "split a SKILL.md into its leading `---` YAML block + body".
- * `yaml` is dynamically imported (mobile-safe — no Node API at module init).
  */
+import { parseYaml } from 'obsidian';
 
 /**
  * Parse a SKILL.md: leading `---\nYAML\n---` block + trailing body.
@@ -18,9 +18,9 @@
  * (e.g. the scanner) must do so themselves — this util reports only what the
  * frontmatter actually contains.
  */
-export async function parseSkillFrontmatter(
+export function parseSkillFrontmatter(
   content: string
-): Promise<{ name?: string; description?: string; body: string }> {
+): { name?: string; description?: string; body: string } {
   const normalized = content.replace(/\r\n/g, '\n');
   const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(normalized);
   if (!match) {
@@ -30,8 +30,7 @@ export async function parseSkillFrontmatter(
   let name: string | undefined;
   let description: string | undefined;
   try {
-    const { parse } = await import('yaml');
-    const parsed: unknown = parse(match[1]);
+    const parsed: unknown = parseYaml(match[1]);
     if (parsed && typeof parsed === 'object') {
       const fields = parsed as Record<string, unknown>;
       if (typeof fields.name === 'string') {
