@@ -362,7 +362,7 @@ export class SkillsSectionRenderer {
                     new Notice(`A skill named "${name}" already exists for provider "nexus".`);
                     return false;
                 }
-                const skillMd = await bundle.write.composeSkillMd(name, description, body);
+                const skillMd = bundle.write.composeSkillMd(name, description, body);
                 await bundle.write.writeSkill(folder, skillMd);
                 await bundle.index.upsertOne({
                     provider: 'nexus',
@@ -382,7 +382,7 @@ export class SkillsSectionRenderer {
         // Edit mode — prefill from the current SKILL.md.
         void (async () => {
             const raw = await bundle.write.readSkillMd(skill.vaultPath);
-            const parsed = raw ? await parseSkillFrontmatter(raw) : { body: '' };
+            const parsed = raw ? parseSkillFrontmatter(raw) : { body: '' };
             const modal = new SkillEditModal(
                 this.app,
                 {
@@ -392,7 +392,7 @@ export class SkillsSectionRenderer {
                     body: parsed.body
                 },
                 async ({ description, body }) => {
-                    const skillMd = await bundle.write.composeSkillMd(skill.name, description, body);
+                    const skillMd = bundle.write.composeSkillMd(skill.name, description, body);
                     // Reuse the same archive-then-replace path as updateSkill.
                     await bundle.write.archiveThenReplace(
                         skill.vaultPath,

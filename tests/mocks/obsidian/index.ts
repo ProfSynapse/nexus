@@ -21,6 +21,8 @@ export {
   requestUrl,
   __setRequestUrlMock,
   normalizePath,
+  parseYaml,
+  stringifyYaml,
   Events,
   EventRef,
   MarkdownFileInfo,

@@ -1,6 +1,7 @@
 /**
  * Core Obsidian API mocks: Editor, files, App, Vault, Workspace, Platform.
  */
+import { parse, stringify } from 'yaml';
 
 // EditorPosition type
 export interface EditorPosition {
@@ -187,6 +188,14 @@ export function requestUrl(request: RequestUrlRequest): Promise<RequestUrlRespon
 
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+export function parseYaml(yaml: string): unknown {
+  return parse(yaml);
+}
+
+export function stringifyYaml(obj: unknown): string {
+  return stringify(obj);
 }
 
 // Events / EventRef mocks
