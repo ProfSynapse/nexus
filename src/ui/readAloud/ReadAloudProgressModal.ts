@@ -36,6 +36,10 @@ export class ReadAloudProgressModal extends Modal {
   onOpen(): void {
     this.modalEvents = new Component();
     const { contentEl } = this;
+    // Scope the FRAME (not just contentEl) so the modal renders at a sensible
+    // centered width instead of full-screen-wide; the waveform fill rules below
+    // are anchored under .read-aloud-progress.
+    this.modalEl.addClass('read-aloud-progress-modal');
     contentEl.addClass('read-aloud-progress');
 
     contentEl.createEl('h2', { text: 'Reading aloud…' });

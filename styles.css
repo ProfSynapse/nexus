@@ -9189,13 +9189,16 @@ body.is-mobile .nexus-task-board-shell {
 
 /* Read-aloud progress modal. Reuses the live-voice .chat-live-dot +
    .chat-live-waveform / .chat-live-wave-bar visuals (animations + their
-   prefers-reduced-motion handling are defined with those classes). */
+   prefers-reduced-motion handling are defined with those classes). All width
+   overrides are SCOPED to the read-aloud context so the shared live-voice
+   rules used elsewhere are untouched. */
 
-/* Give the modal content a sensible target width so the waveform reads as a
-   full-width player rather than shrink-wrapping to a small cluster. min() caps
-   it to the viewport on narrow/mobile screens so it never overflows. */
-.read-aloud-progress {
-    width: min(420px, 100%);
+/* Constrain the modal FRAME (not just contentEl) so it renders at a sensible
+   centered width instead of full-screen-wide. min() caps it to the viewport on
+   narrow/mobile screens so it never overflows. */
+.read-aloud-progress-modal {
+    width: min(520px, 100%);
+    max-width: 100%;
 }
 
 .read-aloud-progress-visual {
@@ -9204,6 +9207,18 @@ body.is-mobile .nexus-task-board-shell {
     gap: 12px;
     width: 100%;
     margin: var(--space-m) 0;
+}
+
+/* Make the 24 bars span the waveform edge-to-edge. The shared
+   .chat-live-wave-bar caps growth at max-width:8px (fine for the narrow chat
+   input), so in this wider modal we spread the bars (space-between) AND raise
+   the per-bar cap so they thicken into a proper full-width waveform. */
+.read-aloud-progress .chat-live-waveform {
+    justify-content: space-between;
+}
+
+.read-aloud-progress .chat-live-wave-bar {
+    max-width: 12px;
 }
 
 .read-aloud-progress-status {
