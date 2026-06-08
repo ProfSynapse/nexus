@@ -34,6 +34,21 @@ There are two natural modes that already exist in the command surface — but th
 
 ---
 
+## 1b. v2 UX REDESIGN — supersedes the v1 trigger/feedback design (user manual-test feedback, 2026-06-08)
+
+The v1 build (commits 89f65a8e CODE / f526adbc TEST) shipped **two separate explicit actions** ("Save selection/note as audio") that synthesized WITHOUT playback. Manual testing rejected that surface. The engine (`concatAudioBuffers`, settings-derived path, naming, embed-below-frontmatter) is RETAINED; the **trigger + feedback + playback coupling** is redesigned:
+
+**DECIDED (user, 2026-06-08):**
+1. **Unify to ONE action.** REMOVE the two separate "Save selection as audio" / "Save note as audio" commands AND their context/file-menu items. There is a single **"Read aloud"** entry (selection via editor context menu + palette; note via file ⋯ menu + palette). Save is no longer its own command.
+2. **Save-prompt modal.** On invoking read-aloud → an Obsidian `Modal` asks **save-or-not** (e.g. [Save & read] / [Just read], + Cancel). This replaces the silent-synth behavior.
+3. **Animated reading-aloud modal (either choice).** After the prompt, show a progress modal with a **live animation REUSED from the live-voice/transcript UI** (the pulsing dot `.chat-live-dot` + waveform bars `.chat-live-wave-bar` / `ChatInput.buildLiveVoiceBars`) so it's visually clear it's synthesizing/reading. These styles already carry `prefers-reduced-motion` handling (FE-MINOR-1) — reuse inherits it.
+4. **Read-aloud now PLAYS.** This REVERSES the v1 "synth-only, no playback" decision. The action plays audio aloud; saving is captured ALONGSIDE playback (single synth pass — never double-synthesize: play + capture from the same synthesized buffers).
+5. **Background-continue on dismiss (save case).** If Save was chosen and the user dismisses/leaves the modal: **playback STOPS, but synthesis + save CONTINUE in the background**, inserting the `![[...]]` embed when done. Implication: the save's synth pass must complete ALL chunks even after playback is cancelled mid-way (play until stopped, then synth-only for remaining chunks — one pass, no double-synth). If "Just read" was chosen, dismiss simply stops playback (nothing saved).
+
+**Engine reuse (unchanged):** `concatAudioBuffers`, `ReadAloudSaveService` file-write + naming + sanitization + embed-below-frontmatter, settings-derived path. The capture source shifts from a synth-only pass to a **play-and-capture pass with cancellable playback but non-cancellable save**.
+
+---
+
 ## 2. Current-State Ground Truth (verified)
 
 | Fact | Location |
