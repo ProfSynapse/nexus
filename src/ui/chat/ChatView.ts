@@ -35,6 +35,7 @@ import { StreamingController } from './controllers/StreamingController';
 import { NexusLoadingController } from './controllers/NexusLoadingController';
 import { SubagentController } from './controllers/SubagentController';
 import { ChatLiveVoiceController } from './controllers/ChatLiveVoiceController';
+import { LiveVoiceContextBuilder } from '../../services/realtimeVoice/LiveVoiceContextBuilder';
 
 // Coordinators
 import { ToolStatusBar } from './components/ToolStatusBar';
@@ -674,6 +675,7 @@ export class ChatView extends ItemView {
       toolStatusBar: this.toolStatusBar,
       liveVoiceButton: this.layoutElements.liveVoiceButton,
       getHasConversation: () => this.conversationManager.getCurrentConversation() !== null,
+      getConversationContext: () => new LiveVoiceContextBuilder().build(this.conversationManager.getCurrentConversation()),
       onTranscriptMessage: (role, content) => {
         void this.appendLiveVoiceTranscriptMessage(role, content);
       },
