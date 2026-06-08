@@ -19,7 +19,7 @@ Nexus can be used in two ways:
 
 - Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, and `main.js`
 - Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
-- Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md)
+- Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md) for chat, live voice, read-aloud, and built-in audio/video generation
 - External agent over MCP: use **Nexus settings -> Get started -> MCP integration** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
 - Optional desktop features: [Semantic search](guide/semantic-search.md) and [Apps and integrations](guide/apps.md)
 
@@ -48,6 +48,8 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 |---|---|
 | Connect Claude Desktop, Codex CLI, Gemini CLI, Cursor, Cline, or another MCP client | [MCP setup](guide/mcp-setup.md) |
 | Configure built-in chat providers inside Obsidian | [Provider setup](guide/provider-setup.md) |
+| Use live voice, read notes aloud, or save spoken audio back into your notes | [Native chat](guide/native-chat.md) |
+| Generate voice audio or text-to-video files directly into your vault | [Native chat](guide/native-chat.md) |
 | Give your agent better instructions for using Nexus | [Recommended system prompt](guide/recommended-system-prompt.md) |
 | Manage long-running work with persistent workspace context | [Workspace memory](guide/workspace-memory.md) |
 | Track projects, tasks, blockers, and dependencies | [Task management](guide/task-management.md) |

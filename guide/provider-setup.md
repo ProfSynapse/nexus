@@ -16,6 +16,17 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 
 ---
 
+## What Provider Setup Unlocks
+
+- **Standard text chat**: any configured chat provider works in the chat model picker
+- **Live voice**: configure OpenAI, then choose the live voice provider/model in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. Only OpenAI realtime/WebRTC is wired in the current build
+- **Read aloud and `generateAudio`**: configure a speech-capable backend such as OpenAI, ElevenLabs, Google AI, Mistral, or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. This is a different surface from live voice and is not OpenAI-only
+- **`generateVideo`**: configure Google AI or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Video**
+
+If you want ElevenLabs voices, sound effects, or music generation, enable the ElevenLabs app in **Settings &rarr; Nexus &rarr; Apps** and see [Apps](apps.md).
+
+---
+
 ## API Key Providers
 
 For Anthropic, OpenAI, Google AI, Groq, Mistral, OpenRouter, Perplexity, and Requesty:

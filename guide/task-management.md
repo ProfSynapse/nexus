@@ -9,6 +9,7 @@ Workspace-scoped project and task management with DAG dependency tracking.
 - **Projects** belong to a workspace and group related tasks
 - **Tasks** belong to a project and can have subtasks, dependencies, priorities, assignees, due dates, and tags
 - **Dependencies** form a directed acyclic graph (DAG) — Nexus prevents cycles and can compute next actions, blocked tasks, and topological order
+- **Short task refs** give each task a compact human-facing alias like `T-1a2b3c4d` while the full UUID remains the storage key
 - **Note linking** connects tasks to vault notes with a typed relationship, and the AI can now *read* those links when it lists or queries tasks
 
 ---
@@ -27,6 +28,18 @@ Workspace-scoped project and task management with DAG dependency tracking.
 | `moveTask` | Move a task between projects |
 | `queryTasks` | Query tasks across projects with filters (status, priority, assignee, tags, due date) — returns each task's linked notes |
 | `linkNote` | Link a vault note to a task with a relationship type |
+
+---
+
+## Short Task References
+
+Task read surfaces now include a `taskRef` such as `T-1a2b3c4d`.
+
+- `createTask` returns both the internal `taskId` and the short `taskRef`
+- `listTasks` and `queryTasks` include `taskRef` on each returned task
+- Prefer `taskRef` over the raw UUID when you call `updateTask`, `moveTask`, `linkNote`, or dependency-related operations
+
+Nexus accepts either the full internal task ID or the short ref in the task operations that target an existing task, so you can keep later tool calls readable.
 
 ---
 
