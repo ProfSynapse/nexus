@@ -70,6 +70,7 @@ describe('ChatLiveVoiceController', () => {
     } as unknown as ToolStatusBar;
     const liveVoiceButton = createMockElement('button');
     const component = new Component();
+    const onTranscriptMessage = jest.fn();
     const registerDomEventSpy = jest.spyOn(component, 'registerDomEvent');
     const controller = new ChatLiveVoiceController({
       app: app as never,
@@ -77,6 +78,7 @@ describe('ChatLiveVoiceController', () => {
       toolStatusBar,
       liveVoiceButton,
       getHasConversation: () => hasConversation,
+      onTranscriptMessage,
       component,
     });
 
@@ -84,6 +86,7 @@ describe('ChatLiveVoiceController', () => {
       chatInput,
       controller,
       liveVoiceButton,
+      onTranscriptMessage,
       registerDomEventSpy,
       toolStatusBar,
     };
@@ -155,5 +158,29 @@ describe('ChatLiveVoiceController', () => {
     await Promise.resolve();
 
     expect(controller.getState()).toBe('connecting');
+  });
+
+  it('forwards completed user transcripts into the chat stream', async () => {
+    const { controller, onTranscriptMessage, toolStatusBar } = createHarness(true);
+    await controller.start();
+    const createSessionRequest = mockCreateSession.mock.calls[0]?.[0];
+
+    createSessionRequest.callbacks.onUserTranscript('  Hello   Nexus.  ');
+
+    expect(onTranscriptMessage).toHaveBeenCalledWith('user', 'Hello Nexus.');
+    expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenLastCalledWith('Heard: Hello Nexus.', 'present');
+  });
+
+  it('buffers assistant transcript deltas and forwards the completed assistant message', async () => {
+    const { controller, onTranscriptMessage } = createHarness(true);
+    await controller.start();
+    const createSessionRequest = mockCreateSession.mock.calls[0]?.[0];
+
+    createSessionRequest.callbacks.onAssistantTranscriptDelta('Hello ');
+    createSessionRequest.callbacks.onAssistantTranscriptDelta('there');
+    createSessionRequest.callbacks.onAssistantTranscriptCompleted('Hello there');
+
+    expect(onTranscriptMessage).toHaveBeenCalledWith('assistant', 'Hello there');
+    expect(controller.getState()).toBe('listening');
   });
 });

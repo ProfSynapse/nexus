@@ -121,6 +121,14 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
           model: this.request.model,
           instructions: this.request.instructions || 'You are Nexus, a helpful voice assistant inside Obsidian.',
           audio: {
+            input: {
+              transcription: {
+                model: 'gpt-4o-mini-transcribe',
+              },
+              turn_detection: {
+                type: 'server_vad',
+              },
+            },
             output: {
               voice: this.request.voice,
             },
@@ -241,6 +249,11 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
       case 'response.audio_transcript.delta':
         if (typeof event.delta === 'string') {
           this.request.callbacks.onAssistantTranscriptDelta?.(event.delta);
+        }
+        break;
+      case 'response.audio_transcript.done':
+        if (typeof event.transcript === 'string' && event.transcript.trim().length > 0) {
+          this.request.callbacks.onAssistantTranscriptCompleted?.(event.transcript.trim());
         }
         break;
       case 'error':

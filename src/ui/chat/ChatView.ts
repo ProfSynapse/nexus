@@ -53,6 +53,7 @@ import { ChatEventBinder } from './utils/ChatEventBinder';
 
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
 import { getNexusPlugin } from '../../utils/pluginLocator';
+import { generateUUID } from '../../utils/uuid';
 
 // Nexus Lifecycle
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
@@ -673,6 +674,9 @@ export class ChatView extends ItemView {
       toolStatusBar: this.toolStatusBar,
       liveVoiceButton: this.layoutElements.liveVoiceButton,
       getHasConversation: () => this.conversationManager.getCurrentConversation() !== null,
+      onTranscriptMessage: (role, content) => {
+        void this.appendLiveVoiceTranscriptMessage(role, content);
+      },
       component: this,
     });
 
@@ -863,6 +867,53 @@ export class ChatView extends ItemView {
 
   private handleAIMessageStarted(message: ConversationMessage): void {
     this.messageDisplay.addAIMessage(message);
+  }
+
+  private async appendLiveVoiceTranscriptMessage(role: 'user' | 'assistant', content: string): Promise<void> {
+    const normalizedContent = content.replace(/\s+/g, ' ').trim();
+    if (!normalizedContent) {
+      return;
+    }
+
+    const conversation = this.conversationManager.getCurrentConversation();
+    if (!conversation) {
+      return;
+    }
+
+    const message: ConversationMessage = {
+      id: generateUUID(),
+      role,
+      content: normalizedContent,
+      timestamp: Date.now(),
+      conversationId: conversation.id,
+      state: 'complete',
+      metadata: {
+        source: 'liveVoice',
+      },
+    };
+
+    const result = await this.chatService.addMessage({
+      conversationId: conversation.id,
+      role,
+      content: normalizedContent,
+      id: message.id,
+      metadata: message.metadata,
+    });
+
+    if (!result.success) {
+      console.error('[ChatView] Failed to append live voice transcript:', result.error);
+      this.toolStatusBar.pushLiveVoiceStatus(result.error || 'Failed to append live voice transcript.', 'failed');
+      return;
+    }
+
+    const updatedConversation: ConversationData = {
+      ...conversation,
+      messages: [...conversation.messages, message],
+      updated: Date.now(),
+    };
+    this.conversationManager.updateCurrentConversation(updatedConversation);
+    this.messageDisplay.setConversation(updatedConversation);
+    void this.updateContextProgress();
   }
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {

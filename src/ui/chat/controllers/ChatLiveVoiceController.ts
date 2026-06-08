@@ -22,6 +22,7 @@ export interface ChatLiveVoiceControllerOptions {
   toolStatusBar: ToolStatusBar;
   liveVoiceButton: HTMLElement;
   getHasConversation: () => boolean;
+  onTranscriptMessage?: (role: 'user' | 'assistant', content: string) => void | Promise<void>;
   component: Component;
 }
 
@@ -38,6 +39,7 @@ export class ChatLiveVoiceController {
   private readonly timeouts: ManagedTimeoutTracker;
   private session: RealtimeVoiceSession | null = null;
   private starting = false;
+  private assistantTranscriptBuffer = '';
 
   constructor(private readonly options: ChatLiveVoiceControllerOptions) {
     this.timeouts = new ManagedTimeoutTracker(options.component);
@@ -74,6 +76,7 @@ export class ChatLiveVoiceController {
           onError: (message, error) => this.handleSessionError(message, error),
           onUserTranscript: (text) => this.handleUserTranscript(text),
           onAssistantTranscriptDelta: (text) => this.handleAssistantTranscriptDelta(text),
+          onAssistantTranscriptCompleted: (text) => this.handleAssistantTranscriptCompleted(text),
         },
       });
       this.session = session;
@@ -93,6 +96,7 @@ export class ChatLiveVoiceController {
   stop(): void {
     this.starting = false;
     this.timeouts.clear();
+    this.assistantTranscriptBuffer = '';
     this.session?.stop();
     this.session = null;
     this.setState('inactive');
@@ -105,6 +109,7 @@ export class ChatLiveVoiceController {
 
   cleanup(): void {
     this.timeouts.clear();
+    this.assistantTranscriptBuffer = '';
     this.session?.stop();
     this.session = null;
     this.setState('inactive');
@@ -118,16 +123,38 @@ export class ChatLiveVoiceController {
   }
 
   private handleUserTranscript(text: string): void {
-    this.options.toolStatusBar.pushLiveVoiceStatus(`Heard: ${text}`, 'present');
+    const normalized = this.normalizeTranscript(text);
+    if (!normalized) {
+      return;
+    }
+
+    void this.options.onTranscriptMessage?.('user', normalized);
+    this.options.toolStatusBar.pushLiveVoiceStatus(`Heard: ${normalized}`, 'present');
   }
 
-  private handleAssistantTranscriptDelta(_text: string): void {
+  private handleAssistantTranscriptDelta(text: string): void {
+    this.assistantTranscriptBuffer += text;
     this.setState('assistant-speaking');
+  }
+
+  private handleAssistantTranscriptCompleted(text: string): void {
+    const normalized = this.normalizeTranscript(text || this.assistantTranscriptBuffer);
+    this.assistantTranscriptBuffer = '';
+    if (!normalized) {
+      return;
+    }
+
+    void this.options.onTranscriptMessage?.('assistant', normalized);
+    this.setState('listening');
   }
 
   private getLLMSettings(): LLMProviderSettings | null {
     const plugin = getNexusPlugin(this.options.app) as PluginWithLLMSettings | null;
     return plugin?.settings?.settings?.llmProviders ?? null;
+  }
+
+  private normalizeTranscript(text: string): string {
+    return text.replace(/\s+/g, ' ').trim();
   }
 
   setState(state: LiveVoiceComposerState, statusText?: string): void {

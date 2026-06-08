@@ -6,6 +6,7 @@ export interface RealtimeVoiceSessionCallbacks {
   onError: (message: string, error?: unknown) => void;
   onUserTranscript?: (text: string) => void;
   onAssistantTranscriptDelta?: (text: string) => void;
+  onAssistantTranscriptCompleted?: (text: string) => void;
 }
 
 export interface RealtimeVoiceSession {
