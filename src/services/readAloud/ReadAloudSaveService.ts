@@ -1,19 +1,24 @@
 /**
  * Location: src/services/readAloud/ReadAloudSaveService.ts
  *
- * Backend engine for the read-aloud "save as audio" feature. Synthesizes a
- * selection or a whole note to audio (capturing buffers, never playing),
- * concatenates them into ONE file via the pure {@link concatAudioBuffers}
- * helper, writes the file to the SETTINGS-DERIVED audio folder, and inserts a
- * single `![[...]]` embed into the note.
+ * Backend SAVE-TAIL for the read-aloud "save as audio" feature: given the
+ * per-chunk synthesis buffers, concatenates them into ONE file via the pure
+ * {@link concatAudioBuffers} helper, writes the file to the SETTINGS-DERIVED
+ * audio folder, and inserts a single `![[...]]` embed into the note.
  *
- * Public contract (called by ReadAloudCommandManager / UI — frontend-coder):
- * - saveSelectionAsAudio(editor, file): synth selection, embed after selection.
- * - saveNoteAsAudio(file): synth whole note, embed at top of body.
- * Both return Promise<void> and THROW on failure (caller catches + Notices).
+ * v2 contract (called by ReadAloudService.startReadAloudSession during the
+ * play-and-capture session — synthesis happens ONCE, in the session loop):
+ * - saveCapturedSelection(results, editor, file, selection): write + embed after selection.
+ * - saveCapturedNote(results, file): write + embed at top of body (below frontmatter).
+ * Both return the saved vault-relative path and THROW on failure (the session's
+ * `completed` promise rejects; the UI catches + Notices).
+ *
+ * The synthesize-then-save methods {@link saveSelectionAsAudio} /
+ * {@link saveNoteAsAudio} are RETAINED as test seams that drive the full
+ * capture→write→embed pipeline; production traffic goes through the session.
  *
  * Mobile-safe: no AudioContext family, no Node built-ins, no Composer. See
- * docs/plans/read-aloud-save-embed-scoping.md.
+ * docs/plans/read-aloud-save-embed-scoping.md §1b.
  */
 
 import { App, Editor, normalizePath, TFile, TFolder, Vault } from 'obsidian';
@@ -44,9 +49,52 @@ export class ReadAloudSaveService {
   ) {}
 
   /**
-   * Synthesize the current editor selection to a single audio file and insert an
-   * `![[...]]` embed immediately after the selection. Selection is usually one
-   * chunk (N=1), so concat is a no-op pass-through.
+   * Persist ALREADY-captured selection buffers (from the v2 play-and-capture
+   * session) to one audio file and insert the `![[...]]` embed after the selection.
+   * No synthesis happens here — the session synthesized each chunk exactly once.
+   * Selection is usually one chunk (N=1), so concat is a no-op pass-through.
+   * Returns the saved vault-relative path; throws on failure.
+   */
+  async saveCapturedSelection(
+    results: SpeechSynthesisResult[],
+    editor: Editor,
+    file: TFile,
+    selection: string
+  ): Promise<string> {
+    const { filename, outputPath } = await this.writeCaptured(
+      results,
+      this.buildSelectionFilenameStem(file.basename, selection)
+    );
+
+    // Insert the embed on its own line after the selection's end.
+    const to = editor.getCursor('to');
+    const embed = `\n\n${this.buildEmbed(filename)}\n`;
+    editor.replaceRange(embed, to);
+    return outputPath;
+  }
+
+  /**
+   * Persist ALREADY-captured whole-note buffers (from the v2 session) to one
+   * concatenated audio file and insert the `![[...]]` embed at the top of the note
+   * body (below YAML frontmatter, if any). No synthesis happens here. Returns the
+   * saved vault-relative path; throws on failure.
+   */
+  async saveCapturedNote(results: SpeechSynthesisResult[], file: TFile): Promise<string> {
+    const { filename, outputPath } = await this.writeCaptured(
+      results,
+      this.buildNoteFilenameStem(file.basename)
+    );
+
+    const embed = this.buildEmbed(filename);
+    await this.vault.process(file, (content) => this.prependBelowFrontmatter(content, embed));
+    return outputPath;
+  }
+
+  /**
+   * RETAINED test seam: synthesize the current editor selection (capturing, no
+   * playback) and persist it via {@link saveCapturedSelection}. The v2 session
+   * does NOT call this — it captures during play-and-capture so synthesis happens
+   * once. Kept to exercise the full capture→write→embed pipeline in unit tests.
    */
   async saveSelectionAsAudio(editor: Editor, file: TFile): Promise<void> {
     const selection = editor.getSelection();
@@ -54,49 +102,39 @@ export class ReadAloudSaveService {
       throw new Error('Select text to save as audio.');
     }
 
-    const { basename, mimeType } = await this.synthesizeAndWrite(
-      selection,
-      this.buildSelectionFilenameStem(file.basename, selection),
-      undefined
-    );
-    void mimeType;
-
-    // Insert the embed on its own line after the selection's end.
-    const to = editor.getCursor('to');
-    const embed = `\n\n${this.buildEmbed(basename)}\n`;
-    editor.replaceRange(embed, to);
+    const results = await this.captureResults(selection);
+    await this.saveCapturedSelection(results, editor, file, selection);
   }
 
   /**
-   * Synthesize a whole note to a single concatenated audio file and insert one
-   * `![[...]]` embed at the top of the note body (below YAML frontmatter, if any).
+   * RETAINED test seam: synthesize a whole note (capturing, no playback) and
+   * persist it via {@link saveCapturedNote}. See {@link saveSelectionAsAudio}.
    */
   async saveNoteAsAudio(file: TFile): Promise<void> {
     const markdown = await this.vault.cachedRead(file);
-
-    const { basename } = await this.synthesizeAndWrite(
-      markdown,
-      this.buildNoteFilenameStem(file.basename),
-      undefined
-    );
-
-    const embed = this.buildEmbed(basename);
-    await this.vault.process(file, (content) => this.prependBelowFrontmatter(content, embed));
+    const results = await this.captureResults(markdown);
+    await this.saveCapturedNote(results, file);
   }
 
   /**
-   * Shared pipeline: capture-synthesize the text (no playback), concat to one
-   * buffer, derive the settings-rooted output path with the provider-native
-   * extension, and write it via the temp-swap pattern. Returns the saved file's
-   * basename (for the embed) and the audio mimeType.
+   * Capture-synthesize text chunk-by-chunk (no playback) and return the per-chunk
+   * results. Used only by the retained synthesize-then-save seams; the v2 session
+   * supplies its own captured results.
    */
-  private async synthesizeAndWrite(
-    text: string,
-    filenameStem: string,
-    onProgress?: (completed: number, total: number) => void
-  ): Promise<{ basename: string; mimeType: string }> {
+  private async captureResults(text: string): Promise<SpeechSynthesisResult[]> {
     const service = this.buildCaptureService();
-    const results = await service.synthesizeForCapture({ markdown: text }, onProgress);
+    return service.synthesizeForCapture({ markdown: text });
+  }
+
+  /**
+   * Shared write tail: validate + concat the captured buffers to one buffer, derive
+   * the settings-rooted output path with the provider-native extension, and write
+   * it. Returns the saved file's basename (for the embed) and the vault path.
+   */
+  private async writeCaptured(
+    results: SpeechSynthesisResult[],
+    filenameStem: string
+  ): Promise<{ filename: string; mimeType: string; outputPath: string }> {
     if (results.length === 0) {
       throw new Error('There is no readable text to save as audio.');
     }
@@ -113,13 +151,13 @@ export class ReadAloudSaveService {
     const outputPath = this.resolveOutputPath(filename);
     await this.writeAudio(outputPath, merged);
 
-    return { basename: filename, mimeType };
+    return { filename, mimeType, outputPath };
   }
 
   /**
-   * Normalize a SpeechSynthesisResult's audioData to a true ArrayBuffer. Adapters
-   * return ArrayBuffer today, but guard against a typed-array slice so concat
-   * never sees a SharedArrayBuffer/typed-array view.
+   * Extract a SpeechSynthesisResult's audioData. Adapters already return a true
+   * ArrayBuffer (see SpeechSynthesisResult.audioData), so this is a direct
+   * pass-through used as the map projection into concatAudioBuffers.
    */
   private toAudioBuffer = (result: SpeechSynthesisResult): ArrayBuffer => {
     return result.audioData;

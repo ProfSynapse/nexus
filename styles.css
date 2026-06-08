@@ -9186,3 +9186,18 @@ body.is-mobile .nexus-task-board-shell {
         overflow: visible;
     }
 }
+
+/* Read-aloud progress modal. Reuses the live-voice .chat-live-dot +
+   .chat-live-waveform / .chat-live-wave-bar visuals (animations + their
+   prefers-reduced-motion handling are defined with those classes). */
+.read-aloud-progress-visual {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: var(--space-m) 0;
+}
+
+.read-aloud-progress-status {
+    color: var(--text-muted);
+    font-size: 13px;
+}

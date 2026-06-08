@@ -12,7 +12,10 @@ import {
 } from 'obsidian';
 import type { Settings } from '../../settings';
 import { ReadAloudService } from '../../services/readAloud/ReadAloudService';
+import type { ReadAloudSession } from '../../services/readAloud/ReadAloudService';
 import { ReadAloudSaveService } from '../../services/readAloud/ReadAloudSaveService';
+import { SavePromptModal, SavePromptChoice } from '../../ui/readAloud/SavePromptModal';
+import { ReadAloudProgressModal } from '../../ui/readAloud/ReadAloudProgressModal';
 
 declare module 'obsidian' {
   interface Workspace extends Events {
@@ -30,6 +33,8 @@ export interface ReadAloudCommandManagerConfig {
   app: App;
 }
 
+type ReadAloudTarget = { mode: 'selection' | 'note'; file: TFile; editor?: Editor };
+
 export class ReadAloudCommandManager {
   private readAloudService: ReadAloudService | null = null;
   private settingsFingerprint: string | null = null;
@@ -39,8 +44,7 @@ export class ReadAloudCommandManager {
 
   registerCommands(): void {
     this.registerReadActiveNoteCommand();
-    this.registerSaveActiveNoteCommand();
-    this.registerSaveSelectionCommand();
+    this.registerReadSelectionCommand();
     this.registerStopCommand();
     this.registerEditorMenu();
     this.registerFileMenu();
@@ -49,7 +53,7 @@ export class ReadAloudCommandManager {
   private registerReadActiveNoteCommand(): void {
     this.config.plugin.addCommand({
       id: 'read-active-note-aloud',
-      name: 'Read active note aloud',
+      name: 'Read note aloud',
       checkCallback: (checking) => {
         const view = this.config.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view?.file) {
@@ -57,7 +61,7 @@ export class ReadAloudCommandManager {
         }
 
         if (!checking) {
-          void this.readFile(view.file);
+          this.promptAndRead({ mode: 'note', file: view.file });
         }
 
         return true;
@@ -65,29 +69,10 @@ export class ReadAloudCommandManager {
     });
   }
 
-  private registerSaveActiveNoteCommand(): void {
+  private registerReadSelectionCommand(): void {
     this.config.plugin.addCommand({
-      id: 'save-active-note-as-audio',
-      name: 'Save note as audio',
-      checkCallback: (checking) => {
-        const view = this.config.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!view?.file) {
-          return false;
-        }
-
-        if (!checking) {
-          void this.saveNoteAsAudio(view.file);
-        }
-
-        return true;
-      }
-    });
-  }
-
-  private registerSaveSelectionCommand(): void {
-    this.config.plugin.addCommand({
-      id: 'save-selection-as-audio',
-      name: 'Save selection as audio',
+      id: 'read-selection-aloud',
+      name: 'Read selection aloud',
       editorCheckCallback: (checking, editor, ctx) => {
         const file = ctx.file;
         if (!file || !editor.somethingSelected()) {
@@ -95,7 +80,7 @@ export class ReadAloudCommandManager {
         }
 
         if (!checking) {
-          void this.saveSelectionAsAudio(editor, file);
+          this.promptAndRead({ mode: 'selection', file, editor });
         }
 
         return true;
@@ -130,26 +115,19 @@ export class ReadAloudCommandManager {
           return;
         }
 
+        const file = info.file;
+        if (!(file instanceof TFile) || file.extension !== 'md') {
+          return;
+        }
+
         menu.addItem((item) => {
           item
             .setTitle('Read selection aloud')
             .setIcon('volume-2')
             .onClick(() => {
-              void this.readSelection(editor);
+              this.promptAndRead({ mode: 'selection', file, editor });
             });
         });
-
-        const file = info.file;
-        if (file instanceof TFile && file.extension === 'md') {
-          menu.addItem((item) => {
-            item
-              .setTitle('Save selection as audio')
-              .setIcon('save')
-              .onClick(() => {
-                void this.saveSelectionAsAudio(editor, file);
-              });
-          });
-        }
       })
     );
   }
@@ -166,109 +144,115 @@ export class ReadAloudCommandManager {
             .setTitle('Read note aloud')
             .setIcon('volume-2')
             .onClick(() => {
-              void this.readFile(file);
-            });
-        });
-
-        menu.addItem((item) => {
-          item
-            .setTitle('Save note as audio')
-            .setIcon('save')
-            .onClick(() => {
-              void this.saveNoteAsAudio(file);
+              this.promptAndRead({ mode: 'note', file });
             });
         });
       })
     );
   }
 
-  private async readSelection(editor: Editor): Promise<void> {
-    const selectedText = editor.getSelection();
-    if (!selectedText.trim()) {
-      new Notice('Please select text to read aloud.');
+  /**
+   * The single v2 read-aloud entry point. Asks save-or-not, then runs an
+   * animated reading-aloud session. "Save & read" plays AND saves+embeds (the
+   * save continues in the background even if the modal is dismissed mid-play);
+   * "Just read" plays only; dismissing the progress modal stops playback.
+   */
+  private promptAndRead(target: ReadAloudTarget): void {
+    new SavePromptModal(this.config.app, (choice: SavePromptChoice) => {
+      if (choice === 'cancel') {
+        return;
+      }
+      void this.runReadAloudSession(target, choice === 'save');
+    }).open();
+  }
+
+  /**
+   * Resolve the text to synthesize: the live selection (selection mode) or the
+   * whole note (note mode). Returns null with a Notice if there's nothing to read.
+   */
+  private async resolveMarkdown(target: ReadAloudTarget): Promise<string | null> {
+    if (target.mode === 'selection') {
+      const selection = target.editor?.getSelection() ?? '';
+      if (!selection.trim()) {
+        new Notice('Please select text to read aloud.');
+        return null;
+      }
+      return selection;
+    }
+
+    const content = await this.config.app.vault.cachedRead(target.file);
+    if (!content.trim()) {
+      new Notice('There is no readable text in this note.');
+      return null;
+    }
+    return content;
+  }
+
+  /**
+   * Start a read-aloud session and drive the progress modal. Wiring rules:
+   * - onProgress updates the modal until the modal is closed (listener detached).
+   * - User-dismissing the modal stops playback; a chosen save keeps running in
+   *   the background (the backend session is modal-agnostic).
+   * - session.completed resolves with a savedPath on save, resolves empty on
+   *   just-read, and rejects on synth/write failure (-> error Notice).
+   */
+  private async runReadAloudSession(target: ReadAloudTarget, save: boolean): Promise<void> {
+    const markdown = await this.resolveMarkdown(target);
+    if (markdown === null) {
       return;
     }
 
-    await this.startReadAloud(selectedText, 'Selection');
-  }
-
-  private async readFile(file: TFile): Promise<void> {
-    const content = await this.config.app.vault.cachedRead(file);
-    await this.startReadAloud(content, file.basename);
-  }
-
-  /**
-   * Explicit "Save selection as audio": synthesize the current selection, save
-   * it as a single audio file, and embed an ![[...]] player after the selection.
-   * The backend ReadAloudSaveService owns the synth/concat/write/embed; this
-   * handler only triggers it and surfaces progress + errors to the user.
-   */
-  private async saveSelectionAsAudio(editor: Editor, file: TFile): Promise<void> {
-    if (!editor.somethingSelected()) {
-      new Notice('Please select text to save as audio.');
+    let session: ReadAloudSession;
+    try {
+      session = this.getReadAloudService().startReadAloudSession({
+        mode: target.mode,
+        file: target.file,
+        markdown,
+        editor: target.editor,
+        selection: target.mode === 'selection' ? markdown : undefined,
+        save,
+        saveService: save ? this.getReadAloudSaveService() : undefined
+      });
+    } catch (error) {
+      new Notice(`Read aloud failed: ${this.errorMessage(error)}`);
       return;
     }
 
-    await this.runSaveAsAudio(
-      file.basename,
-      (service) => service.saveSelectionAsAudio(editor, file)
-    );
-  }
-
-  /**
-   * Explicit "Save note as audio": synthesize the whole note, save it as one
-   * concatenated audio file, and embed an ![[...]] player at the top of the
-   * note. Backend owns the work; this handler triggers + reports.
-   */
-  private async saveNoteAsAudio(file: TFile): Promise<void> {
-    await this.runSaveAsAudio(
-      file.basename,
-      (service) => service.saveNoteAsAudio(file)
-    );
-  }
-
-  /**
-   * Shared trigger/progress/error wrapper for the two save-as-audio actions.
-   * Mirrors startReadAloud's progress-Notice + stopped/failure handling so the
-   * save actions feel consistent with plain read-aloud.
-   */
-  private async runSaveAsAudio(
-    sourceName: string,
-    run: (service: ReadAloudSaveService) => Promise<void>
-  ): Promise<void> {
-    const service = this.getReadAloudSaveService();
-    const notice = new Notice(`Saving ${sourceName} as audio...`, 0);
-
-    try {
-      await run(service);
-      notice.hide();
-      new Notice(`Saved ${sourceName} as audio.`);
-    } catch (error) {
-      notice.hide();
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'Read aloud playback was stopped.') {
-        return;
+    let listening = true;
+    const modal = new ReadAloudProgressModal(
+      this.config.app,
+      target.file.basename,
+      () => {
+        // User dismissed: stop playback, stop reacting to progress. A chosen
+        // save continues in the background and inserts its embed on completion.
+        listening = false;
+        session.stopPlayback();
       }
-      new Notice(`Save as audio failed: ${message}`);
-    }
+    );
+
+    session.onProgress((done, total) => {
+      if (listening) {
+        modal.setProgress(done, total);
+      }
+    });
+
+    modal.open();
+
+    void session.completed
+      .then((result) => {
+        modal.finish();
+        if (result.savedPath) {
+          new Notice(`Saved read-aloud audio to ${result.savedPath}`);
+        }
+      })
+      .catch((error) => {
+        modal.finish();
+        new Notice(`Read aloud save failed: ${this.errorMessage(error)}`);
+      });
   }
 
-  private async startReadAloud(markdown: string, sourceName: string): Promise<void> {
-    const service = this.getReadAloudService();
-    const notice = new Notice(`Reading ${sourceName} aloud...`, 0);
-
-    try {
-      const result = await service.read({ markdown, sourceName });
-      notice.hide();
-      new Notice(`Finished reading ${result.sourceName ?? 'text'} aloud.`);
-    } catch (error) {
-      notice.hide();
-      const message = error instanceof Error ? error.message : String(error);
-      if (message === 'Read aloud playback was stopped.') {
-        return;
-      }
-      new Notice(`Read aloud failed: ${message}`);
-    }
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private getReadAloudService(): ReadAloudService {
@@ -284,11 +268,10 @@ export class ReadAloudCommandManager {
   }
 
   /**
-   * Lazily build the backend ReadAloudSaveService. It holds the live Settings
-   * object and resolves the LLM/apps/storage config (incl. the audio-subfolder,
-   * settings-derived and never hardcoded) on each call, so a single instance
-   * stays correct across settings changes — no fingerprint rebuild needed.
-   * Requires plugin settings to be available.
+   * Lazily build the backend ReadAloudSaveService (the save tail passed to the
+   * session when saving). It holds the live Settings object and resolves the
+   * storage config (incl. the settings-derived audio subfolder, never hardcoded)
+   * on each call, so one cached instance stays correct across settings changes.
    */
   private getReadAloudSaveService(): ReadAloudSaveService {
     if (!this.readAloudSaveService) {

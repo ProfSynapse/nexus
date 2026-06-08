@@ -1,12 +1,19 @@
 import { App, Editor, MarkdownView, TFile } from 'obsidian';
 import { ReadAloudCommandManager } from '../../src/core/commands/ReadAloudCommandManager';
-import { ReadAloudSaveService } from '../../src/services/readAloud/ReadAloudSaveService';
+import { ReadAloudService } from '../../src/services/readAloud/ReadAloudService';
+import { SavePromptModal } from '../../src/ui/readAloud/SavePromptModal';
+import { ReadAloudProgressModal } from '../../src/ui/readAloud/ReadAloudProgressModal';
 
-// Mock the backend save service — frontend only CALLS its two pinned methods
-// (S2 boundary), so we assert the calls without exercising backend internals.
+// Mock the backend session API and both modals — frontend only DRIVES them
+// (S2 boundary), so we assert the wiring without exercising backend/modal DOM.
+jest.mock('../../src/services/readAloud/ReadAloudService');
 jest.mock('../../src/services/readAloud/ReadAloudSaveService');
+jest.mock('../../src/ui/readAloud/SavePromptModal');
+jest.mock('../../src/ui/readAloud/ReadAloudProgressModal');
 
-const MockedSaveService = ReadAloudSaveService as jest.MockedClass<typeof ReadAloudSaveService>;
+const MockedReadAloudService = ReadAloudService as jest.MockedClass<typeof ReadAloudService>;
+const MockedSavePromptModal = SavePromptModal as jest.MockedClass<typeof SavePromptModal>;
+const MockedProgressModal = ReadAloudProgressModal as jest.MockedClass<typeof ReadAloudProgressModal>;
 
 interface CapturedCommand {
   id: string;
@@ -15,155 +22,171 @@ interface CapturedCommand {
   editorCheckCallback?: (checking: boolean, editor: Editor, ctx: { file: TFile | null }) => boolean;
 }
 
-interface CapturedMenuItem {
-  title: string;
-  icon: string;
-  onClick: () => void;
-}
-
 class FakeMenu {
-  items: CapturedMenuItem[] = [];
-
+  items: { title: string; onClick: () => void }[] = [];
   addItem(cb: (item: MenuItemBuilder) => void): this {
     const builder = new MenuItemBuilder();
     cb(builder);
-    this.items.push({ title: builder.title, icon: builder.icon, onClick: builder.clickHandler });
+    this.items.push({ title: builder.title, onClick: builder.clickHandler });
     return this;
   }
 }
 
 class MenuItemBuilder {
   title = '';
-  icon = '';
   clickHandler: () => void = () => undefined;
-
   setTitle(title: string): this { this.title = title; return this; }
-  setIcon(icon: string): this { this.icon = icon; return this; }
+  setIcon(): this { return this; }
   onClick(handler: () => void): this { this.clickHandler = handler; return this; }
 }
 
-/**
- * Build a plugin/app harness that captures registered commands and the
- * editor-menu / file-menu callbacks so a test can fire them directly.
- */
+let startSessionSpy: jest.Mock;
+let sessionCompleted: Promise<{ savedPath?: string }>;
+
 function buildHarness(activeFile: TFile | null = new TFile('My Note.md', 'My Note.md')) {
   const commands: CapturedCommand[] = [];
   const menuCallbacks: Record<string, (...args: unknown[]) => void> = {};
 
   const app = new App();
-  app.workspace.getActiveViewOfType = (() => {
-    return activeFile ? ({ file: activeFile } as MarkdownView) : null;
-  }) as App['workspace']['getActiveViewOfType'];
+  app.workspace.getActiveViewOfType = (() =>
+    activeFile ? ({ file: activeFile } as MarkdownView) : null
+  ) as App['workspace']['getActiveViewOfType'];
   app.workspace.on = ((name: string, cb: (...args: unknown[]) => void) => {
     menuCallbacks[name] = cb;
     return { id: name };
   }) as unknown as App['workspace']['on'];
+  app.vault.cachedRead = (async () => 'note body text') as App['vault']['cachedRead'];
 
   const plugin = {
     addCommand: (command: CapturedCommand) => { commands.push(command); },
     registerEvent: () => undefined,
-    settings: {
-      settings: {
-        llmProviders: { providers: {} },
-        apps: { apps: {} },
-        storage: { rootPath: 'Nexus', audioSubfolder: 'audio', maxShardBytes: 1 }
-      }
-    }
+    settings: { settings: { llmProviders: { providers: {} }, apps: { apps: {} }, storage: {} } }
   };
 
-  const manager = new ReadAloudCommandManager({
-    plugin: plugin as never,
-    app
-  });
+  const manager = new ReadAloudCommandManager({ plugin: plugin as never, app });
   manager.registerCommands();
-
-  return { manager, commands, menuCallbacks, app, activeFile };
+  return { manager, commands, menuCallbacks };
 }
 
-describe('ReadAloudCommandManager — save as audio', () => {
+/** Drive the SavePromptModal mock to invoke its callback with a given choice. */
+function resolveSavePrompt(choice: 'save' | 'read' | 'cancel'): void {
+  const lastCall = MockedSavePromptModal.mock.calls[MockedSavePromptModal.mock.calls.length - 1];
+  const onChoose = lastCall[1] as (c: 'save' | 'read' | 'cancel') => void;
+  onChoose(choice);
+}
+
+describe('ReadAloudCommandManager — v2 unified read-aloud', () => {
   beforeEach(() => {
-    MockedSaveService.mockClear();
-    MockedSaveService.prototype.saveSelectionAsAudio = jest.fn().mockResolvedValue(undefined);
-    MockedSaveService.prototype.saveNoteAsAudio = jest.fn().mockResolvedValue(undefined);
+    MockedReadAloudService.mockClear();
+    MockedSavePromptModal.mockClear();
+    MockedProgressModal.mockClear();
+
+    sessionCompleted = Promise.resolve({});
+    startSessionSpy = jest.fn(() => ({
+      onProgress: jest.fn(),
+      stopPlayback: jest.fn(),
+      completed: sessionCompleted
+    }));
+    MockedReadAloudService.prototype.startReadAloudSession = startSessionSpy as never;
+    MockedReadAloudService.prototype.isPlaying = jest.fn(() => false);
+    MockedReadAloudService.prototype.stop = jest.fn();
+
+    MockedSavePromptModal.prototype.open = jest.fn();
+    MockedProgressModal.prototype.open = jest.fn();
+    MockedProgressModal.prototype.setProgress = jest.fn();
+    MockedProgressModal.prototype.finish = jest.fn();
   });
 
-  it('registers both save commands', () => {
+  it('registers the unified read-aloud commands and NOT the v1 save commands', () => {
     const { commands } = buildHarness();
     const ids = commands.map(c => c.id);
-    expect(ids).toContain('save-active-note-as-audio');
-    expect(ids).toContain('save-selection-as-audio');
+    expect(ids).toContain('read-active-note-aloud');
+    expect(ids).toContain('read-selection-aloud');
+    expect(ids).toContain('stop-read-aloud');
+    // v1 commands removed
+    expect(ids).not.toContain('save-active-note-as-audio');
+    expect(ids).not.toContain('save-selection-as-audio');
   });
 
-  it('"Save note as audio" command is gated on an active file', () => {
-    const withFile = buildHarness(new TFile('Note.md', 'Note.md'));
-    const cmd = withFile.commands.find(c => c.id === 'save-active-note-as-audio');
-    expect(cmd?.checkCallback?.(true)).toBe(true);
-
-    const noFile = buildHarness(null);
-    const cmdNoFile = noFile.commands.find(c => c.id === 'save-active-note-as-audio');
-    expect(cmdNoFile?.checkCallback?.(true)).toBe(false);
-  });
-
-  it('"Save note as audio" calls backend saveNoteAsAudio when executed', async () => {
-    const file = new TFile('Note.md', 'Note.md');
-    const { commands } = buildHarness(file);
-    const cmd = commands.find(c => c.id === 'save-active-note-as-audio');
-
-    cmd?.checkCallback?.(false);
-    await Promise.resolve();
-
-    expect(MockedSaveService.prototype.saveNoteAsAudio).toHaveBeenCalledWith(file);
-  });
-
-  it('"Save selection as audio" command requires a selection AND a file', () => {
-    const { commands } = buildHarness();
-    const cmd = commands.find(c => c.id === 'save-selection-as-audio');
-    const file = new TFile('Note.md', 'Note.md');
-
-    const noSelection = new Editor();
-    expect(cmd?.editorCheckCallback?.(true, noSelection, { file })).toBe(false);
-
-    const withSelection = new Editor();
-    withSelection.setSelection('hello world');
-    expect(cmd?.editorCheckCallback?.(true, withSelection, { file })).toBe(true);
-
-    expect(cmd?.editorCheckCallback?.(true, withSelection, { file: null })).toBe(false);
-  });
-
-  it('"Save selection as audio" calls backend saveSelectionAsAudio when executed', async () => {
-    const { commands } = buildHarness();
-    const cmd = commands.find(c => c.id === 'save-selection-as-audio');
-    const file = new TFile('Note.md', 'Note.md');
-    const editor = new Editor();
-    editor.setSelection('read this');
-
-    cmd?.editorCheckCallback?.(false, editor, { file });
-    await Promise.resolve();
-
-    expect(MockedSaveService.prototype.saveSelectionAsAudio).toHaveBeenCalledWith(editor, file);
-  });
-
-  it('editor context menu offers "Save selection as audio" only on a md file with a selection', () => {
+  it('editor menu offers ONE "Read selection aloud" entry (no separate save item)', () => {
     const { menuCallbacks } = buildHarness();
     const editor = new Editor();
-    editor.setSelection('some text');
-    const file = new TFile('Note.md', 'Note.md');
-
+    editor.setSelection('hello');
     const menu = new FakeMenu();
-    menuCallbacks['editor-menu'](menu, editor, { file });
+    menuCallbacks['editor-menu'](menu, editor, { file: new TFile('Note.md', 'Note.md') });
 
     const titles = menu.items.map(i => i.title);
-    expect(titles).toContain('Save selection as audio');
+    expect(titles).toEqual(['Read selection aloud']);
+    expect(titles).not.toContain('Save selection as audio');
   });
 
-  it('file menu offers "Save note as audio" on a markdown file', () => {
+  it('file menu offers ONE "Read note aloud" entry (no separate save item)', () => {
     const { menuCallbacks } = buildHarness();
-    const file = new TFile('Note.md', 'Note.md');
-
     const menu = new FakeMenu();
-    menuCallbacks['file-menu'](menu, file, 'more-options');
+    menuCallbacks['file-menu'](menu, new TFile('Note.md', 'Note.md'), 'more-options');
 
     const titles = menu.items.map(i => i.title);
-    expect(titles).toContain('Save note as audio');
+    expect(titles).toEqual(['Read note aloud']);
+    expect(titles).not.toContain('Save note as audio');
+  });
+
+  it('invoking read-aloud opens the SavePromptModal', () => {
+    const { commands } = buildHarness();
+    commands.find(c => c.id === 'read-active-note-aloud')?.checkCallback?.(false);
+    expect(MockedSavePromptModal).toHaveBeenCalledTimes(1);
+    expect(MockedSavePromptModal.prototype.open).toHaveBeenCalled();
+  });
+
+  it('choosing "Just read" starts a session with save=false', async () => {
+    const { commands } = buildHarness();
+    commands.find(c => c.id === 'read-active-note-aloud')?.checkCallback?.(false);
+    resolveSavePrompt('read');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(startSessionSpy).toHaveBeenCalledTimes(1);
+    expect(startSessionSpy.mock.calls[0][0]).toMatchObject({ mode: 'note', save: false });
+    expect(startSessionSpy.mock.calls[0][0].saveService).toBeUndefined();
+  });
+
+  it('choosing "Save & read" starts a session with save=true and a saveService', async () => {
+    const { commands } = buildHarness();
+    const editor = new Editor();
+    editor.setSelection('read this selection');
+    const cmd = commands.find(c => c.id === 'read-selection-aloud');
+    cmd?.editorCheckCallback?.(false, editor, { file: new TFile('Note.md', 'Note.md') });
+    resolveSavePrompt('save');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(startSessionSpy).toHaveBeenCalledTimes(1);
+    const opts = startSessionSpy.mock.calls[0][0];
+    expect(opts).toMatchObject({ mode: 'selection', save: true });
+    expect(opts.saveService).toBeDefined();
+    expect(opts.markdown).toBe('read this selection');
+  });
+
+  it('choosing "Cancel" starts no session', async () => {
+    const { commands } = buildHarness();
+    commands.find(c => c.id === 'read-active-note-aloud')?.checkCallback?.(false);
+    resolveSavePrompt('cancel');
+    await Promise.resolve();
+
+    expect(startSessionSpy).not.toHaveBeenCalled();
+    expect(MockedProgressModal).not.toHaveBeenCalled();
+  });
+
+  it('selection command is gated on a selection + file', () => {
+    const { commands } = buildHarness();
+    const cmd = commands.find(c => c.id === 'read-selection-aloud');
+    const file = new TFile('Note.md', 'Note.md');
+
+    const empty = new Editor();
+    expect(cmd?.editorCheckCallback?.(true, empty, { file })).toBe(false);
+
+    const withSel = new Editor();
+    withSel.setSelection('x');
+    expect(cmd?.editorCheckCallback?.(true, withSel, { file })).toBe(true);
+    expect(cmd?.editorCheckCallback?.(true, withSel, { file: null })).toBe(false);
   });
 });
