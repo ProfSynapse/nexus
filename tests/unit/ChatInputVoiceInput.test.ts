@@ -25,6 +25,8 @@ jest.mock('../../src/ui/chat/controllers/ChatVoiceInputController', () => ({
 type ChatInputInternals = ChatInput & {
   sendButton: HTMLButtonElement;
   inputWrapper: HTMLElement;
+  inputElement: HTMLElement;
+  liveVoiceStopButton: HTMLButtonElement;
 };
 
 describe('ChatInput voice input UI', () => {
@@ -97,5 +99,59 @@ describe('ChatInput voice input UI', () => {
 
     expect(inputWrapper.addClass).toHaveBeenCalledWith('chat-input-voice-recording');
     expect(sendButton.setAttribute).toHaveBeenCalledWith('aria-label', 'Stop recording');
+  });
+
+  it('switches into the live voice composer UI and disables text entry', () => {
+    mockIsAvailable.mockReturnValue(true);
+
+    const input = new ChatInput(
+      createMockElement('div'),
+      jest.fn(),
+      () => false,
+      undefined,
+      undefined,
+      () => true,
+      new Component()
+    );
+
+    const { inputElement, inputWrapper, sendButton } = input as ChatInputInternals;
+
+    input.setLiveVoiceState('assistant-speaking');
+
+    expect(input.getLiveVoiceState()).toBe('assistant-speaking');
+    expect(inputWrapper.addClass).toHaveBeenCalledWith('chat-input-live-mode');
+    expect(inputWrapper.addClass).toHaveBeenCalledWith('chat-input-live-assistant-speaking');
+    expect(sendButton.disabled).toBe(true);
+    expect(inputElement.contentEditable).toBe('false');
+  });
+
+  it('uses the embedded live voice stop button callback', () => {
+    mockIsAvailable.mockReturnValue(true);
+
+    const component = new Component();
+    const stopLiveVoice = jest.fn();
+    const registerDomEventSpy = jest.spyOn(component, 'registerDomEvent');
+
+    const input = new ChatInput(
+      createMockElement('div'),
+      jest.fn(),
+      () => false,
+      undefined,
+      undefined,
+      () => true,
+      component,
+      stopLiveVoice
+    );
+
+    const { liveVoiceStopButton } = input as ChatInputInternals;
+    const registration = registerDomEventSpy.mock.calls.find(([element, eventName]) => (
+      element === liveVoiceStopButton && eventName === 'click'
+    ));
+
+    expect(registration).toBeDefined();
+    const handler = registration?.[2] as EventListener;
+    handler(new Event('click'));
+
+    expect(stopLiveVoice).toHaveBeenCalledTimes(1);
   });
 });

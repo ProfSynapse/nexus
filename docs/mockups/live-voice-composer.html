@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus live voice composer mockup</title>
+  <link rel="stylesheet" href="./live-voice-composer.css">
+</head>
+<body class="mock-page theme-dark" data-state="normal">
+  <main class="mock-layout">
+    <aside class="mock-panel" aria-label="Mock controls">
+      <p class="mock-eyebrow">Nexus voice mode</p>
+      <h1>Live composer takeover</h1>
+      <p class="mock-summary">
+        This mock keeps text chat as the primary surface. Live voice only replaces the composer with a red session dot,
+        a stateful waveform, and a stop button.
+      </p>
+
+      <div class="mock-controls">
+        <div class="mock-control-label">State</div>
+        <button type="button" class="mock-state-button is-active" data-state-button="normal">
+          Normal composer
+        </button>
+        <button type="button" class="mock-state-button" data-state-button="connecting">
+          Connecting
+        </button>
+        <button type="button" class="mock-state-button" data-state-button="listening">
+          Listening
+        </button>
+        <button type="button" class="mock-state-button" data-state-button="user-speaking">
+          User speaking
+        </button>
+        <button type="button" class="mock-state-button" data-state-button="assistant-speaking">
+          Assistant speaking
+        </button>
+        <button type="button" class="mock-state-button" data-state-button="error">
+          Error
+        </button>
+      </div>
+
+      <div class="mock-notes">
+        <div class="mock-control-label">Design notes</div>
+        <p>The live composer itself intentionally has no visible text. The dot communicates that the session is active,
+        the waveform communicates who is speaking, and the square button exits live mode.</p>
+        <p>Transcript content stays in the normal message stream so live voice feels like another way to drive the same chat.</p>
+      </div>
+    </aside>
+
+    <section class="chat-shell" aria-label="Nexus chat preview">
+      <header class="chat-header">
+        <button type="button" class="chat-header-button" aria-label="Toggle conversations">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18"></path>
+            <path d="M3 12h18"></path>
+            <path d="M3 18h18"></path>
+          </svg>
+        </button>
+        <div class="chat-title">Research notes</div>
+        <div class="chat-header-actions">
+          <button type="button" class="chat-header-button chat-live-entry" aria-label="Start live voice" title="Start live voice">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12h2"></path>
+              <path d="M7 6v12"></path>
+              <path d="M12 3v18"></path>
+              <path d="M17 8v8"></path>
+              <path d="M22 12h-2"></path>
+            </svg>
+          </button>
+          <button type="button" class="chat-header-button" aria-label="Subagents" title="Subagents">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8V4H8"></path>
+              <rect x="4" y="8" width="16" height="12" rx="2"></rect>
+              <path d="M2 14h2"></path>
+              <path d="M20 14h2"></path>
+              <path d="M9 13h.01"></path>
+              <path d="M15 13h.01"></path>
+              <path d="M10 17h4"></path>
+            </svg>
+          </button>
+          <button type="button" class="chat-header-button" aria-label="Chat settings" title="Chat settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.82.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.8a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1A1.7 1.7 0 0 0 4.26 6.4l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.8a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.82-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1z"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="message-display" aria-label="Conversation">
+        <div class="messages-container" data-role="messages">
+          <article class="message message-user">
+            <div class="message-bubble">Can you help me think through the voice mode UX without making the composer noisy?</div>
+          </article>
+          <article class="message message-assistant">
+            <div class="message-bubble">I would keep voice mode as a composer state and let the message stream stay unchanged.</div>
+          </article>
+        </div>
+      </section>
+
+      <div class="live-status-bar" data-role="live-status-bar" role="status" aria-live="polite" aria-atomic="true">
+        <span class="live-status-text" data-role="live-status-text"></span>
+      </div>
+
+      <footer class="chat-input-container">
+        <div class="chat-input">
+          <div class="chat-input-wrapper" data-role="composer-shell">
+            <div
+              class="chat-textarea"
+              role="textbox"
+              aria-multiline="true"
+              data-placeholder="Type your message..."
+              contenteditable="true"
+            ></div>
+
+            <div class="chat-live-composer" role="group" aria-label="Live voice session">
+              <span class="chat-live-dot" aria-hidden="true"></span>
+              <div class="chat-live-waveform" data-role="live-waveform" aria-hidden="true"></div>
+              <button type="button" class="chat-live-stop-button" data-role="stop-live" aria-label="Stop live voice" title="Stop live voice">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+                </svg>
+              </button>
+            </div>
+
+            <button type="button" class="chat-send-button" aria-label="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 19V5"></path>
+                <path d="M5 12l7-7 7 7"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </footer>
+    </section>
+  </main>
+
+  <script src="./live-voice-composer.js"></script>
+</body>
+</html>

@@ -14,20 +14,26 @@ import { isMobile, isIOS } from '../../../utils/platform';
 import { ChatVoiceInputController, ChatVoiceInputState } from '../controllers/ChatVoiceInputController';
 import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 import { ChatKeyboardViewportController } from '../controllers/ChatKeyboardViewportController';
+import type { LiveVoiceComposerState } from '../types/LiveVoiceTypes';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
   private inputElement: HTMLElement | null = null;
   private inputWrapper: HTMLElement | null = null;
   private voiceVisualElement: HTMLElement | null = null;
+  private liveVoiceComposerElement: HTMLElement | null = null;
+  private liveVoiceWaveformElement: HTMLElement | null = null;
+  private liveVoiceStopButton: HTMLButtonElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
   private isLoading = false;
   private isPreSendCompacting = false;
   private hasConversation = false;
   private suggesters: SuggesterInstances | null = null;
   private voiceInputState: ChatVoiceInputState = 'idle';
+  private liveVoiceState: LiveVoiceComposerState = 'inactive';
   private voiceInputController: ChatVoiceInputController | null = null;
   private voiceVisualResizeObserver: ResizeObserver | null = null;
+  private liveVoiceResizeObserver: ResizeObserver | null = null;
   private timeouts: ManagedTimeoutTracker | null = null;
   private keyboardViewportController: ChatKeyboardViewportController | null = null;
 
@@ -42,7 +48,8 @@ export class ChatInput {
     private app?: App,
     private onStopGeneration?: () => void,
     private getHasConversation?: () => boolean,
-    private component?: Component
+    private component?: Component,
+    private onStopLiveVoice?: () => void
   ) {
     if (component) {
       this.timeouts = new ManagedTimeoutTracker(component);
@@ -103,6 +110,22 @@ export class ChatInput {
 
     this.voiceVisualElement = this.inputWrapper.createDiv('chat-voice-visual');
     this.voiceVisualElement.setAttribute('aria-hidden', 'true');
+
+    this.liveVoiceComposerElement = this.inputWrapper.createDiv('chat-live-composer');
+    this.liveVoiceComposerElement.setAttribute('role', 'group');
+    this.liveVoiceComposerElement.setAttribute('aria-label', 'Live voice session');
+    this.liveVoiceComposerElement.createSpan('chat-live-dot');
+    this.liveVoiceWaveformElement = this.liveVoiceComposerElement.createDiv('chat-live-waveform');
+    this.liveVoiceWaveformElement.setAttribute('aria-hidden', 'true');
+    this.liveVoiceStopButton = this.liveVoiceComposerElement.createEl('button', {
+      cls: 'chat-live-stop-button clickable-icon'
+    });
+    setIcon(this.liveVoiceStopButton, 'square');
+    this.liveVoiceStopButton.setAttribute('aria-label', 'Stop live voice');
+    this.liveVoiceStopButton.setAttribute('title', 'Stop live voice');
+    component?.registerDomEvent(this.liveVoiceStopButton, 'click', () => {
+      this.onStopLiveVoice?.();
+    });
 
     // Handle Enter key (send) and Shift+Enter (new line)
     const keydownHandler = (e: KeyboardEvent) => {
@@ -192,6 +215,8 @@ export class ChatInput {
 
     this.initializeVoiceVisualResizeHandling();
     this.buildVoiceBars();
+    this.initializeLiveVoiceResizeHandling();
+    this.buildLiveVoiceBars();
 
     this.element = this.container;
     this.updateUI();
@@ -337,6 +362,15 @@ export class ChatInput {
       this.sendButton.setAttribute('aria-label', 'Compacting');
       this.inputElement.contentEditable = 'false';
       this.inputElement.setAttribute('data-placeholder', 'Compacting');
+    } else if (this.liveVoiceState !== 'inactive') {
+      this.sendButton.disabled = true;
+      this.sendButton.classList.remove('stop-mode');
+      this.sendButton.classList.add('disabled-mode');
+      this.inputElement.contentEditable = 'false';
+      this.inputElement.setAttribute('data-placeholder', 'Type your message...');
+      if (this.liveVoiceStopButton) {
+        this.liveVoiceStopButton.disabled = false;
+      }
     } else if (actuallyLoading) {
       // Keep the input active so a new message can interrupt the current turn.
       this.sendButton.disabled = false;
@@ -444,6 +478,16 @@ export class ChatInput {
     }
   }
 
+  setLiveVoiceState(state: LiveVoiceComposerState): void {
+    this.liveVoiceState = state;
+    this.updateLiveVoiceVisual();
+    this.updateUI();
+  }
+
+  getLiveVoiceState(): LiveVoiceComposerState {
+    return this.liveVoiceState;
+  }
+
   /**
    * Get message enhancer (for accessing enhancements before sending)
    */
@@ -468,6 +512,8 @@ export class ChatInput {
     this.keyboardViewportController = null;
     this.voiceVisualResizeObserver?.disconnect();
     this.voiceVisualResizeObserver = null;
+    this.liveVoiceResizeObserver?.disconnect();
+    this.liveVoiceResizeObserver = null;
     this.voiceInputController?.cleanup();
     this.voiceInputController = null;
 
@@ -480,6 +526,9 @@ export class ChatInput {
     this.inputElement = null;
     this.inputWrapper = null;
     this.voiceVisualElement = null;
+    this.liveVoiceComposerElement = null;
+    this.liveVoiceWaveformElement = null;
+    this.liveVoiceStopButton = null;
     this.sendButton = null;
   }
 
@@ -508,6 +557,8 @@ export class ChatInput {
       return;
     }
 
+    this.updateLiveVoiceVisual();
+
     const isVoiceMode = this.voiceInputState === 'recording' || this.voiceInputState === 'transcribing';
     if (isVoiceMode) {
       this.inputWrapper.addClass('chat-input-voice-recording');
@@ -526,6 +577,40 @@ export class ChatInput {
     }
   }
 
+  private updateLiveVoiceVisual(): void {
+    if (!this.inputWrapper) {
+      return;
+    }
+
+    const states: LiveVoiceComposerState[] = [
+      'connecting',
+      'listening',
+      'user-speaking',
+      'assistant-speaking',
+      'error',
+    ];
+    const isLive = this.liveVoiceState !== 'inactive';
+
+    if (isLive) {
+      this.inputWrapper.addClass('chat-input-live-mode');
+    } else {
+      this.inputWrapper.removeClass('chat-input-live-mode');
+    }
+
+    states.forEach(state => {
+      const className = `chat-input-live-${state}`;
+      if (this.liveVoiceState === state) {
+        this.inputWrapper?.addClass(className);
+      } else {
+        this.inputWrapper?.removeClass(className);
+      }
+    });
+
+    if (isLive) {
+      this.buildLiveVoiceBars();
+    }
+  }
+
   private initializeVoiceVisualResizeHandling(): void {
     if (!this.voiceVisualElement) {
       return;
@@ -539,6 +624,22 @@ export class ChatInput {
 
     if (this.component && typeof window !== 'undefined') {
       this.component.registerDomEvent(window, 'resize', () => this.buildVoiceBars());
+    }
+  }
+
+  private initializeLiveVoiceResizeHandling(): void {
+    if (!this.liveVoiceWaveformElement) {
+      return;
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      this.liveVoiceResizeObserver = new ResizeObserver(() => this.buildLiveVoiceBars());
+      this.liveVoiceResizeObserver.observe(this.liveVoiceWaveformElement);
+      return;
+    }
+
+    if (this.component && typeof window !== 'undefined') {
+      this.component.registerDomEvent(window, 'resize', () => this.buildLiveVoiceBars());
     }
   }
 
@@ -567,6 +668,33 @@ export class ChatInput {
       const phaseIndex = index % 8;
       const delayIndex = index % 8;
       this.voiceVisualElement.createSpan(`chat-voice-bar chat-voice-bar-phase-${phaseIndex} chat-voice-bar-delay-${delayIndex}`);
+    }
+  }
+
+  private buildLiveVoiceBars(): void {
+    if (!this.liveVoiceWaveformElement || typeof window === 'undefined') {
+      return;
+    }
+
+    const computedStyle = window.getComputedStyle(this.liveVoiceWaveformElement);
+    const paddingLeft = Number.parseFloat(computedStyle.paddingLeft || '0');
+    const paddingRight = Number.parseFloat(computedStyle.paddingRight || '0');
+    const availableWidth = this.liveVoiceWaveformElement.clientWidth - paddingLeft - paddingRight;
+
+    if (availableWidth <= 0) {
+      return;
+    }
+
+    const gap = 3;
+    const barWidth = 6;
+    const barSlot = barWidth + gap;
+    const barCount = Math.max(24, Math.floor(availableWidth / barSlot));
+
+    this.liveVoiceWaveformElement.empty();
+
+    for (let index = 0; index < barCount; index += 1) {
+      const phaseIndex = index % 12;
+      this.liveVoiceWaveformElement.createSpan(`chat-live-wave-bar chat-live-wave-phase-${phaseIndex}`);
     }
   }
 }

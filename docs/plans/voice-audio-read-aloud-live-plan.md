@@ -23,6 +23,9 @@ This plan is scope only. No production code changes are included here.
 - PDF/OCR/file conversion defaults should remain under **Ingestion**.
 - Provider/app setup still belongs in **Providers** and **Apps**. The Voice section only selects defaults from configured capabilities.
 - App-backed voice capabilities should unlock when the app is installed, enabled, and configured.
+- Live voice should use a **composer takeover**, not a full-screen replacement. The normal message stream stays visible and receives transcript/assistant text.
+- The live composer itself should stay visual: recording dot, stateful waveform/indicator, and stop button. State copy belongs in the existing chat status bar.
+- Connecting and error states must not show speech waveform bars. Connecting should use a non-speech loading indicator; error should use a non-speech error mark plus actionable status text.
 
 ## Existing Repo Context
 
@@ -79,6 +82,44 @@ Read aloud should be enabled when at least one configured speech provider is ava
 - Voice
 
 Live voice should be locked unless at least one configured realtime voice provider/app is available.
+
+## Live Voice Composer Design
+
+Reviewed mockup:
+
+- `docs/mockups/live-voice-composer.html`
+- `docs/mockups/live-voice-composer.css`
+- `docs/mockups/live-voice-composer.js`
+
+Production alignment:
+
+- `src/ui/chat/components/ChatInput.ts` owns the composer mode because it already switches between normal input, transcription recording, transcribing, send, and stop states.
+- `src/ui/chat/components/ToolStatusBar.ts` owns live voice status text because this matches existing Nexus status conventions and keeps state copy out of the composer.
+- `src/ui/chat/builders/ChatLayoutBuilder.ts` owns the header entry button because live voice is a chat mode, not a one-shot composer action.
+- `src/ui/chat/ChatView.ts` wires the entry button to the live voice controller/shell and ensures cleanup on unload.
+
+Visual states:
+
+| State | Composer visual | Status bar text |
+| --- | --- | --- |
+| Inactive | Normal text composer | none |
+| Connecting | Dot + spinner/scan indicator + stop | `Connecting live voice...` |
+| Listening | Dot + low waveform + stop | `Listening` |
+| User speaking | Dot + tighter/jagged waveform + stop | `Transcribing your speech...` |
+| Assistant speaking | Dot + fuller/smoother waveform + stop | `Nexus is speaking...` |
+| Error | Dot + error mark + stop | `Live voice connection failed. Stop and try again.` |
+
+Accessibility:
+
+- Composer visuals remain `aria-hidden`.
+- The live composer wrapper gets a stable `aria-label`.
+- The stop control uses `aria-label="Stop live voice"`.
+- Status text uses the existing status-bar live region.
+
+Phase boundary:
+
+- This UI shell does not fake provider audio. Until realtime provider adapters are wired, the header entry should show a clear status/error rather than pretending a live session is working.
+- Provider runtime work should connect real OpenAI/Google/ElevenLabs events into the same state API rather than rewriting the composer.
 
 ## Default Resolution Policy
 

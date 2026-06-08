@@ -22,6 +22,7 @@ export interface ChatLayoutElements {
   conversationListContainer: HTMLElement;
   newChatButton: HTMLElement;
   settingsButton: HTMLElement;
+  liveVoiceButton: HTMLElement;
   chatTitle: HTMLElement;
   hamburgerButton: HTMLElement;
   backdrop: HTMLElement;
@@ -47,7 +48,7 @@ export class ChatLayoutBuilder {
     this.createWarningBanner(mainContainer, component);
 
     // Header
-    const { chatTitle, hamburgerButton, settingsButton } = this.createHeader(mainContainer);
+    const { chatTitle, hamburgerButton, liveVoiceButton, settingsButton } = this.createHeader(mainContainer);
 
     // Branch header container (above messages, separate from message container)
     // This ensures BranchHeader isn't clobbered when MessageDisplay.setConversation() empties the message container
@@ -72,6 +73,7 @@ export class ChatLayoutBuilder {
       conversationListContainer,
       newChatButton,
       settingsButton,
+      liveVoiceButton,
       chatTitle,
       hamburgerButton,
       backdrop,
@@ -170,6 +172,7 @@ export class ChatLayoutBuilder {
   private static createHeader(container: HTMLElement): {
     chatTitle: HTMLElement;
     hamburgerButton: HTMLElement;
+    liveVoiceButton: HTMLElement;
     settingsButton: HTMLElement;
   } {
     const chatHeader = container.createDiv('chat-header');
@@ -182,12 +185,17 @@ export class ChatLayoutBuilder {
     const chatTitle = chatHeader.createDiv('chat-title');
     chatTitle.textContent = 'Chat';
 
+    const liveVoiceButton = chatHeader.createEl('button', { cls: 'chat-live-voice-button' });
+    setIcon(liveVoiceButton, 'audio-waveform');
+    liveVoiceButton.setAttribute('aria-label', 'Start live voice');
+    liveVoiceButton.setAttribute('title', 'Start live voice');
+
     // Right: Settings gear icon
     const settingsButton = chatHeader.createEl('button', { cls: 'chat-settings-button' });
     setIcon(settingsButton, 'settings');
     settingsButton.setAttribute('aria-label', 'Chat settings');
 
-    return { chatTitle, hamburgerButton, settingsButton };
+    return { chatTitle, hamburgerButton, liveVoiceButton, settingsButton };
   }
 
   /**
