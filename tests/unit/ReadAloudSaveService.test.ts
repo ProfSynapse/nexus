@@ -354,6 +354,97 @@ describe('ReadAloudSaveService', () => {
     });
   });
 
+  // ── v2 buffer-driven save tail (the ACTUAL v2 entry points) ────────────────
+  // The v2 session captures buffers during play-and-capture and calls these
+  // directly — they perform NO synthesis. The synth-then-save methods above are
+  // retained test seams; these tests cover the v2 surface (ReadAloudSaveTail)
+  // with N>1 captured buffers so concat + embed + settings-path are exercised
+  // without going through synthesizeForCapture.
+  describe('v2 buffer-driven saveCaptured* (N>1, no synthesis)', () => {
+    it('saveCapturedNote: concatenates N buffers, writes to settings path, embeds below frontmatter, returns path', async () => {
+      const fake = buildFakeVault({ noteContent: '---\ntitle: T\n---\nBody' });
+      const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
+      // 3 WAV chunks with distinct fills to verify ordered concat.
+      const results = [
+        wrapWav(makeResult(10, 0xa1, 'audio/wav')),
+        wrapWav(makeResult(10, 0xb2, 'audio/wav')),
+        wrapWav(makeResult(10, 0xc3, 'audio/wav')),
+      ];
+
+      const returnedPath = await svc.saveCapturedNote(results, new TFile('Note.md', 'Note.md'));
+
+      // ONE write, settings-derived path, returns that path.
+      expect(fake.writes).toHaveLength(1);
+      expect(fake.writes[0].path).toMatch(/^Nexus\/audio\/Note - \d{8}-\d{6}\.wav$/);
+      expect(returnedPath).toBe(fake.writes[0].path);
+      // Ordered concat of all 3 payloads.
+      const merged = new Uint8Array(fake.writes[0].data);
+      expect(merged.indexOf(0xa1)).toBeLessThan(merged.indexOf(0xb2));
+      expect(merged.indexOf(0xb2)).toBeLessThan(merged.indexOf(0xc3));
+      // Embed inserted below the YAML frontmatter.
+      const out = fake.getProcessed() as string;
+      expect(out.startsWith('---\ntitle: T')).toBe(true);
+      expect(out.indexOf('![[')).toBeGreaterThan(out.indexOf('---', 3));
+    });
+
+    it('saveCapturedSelection: concatenates N buffers, inserts embed at selection end, returns path', async () => {
+      const fake = buildFakeVault();
+      const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
+      const { editor, replaceRange } = buildEditor('the selected text');
+      const results = [
+        wrapWav(makeResult(8, 0xd4, 'audio/wav')),
+        wrapWav(makeResult(8, 0xe5, 'audio/wav')),
+      ];
+
+      const returnedPath = await svc.saveCapturedSelection(
+        results,
+        editor,
+        new TFile('Src.md', 'Src.md'),
+        'the selected text'
+      );
+
+      expect(fake.writes).toHaveLength(1);
+      expect(returnedPath).toBe(fake.writes[0].path);
+      expect(fake.writes[0].path).toMatch(/^Nexus\/audio\/Src - the selected text - \d{8}-\d{6}\.wav$/);
+      // Embed inserted at the selection end (getCursor('to')).
+      expect(replaceRange).toHaveBeenCalledTimes(1);
+      const [text, pos] = replaceRange.mock.calls[0];
+      expect(text).toContain('![[');
+      expect(pos).toEqual({ line: 5, ch: 0 });
+      // Ordered concat.
+      const merged = new Uint8Array(fake.writes[0].data);
+      expect(merged.indexOf(0xd4)).toBeLessThan(merged.indexOf(0xe5));
+    });
+
+    it('saveCapturedNote: throws on empty buffer array (no write)', async () => {
+      const fake = buildFakeVault();
+      const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
+      await expect(
+        svc.saveCapturedNote([], new TFile('Note.md', 'Note.md'))
+      ).rejects.toThrow(/no readable text/);
+      expect(fake.writes).toHaveLength(0);
+    });
+
+    it('saveCapturedNote: throws on unsupported captured mimeType (no write)', async () => {
+      const fake = buildFakeVault();
+      const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
+      await expect(
+        svc.saveCapturedNote([makeResult(8, 0x01, 'audio/ogg')], new TFile('Note.md', 'Note.md'))
+      ).rejects.toThrow(/unsupported format/);
+      expect(fake.writes).toHaveLength(0);
+    });
+
+    it('saveCapturedNote: N=1 passthrough writes the single buffer unchanged', async () => {
+      const fake = buildFakeVault();
+      const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
+      const only = makeResult(12, 0x7f); // audio/mpeg, N=1 → concat passthrough
+      await svc.saveCapturedNote([only], new TFile('Note.md', 'Note.md'));
+      const written = new Uint8Array(fake.writes[0].data);
+      expect(written.byteLength).toBe(12);
+      expect(Array.from(written).every((b) => b === 0x7f)).toBe(true);
+    });
+  });
+
   // ── Error paths ────────────────────────────────────────────────────────────
   describe('error paths', () => {
     it('throws when the selection is empty/whitespace (no synth, no write)', async () => {

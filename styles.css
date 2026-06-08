@@ -9190,10 +9190,19 @@ body.is-mobile .nexus-task-board-shell {
 /* Read-aloud progress modal. Reuses the live-voice .chat-live-dot +
    .chat-live-waveform / .chat-live-wave-bar visuals (animations + their
    prefers-reduced-motion handling are defined with those classes). */
+
+/* Give the modal content a sensible target width so the waveform reads as a
+   full-width player rather than shrink-wrapping to a small cluster. min() caps
+   it to the viewport on narrow/mobile screens so it never overflows. */
+.read-aloud-progress {
+    width: min(420px, 100%);
+}
+
 .read-aloud-progress-visual {
     display: flex;
     align-items: center;
     gap: 12px;
+    width: 100%;
     margin: var(--space-m) 0;
 }
 
