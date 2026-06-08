@@ -10,6 +10,10 @@ interface ClientSecretResponse {
 
 interface RealtimeServerEvent {
   type?: unknown;
+  response_id?: unknown;
+  item_id?: unknown;
+  output_index?: unknown;
+  content_index?: unknown;
   transcript?: unknown;
   delta?: unknown;
   response?: unknown;
@@ -21,7 +25,9 @@ interface RealtimeServerEvent {
 }
 
 interface RealtimeResponseWithOutput {
+  id?: unknown;
   output?: Array<{
+    id?: unknown;
     content?: Array<{
       transcript?: unknown;
     }>;
@@ -37,6 +43,7 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
   private mediaStream: MediaStream | null = null;
   private outputAudio: HTMLAudioElement | null = null;
   private stopped = false;
+  private completedAssistantTranscriptKeys = new Set<string>();
 
   constructor(private readonly request: ResolvedRealtimeVoiceSessionRequest) {}
 
@@ -86,6 +93,7 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
 
   stop(): void {
     this.stopped = true;
+    this.completedAssistantTranscriptKeys.clear();
 
     if (this.dataChannel && this.dataChannel.readyState !== 'closed') {
       this.dataChannel.close();
@@ -267,6 +275,7 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
       case 'response.audio_transcript.done':
       case 'response.output_audio_transcript.done':
         if (typeof event.transcript === 'string' && event.transcript.trim().length > 0) {
+          this.completedAssistantTranscriptKeys.add(this.getTranscriptEventKey(event));
           this.request.callbacks.onAssistantTranscriptCompleted?.(event.transcript.trim());
         }
         break;
@@ -280,6 +289,11 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
 
   private emitAssistantTranscriptFromResponseDone(event: RealtimeServerEvent): void {
     const response = event.response as RealtimeResponseWithOutput | undefined;
+    const responseId = this.getString(response?.id) || this.getString(event.response_id);
+    if (responseId && this.hasCompletedTranscriptForResponse(responseId)) {
+      return;
+    }
+
     const transcript = response?.output
       ?.flatMap(item => item.content ?? [])
       .map(content => typeof content.transcript === 'string' ? content.transcript : '')
@@ -290,6 +304,34 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
     if (transcript) {
       this.request.callbacks.onAssistantTranscriptCompleted?.(transcript);
     }
+  }
+
+  private getTranscriptEventKey(event: RealtimeServerEvent): string {
+    const responseId = this.getString(event.response_id) || 'unknown-response';
+    const itemId = this.getString(event.item_id) || 'unknown-item';
+    const outputIndex = this.getString(event.output_index) || 'unknown-output';
+    const contentIndex = this.getString(event.content_index) || 'unknown-content';
+    return `${responseId}:${itemId}:${outputIndex}:${contentIndex}`;
+  }
+
+  private hasCompletedTranscriptForResponse(responseId: string): boolean {
+    const prefix = `${responseId}:`;
+    for (const key of this.completedAssistantTranscriptKeys) {
+      if (key.startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private getString(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    return '';
   }
 
   private formatRealtimeError(event: RealtimeServerEvent): string {

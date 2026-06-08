@@ -33,14 +33,52 @@ describe('OpenAIRealtimeVoiceSession', () => {
 
     session.handleServerEvent(JSON.stringify({
       type: 'response.output_audio_transcript.delta',
+      response_id: 'response-1',
+      item_id: 'item-1',
+      output_index: 0,
+      content_index: 0,
       delta: 'Hello ',
     }));
     session.handleServerEvent(JSON.stringify({
       type: 'response.output_audio_transcript.done',
+      response_id: 'response-1',
+      item_id: 'item-1',
+      output_index: 0,
+      content_index: 0,
       transcript: 'Hello there',
     }));
 
     expect(onAssistantTranscriptDelta).toHaveBeenCalledWith('Hello ');
+    expect(onAssistantTranscriptCompleted).toHaveBeenCalledWith('Hello there');
+  });
+
+  it('does not emit response.done fallback when transcript completion already arrived for that response', () => {
+    const onAssistantTranscriptCompleted = jest.fn();
+    const session = createSession({ onAssistantTranscriptCompleted });
+
+    session.handleServerEvent(JSON.stringify({
+      type: 'response.output_audio_transcript.done',
+      response_id: 'response-1',
+      item_id: 'item-1',
+      output_index: 0,
+      content_index: 0,
+      transcript: 'Hello there',
+    }));
+    session.handleServerEvent(JSON.stringify({
+      type: 'response.done',
+      response: {
+        id: 'response-1',
+        output: [
+          {
+            content: [
+              { transcript: 'Hello there' },
+            ],
+          },
+        ],
+      },
+    }));
+
+    expect(onAssistantTranscriptCompleted).toHaveBeenCalledTimes(1);
     expect(onAssistantTranscriptCompleted).toHaveBeenCalledWith('Hello there');
   });
 
