@@ -245,10 +245,15 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
 
   private async pollJob(job: OpenRouterVideoJob): Promise<OpenRouterVideoJob> {
     const url = job.polling_url || `${this.baseUrl}/videos/${encodeURIComponent(job.id || '')}`;
+    // polling_url is taken verbatim from the provider response body. Only attach
+    // the Bearer key when the resolved URL is an OpenRouter API endpoint; any
+    // other host is fetched without the credential (SEC-M2). Mirrors the
+    // allowlist used by downloadVideo below.
+    const shouldAuthorize = this.isOpenRouterUrl(url);
     const response = await requestUrl({
       url,
       method: 'GET',
-      headers: this.getHeaders(),
+      headers: shouldAuthorize ? this.getHeaders() : undefined,
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -261,7 +266,9 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
   private async downloadVideo(job: OpenRouterVideoJob): Promise<ArrayBuffer> {
     const unsignedUrl = job.unsigned_urls?.find(url => url.trim().length > 0);
     const url = unsignedUrl || job.output_url || job.url || `${this.baseUrl}/videos/${encodeURIComponent(job.id || '')}/content?index=0`;
-    const shouldAuthorize = !unsignedUrl || url.startsWith(this.baseUrl) || url.startsWith('https://openrouter.ai/api/');
+    // Attach the key only for OpenRouter API endpoints; when no unsigned_url was
+    // returned the fallback URL is always OpenRouter-hosted, so authorize it too.
+    const shouldAuthorize = !unsignedUrl || this.isOpenRouterUrl(url);
     const response = await requestUrl({
       url,
       method: 'GET',
@@ -319,6 +326,28 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
       'HTTP-Referer': this.httpReferer,
       'X-Title': this.xTitle,
     };
+  }
+
+  /**
+   * Whether `url` is an OpenRouter API endpoint that should receive the Bearer
+   * key. Used to gate credential attachment on URLs taken from the provider
+   * response body (polling_url, output_url) so the key is never sent to an
+   * arbitrary host.
+   *
+   * Matches by URL ORIGIN (https + exact hostname), not substring, so neither a
+   * suffix host (`openrouter.ai.evil.com`) nor a userinfo trick
+   * (`https://openrouter.ai/api/v1@evil.com/`) can smuggle the credential to an
+   * attacker host. An unparseable URL is treated as off-allowlist.
+   */
+  private isOpenRouterUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === 'https:'
+        && parsed.hostname === 'openrouter.ai'
+        && parsed.pathname.startsWith('/api/');
+    } catch {
+      return false;
+    }
   }
 
   private asJob(value: unknown): OpenRouterVideoJob {

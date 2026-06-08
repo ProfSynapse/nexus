@@ -89,4 +89,88 @@ describe('AudioGenerationService', () => {
 
     expect(vault.createBinary).not.toHaveBeenCalled();
   });
+
+  describe('output-extension validation (BE-m1)', () => {
+    it('rejects a disallowed extension before synthesizing', async () => {
+      const synth = jest.spyOn(SpeechSynthesisService.prototype, 'synthesize');
+      const vault = makeVault();
+      const service = new AudioGenerationService(makeApp(), vault, {
+        llmSettings: DEFAULT_LLM_PROVIDER_SETTINGS,
+      });
+
+      await expect(service.generate({
+        prompt: 'Read this.',
+        outputPath: 'audio/read-this.txt',
+      })).rejects.toThrow('outputPath must end with one of: .mp3, .wav.');
+
+      // Fail-fast: synthesis is never invoked for an invalid extension.
+      expect(synth).not.toHaveBeenCalled();
+      expect(vault.createBinary).not.toHaveBeenCalled();
+    });
+
+    it('rejects writing audio/wav bytes to a .mp3 path', async () => {
+      jest.spyOn(SpeechSynthesisService.prototype, 'synthesize').mockResolvedValue({
+        provider: 'google',
+        model: 'gemini-tts',
+        voice: 'kore',
+        audioData: new Uint8Array([1, 2, 3]).buffer,
+        mimeType: 'audio/wav',
+      });
+      const vault = makeVault();
+      const service = new AudioGenerationService(makeApp(), vault, {
+        llmSettings: DEFAULT_LLM_PROVIDER_SETTINGS,
+      });
+
+      await expect(service.generate({
+        prompt: 'Read this.',
+        outputPath: 'audio/read-this.mp3',
+      })).rejects.toThrow('does not match the synthesized audio format "audio/wav" (expected ".wav")');
+
+      // The mismatched file must never be written.
+      expect(vault.createBinary).not.toHaveBeenCalled();
+    });
+
+    it('accepts a .wav path for audio/wav output', async () => {
+      jest.spyOn(SpeechSynthesisService.prototype, 'synthesize').mockResolvedValue({
+        provider: 'google',
+        model: 'gemini-tts',
+        voice: 'kore',
+        audioData: new Uint8Array([1, 2, 3]).buffer,
+        mimeType: 'audio/wav',
+      });
+      const vault = makeVault();
+      const service = new AudioGenerationService(makeApp(), vault, {
+        llmSettings: DEFAULT_LLM_PROVIDER_SETTINGS,
+      });
+
+      const result = await service.generate({
+        prompt: 'Read this.',
+        outputPath: 'audio/read-this.wav',
+      });
+
+      expect(vault.createBinary).toHaveBeenCalledWith('audio/read-this.wav', expect.any(ArrayBuffer));
+      expect(result).toMatchObject({ path: 'audio/read-this.wav', mimeType: 'audio/wav' });
+    });
+
+    it('rejects an unmapped synthesized mimeType with a clear error', async () => {
+      jest.spyOn(SpeechSynthesisService.prototype, 'synthesize').mockResolvedValue({
+        provider: 'future',
+        model: 'future-tts',
+        voice: 'x',
+        audioData: new Uint8Array([1]).buffer,
+        mimeType: 'audio/opus',
+      });
+      const vault = makeVault();
+      const service = new AudioGenerationService(makeApp(), vault, {
+        llmSettings: DEFAULT_LLM_PROVIDER_SETTINGS,
+      });
+
+      await expect(service.generate({
+        prompt: 'Read this.',
+        outputPath: 'audio/read-this.mp3',
+      })).rejects.toThrow('unsupported mimeType "audio/opus"');
+
+      expect(vault.createBinary).not.toHaveBeenCalled();
+    });
+  });
 });

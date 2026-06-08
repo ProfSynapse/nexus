@@ -12,6 +12,7 @@ import {
   LLMProviderSettings
 } from '../../types/llm/ProviderTypes';
 import { Settings } from '../../settings';
+import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { ChatSettingsRenderer, ChatSettings } from '../../components/shared/ChatSettingsRenderer';
@@ -515,6 +516,7 @@ export class DefaultsTab {
 
     this.renderVoiceGroupLabel(content, 'Read aloud');
     this.renderSpeechSettings(content, llmSettings, () => updateVoiceWarning());
+    this.renderAudioSaveSettings(content);
 
     this.renderVoiceGroupLabel(content, 'Live voice');
     this.renderRealtimeVoiceSettings(content, llmSettings, () => updateVoiceWarning());
@@ -533,6 +535,49 @@ export class DefaultsTab {
 
   private renderVoiceGroupLabel(parentEl: HTMLElement, label: string): void {
     parentEl.createDiv({ cls: 'nexus-voice-group-label', text: label });
+  }
+
+  /**
+   * Render the "Save as audio" subfolder field. Controls the subfolder under
+   * the storage root where saved read-aloud audio is written. The value is a
+   * plain folder NAME (not a path) joined under the configured storage root by
+   * the backend, so changing the storage root relocates saved audio. Never a
+   * hardcoded root.
+   */
+  private renderAudioSaveSettings(parentEl: HTMLElement): void {
+    const pluginSettings = this.services.settings.settings;
+    const defaultSubfolder = DEFAULT_STORAGE_SETTINGS.audioSubfolder ?? 'audio';
+
+    new Setting(parentEl)
+      .setName('Saved audio subfolder')
+      .setDesc('Folder name, under your storage root, where saved read-aloud audio (mp3/wav) is written.')
+      .addText(text => {
+        const current = pluginSettings.storage?.audioSubfolder ?? defaultSubfolder;
+        text
+          .setPlaceholder(defaultSubfolder)
+          .setValue(current)
+          .onChange(async (value) => {
+            const sanitized = this.sanitizeSubfolderName(value);
+            const storage = pluginSettings.storage ?? { ...DEFAULT_STORAGE_SETTINGS };
+            storage.audioSubfolder = sanitized || defaultSubfolder;
+            pluginSettings.storage = storage;
+            await this.services.settings.saveSettings();
+          });
+      });
+  }
+
+  /**
+   * Reduce free-text input to a safe single folder NAME: trim, collapse path
+   * separators and leading dots so the value can never escape the storage root
+   * or become a nested path. Returns '' for empty/invalid input so the caller
+   * can fall back to the default.
+   */
+  private sanitizeSubfolderName(value: string): string {
+    return value
+      .trim()
+      .replace(/[\\/]+/g, '')
+      .replace(/^\.+/, '')
+      .trim();
   }
 
   private renderSpeechSettings(
