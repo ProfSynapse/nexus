@@ -71,6 +71,7 @@ describe('ChatLiveVoiceController', () => {
     const liveVoiceButton = createMockElement('button');
     const component = new Component();
     const onTranscriptMessage = jest.fn();
+    const getConversationContext = jest.fn(() => '<conversation_context>Prior chat</conversation_context>');
     const registerDomEventSpy = jest.spyOn(component, 'registerDomEvent');
     const controller = new ChatLiveVoiceController({
       app: app as never,
@@ -78,6 +79,7 @@ describe('ChatLiveVoiceController', () => {
       toolStatusBar,
       liveVoiceButton,
       getHasConversation: () => hasConversation,
+      getConversationContext,
       onTranscriptMessage,
       component,
     });
@@ -85,6 +87,7 @@ describe('ChatLiveVoiceController', () => {
     return {
       chatInput,
       controller,
+      getConversationContext,
       liveVoiceButton,
       onTranscriptMessage,
       registerDomEventSpy,
@@ -115,6 +118,7 @@ describe('ChatLiveVoiceController', () => {
     expect(liveVoiceButton.addClass).toHaveBeenCalledWith('chat-live-voice-button-active');
     expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenCalledWith('Connecting live voice...', 'present');
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    expect(mockCreateSession.mock.calls[0]?.[0].instructions).toContain('<conversation_context>Prior chat</conversation_context>');
     expect(mockSessionStart).toHaveBeenCalledTimes(1);
   });
 

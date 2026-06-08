@@ -22,6 +22,7 @@ export interface ChatLiveVoiceControllerOptions {
   toolStatusBar: ToolStatusBar;
   liveVoiceButton: HTMLElement;
   getHasConversation: () => boolean;
+  getConversationContext?: () => string;
   onTranscriptMessage?: (role: 'user' | 'assistant', content: string) => void | Promise<void>;
   component: Component;
 }
@@ -70,7 +71,7 @@ export class ChatLiveVoiceController {
       }
 
       const session = service.createSession({
-        instructions: 'You are Nexus, a helpful voice assistant inside Obsidian. Keep spoken responses concise and practical.',
+        instructions: this.buildSessionInstructions(),
         callbacks: {
           onStateChange: (state) => this.setState(state),
           onError: (message, error) => this.handleSessionError(message, error),
@@ -155,6 +156,19 @@ export class ChatLiveVoiceController {
 
   private normalizeTranscript(text: string): string {
     return text.replace(/\s+/g, ' ').trim();
+  }
+
+  private buildSessionInstructions(): string {
+    const context = this.options.getConversationContext?.().trim();
+    const baseInstructions = [
+      'You are Nexus, a helpful voice assistant inside Obsidian.',
+      'Keep spoken responses concise and practical.',
+      'When the user asks about prior chat context, use the provided conversation context instead of saying you cannot see it.',
+    ].join(' ');
+
+    return context
+      ? `${baseInstructions}\n\n${context}`
+      : baseInstructions;
   }
 
   setState(state: LiveVoiceComposerState, statusText?: string): void {
