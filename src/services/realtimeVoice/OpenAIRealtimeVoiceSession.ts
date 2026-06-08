@@ -12,11 +12,20 @@ interface RealtimeServerEvent {
   type?: unknown;
   transcript?: unknown;
   delta?: unknown;
+  response?: unknown;
   error?: {
     message?: unknown;
     type?: unknown;
     code?: unknown;
   };
+}
+
+interface RealtimeResponseWithOutput {
+  output?: Array<{
+    content?: Array<{
+      transcript?: unknown;
+    }>;
+  }>;
 }
 
 const CLIENT_SECRET_ENDPOINT = 'https://api.openai.com/v1/realtime/client_secrets';
@@ -238,7 +247,10 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
         break;
       case 'response.audio.done':
       case 'response.output_audio.done':
+        this.request.callbacks.onStateChange('listening');
+        break;
       case 'response.done':
+        this.emitAssistantTranscriptFromResponseDone(event);
         this.request.callbacks.onStateChange('listening');
         break;
       case 'conversation.item.input_audio_transcription.completed':
@@ -247,11 +259,13 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
         }
         break;
       case 'response.audio_transcript.delta':
+      case 'response.output_audio_transcript.delta':
         if (typeof event.delta === 'string') {
           this.request.callbacks.onAssistantTranscriptDelta?.(event.delta);
         }
         break;
       case 'response.audio_transcript.done':
+      case 'response.output_audio_transcript.done':
         if (typeof event.transcript === 'string' && event.transcript.trim().length > 0) {
           this.request.callbacks.onAssistantTranscriptCompleted?.(event.transcript.trim());
         }
@@ -261,6 +275,20 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
         break;
       default:
         break;
+    }
+  }
+
+  private emitAssistantTranscriptFromResponseDone(event: RealtimeServerEvent): void {
+    const response = event.response as RealtimeResponseWithOutput | undefined;
+    const transcript = response?.output
+      ?.flatMap(item => item.content ?? [])
+      .map(content => typeof content.transcript === 'string' ? content.transcript : '')
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (transcript) {
+      this.request.callbacks.onAssistantTranscriptCompleted?.(transcript);
     }
   }
 
