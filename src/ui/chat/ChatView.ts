@@ -668,6 +668,7 @@ export class ChatView extends ItemView {
     );
 
     this.liveVoiceController = new ChatLiveVoiceController({
+      app: this.app,
       chatInput: this.chatInput,
       toolStatusBar: this.toolStatusBar,
       liveVoiceButton: this.layoutElements.liveVoiceButton,

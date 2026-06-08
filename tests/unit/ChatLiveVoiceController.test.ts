@@ -3,9 +3,31 @@ import { ChatLiveVoiceController } from '../../src/ui/chat/controllers/ChatLiveV
 import type { ChatInput } from '../../src/ui/chat/components/ChatInput';
 import type { ToolStatusBar } from '../../src/ui/chat/components/ToolStatusBar';
 
+const mockSessionStart = jest.fn();
+const mockSessionStop = jest.fn();
+const mockGetAvailability = jest.fn();
+const mockCreateSession = jest.fn();
+
+jest.mock('../../src/services/realtimeVoice/RealtimeVoiceService', () => ({
+  RealtimeVoiceService: jest.fn().mockImplementation(() => ({
+    getAvailability: mockGetAvailability,
+    createSession: mockCreateSession,
+  })),
+}));
+
 describe('ChatLiveVoiceController', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    mockSessionStart.mockReset();
+    mockSessionStop.mockReset();
+    mockGetAvailability.mockReset();
+    mockCreateSession.mockReset();
+    mockSessionStart.mockResolvedValue(undefined);
+    mockGetAvailability.mockReturnValue({ available: true });
+    mockCreateSession.mockReturnValue({
+      start: mockSessionStart,
+      stop: mockSessionStop,
+    });
   });
 
   afterEach(() => {
@@ -14,6 +36,31 @@ describe('ChatLiveVoiceController', () => {
   });
 
   function createHarness(hasConversation = true) {
+    const app = {
+      plugins: {
+        getPlugin: jest.fn(() => ({
+          settings: {
+            settings: {
+              llmProviders: {
+                providers: {
+                  openai: {
+                    enabled: true,
+                    apiKey: 'test-openai-key',
+                  },
+                },
+                defaultModel: { provider: 'openai', model: 'gpt-4o' },
+                defaultRealtimeVoiceModel: {
+                  provider: 'openai',
+                  model: 'gpt-realtime-2',
+                  voice: 'marin',
+                  source: 'user',
+                },
+              },
+            },
+          },
+        })),
+      },
+    };
     const chatInput = {
       setLiveVoiceState: jest.fn(),
     } as unknown as ChatInput;
@@ -25,6 +72,7 @@ describe('ChatLiveVoiceController', () => {
     const component = new Component();
     const registerDomEventSpy = jest.spyOn(component, 'registerDomEvent');
     const controller = new ChatLiveVoiceController({
+      app: app as never,
       chatInput,
       toolStatusBar,
       liveVoiceButton,
@@ -41,36 +89,45 @@ describe('ChatLiveVoiceController', () => {
     };
   }
 
-  it('reports a clear error when no conversation is selected', () => {
+  it('reports a clear error when no conversation is selected', async () => {
     const { chatInput, controller, toolStatusBar } = createHarness(false);
 
-    controller.start();
+    await controller.start();
 
     expect(chatInput.setLiveVoiceState).not.toHaveBeenCalled();
+    expect(mockCreateSession).not.toHaveBeenCalled();
     expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenCalledWith(
       'Select or create a conversation to use live voice.',
       'failed'
     );
   });
 
-  it('enters connecting state and then reports unavailable runtime wiring', () => {
+  it('starts a realtime voice session when available', async () => {
     const { chatInput, controller, liveVoiceButton, toolStatusBar } = createHarness(true);
 
-    controller.start();
+    await controller.start();
 
     expect(controller.getState()).toBe('connecting');
     expect(chatInput.setLiveVoiceState).toHaveBeenCalledWith('connecting');
     expect(liveVoiceButton.addClass).toHaveBeenCalledWith('chat-live-voice-button-active');
     expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenCalledWith('Connecting live voice...', 'present');
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    expect(mockSessionStart).toHaveBeenCalledTimes(1);
+  });
 
-    jest.advanceTimersByTime(700);
+  it('reports unavailable realtime voice settings', async () => {
+    mockGetAvailability.mockReturnValue({ available: false, reason: 'OpenAI is not enabled and configured for live voice.' });
+    const { chatInput, controller, toolStatusBar } = createHarness(true);
+
+    await controller.start();
 
     expect(controller.getState()).toBe('error');
-    expect(chatInput.setLiveVoiceState).toHaveBeenCalledWith('error');
-    expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenCalledWith(
-      'Live voice provider is not connected yet.',
+    expect(chatInput.setLiveVoiceState).toHaveBeenLastCalledWith('error');
+    expect(toolStatusBar.pushLiveVoiceStatus).toHaveBeenLastCalledWith(
+      'OpenAI is not enabled and configured for live voice.',
       'failed'
     );
+    expect(mockCreateSession).not.toHaveBeenCalled();
   });
 
   it('stops the live voice UI and clears the status line', () => {
@@ -82,10 +139,11 @@ describe('ChatLiveVoiceController', () => {
     expect(controller.getState()).toBe('inactive');
     expect(chatInput.setLiveVoiceState).toHaveBeenLastCalledWith('inactive');
     expect(liveVoiceButton.removeClass).toHaveBeenCalledWith('chat-live-voice-button-active');
+    expect(mockSessionStop).toHaveBeenCalledTimes(1);
     expect(toolStatusBar.clearLiveVoiceStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('wires the header live voice button to start the controller', () => {
+  it('wires the header live voice button to start the controller', async () => {
     const { controller, liveVoiceButton, registerDomEventSpy } = createHarness(true);
     const registration = registerDomEventSpy.mock.calls.find(([element, eventName]) => (
       element === liveVoiceButton && eventName === 'click'
@@ -94,6 +152,7 @@ describe('ChatLiveVoiceController', () => {
     expect(registration).toBeDefined();
     const handler = registration?.[2] as EventListener;
     handler(new Event('click'));
+    await Promise.resolve();
 
     expect(controller.getState()).toBe('connecting');
   });

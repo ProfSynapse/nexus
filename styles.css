@@ -1568,6 +1568,10 @@ body.theme-light .message-content {
     transform: translateY(-50%) scale(1.05);
 }
 
+.chat-live-voice-output {
+    display: none;
+}
+
 @keyframes chat-live-dot-pulse {
     0%, 100% {
         box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-error) 32%, transparent);
