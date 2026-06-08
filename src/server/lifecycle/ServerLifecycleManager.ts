@@ -5,7 +5,7 @@
 
 import { Events } from 'obsidian';
 import { AgentRegistry } from '../services/AgentRegistry';
-import { HttpTransportManager } from '../transport/HttpTransportManager';
+import { getDisabledHttpTransportStatus } from '../transport/HttpTransportStatus';
 import { IPCTransportManager } from '../transport/IPCTransportManager';
 import { ServerStatus } from '../../types';
 import { logger } from '../../utils/logger';
@@ -35,7 +35,6 @@ export class ServerLifecycleManager {
 
     constructor(
         private agentRegistry: AgentRegistry,
-        private httpTransportManager: HttpTransportManager,
         private ipcTransportManager: IPCTransportManager,
         private events: Events
     ) {}
@@ -132,7 +131,7 @@ export class ServerLifecycleManager {
     }
 
     /**
-     * Stop both transports
+     * Stop transports
      */
     private async stopTransports(): Promise<void> {
         try {
@@ -183,7 +182,7 @@ export class ServerLifecycleManager {
             isRunning: this.isRunning(),
             agentCount: this.agentRegistry.getAgentCount(),
             ipcTransportStatus: this.ipcTransportManager.getTransportStatus(),
-            httpTransportStatus: this.httpTransportManager.getTransportStatus()
+            httpTransportStatus: getDisabledHttpTransportStatus()
         };
     }
 
@@ -223,12 +222,7 @@ export class ServerLifecycleManager {
         }
 
         // Check transports
-        const httpStatus = this.httpTransportManager.getTransportStatus();
         const ipcStatus = this.ipcTransportManager.getTransportStatus();
-
-        if (!httpStatus.isRunning) {
-            issues.push('STDIO transport not connected');
-        }
 
         if (!ipcStatus.isRunning) {
             issues.push('IPC transport not running');
@@ -239,7 +233,7 @@ export class ServerLifecycleManager {
             status: this.status,
             agentStatus: agentStats,
             transportStatus: {
-                http: httpStatus,
+                http: getDisabledHttpTransportStatus(),
                 ipc: ipcStatus
             },
             issues
@@ -268,7 +262,7 @@ export class ServerLifecycleManager {
             },
             agents: this.agentRegistry.getAgentStatistics(),
             transports: {
-                http: this.httpTransportManager.getTransportStatus(),
+                http: getDisabledHttpTransportStatus(),
                 ipc: this.ipcTransportManager.getDiagnostics()
             },
             events: {

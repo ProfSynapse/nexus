@@ -15,7 +15,7 @@ import { logger } from '../utils/logger';
 // Import specialized services
 import { ServerConfiguration } from './services/ServerConfiguration';
 import { AgentRegistry } from './services/AgentRegistry';
-import { HttpTransportManager } from './transport/HttpTransportManager';
+import { HttpTransportStatus, getDisabledHttpTransportStatus } from './transport/HttpTransportStatus';
 import { IPCTransportManager } from './transport/IPCTransportManager';
 import { StdioTransportManager } from './transport/StdioTransportManager';
 import { RequestHandlerFactory } from './handlers/RequestHandlerFactory';
@@ -24,7 +24,7 @@ import { AgentExecutionManager } from './execution/AgentExecutionManager';
 
 type ToolCallParams = Record<string, unknown>;
 type ServerTransportStatus = {
-    http: ReturnType<HttpTransportManager['getTransportStatus']>;
+    http: HttpTransportStatus;
     ipc: ReturnType<IPCTransportManager['getTransportStatus']>;
 };
 
@@ -48,7 +48,6 @@ export class MCPServer implements IMCPServer {
     // Specialized services following Dependency Injection principle
     private configuration: ServerConfiguration;
     private agentRegistry: AgentRegistry;
-    private httpTransportManager: HttpTransportManager;
     private stdioTransportManager: StdioTransportManager;
     private ipcTransportManager: IPCTransportManager;
     private requestHandlerFactory: RequestHandlerFactory;
@@ -76,7 +75,6 @@ export class MCPServer implements IMCPServer {
         
         // Initialize specialized services
         this.agentRegistry = new AgentRegistry();
-        this.httpTransportManager = new HttpTransportManager(this.server, 3000, 'localhost');
         this.stdioTransportManager = new StdioTransportManager(this.server);
         this.ipcTransportManager = new IPCTransportManager(
             this.configuration,
@@ -98,7 +96,6 @@ export class MCPServer implements IMCPServer {
         // Initialize lifecycle manager
         this.lifecycleManager = new ServerLifecycleManager(
             this.agentRegistry,
-            this.httpTransportManager,
             this.ipcTransportManager,
             this.events
         );
@@ -282,16 +279,17 @@ export class MCPServer implements IMCPServer {
      */
     getTransportStatus(): ServerTransportStatus {
         return {
-            http: this.httpTransportManager.getTransportStatus(),
+            http: getDisabledHttpTransportStatus(),
             ipc: this.ipcTransportManager.getTransportStatus()
         };
     }
 
     /**
-     * Get HTTP server URL for MCP integration
+     * Compatibility shim for callers that still ask for an HTTP MCP URL.
+     * MCP transport is IPC-only, so there is no HTTP endpoint to return.
      */
     getServerUrl(): string {
-        return this.httpTransportManager.getServerUrl();
+        return '';
     }
 
     /**
