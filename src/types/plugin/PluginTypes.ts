@@ -22,12 +22,20 @@ export interface MCPStorageSettings {
   maxShardBytes: number;
   /** Root paths from previous configurations, used as legacy read sources on next startup */
   previousRootPaths?: string[];
+  /**
+   * Subfolder under `rootPath` where saved read-aloud audio files are written
+   * (e.g. `<rootPath>/<audioSubfolder>/`). Just a folder name, never a full
+   * path — the root is resolved from `rootPath` so changing the storage root
+   * relocates saved audio. Defaults to `audio`.
+   */
+  audioSubfolder?: string;
 }
 
 export const DEFAULT_STORAGE_SETTINGS: MCPStorageSettings = {
   schemaVersion: 2,
   rootPath: 'Nexus',
-  maxShardBytes: 4 * 1024 * 1024
+  maxShardBytes: 4 * 1024 * 1024,
+  audioSubfolder: 'audio'
 };
 
 /**

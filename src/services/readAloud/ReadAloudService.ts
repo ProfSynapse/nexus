@@ -2,6 +2,7 @@ import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import type { AppsSettings } from '../../types/apps/AppTypes';
 import { MarkdownSpeechPreprocessor, SpeechTextChunk } from './MarkdownSpeechPreprocessor';
 import { SpeechSynthesisService } from './SpeechSynthesisService';
+import type { SpeechSynthesisResult } from './SpeechSynthesisTypes';
 
 export interface ReadAloudRequest {
   markdown: string;
@@ -134,6 +135,36 @@ export class ReadAloudService {
         this.activePlayback = null;
       }
     }
+  }
+
+  /**
+   * Synthesize the markdown chunk-by-chunk and RETURN every
+   * SpeechSynthesisResult WITHOUT playing any audio. This is the capture path
+   * for "save as audio": it reuses the same preprocessor + speech service as
+   * {@link read} but never touches playback, so saving does not force the user
+   * to listen (and never double-synthesizes — each chunk is synthesized once).
+   *
+   * Results are returned in chunk order so the caller can concatenate them into
+   * a single file. Throws if there is no readable text.
+   *
+   * @param onProgress optional callback after each chunk synthesizes (e.g. for a
+   *   long-note progress UI). Index is 0-based; total is the chunk count.
+   */
+  async synthesizeForCapture(
+    request: ReadAloudRequest,
+    onProgress?: (completed: number, total: number) => void
+  ): Promise<SpeechSynthesisResult[]> {
+    const chunks = MarkdownSpeechPreprocessor.preprocess(request.markdown);
+    if (chunks.length === 0) {
+      throw new Error('There is no readable text in this note.');
+    }
+
+    const results: SpeechSynthesisResult[] = [];
+    for (let index = 0; index < chunks.length; index += 1) {
+      results.push(await this.speechService.synthesize({ text: chunks[index].text }));
+      onProgress?.(index + 1, chunks.length);
+    }
+    return results;
   }
 
   private async playChunk(chunk: SpeechTextChunk, runId: number): Promise<void> {
