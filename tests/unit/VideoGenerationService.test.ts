@@ -2,6 +2,7 @@ import type { App, Vault } from 'obsidian';
 import { TFolder, __setRequestUrlMock } from '../mocks/obsidian';
 import { VideoGenerationService } from '../../src/services/video/VideoGenerationService';
 import { VideoGenerationTimeoutError } from '../../src/services/video/VideoGenerationTypes';
+import type { PendingVideoGenerationJob } from '../../src/services/video/VideoGenerationTypes';
 import { GoogleVideoAdapter } from '../../src/services/video/adapters/GoogleVideoAdapter';
 import { OpenRouterVideoAdapter } from '../../src/services/video/adapters/OpenRouterVideoAdapter';
 import { GenerateVideoTool } from '../../src/agents/promptManager/tools/generateVideo';
@@ -358,6 +359,202 @@ describe('OpenRouterVideoAdapter', () => {
     expect(result.providerJobId).toBe('job-1');
   });
 
+  it('does not attach the Bearer key when polling an off-allowlist polling_url', async () => {
+    const authByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      authByUrl[request.url] = request.headers?.Authorization;
+
+      if (request.url.endsWith('/videos/models')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            data: [{
+              id: 'google/veo-3.1-fast',
+              supported_resolutions: ['720p'],
+              supported_aspect_ratios: ['16:9'],
+              supported_durations: [5],
+            }]
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      // submitJob → return a poisoned, attacker-controlled polling_url.
+      if (request.url.endsWith('/videos')) {
+        return {
+          status: 202,
+          headers: {},
+          text: '{}',
+          json: {
+            id: 'job-1',
+            status: 'queued',
+            polling_url: 'https://evil.example.com/steal',
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      // pollJob hits the poisoned URL → report completed so generate() finishes.
+      if (request.url === 'https://evil.example.com/steal') {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            id: 'job-1',
+            status: 'completed',
+            unsigned_urls: ['https://cdn.example.com/video.mp4'],
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return {
+        status: 200,
+        headers: {},
+        text: '',
+        json: null,
+        arrayBuffer: new Uint8Array([1]).buffer,
+      };
+    });
+
+    const adapter = new OpenRouterVideoAdapter({
+      apiKey: 'test-key',
+      vault: makeVault(),
+    });
+
+    await adapter.generate({
+      prompt: 'A calm ocean sunrise.',
+      provider: 'openrouter',
+      model: 'google/veo-3.1-fast',
+      aspectRatio: '16:9',
+      resolution: '720p',
+      seconds: 5,
+      pollIntervalMs: 1,
+      timeoutMs: 1000,
+    });
+
+    // The off-allowlist polling host must NOT receive the credential.
+    expect(authByUrl['https://evil.example.com/steal']).toBeUndefined();
+    // The legitimate OpenRouter submit endpoint still gets the key.
+    expect(authByUrl['https://openrouter.ai/api/v1/videos']).toBe('Bearer test-key');
+    // The unsigned CDN download is also fetched without the credential.
+    expect(authByUrl['https://cdn.example.com/video.mp4']).toBeUndefined();
+  });
+
+  it('attaches the Bearer key when polling an OpenRouter polling_url', async () => {
+    const authByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      authByUrl[request.url] = request.headers?.Authorization;
+
+      if (request.url.endsWith('/videos/models')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: { data: [{ id: 'google/veo-3.1-fast', supported_resolutions: ['720p'], supported_aspect_ratios: ['16:9'], supported_durations: [5] }] },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      if (request.url.endsWith('/videos')) {
+        return {
+          status: 202,
+          headers: {},
+          text: '{}',
+          json: { id: 'job-1', status: 'queued', polling_url: 'https://openrouter.ai/api/v1/videos/job-1' },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      if (request.url === 'https://openrouter.ai/api/v1/videos/job-1') {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: { id: 'job-1', status: 'completed', unsigned_urls: ['https://cdn.example.com/video.mp4'] },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
+    });
+
+    const adapter = new OpenRouterVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+
+    await adapter.generate({
+      prompt: 'A calm ocean sunrise.',
+      provider: 'openrouter',
+      model: 'google/veo-3.1-fast',
+      aspectRatio: '16:9',
+      resolution: '720p',
+      seconds: 5,
+      pollIntervalMs: 1,
+      timeoutMs: 1000,
+    });
+
+    expect(authByUrl['https://openrouter.ai/api/v1/videos/job-1']).toBe('Bearer test-key');
+  });
+
+  it('does not attach the Bearer key to a userinfo-trick polling_url', async () => {
+    // Resolves to host evil.com (the openrouter.ai before @ is userinfo) — the
+    // hostname-equality check must reject it; a naive prefix check would not.
+    const trickUrl = 'https://openrouter.ai@evil.com/api/v1/steal';
+    const authByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      authByUrl[request.url] = request.headers?.Authorization;
+
+      if (request.url.endsWith('/videos/models')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: { data: [{ id: 'google/veo-3.1-fast', supported_resolutions: ['720p'], supported_aspect_ratios: ['16:9'], supported_durations: [5] }] },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      if (request.url.endsWith('/videos')) {
+        return {
+          status: 202,
+          headers: {},
+          text: '{}',
+          json: { id: 'job-1', status: 'queued', polling_url: trickUrl },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      if (request.url === trickUrl) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: { id: 'job-1', status: 'completed', unsigned_urls: ['https://cdn.example.com/video.mp4'] },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
+    });
+
+    const adapter = new OpenRouterVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+
+    await adapter.generate({
+      prompt: 'A calm ocean sunrise.',
+      provider: 'openrouter',
+      model: 'google/veo-3.1-fast',
+      aspectRatio: '16:9',
+      resolution: '720p',
+      seconds: 5,
+      pollIntervalMs: 1,
+      timeoutMs: 1000,
+    });
+
+    expect(authByUrl[trickUrl]).toBeUndefined();
+  });
+
   it('rejects unsupported model options from OpenRouter metadata', async () => {
     __setRequestUrlMock(async () => ({
       status: 200,
@@ -389,5 +586,138 @@ describe('OpenRouterVideoAdapter', () => {
       pollIntervalMs: 1,
       timeoutMs: 1000,
     })).rejects.toThrow('does not support resolution "1080p"');
+  });
+});
+
+describe('GoogleVideoAdapter credential allowlist', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  function makeJob(): PendingVideoGenerationJob {
+    return {
+      provider: 'google',
+      providerJobId: 'operations/video-1',
+      pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-1',
+      request: { seconds: 8, aspectRatio: '16:9', resolution: '720p' },
+    } as unknown as PendingVideoGenerationJob;
+  }
+
+  it('does not attach x-goog-api-key when the download URI is off-allowlist', async () => {
+    const keyByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
+
+      // pollOperation → completed, with a poisoned attacker-controlled download URI.
+      if (request.url.endsWith('/operations/video-1')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            name: 'operations/video-1',
+            done: true,
+            response: { generatedVideos: [{ video: { uri: 'https://evil.example.com/steal.mp4' } }] },
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1, 2, 3]).buffer };
+    });
+
+    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+    await adapter.checkJob(makeJob());
+
+    // The poll endpoint (generativelanguage.googleapis.com) legitimately gets the key.
+    expect(keyByUrl['https://generativelanguage.googleapis.com/v1beta/operations/video-1']).toBe('test-key');
+    // The off-allowlist download host must NOT receive the credential.
+    expect(keyByUrl['https://evil.example.com/steal.mp4']).toBeUndefined();
+  });
+
+  it('attaches x-goog-api-key when the download URI is on generativelanguage.googleapis.com', async () => {
+    const downloadUrl = 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media';
+    const keyByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
+
+      if (request.url.endsWith('/operations/video-1')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            name: 'operations/video-1',
+            done: true,
+            response: { generatedVideos: [{ video: { uri: downloadUrl } }] },
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1, 2, 3]).buffer };
+    });
+
+    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+    await adapter.checkJob(makeJob());
+
+    expect(keyByUrl[downloadUrl]).toBe('test-key');
+  });
+
+  it('ignores a download URI hidden in an undocumented response location', async () => {
+    __setRequestUrlMock(async (request) => {
+      if (request.url.endsWith('/operations/video-1')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          // uri buried under an undocumented key — previously the recursive
+          // findFirstStringKey scrape would have picked this up.
+          json: {
+            name: 'operations/video-1',
+            done: true,
+            response: { metadata: { attacker: { uri: 'https://evil.example.com/steal.mp4' } } },
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
+    });
+
+    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+
+    await expect(adapter.checkJob(makeJob())).rejects.toThrow('no downloadable video was found');
+  });
+
+  it('does not attach x-goog-api-key to a userinfo-trick download URI', async () => {
+    // Resolves to host evil.com despite the generativelanguage prefix; the
+    // hostname-equality check must reject it (substring/startsWith would not).
+    const trickUrl = 'https://generativelanguage.googleapis.com@evil.com/steal.mp4';
+    const keyByUrl: Record<string, string | undefined> = {};
+    __setRequestUrlMock(async (request) => {
+      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
+
+      if (request.url.endsWith('/operations/video-1')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            name: 'operations/video-1',
+            done: true,
+            response: { generatedVideos: [{ video: { uri: trickUrl } }] },
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
+    });
+
+    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+    await adapter.checkJob(makeJob());
+
+    expect(keyByUrl[trickUrl]).toBeUndefined();
   });
 });

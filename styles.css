@@ -8250,6 +8250,17 @@ body.is-mobile .nexus-task-board-shell {
   .context-badge-danger {
     animation: none;
   }
+
+  /* Live voice composer: disable the continuous dot pulse, waveform bars,
+     and connecting spinner for motion-sensitive users. The session dot
+     keeps its color and the ToolStatusBar text + button aria-label carry
+     the state meaning, so motion is a reinforcement, not the sole indicator
+     (WCAG 1.4.1). */
+  .chat-live-dot,
+  .chat-live-wave-bar,
+  .chat-input-live-connecting .chat-live-waveform::before {
+    animation: none;
+  }
 }
 
 .tool-status-text-failed {
