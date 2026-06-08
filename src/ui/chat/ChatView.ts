@@ -34,6 +34,7 @@ import { UIStateController, UIStateControllerEvents } from './controllers/UIStat
 import { StreamingController } from './controllers/StreamingController';
 import { NexusLoadingController } from './controllers/NexusLoadingController';
 import { SubagentController } from './controllers/SubagentController';
+import { ChatLiveVoiceController } from './controllers/ChatLiveVoiceController';
 
 // Coordinators
 import { ToolStatusBar } from './components/ToolStatusBar';
@@ -89,6 +90,7 @@ export class ChatView extends ItemView {
   private uiStateController!: UIStateController;
   private streamingController!: StreamingController;
   private nexusLoadingController!: NexusLoadingController;
+  private liveVoiceController: ChatLiveVoiceController | null = null;
   private toolCallStateManager!: ToolCallStateManager;
   private toolEventCoordinator!: ToolEventCoordinator;
   private toolStatusBar!: ToolStatusBar;
@@ -661,8 +663,17 @@ export class ChatView extends ItemView {
         this.sendCoordinator.handleStopGeneration();
       },
       () => this.conversationManager.getCurrentConversation() !== null,
-      this // Pass Component for registerDomEvent
+      this, // Pass Component for registerDomEvent
+      () => this.liveVoiceController?.stop()
     );
+
+    this.liveVoiceController = new ChatLiveVoiceController({
+      chatInput: this.chatInput,
+      toolStatusBar: this.toolStatusBar,
+      liveVoiceButton: this.layoutElements.liveVoiceButton,
+      getHasConversation: () => this.conversationManager.getCurrentConversation() !== null,
+      component: this,
+    });
 
     // Update conversation list if conversations were already loaded
     const conversations = this.conversationManager.getConversations();
@@ -1035,6 +1046,8 @@ export class ChatView extends ItemView {
     }
     this.conversationList?.cleanup();
     this.messageDisplay?.cleanup();
+    this.liveVoiceController?.cleanup();
+    this.liveVoiceController = null;
     this.chatInput?.cleanup();
     this.toolStatusBar?.cleanup();
     this.uiStateController?.cleanup();

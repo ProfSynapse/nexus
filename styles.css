@@ -519,6 +519,7 @@ body.theme-light .message-content {
 }
 
 .chat-header .chat-hamburger-button,
+.chat-header .chat-live-voice-button,
 .chat-header .chat-settings-button {
     padding: 4px;
 }
@@ -526,6 +527,7 @@ body.theme-light .message-content {
 /* Header buttons — flat icons matching the status bar icon style.
    No raised appearance, just the icon as the tap target. */
 .chat-hamburger-button,
+.chat-live-voice-button,
 .chat-settings-button {
     background: none;
     border: none;
@@ -541,12 +543,18 @@ body.theme-light .message-content {
 }
 
 .chat-hamburger-button:hover,
+.chat-live-voice-button:hover,
 .chat-settings-button:hover {
     background: none;
     color: var(--text-normal);
 }
 
+.chat-live-voice-button-active {
+    color: var(--interactive-accent);
+}
+
 .chat-hamburger-button:focus-visible,
+.chat-live-voice-button:focus-visible,
 .chat-settings-button:focus-visible {
     outline: 2px solid var(--interactive-accent);
     outline-offset: 2px;
@@ -1373,6 +1381,231 @@ body.theme-light .message-content {
 .chat-send-button.stop-mode:hover {
     background: var(--text-error);
     opacity: 0.9;
+}
+
+/* Live voice composer takeover. Text status lives in ToolStatusBar; the
+   composer stays visual: session dot, waveform/indicator, and stop button. */
+.chat-live-composer {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 60px;
+    padding: 11px 55px 11px 13px;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+    border-radius: 11px;
+    background: var(--background-primary);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.chat-input-live-mode .chat-textarea,
+.chat-input-live-mode .chat-send-button {
+    display: none;
+}
+
+.chat-input-live-mode .chat-live-composer {
+    display: flex;
+}
+
+.chat-live-dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--text-error);
+    animation: chat-live-dot-pulse 1.8s ease-in-out infinite;
+}
+
+.chat-live-waveform {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: stretch;
+    gap: 3px;
+    padding-inline: 2px;
+}
+
+.chat-live-wave-bar {
+    flex: 1 1 0;
+    min-width: 2px;
+    max-width: 8px;
+    height: 30px;
+    border-radius: 999px;
+    background: var(--interactive-accent);
+    opacity: 0.54;
+    transform-origin: center;
+    animation: chat-live-wave-listening 1.55s ease-in-out infinite;
+}
+
+.chat-live-wave-phase-0 { animation-delay: -0ms; }
+.chat-live-wave-phase-1 { animation-delay: -80ms; }
+.chat-live-wave-phase-2 { animation-delay: -160ms; }
+.chat-live-wave-phase-3 { animation-delay: -240ms; }
+.chat-live-wave-phase-4 { animation-delay: -320ms; }
+.chat-live-wave-phase-5 { animation-delay: -400ms; }
+.chat-live-wave-phase-6 { animation-delay: -480ms; }
+.chat-live-wave-phase-7 { animation-delay: -560ms; }
+.chat-live-wave-phase-8 { animation-delay: -640ms; }
+.chat-live-wave-phase-9 { animation-delay: -720ms; }
+.chat-live-wave-phase-10 { animation-delay: -800ms; }
+.chat-live-wave-phase-11 { animation-delay: -880ms; }
+
+.chat-input-live-connecting .chat-live-wave-bar,
+.chat-input-live-error .chat-live-wave-bar {
+    display: none;
+}
+
+.chat-input-live-connecting .chat-live-dot {
+    background: var(--color-yellow);
+}
+
+.chat-input-live-listening .chat-live-dot {
+    background: var(--text-error);
+}
+
+.chat-input-live-user-speaking .chat-live-dot {
+    background: var(--color-cyan);
+}
+
+.chat-input-live-assistant-speaking .chat-live-dot {
+    background: var(--color-green);
+}
+
+.chat-input-live-error .chat-live-dot {
+    background: var(--text-error);
+    animation-duration: 760ms;
+}
+
+.chat-input-live-user-speaking .chat-live-wave-bar {
+    background: var(--color-cyan);
+    opacity: 0.86;
+    animation-name: chat-live-wave-user;
+    animation-duration: 560ms;
+}
+
+.chat-input-live-assistant-speaking .chat-live-wave-bar {
+    background: var(--color-green);
+    opacity: 0.9;
+    animation-name: chat-live-wave-assistant;
+    animation-duration: 1040ms;
+}
+
+.chat-input-live-connecting .chat-live-waveform,
+.chat-input-live-error .chat-live-waveform {
+    justify-content: center;
+}
+
+.chat-input-live-connecting .chat-live-waveform::before {
+    content: "";
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--color-yellow) 32%, transparent);
+    border-top-color: var(--color-yellow);
+    animation: chat-live-connecting-spin 860ms linear infinite;
+}
+
+.chat-input-live-connecting .chat-live-waveform::after {
+    content: "";
+    position: absolute;
+    width: min(180px, 58%);
+    height: 1px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-yellow) 52%, transparent), transparent);
+    transform: translateY(18px);
+    opacity: 0.68;
+}
+
+.chat-input-live-error .chat-live-composer {
+    border-color: color-mix(in srgb, var(--text-error) 58%, var(--background-modifier-border));
+}
+
+.chat-input-live-error .chat-live-waveform::before,
+.chat-input-live-error .chat-live-waveform::after {
+    content: "";
+    position: absolute;
+    width: 34px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--text-error);
+}
+
+.chat-input-live-error .chat-live-waveform::before {
+    transform: rotate(45deg);
+}
+
+.chat-input-live-error .chat-live-waveform::after {
+    transform: rotate(-45deg);
+}
+
+.chat-live-stop-button {
+    --icon-size: 12px;
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--text-error) 56%, var(--background-modifier-border));
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--text-error) 24%, var(--background-primary));
+    color: var(--text-normal);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, opacity 0.2s, transform 0.15s;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background-primary) 72%, var(--text-normal));
+}
+
+.chat-live-stop-button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text-error) 34%, var(--background-primary));
+    transform: translateY(-50%) scale(1.05);
+}
+
+@keyframes chat-live-dot-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-error) 32%, transparent);
+        opacity: 0.82;
+    }
+    50% {
+        box-shadow: 0 0 0 5px transparent;
+        opacity: 1;
+    }
+}
+
+@keyframes chat-live-wave-listening {
+    0%, 100% {
+        transform: scaleY(0.24);
+        opacity: 0.32;
+    }
+    50% {
+        transform: scaleY(0.54);
+        opacity: 0.62;
+    }
+}
+
+@keyframes chat-live-wave-user {
+    0%, 100% { transform: scaleY(0.28); }
+    38% { transform: scaleY(1.22); }
+    72% { transform: scaleY(0.56); }
+}
+
+@keyframes chat-live-wave-assistant {
+    0%, 100% { transform: scaleY(0.42); }
+    25% { transform: scaleY(1.22); }
+    65% { transform: scaleY(0.82); }
+}
+
+@keyframes chat-live-connecting-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes pulse-stop {

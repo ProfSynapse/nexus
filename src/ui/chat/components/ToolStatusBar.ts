@@ -97,6 +97,14 @@ export class ToolStatusBar {
     this.statusLine.update(entry.text, entry.state);
   }
 
+  public pushLiveVoiceStatus(text: string, state: ToolStatusEntry['state'] = 'present'): void {
+    this.pushStatus({ text, state });
+  }
+
+  public clearLiveVoiceStatus(): void {
+    this.clearStatus();
+  }
+
   public clearStatus(): void {
     this.statusLine.clear();
   }
