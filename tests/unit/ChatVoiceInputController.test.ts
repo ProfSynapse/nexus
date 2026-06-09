@@ -135,4 +135,36 @@ describe('ChatVoiceInputController', () => {
     expect(onError).not.toHaveBeenCalled();
     expect(mediaTrackStop).toHaveBeenCalled();
   });
+
+  it('prefers resolved chat transcription settings when provided', () => {
+    const resolvedSettings = {
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'override-key'
+        }
+      },
+      defaultModel: { provider: 'openai', model: 'gpt-4o' },
+      defaultTranscriptionModel: { provider: 'openai', model: 'whisper-1' }
+    } as never;
+    mockedCreateOrReuse.mockReturnValue({
+      getAvailableProviders: () => [
+        {
+          provider: 'openai',
+          available: true,
+          models: [{ id: 'whisper-1' }]
+        }
+      ]
+    } as never);
+
+    const controller = new ChatVoiceInputController({} as App, {
+      onStateChange: jest.fn(),
+      onTranscriptReady: jest.fn(),
+      onError: jest.fn()
+    }, () => resolvedSettings);
+
+    expect(controller.isAvailable()).toBe(true);
+    expect(mockedCreateOrReuse).toHaveBeenCalledWith(resolvedSettings);
+    expect(mockedGetNexusPlugin).not.toHaveBeenCalled();
+  });
 });

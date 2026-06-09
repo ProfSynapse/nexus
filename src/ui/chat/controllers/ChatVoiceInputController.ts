@@ -43,7 +43,8 @@ export class ChatVoiceInputController {
 
   constructor(
     private readonly app: App | undefined,
-    private readonly callbacks: ChatVoiceInputControllerCallbacks
+    private readonly callbacks: ChatVoiceInputControllerCallbacks,
+    private readonly getResolvedLLMSettings?: () => LLMProviderSettings | null
   ) {}
 
   getState(): ChatVoiceInputState {
@@ -298,6 +299,11 @@ export class ChatVoiceInputController {
   }
 
   private getLLMSettings(): LLMProviderSettings | null {
+    const resolved = this.getResolvedLLMSettings?.();
+    if (resolved) {
+      return resolved;
+    }
+
     if (!this.app) {
       return null;
     }

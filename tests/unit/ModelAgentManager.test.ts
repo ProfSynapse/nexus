@@ -4,6 +4,7 @@ import { ModelSelectionUtility } from '../../src/ui/chat/utils/ModelSelectionUti
 import type { WorkspaceContext } from '../../src/database/types/workspace/WorkspaceTypes';
 import type { ModelOption, PromptOption } from '../../src/ui/chat/types/SelectionTypes';
 import type { ModelAgentDefaultState } from '../../src/ui/chat/services/ModelAgentDefaultsResolver';
+import type { LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
 
 type SelectedModel = {
   providerId: string;
@@ -176,7 +177,15 @@ describe('ModelAgentManager', () => {
             temperature: 0.8,
             agentProvider: 'anthropic',
             agentModel: 'claude-sonnet',
-            agentThinking: { enabled: true, effort: 'low' }
+            agentThinking: { enabled: true, effort: 'low' },
+            speechProvider: 'openai',
+            speechModel: 'gpt-4o-mini-tts',
+            speechVoice: 'alloy',
+            realtimeVoiceProvider: 'openai',
+            realtimeVoiceModel: 'gpt-realtime-2',
+            realtimeVoiceVoice: 'marin',
+            transcriptionProvider: 'openai',
+            transcriptionModel: 'whisper-1'
           }
         }
       })
@@ -210,6 +219,14 @@ describe('ModelAgentManager', () => {
     expect(manager.getAgentProvider()).toBe('anthropic');
     expect(manager.getAgentModel()).toBe('claude-sonnet');
     expect(manager.getAgentThinkingSettings()).toEqual({ enabled: true, effort: 'low' });
+    expect(manager.getSpeechProvider()).toBe('openai');
+    expect(manager.getSpeechModel()).toBe('gpt-4o-mini-tts');
+    expect(manager.getSpeechVoice()).toBe('alloy');
+    expect(manager.getRealtimeVoiceProvider()).toBe('openai');
+    expect(manager.getRealtimeVoiceModel()).toBe('gpt-realtime-2');
+    expect(manager.getRealtimeVoiceVoice()).toBe('marin');
+    expect(manager.getTranscriptionProvider()).toBe('openai');
+    expect(manager.getTranscriptionModel()).toBe('whisper-1');
     expect(access.workspaceContextService.restoreWorkspace).toHaveBeenCalledWith('workspace_1', 'session_abc');
   });
 
@@ -236,6 +253,9 @@ describe('ModelAgentManager', () => {
     manager.setTemperature(0.35);
     manager.setAgentModel('openai', 'gpt-5');
     manager.setAgentThinkingSettings({ enabled: false, effort: 'medium' });
+    manager.setSpeechSettings('openai', 'gpt-4o-mini-tts', 'alloy');
+    manager.setRealtimeVoiceSettings('openai', 'gpt-realtime-2', 'marin');
+    manager.setTranscriptionModel('openai', 'whisper-1');
 
     await manager.saveToConversation('conv_2');
 
@@ -251,9 +271,69 @@ describe('ModelAgentManager', () => {
         temperature: 0.35,
         agentProvider: 'openai',
         agentModel: 'gpt-5',
-        agentThinking: { enabled: false, effort: 'medium' }
+        agentThinking: { enabled: false, effort: 'medium' },
+        speechProvider: 'openai',
+        speechModel: 'gpt-4o-mini-tts',
+        speechVoice: 'alloy',
+        realtimeVoiceProvider: 'openai',
+        realtimeVoiceModel: 'gpt-realtime-2',
+        realtimeVoiceVoice: 'marin',
+        transcriptionProvider: 'openai',
+        transcriptionModel: 'whisper-1'
       })
     });
+  });
+
+  it('applies chat-scoped voice overrides over plugin defaults', () => {
+    const manager = new ModelAgentManager({}, createEvents());
+    manager.setSpeechSettings('openai', 'gpt-4o-mini-tts', 'alloy');
+    manager.setRealtimeVoiceSettings('openai', 'gpt-realtime-2', 'marin');
+    manager.setTranscriptionModel('openai', 'whisper-1');
+
+    const settings: LLMProviderSettings = {
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'test-key'
+        }
+      },
+      defaultModel: { provider: 'openai', model: 'gpt-4o' },
+      defaultSpeechModel: {
+        provider: 'openai',
+        model: 'tts-1',
+        voice: 'echo',
+        source: 'user'
+      },
+      defaultRealtimeVoiceModel: {
+        provider: 'openai',
+        model: 'gpt-realtime-1',
+        voice: 'cedar',
+        source: 'user'
+      },
+      defaultTranscriptionModel: {
+        provider: 'google',
+        model: 'gemini-transcribe'
+      }
+    };
+
+    expect(manager.applyChatVoiceOverrides(settings)).toEqual(expect.objectContaining({
+      defaultSpeechModel: {
+        provider: 'openai',
+        model: 'gpt-4o-mini-tts',
+        voice: 'alloy',
+        source: 'user'
+      },
+      defaultRealtimeVoiceModel: {
+        provider: 'openai',
+        model: 'gpt-realtime-2',
+        voice: 'marin',
+        source: 'user'
+      },
+      defaultTranscriptionModel: {
+        provider: 'openai',
+        model: 'whisper-1'
+      }
+    }));
   });
 
   it('binds the current session and rebuilds the prompt when setting workspace context', async () => {

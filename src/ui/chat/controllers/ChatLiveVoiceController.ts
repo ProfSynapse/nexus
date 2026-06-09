@@ -22,6 +22,7 @@ export interface ChatLiveVoiceControllerOptions {
   toolStatusBar: ToolStatusBar;
   liveVoiceButton: HTMLElement;
   getHasConversation: () => boolean;
+  getLLMSettings?: () => LLMProviderSettings | null;
   getConversationContext?: () => string;
   onTranscriptMessage?: (role: 'user' | 'assistant', content: string) => void | Promise<void>;
   component: Component;
@@ -150,6 +151,11 @@ export class ChatLiveVoiceController {
   }
 
   private getLLMSettings(): LLMProviderSettings | null {
+    const resolved = this.options.getLLMSettings?.();
+    if (resolved) {
+      return resolved;
+    }
+
     const plugin = getNexusPlugin(this.options.app) as PluginWithLLMSettings | null;
     return plugin?.settings?.settings?.llmProviders ?? null;
   }

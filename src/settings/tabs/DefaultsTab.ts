@@ -223,6 +223,7 @@ export class DefaultsTab {
       llmProviderSettings: this.services.llmProviderSettings,
       initialSettings: this.getCurrentSettings(),
       options: { workspaces, prompts },
+      showVoiceSection: false,
       showTranscriptionSection: false,
       renderAfterImageSection: (parent) => {
         this.renderVideoSection(parent);

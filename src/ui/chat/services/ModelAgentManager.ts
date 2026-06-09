@@ -30,7 +30,12 @@ import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility'
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { StaticModelsService } from '../../../services/StaticModelsService';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
-import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
+import {
+  DefaultRealtimeVoiceModelSettings,
+  DefaultSpeechModelSettings,
+  LLMProviderSettings,
+  ThinkingSettings
+} from '../../../types/llm/ProviderTypes';
 import { ContextStatus, ContextTokenTracker } from '../../../services/chat/ContextTokenTracker';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import {
@@ -71,6 +76,12 @@ export class ModelAgentManager {
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private imageProvider: 'google' | 'openrouter' = 'google';
   private imageModel = 'gemini-2.5-flash-image';
+  private speechProvider: DefaultSpeechModelSettings['provider'] | null = null;
+  private speechModel: DefaultSpeechModelSettings['model'] | null = null;
+  private speechVoice: DefaultSpeechModelSettings['voice'] | null = null;
+  private realtimeVoiceProvider: DefaultRealtimeVoiceModelSettings['provider'] | null = null;
+  private realtimeVoiceModel: DefaultRealtimeVoiceModelSettings['model'] | null = null;
+  private realtimeVoiceVoice: DefaultRealtimeVoiceModelSettings['voice'] | null = null;
   private transcriptionProvider: string | null = null;
   private transcriptionModel: string | null = null;
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
@@ -254,6 +265,20 @@ export class ModelAgentManager {
       this.imageModel = settings.imageModel;
     }
 
+    // Restore speech model
+    if ('speechProvider' in settings || 'speechModel' in settings || 'speechVoice' in settings) {
+      this.speechProvider = settings.speechProvider || null;
+      this.speechModel = settings.speechModel || null;
+      this.speechVoice = settings.speechVoice || null;
+    }
+
+    // Restore realtime voice model
+    if ('realtimeVoiceProvider' in settings || 'realtimeVoiceModel' in settings || 'realtimeVoiceVoice' in settings) {
+      this.realtimeVoiceProvider = settings.realtimeVoiceProvider || null;
+      this.realtimeVoiceModel = settings.realtimeVoiceModel || null;
+      this.realtimeVoiceVoice = settings.realtimeVoiceVoice || null;
+    }
+
     // Restore transcription model
     if ('transcriptionProvider' in settings || 'transcriptionModel' in settings) {
       this.transcriptionProvider = settings.transcriptionProvider || null;
@@ -308,6 +333,12 @@ export class ModelAgentManager {
       this.agentThinkingSettings = { ...defaultState.agentThinkingSettings };
       this.imageProvider = defaultState.imageProvider;
       this.imageModel = defaultState.imageModel;
+      this.speechProvider = defaultState.speechProvider;
+      this.speechModel = defaultState.speechModel;
+      this.speechVoice = defaultState.speechVoice;
+      this.realtimeVoiceProvider = defaultState.realtimeVoiceProvider;
+      this.realtimeVoiceModel = defaultState.realtimeVoiceModel;
+      this.realtimeVoiceVoice = defaultState.realtimeVoiceVoice;
       this.transcriptionProvider = defaultState.transcriptionProvider;
       this.transcriptionModel = defaultState.transcriptionModel;
       this.temperature = defaultState.temperature;
@@ -571,6 +602,90 @@ export class ModelAgentManager {
   setImageModel(provider: 'google' | 'openrouter', model: string): void {
     this.imageProvider = provider;
     this.imageModel = model;
+  }
+
+  getSpeechProvider(): DefaultSpeechModelSettings['provider'] | null {
+    return this.speechProvider;
+  }
+
+  getSpeechModel(): DefaultSpeechModelSettings['model'] | null {
+    return this.speechModel;
+  }
+
+  getSpeechVoice(): DefaultSpeechModelSettings['voice'] | null {
+    return this.speechVoice;
+  }
+
+  setSpeechSettings(
+    provider: DefaultSpeechModelSettings['provider'] | null,
+    model: DefaultSpeechModelSettings['model'] | null,
+    voice: DefaultSpeechModelSettings['voice'] | null
+  ): void {
+    this.speechProvider = provider;
+    this.speechModel = model;
+    this.speechVoice = voice;
+  }
+
+  getRealtimeVoiceProvider(): DefaultRealtimeVoiceModelSettings['provider'] | null {
+    return this.realtimeVoiceProvider;
+  }
+
+  getRealtimeVoiceModel(): DefaultRealtimeVoiceModelSettings['model'] | null {
+    return this.realtimeVoiceModel;
+  }
+
+  getRealtimeVoiceVoice(): DefaultRealtimeVoiceModelSettings['voice'] | null {
+    return this.realtimeVoiceVoice;
+  }
+
+  setRealtimeVoiceSettings(
+    provider: DefaultRealtimeVoiceModelSettings['provider'] | null,
+    model: DefaultRealtimeVoiceModelSettings['model'] | null,
+    voice: DefaultRealtimeVoiceModelSettings['voice'] | null
+  ): void {
+    this.realtimeVoiceProvider = provider;
+    this.realtimeVoiceModel = model;
+    this.realtimeVoiceVoice = voice;
+  }
+
+  applyChatVoiceOverrides(settings: LLMProviderSettings | null): LLMProviderSettings | null {
+    if (!settings) {
+      return null;
+    }
+
+    const nextSettings: LLMProviderSettings = {
+      ...settings,
+      defaultSpeechModel: settings.defaultSpeechModel ? { ...settings.defaultSpeechModel } : undefined,
+      defaultRealtimeVoiceModel: settings.defaultRealtimeVoiceModel ? { ...settings.defaultRealtimeVoiceModel } : undefined,
+      defaultTranscriptionModel: settings.defaultTranscriptionModel ? { ...settings.defaultTranscriptionModel } : undefined,
+    };
+
+    if (this.speechProvider && this.speechModel) {
+      nextSettings.defaultSpeechModel = {
+        provider: this.speechProvider,
+        model: this.speechModel,
+        voice: this.speechVoice || undefined,
+        source: 'user'
+      };
+    }
+
+    if (this.realtimeVoiceProvider && this.realtimeVoiceModel) {
+      nextSettings.defaultRealtimeVoiceModel = {
+        provider: this.realtimeVoiceProvider,
+        model: this.realtimeVoiceModel,
+        voice: this.realtimeVoiceVoice || undefined,
+        source: 'user'
+      };
+    }
+
+    if (this.transcriptionProvider && this.transcriptionModel) {
+      nextSettings.defaultTranscriptionModel = {
+        provider: this.transcriptionProvider,
+        model: this.transcriptionModel
+      };
+    }
+
+    return nextSettings;
   }
 
   /**
@@ -844,6 +959,12 @@ export class ModelAgentManager {
       agentThinking: this.agentThinkingSettings,
       imageProvider: this.imageProvider,
       imageModel: this.imageModel,
+      speechProvider: this.speechProvider,
+      speechModel: this.speechModel,
+      speechVoice: this.speechVoice,
+      realtimeVoiceProvider: this.realtimeVoiceProvider,
+      realtimeVoiceModel: this.realtimeVoiceModel,
+      realtimeVoiceVoice: this.realtimeVoiceVoice,
       transcriptionProvider: this.transcriptionProvider,
       transcriptionModel: this.transcriptionModel
     };

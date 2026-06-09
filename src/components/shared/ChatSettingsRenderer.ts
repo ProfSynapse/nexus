@@ -16,7 +16,26 @@ import { App, Setting, EventRef } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
 import { ImageGenerationService } from '../../services/llm/ImageGenerationService';
-import { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTypes';
+import {
+  buildSpeechProviderAvailability,
+  getSpeechModel,
+  resolveDefaultSpeechSelection,
+  type SpeechProvider,
+  type SpeechProviderAvailability,
+} from '../../services/llm/types/SpeechTypes';
+import {
+  buildRealtimeVoiceProviderAvailability,
+  getRealtimeVoiceModel,
+  resolveDefaultRealtimeVoiceSelection,
+  type RealtimeVoiceProviderAvailability,
+} from '../../services/llm/types/RealtimeVoiceTypes';
+import {
+  DefaultRealtimeVoiceModelSettings,
+  DefaultSpeechModelSettings,
+  LLMProviderSettings,
+  ThinkingEffort
+} from '../../types/llm/ProviderTypes';
+import type { AppsSettings } from '../../types/apps/AppTypes';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
@@ -26,6 +45,10 @@ import {
   normalizeIngestSelection
 } from '../../agents/ingestManager/tools/services/IngestCapabilityService';
 import { renderIngestModelDropdowns } from './IngestModelDropdownRenderer';
+import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogService';
+import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
+import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
+import { getNexusPlugin } from '../../utils/pluginLocator';
 
 /**
  * Current settings state
@@ -48,6 +71,12 @@ export interface ChatSettings {
   temperature: number; // 0.0-1.0, controls randomness
   imageProvider: 'google' | 'openrouter';
   imageModel: string;
+  speechProvider?: DefaultSpeechModelSettings['provider'];
+  speechModel?: DefaultSpeechModelSettings['model'];
+  speechVoice?: DefaultSpeechModelSettings['voice'];
+  realtimeVoiceProvider?: DefaultRealtimeVoiceModelSettings['provider'];
+  realtimeVoiceModel?: DefaultRealtimeVoiceModelSettings['model'];
+  realtimeVoiceVoice?: DefaultRealtimeVoiceModelSettings['voice'];
   transcriptionProvider?: string;
   transcriptionModel?: string;
   workspaceId: string | null;
@@ -93,8 +122,17 @@ export interface ChatSettingsRendererConfig {
   initialSettings: ChatSettings;
   options: ChatSettingsOptions;
   callbacks: ChatSettingsCallbacks;
+  showVoiceSection?: boolean;
   showTranscriptionSection?: boolean;
   renderAfterImageSection?: (parent: HTMLElement) => void;
+}
+
+interface PluginWithAppSettings {
+  settings?: {
+    settings?: {
+      apps?: AppsSettings;
+    };
+  };
 }
 
 const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high'];
@@ -158,7 +196,9 @@ export class ChatSettingsRenderer {
     this.renderAgentModelSection(this.container);
     this.renderImageSection(this.container);
     this.config.renderAfterImageSection?.(this.container);
-    if (this.config.showTranscriptionSection !== false) {
+    if (this.config.showVoiceSection !== false) {
+      this.renderVoiceSection(this.container);
+    } else if (this.config.showTranscriptionSection !== false) {
       this.renderTranscriptionSection(this.container);
     }
     this.renderTemperatureSection(this.container);
@@ -541,6 +581,11 @@ export class ChatSettingsRenderer {
     const section = parent.createDiv('csr-section');
     section.createDiv('csr-section-header').setText('Transcription model');
     const content = section.createDiv('csr-section-content');
+    this.renderTranscriptionControls(content);
+  }
+
+  private renderTranscriptionControls(parent: HTMLElement): void {
+    const content = parent.createDiv('csr-transcription-controls');
     content.createDiv({
       cls: 'setting-item-description',
       text: 'Loading transcription models...'
@@ -589,6 +634,470 @@ export class ChatSettingsRenderer {
         text: 'Transcription models are not available.'
       });
     });
+  }
+
+  private renderVoiceSection(parent: HTMLElement): void {
+    const section = parent.createDiv('csr-section');
+    section.createDiv('csr-section-header').setText('Voice');
+    const content = section.createDiv('csr-section-content');
+    content.createDiv({
+      cls: 'csr-section-desc nexus-voice-section-desc',
+      text: 'Defaults for microphone input, read aloud, and live voice in this chat.'
+    });
+
+    let updateVoiceWarning = (): void => undefined;
+
+    this.renderVoiceGroupLabel(content, 'Voice input');
+    this.renderTranscriptionControls(content);
+
+    this.renderVoiceGroupLabel(content, 'Read aloud');
+    this.renderSpeechSettings(content, () => updateVoiceWarning());
+
+    this.renderVoiceGroupLabel(content, 'Live voice');
+    this.renderRealtimeVoiceSettings(content, () => updateVoiceWarning());
+
+    const warningEl = content.createDiv({ cls: 'nexus-voice-warning is-hidden' });
+    updateVoiceWarning = (): void => {
+      const messages = this.getVoiceWarningMessages();
+      warningEl.empty();
+      warningEl.toggleClass('is-hidden', messages.length === 0);
+      messages.forEach(message => {
+        warningEl.createDiv({ text: message });
+      });
+    };
+    updateVoiceWarning();
+  }
+
+  private renderVoiceGroupLabel(parentEl: HTMLElement, label: string): void {
+    parentEl.createDiv({ cls: 'nexus-voice-group-label', text: label });
+  }
+
+  private renderSpeechSettings(parent: HTMLElement, onSelectionChange: () => void): void {
+    let modelDropdown: HTMLSelectElement | null = null;
+    let voiceDropdown: HTMLSelectElement | null = null;
+    let modelRequestId = 0;
+    let voiceRequestId = 0;
+    const voiceCatalogService = new VoiceCatalogService();
+    const speechModelCatalogService = new SpeechModelCatalogService();
+
+    const getAvailability = (): SpeechProviderAvailability[] =>
+      buildSpeechProviderAvailability(this.config.llmProviderSettings, this.getSpeechAppStates());
+
+    const getSelection = (): DefaultSpeechModelSettings => {
+      const availability = getAvailability();
+      const configuredProvider = this.settings.speechProvider;
+      const provider = configuredProvider
+        || availability.find(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0)?.provider;
+      const providerAvailability = availability.find(item => item.provider === provider);
+      const model = this.settings.speechModel && providerAvailability?.models?.some(candidate => candidate.id === this.settings.speechModel)
+        ? this.settings.speechModel
+        : providerAvailability?.models?.[0]?.id;
+
+      return {
+        provider,
+        model,
+        voice: this.settings.speechVoice,
+        source: 'user'
+      };
+    };
+
+    const updateVoiceOptions = async (): Promise<void> => {
+      if (!voiceDropdown) return;
+      const requestId = ++voiceRequestId;
+      const selection = getSelection();
+
+      voiceDropdown.empty();
+      if (selection.provider === 'elevenlabs') {
+        voiceDropdown.createEl('option', { value: '', text: 'Loading voices...' });
+        voiceDropdown.disabled = true;
+      }
+
+      const voices = await voiceCatalogService.getVoices(selection.provider, selection.model, {
+        llmSettings: this.config.llmProviderSettings,
+        appsSettings: this.getAppsSettings()
+      }).catch(() => []);
+
+      if (requestId !== voiceRequestId || !voiceDropdown) {
+        return;
+      }
+
+      voiceDropdown.empty();
+      voiceDropdown.createEl('option', { value: '', text: 'Provider default' });
+      voices.forEach(voice => {
+        voiceDropdown?.createEl('option', { value: voice.id, text: voice.name });
+      });
+
+      if (selection.voice && !voices.some(voice => voice.id === selection.voice)) {
+        voiceDropdown.createEl('option', {
+          value: selection.voice,
+          text: `${selection.voice} (unavailable)`
+        });
+      }
+
+      voiceDropdown.disabled = !selection.provider || !selection.model;
+      voiceDropdown.value = selection.voice || '';
+    };
+
+    const updateModelOptions = async (): Promise<void> => {
+      if (!modelDropdown) return;
+      const requestId = ++modelRequestId;
+      const selection = getSelection();
+      const availability = getAvailability();
+      const providerAvailability = availability.find(item => item.provider === selection.provider);
+      const providerUsable = providerAvailability?.enabled === true && providerAvailability.configured === true;
+
+      modelDropdown.empty();
+      if (!selection.provider) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: 'Select a speech provider first'
+        });
+        modelDropdown.disabled = true;
+        void updateVoiceOptions();
+        return;
+      }
+
+      if (selection.provider === 'openrouter') {
+        modelDropdown.createEl('option', { value: '', text: 'Loading OpenRouter speech models...' });
+        modelDropdown.disabled = true;
+      }
+
+      const models = await speechModelCatalogService.getModels(
+        selection.provider as SpeechProvider,
+        this.config.llmProviderSettings
+      ).catch(() => providerAvailability?.models ?? []);
+
+      if (requestId !== modelRequestId || !modelDropdown) {
+        return;
+      }
+
+      modelDropdown.empty();
+      if (models.length === 0) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: 'No speech models available'
+        });
+        modelDropdown.disabled = true;
+        void updateVoiceOptions();
+        return;
+      }
+
+      models.forEach(model => {
+        modelDropdown?.createEl('option', { value: model.id, text: model.name });
+      });
+
+      if (selection.model && !models.some(model => model.id === selection.model)) {
+        modelDropdown.createEl('option', {
+          value: selection.model,
+          text: `${selection.model} (unavailable)`
+        });
+      }
+
+      const selectedModelExists = models.some(model => model.id === selection.model);
+      const nextModel = selection.model && selectedModelExists
+        ? selection.model
+        : models[0]?.id || '';
+
+      this.settings.speechProvider = selection.provider;
+      this.settings.speechModel = nextModel || undefined;
+      modelDropdown.disabled = !providerUsable;
+      modelDropdown.value = nextModel;
+      this.notifyChange();
+      void updateVoiceOptions();
+    };
+
+    new Setting(parent)
+      .setName('Speech provider')
+      .setDesc('Normal text-to-speech models for reading chat content aloud.')
+      .addDropdown(dropdown => {
+        const availability = getAvailability();
+        const selection = getSelection();
+        const usableProviders = availability.filter(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0);
+
+        if (usableProviders.length === 0 && !selection.provider) {
+          dropdown.addOption('', 'No speech providers available');
+          dropdown.setDisabled(true);
+          return;
+        }
+
+        usableProviders.forEach(provider => {
+          dropdown.addOption(provider.provider, this.getProviderDisplayName(provider.provider));
+        });
+
+        if (selection.provider && !usableProviders.some(provider => provider.provider === selection.provider)) {
+          dropdown.addOption(
+            selection.provider,
+            `${this.getProviderDisplayName(selection.provider)} (unavailable)`
+          );
+        }
+
+        dropdown.setValue(selection.provider || usableProviders[0]?.provider || '');
+        dropdown.onChange((provider) => {
+          const providerAvailability = getAvailability().find(item => item.provider === provider);
+          const model = providerAvailability?.models?.[0];
+          this.settings.speechProvider = provider || undefined;
+          this.settings.speechModel = model?.id;
+          this.settings.speechVoice = model?.defaultVoice;
+          this.notifyChange();
+          void updateModelOptions().then(onSelectionChange);
+        });
+      });
+
+    new Setting(parent)
+      .setName('Speech model')
+      .addDropdown(dropdown => {
+        modelDropdown = dropdown.selectEl;
+        void updateModelOptions();
+        dropdown.onChange((modelId) => {
+          const selection = getSelection();
+          const model = getSpeechModel(selection.provider, modelId);
+          this.settings.speechModel = modelId || undefined;
+          if (model) {
+            this.settings.speechVoice = this.settings.speechVoice || model.defaultVoice;
+          }
+          this.notifyChange();
+          void updateVoiceOptions().then(onSelectionChange);
+        });
+      });
+
+    new Setting(parent)
+      .setName('Speech voice')
+      .addDropdown(dropdown => {
+        voiceDropdown = dropdown.selectEl;
+        void updateVoiceOptions();
+        dropdown.onChange((voice) => {
+          this.settings.speechVoice = voice || undefined;
+          this.notifyChange();
+          onSelectionChange();
+        });
+      });
+  }
+
+  private renderRealtimeVoiceSettings(parent: HTMLElement, onSelectionChange: () => void): void {
+    let modelDropdown: HTMLSelectElement | null = null;
+    let voiceDropdown: HTMLSelectElement | null = null;
+
+    const getAvailability = (): RealtimeVoiceProviderAvailability[] =>
+      buildRealtimeVoiceProviderAvailability(this.config.llmProviderSettings, this.getRealtimeAppStates());
+
+    const getSelection = (): DefaultRealtimeVoiceModelSettings => {
+      const availability = getAvailability();
+      const configuredProvider = this.settings.realtimeVoiceProvider;
+      const provider = configuredProvider
+        || availability.find(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0)?.provider;
+      const providerAvailability = availability.find(item => item.provider === provider);
+      const model = this.settings.realtimeVoiceModel && providerAvailability?.models?.some(candidate => candidate.id === this.settings.realtimeVoiceModel)
+        ? this.settings.realtimeVoiceModel
+        : providerAvailability?.models?.[0]?.id;
+
+      return {
+        provider,
+        model,
+        voice: this.settings.realtimeVoiceVoice,
+        source: 'user'
+      };
+    };
+
+    const updateVoiceOptions = (): void => {
+      if (!voiceDropdown) return;
+      const selection = getSelection();
+      const model = getRealtimeVoiceModel(selection.provider, selection.model);
+      const voices = model?.voices ?? [];
+
+      voiceDropdown.empty();
+      voiceDropdown.createEl('option', { value: '', text: 'Provider default' });
+      voices.forEach(voice => {
+        voiceDropdown?.createEl('option', { value: voice.id, text: voice.name });
+      });
+
+      if (selection.voice && !voices.some(voice => voice.id === selection.voice)) {
+        voiceDropdown.createEl('option', {
+          value: selection.voice,
+          text: `${selection.voice} (unavailable)`
+        });
+      }
+
+      voiceDropdown.disabled = !selection.provider || !selection.model;
+      voiceDropdown.value = selection.voice || '';
+    };
+
+    const updateModelOptions = (): void => {
+      if (!modelDropdown) return;
+      const selection = getSelection();
+      const availability = getAvailability();
+      const providerAvailability = availability.find(item => item.provider === selection.provider);
+      const providerUsable = providerAvailability?.enabled === true && providerAvailability.configured === true;
+      const models = providerAvailability?.models ?? [];
+
+      modelDropdown.empty();
+      if (!selection.provider || models.length === 0) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: 'Select a live voice provider first'
+        });
+        modelDropdown.disabled = true;
+        updateVoiceOptions();
+        return;
+      }
+
+      models.forEach(model => {
+        modelDropdown?.createEl('option', { value: model.id, text: model.name });
+      });
+
+      if (selection.model && !models.some(model => model.id === selection.model)) {
+        modelDropdown.createEl('option', {
+          value: selection.model,
+          text: `${selection.model} (unavailable)`
+        });
+      }
+
+      const selectedModelExists = models.some(model => model.id === selection.model);
+      const nextModel = selection.model && selectedModelExists
+        ? selection.model
+        : models[0]?.id || '';
+
+      this.settings.realtimeVoiceProvider = selection.provider;
+      this.settings.realtimeVoiceModel = nextModel || undefined;
+      modelDropdown.disabled = !providerUsable;
+      modelDropdown.value = nextModel;
+      this.notifyChange();
+      updateVoiceOptions();
+    };
+
+    new Setting(parent)
+      .setName('Live voice provider')
+      .setDesc('Only true realtime voice providers appear here.')
+      .addDropdown(dropdown => {
+        const availability = getAvailability();
+        const selection = getSelection();
+        const usableProviders = availability.filter(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0);
+
+        if (usableProviders.length === 0 && !selection.provider) {
+          dropdown.addOption('', 'No live voice providers available');
+          dropdown.setDisabled(true);
+          return;
+        }
+
+        usableProviders.forEach(provider => {
+          dropdown.addOption(provider.provider, this.getProviderDisplayName(provider.provider));
+        });
+
+        if (selection.provider && !usableProviders.some(provider => provider.provider === selection.provider)) {
+          dropdown.addOption(
+            selection.provider,
+            `${this.getProviderDisplayName(selection.provider)} (unavailable)`
+          );
+        }
+
+        dropdown.setValue(selection.provider || usableProviders[0]?.provider || '');
+        dropdown.onChange((provider) => {
+          const providerAvailability = getAvailability().find(item => item.provider === provider);
+          const model = providerAvailability?.models?.[0];
+          this.settings.realtimeVoiceProvider = provider || undefined;
+          this.settings.realtimeVoiceModel = model?.id;
+          this.settings.realtimeVoiceVoice = model?.defaultVoice;
+          this.notifyChange();
+          updateModelOptions();
+          onSelectionChange();
+        });
+      });
+
+    new Setting(parent)
+      .setName('Live voice model')
+      .addDropdown(dropdown => {
+        modelDropdown = dropdown.selectEl;
+        updateModelOptions();
+        dropdown.onChange((modelId) => {
+          const selection = getSelection();
+          const model = getRealtimeVoiceModel(selection.provider, modelId);
+          this.settings.realtimeVoiceModel = modelId || undefined;
+          if (model) {
+            this.settings.realtimeVoiceVoice = this.settings.realtimeVoiceVoice || model.defaultVoice;
+          }
+          this.notifyChange();
+          updateVoiceOptions();
+          onSelectionChange();
+        });
+      });
+
+    new Setting(parent)
+      .setName('Live voice')
+      .addDropdown(dropdown => {
+        voiceDropdown = dropdown.selectEl;
+        updateVoiceOptions();
+        dropdown.onChange((voice) => {
+          this.settings.realtimeVoiceVoice = voice || undefined;
+          this.notifyChange();
+          onSelectionChange();
+        });
+      });
+  }
+
+  private getSpeechAppStates(): Partial<Record<SpeechProvider, { enabled: boolean; configured: boolean }>> {
+    const elevenLabs = this.getAppsSettings()?.apps.elevenlabs;
+    return elevenLabs
+      ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials.apiKey?.trim() } }
+      : {};
+  }
+
+  private getRealtimeAppStates(): Partial<Record<'elevenlabs', { enabled: boolean; configured: boolean }>> {
+    const elevenLabs = this.getAppsSettings()?.apps.elevenlabs;
+    return elevenLabs
+      ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials.apiKey?.trim() } }
+      : {};
+  }
+
+  private getVoiceWarningMessages(): string[] {
+    const messages: string[] = [];
+    const speechDefault = this.settings.speechProvider || this.settings.speechModel || this.settings.speechVoice
+      ? {
+        provider: this.settings.speechProvider,
+        model: this.settings.speechModel,
+        voice: this.settings.speechVoice,
+        source: 'user' as const
+      }
+      : undefined;
+    const realtimeDefault = this.settings.realtimeVoiceProvider || this.settings.realtimeVoiceModel || this.settings.realtimeVoiceVoice
+      ? {
+        provider: this.settings.realtimeVoiceProvider,
+        model: this.settings.realtimeVoiceModel,
+        voice: this.settings.realtimeVoiceVoice,
+        source: 'user' as const
+      }
+      : undefined;
+    const speechSelection = resolveDefaultSpeechSelection(
+      {
+        ...this.config.llmProviderSettings,
+        defaultSpeechModel: speechDefault
+      },
+      buildSpeechProviderAvailability(this.config.llmProviderSettings, this.getSpeechAppStates())
+    );
+    const realtimeSelection = resolveDefaultRealtimeVoiceSelection(
+      {
+        ...this.config.llmProviderSettings,
+        defaultRealtimeVoiceModel: realtimeDefault
+      },
+      buildRealtimeVoiceProviderAvailability(this.config.llmProviderSettings, this.getRealtimeAppStates())
+    );
+
+    if (speechSelection.status === 'invalid' && speechSelection.reason) {
+      messages.push(speechSelection.reason);
+    }
+
+    if (realtimeSelection.status === 'invalid' && realtimeSelection.reason) {
+      messages.push(realtimeSelection.reason);
+    }
+
+    return messages;
+  }
+
+  private getAppsSettings(): AppsSettings | undefined {
+    const plugin = getNexusPlugin(this.config.app) as PluginWithAppSettings | null;
+    return plugin?.settings?.settings?.apps;
+  }
+
+  private getProviderDisplayName(providerId: string): string {
+    return ProviderUtils.getProviderDisplayName(providerId);
   }
 
   // ========== CONTEXT SECTION ==========

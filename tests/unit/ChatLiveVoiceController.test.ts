@@ -7,12 +7,13 @@ const mockSessionStart = jest.fn();
 const mockSessionStop = jest.fn();
 const mockGetAvailability = jest.fn();
 const mockCreateSession = jest.fn();
+var mockRealtimeVoiceService: jest.Mock;
 
 jest.mock('../../src/services/realtimeVoice/RealtimeVoiceService', () => ({
-  RealtimeVoiceService: jest.fn().mockImplementation(() => ({
+  RealtimeVoiceService: (mockRealtimeVoiceService = jest.fn().mockImplementation(() => ({
     getAvailability: mockGetAvailability,
     createSession: mockCreateSession,
-  })),
+  }))),
 }));
 
 describe('ChatLiveVoiceController', () => {
@@ -22,6 +23,7 @@ describe('ChatLiveVoiceController', () => {
     mockSessionStop.mockReset();
     mockGetAvailability.mockReset();
     mockCreateSession.mockReset();
+    mockRealtimeVoiceService.mockClear();
     mockSessionStart.mockResolvedValue(undefined);
     mockGetAvailability.mockReturnValue({ available: true });
     mockCreateSession.mockReturnValue({
@@ -85,7 +87,9 @@ describe('ChatLiveVoiceController', () => {
     });
 
     return {
+      app,
       chatInput,
+      component,
       controller,
       getConversationContext,
       liveVoiceButton,
@@ -120,6 +124,40 @@ describe('ChatLiveVoiceController', () => {
     expect(mockCreateSession).toHaveBeenCalledTimes(1);
     expect(mockCreateSession.mock.calls[0]?.[0].instructions).toContain('<conversation_context>Prior chat</conversation_context>');
     expect(mockSessionStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers resolved chat voice settings when provided', async () => {
+    const { app, chatInput, component, getConversationContext, liveVoiceButton, onTranscriptMessage, toolStatusBar } = createHarness(true);
+    const resolvedSettings = {
+      providers: {
+        openai: {
+          enabled: true,
+          apiKey: 'override-key'
+        }
+      },
+      defaultModel: { provider: 'openai', model: 'gpt-4o' },
+      defaultRealtimeVoiceModel: {
+        provider: 'openai',
+        model: 'gpt-realtime-2',
+        voice: 'marin',
+        source: 'user'
+      }
+    };
+    const controllerWithOverride = new ChatLiveVoiceController({
+      app: app as never,
+      chatInput,
+      toolStatusBar,
+      liveVoiceButton,
+      getHasConversation: () => true,
+      getLLMSettings: () => resolvedSettings as never,
+      getConversationContext,
+      onTranscriptMessage,
+      component,
+    });
+
+    await controllerWithOverride.start();
+
+    expect(mockRealtimeVoiceService).toHaveBeenLastCalledWith(resolvedSettings);
   });
 
   it('reports unavailable realtime voice settings', async () => {
