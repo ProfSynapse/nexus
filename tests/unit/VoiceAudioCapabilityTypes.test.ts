@@ -240,7 +240,7 @@ describe('RealtimeVoiceTypes', () => {
     }));
   });
 
-  it('unlocks app-backed ElevenLabs realtime only when the app is enabled and configured', () => {
+  it('keeps unwired ElevenLabs realtime hidden even when the app is enabled and configured', () => {
     const settings = makeSettings();
     const availability = buildRealtimeVoiceProviderAvailability(settings, {
       elevenlabs: { enabled: true, configured: true }
@@ -249,10 +249,10 @@ describe('RealtimeVoiceTypes', () => {
     const selection = resolveDefaultRealtimeVoiceSelection(settings, availability);
 
     expect(selection).toEqual(expect.objectContaining({
-      provider: 'elevenlabs',
-      model: 'eleven-agents-conversation',
-      status: 'resolved'
+      source: 'auto',
+      status: 'unavailable'
     }));
+    expect(availability.find(item => item.provider === 'elevenlabs')).toBeUndefined();
   });
 
   it('keeps invalid user-selected realtime defaults instead of falling back', () => {

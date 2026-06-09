@@ -152,14 +152,15 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
   }
 ];
 
+const WIRED_REALTIME_VOICE_PROVIDERS: RealtimeVoiceProvider[] = ['openai', 'google'];
+
 export const REALTIME_VOICE_PROVIDER_PRIORITY: RealtimeVoiceProvider[] = [
   'openai',
-  'google',
-  'elevenlabs'
+  'google'
 ];
 
 export function getRealtimeVoiceProviders(): RealtimeVoiceProvider[] {
-  return Array.from(new Set(REALTIME_VOICE_MODELS.map(model => model.provider)));
+  return [...WIRED_REALTIME_VOICE_PROVIDERS];
 }
 
 export function getRealtimeVoiceModelsForProvider(provider: string): RealtimeVoiceModelDeclaration[] {
@@ -178,21 +179,10 @@ export function getRealtimeVoiceModel(
 
 export function buildRealtimeVoiceProviderAvailability(
   settings: LLMProviderSettings | null,
-  appStates: RealtimeAppCapabilityStates = {}
+  _appStates: RealtimeAppCapabilityStates = {}
 ): RealtimeVoiceProviderAvailability[] {
   return getRealtimeVoiceProviders().map(provider => {
     const models = getEnabledRealtimeModelsForProvider(settings, provider);
-    if (provider === 'elevenlabs') {
-      const appState = appStates.elevenlabs;
-      return {
-        provider,
-        enabled: appState?.enabled === true,
-        configured: appState?.configured === true,
-        models,
-        error: appState?.error
-      };
-    }
-
     const providerConfig = settings?.providers?.[provider];
     return {
       provider,

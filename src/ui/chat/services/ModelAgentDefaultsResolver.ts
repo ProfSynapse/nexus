@@ -1,7 +1,11 @@
 import type { App } from 'obsidian';
 import type NexusPlugin from '../../../main';
 import { StaticModelsService } from '../../../services/StaticModelsService';
-import type { ThinkingSettings } from '../../../types/llm/ProviderTypes';
+import type {
+  DefaultRealtimeVoiceModelSettings,
+  DefaultSpeechModelSettings,
+  ThinkingSettings
+} from '../../../types/llm/ProviderTypes';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import type { ModelOption, PromptOption } from '../types/SelectionTypes';
@@ -17,6 +21,8 @@ interface PluginWithSettings {
         agentThinking?: ThinkingSettings;
         defaultImageModel?: { provider: 'google' | 'openrouter'; model: string };
         defaultTranscriptionModel?: { provider: string; model: string };
+        defaultSpeechModel?: DefaultSpeechModelSettings;
+        defaultRealtimeVoiceModel?: DefaultRealtimeVoiceModelSettings;
       };
       defaultWorkspaceId?: string;
       defaultPromptId?: string;
@@ -37,6 +43,12 @@ export interface ModelAgentDefaultState {
   agentThinkingSettings: ThinkingSettings;
   imageProvider: 'google' | 'openrouter';
   imageModel: string;
+  speechProvider: DefaultSpeechModelSettings['provider'] | null;
+  speechModel: DefaultSpeechModelSettings['model'] | null;
+  speechVoice: DefaultSpeechModelSettings['voice'] | null;
+  realtimeVoiceProvider: DefaultRealtimeVoiceModelSettings['provider'] | null;
+  realtimeVoiceModel: DefaultRealtimeVoiceModelSettings['model'] | null;
+  realtimeVoiceVoice: DefaultRealtimeVoiceModelSettings['voice'] | null;
   transcriptionProvider: string | null;
   transcriptionModel: string | null;
   temperature: number;
@@ -100,6 +112,12 @@ export class ModelAgentDefaultsResolver {
       agentThinkingSettings,
       imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
       imageModel: llmProviders?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      speechProvider: llmProviders?.defaultSpeechModel?.provider || null,
+      speechModel: llmProviders?.defaultSpeechModel?.model || null,
+      speechVoice: llmProviders?.defaultSpeechModel?.voice || null,
+      realtimeVoiceProvider: llmProviders?.defaultRealtimeVoiceModel?.provider || null,
+      realtimeVoiceModel: llmProviders?.defaultRealtimeVoiceModel?.model || null,
+      realtimeVoiceVoice: llmProviders?.defaultRealtimeVoiceModel?.voice || null,
       transcriptionProvider: llmProviders?.defaultTranscriptionModel?.provider || null,
       transcriptionModel: llmProviders?.defaultTranscriptionModel?.model || null,
       temperature: llmProviders?.defaultTemperature ?? 0.5

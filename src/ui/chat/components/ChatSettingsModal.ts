@@ -144,6 +144,12 @@ export class ChatSettingsModal extends Modal {
       temperature: temperature,
       imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      speechProvider: this.modelAgentManager.getSpeechProvider() || llmSettings?.defaultSpeechModel?.provider,
+      speechModel: this.modelAgentManager.getSpeechModel() || llmSettings?.defaultSpeechModel?.model,
+      speechVoice: this.modelAgentManager.getSpeechVoice() || llmSettings?.defaultSpeechModel?.voice,
+      realtimeVoiceProvider: this.modelAgentManager.getRealtimeVoiceProvider() || llmSettings?.defaultRealtimeVoiceModel?.provider,
+      realtimeVoiceModel: this.modelAgentManager.getRealtimeVoiceModel() || llmSettings?.defaultRealtimeVoiceModel?.model,
+      realtimeVoiceVoice: this.modelAgentManager.getRealtimeVoiceVoice() || llmSettings?.defaultRealtimeVoiceModel?.voice,
       transcriptionProvider: this.modelAgentManager.getTranscriptionProvider() || llmSettings?.defaultTranscriptionModel?.provider,
       transcriptionModel: this.modelAgentManager.getTranscriptionModel() || llmSettings?.defaultTranscriptionModel?.model,
       workspaceId: this.modelAgentManager.getSelectedWorkspaceId(),
@@ -208,6 +214,20 @@ export class ChatSettingsModal extends Modal {
 
       // Update image model
       this.modelAgentManager.setImageModel(settings.imageProvider, settings.imageModel);
+
+      // Update speech settings
+      this.modelAgentManager.setSpeechSettings(
+        settings.speechProvider || null,
+        settings.speechModel || null,
+        settings.speechVoice || null
+      );
+
+      // Update realtime voice settings
+      this.modelAgentManager.setRealtimeVoiceSettings(
+        settings.realtimeVoiceProvider || null,
+        settings.realtimeVoiceModel || null,
+        settings.realtimeVoiceVoice || null
+      );
 
       // Update transcription model
       this.modelAgentManager.setTranscriptionModel(

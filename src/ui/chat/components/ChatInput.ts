@@ -15,6 +15,7 @@ import { ChatVoiceInputController, ChatVoiceInputState } from '../controllers/Ch
 import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 import { ChatKeyboardViewportController } from '../controllers/ChatKeyboardViewportController';
 import type { LiveVoiceComposerState } from '../types/LiveVoiceTypes';
+import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
@@ -49,7 +50,8 @@ export class ChatInput {
     private onStopGeneration?: () => void,
     private getHasConversation?: () => boolean,
     private component?: Component,
-    private onStopLiveVoice?: () => void
+    private onStopLiveVoice?: () => void,
+    private getVoiceInputLLMSettings?: () => LLMProviderSettings | null
   ) {
     if (component) {
       this.timeouts = new ManagedTimeoutTracker(component);
@@ -211,7 +213,7 @@ export class ChatInput {
       onError: (message) => {
         new Notice(message);
       }
-    });
+    }, this.getVoiceInputLLMSettings);
 
     this.initializeVoiceVisualResizeHandling();
     this.buildVoiceBars();

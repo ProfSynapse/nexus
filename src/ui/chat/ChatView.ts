@@ -666,7 +666,8 @@ export class ChatView extends ItemView {
       },
       () => this.conversationManager.getCurrentConversation() !== null,
       this, // Pass Component for registerDomEvent
-      () => this.liveVoiceController?.stop()
+      () => this.liveVoiceController?.stop(),
+      () => this.getEffectiveVoiceLLMSettings()
     );
 
     this.liveVoiceController = new ChatLiveVoiceController({
@@ -675,6 +676,7 @@ export class ChatView extends ItemView {
       toolStatusBar: this.toolStatusBar,
       liveVoiceButton: this.layoutElements.liveVoiceButton,
       getHasConversation: () => this.conversationManager.getCurrentConversation() !== null,
+      getLLMSettings: () => this.getEffectiveVoiceLLMSettings(),
       getConversationContext: () => new LiveVoiceContextBuilder().build(this.conversationManager.getCurrentConversation()),
       onTranscriptMessage: (role, content) => {
         void this.appendLiveVoiceTranscriptMessage(role, content);
@@ -846,6 +848,12 @@ export class ChatView extends ItemView {
       this.modelAgentManager
     );
     modal.open();
+  }
+
+  private getEffectiveVoiceLLMSettings() {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const llmSettings = plugin?.settings?.settings?.llmProviders ?? null;
+    return this.modelAgentManager.applyChatVoiceOverrides(llmSettings);
   }
 
   /**

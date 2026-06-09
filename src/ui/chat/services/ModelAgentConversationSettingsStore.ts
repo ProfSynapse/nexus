@@ -1,4 +1,8 @@
-import type { ThinkingSettings } from '../../../types/llm/ProviderTypes';
+import type {
+  DefaultRealtimeVoiceModelSettings,
+  DefaultSpeechModelSettings,
+  ThinkingSettings
+} from '../../../types/llm/ProviderTypes';
 import type { CompactedContext } from '../../../services/chat/ContextCompactionService';
 
 interface ConversationCompactionMetadata {
@@ -20,6 +24,12 @@ export interface ConversationSettingsMetadata {
   agentThinking?: ThinkingSettings;
   imageProvider?: 'google' | 'openrouter';
   imageModel?: string;
+  speechProvider?: DefaultSpeechModelSettings['provider'] | null;
+  speechModel?: DefaultSpeechModelSettings['model'] | null;
+  speechVoice?: DefaultSpeechModelSettings['voice'] | null;
+  realtimeVoiceProvider?: DefaultRealtimeVoiceModelSettings['provider'] | null;
+  realtimeVoiceModel?: DefaultRealtimeVoiceModelSettings['model'] | null;
+  realtimeVoiceVoice?: DefaultRealtimeVoiceModelSettings['voice'] | null;
   transcriptionProvider?: string | null;
   transcriptionModel?: string | null;
 }
