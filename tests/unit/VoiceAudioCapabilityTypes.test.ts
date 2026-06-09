@@ -6,6 +6,7 @@ import {
 } from '../../src/services/llm/types/SpeechTypes';
 import {
   buildRealtimeVoiceProviderAvailability,
+  getRealtimeVoiceModel,
   getRealtimeVoiceModelsForProvider,
   resolveDefaultRealtimeVoiceSelection
 } from '../../src/services/llm/types/RealtimeVoiceTypes';
@@ -193,6 +194,15 @@ describe('RealtimeVoiceTypes', () => {
   it('declares realtime models separately from speech models', () => {
     expect(getRealtimeVoiceModelsForProvider('openai').map(model => model.id)).toContain('gpt-realtime-2');
     expect(getRealtimeVoiceModelsForProvider('openrouter')).toEqual([]);
+  });
+
+  it('uses a Google-native default voice for Google live models', () => {
+    const model = getRealtimeVoiceModel('google', 'gemini-3.1-flash-live-preview');
+
+    expect(model).toEqual(expect.objectContaining({
+      defaultVoice: 'Kore',
+    }));
+    expect(model?.voices?.some(voice => voice.id === 'Kore')).toBe(true);
   });
 
   it('auto-selects OpenAI before Google when both realtime providers are configured', () => {

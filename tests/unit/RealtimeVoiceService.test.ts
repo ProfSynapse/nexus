@@ -4,9 +4,19 @@ import type { LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
 describe('RealtimeVoiceService', () => {
   const originalRTCPeerConnection = globalThis.RTCPeerConnection;
   const originalNavigator = globalThis.navigator;
+  const originalWebSocket = globalThis.WebSocket;
+  const originalAudioContext = globalThis.AudioContext;
 
   beforeEach(() => {
     Object.defineProperty(globalThis, 'RTCPeerConnection', {
+      configurable: true,
+      value: jest.fn(),
+    });
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: jest.fn(),
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
       configurable: true,
       value: jest.fn(),
     });
@@ -24,6 +34,14 @@ describe('RealtimeVoiceService', () => {
     Object.defineProperty(globalThis, 'RTCPeerConnection', {
       configurable: true,
       value: originalRTCPeerConnection,
+    });
+    Object.defineProperty(globalThis, 'WebSocket', {
+      configurable: true,
+      value: originalWebSocket,
+    });
+    Object.defineProperty(globalThis, 'AudioContext', {
+      configurable: true,
+      value: originalAudioContext,
     });
     Object.defineProperty(globalThis, 'navigator', {
       configurable: true,
@@ -72,7 +90,7 @@ describe('RealtimeVoiceService', () => {
     });
   });
 
-  it('reports configured providers that are not wired yet', () => {
+  it('is available when Google live voice is configured and browser APIs exist', () => {
     const service = new RealtimeVoiceService(buildSettings({
       providers: {
         openai: {
@@ -92,8 +110,7 @@ describe('RealtimeVoiceService', () => {
     }));
 
     expect(service.getAvailability()).toEqual({
-      available: false,
-      reason: 'Realtime voice provider "google" is configured, but only OpenAI WebRTC is wired in this build.',
+      available: true,
     });
   });
 });
