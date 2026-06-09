@@ -7,7 +7,7 @@
  * - Verify whether the final post-tool assistant text arrives
  *
  * Run:
- *   npx jest tests/debug/codex-live-tool-pingpong.test.ts --runInBand --no-coverage --verbose
+ *   RUN_CODEX_LIVE_TOOL_PINGPONG=1 npx jest tests/debug/codex-live-tool-pingpong.test.ts --runInBand --no-coverage --verbose
  */
 
 import * as fs from 'node:fs';
@@ -200,7 +200,7 @@ async function consumeStream(
 
 describe('Codex live tool pingpong', () => {
   const liveTokens = loadCodexTokensFromLocalDataJson();
-  const runLive = liveTokens ? it : it.skip;
+  const runLive = process.env.RUN_CODEX_LIVE_TOOL_PINGPONG === '1' && liveTokens ? it : it.skip;
   const httpCaptures: HttpCapture[] = [];
 
   beforeAll(() => {

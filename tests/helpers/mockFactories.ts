@@ -79,6 +79,7 @@ interface MockElement {
   };
   addClass: MockFn<[string], MockElement>;
   removeClass: MockFn<[string], MockElement>;
+  toggleClass: MockFn<[string, boolean?], MockElement>;
   hasClass: MockFn<[string], boolean>;
   setText: MockFn<[string], MockElement>;
   createEl: MockFn<[string, MockElementOptions?], MockElement>;
@@ -203,6 +204,17 @@ function createBaseElement(tag: string): MockElement {
       return this;
     }),
     removeClass: jest.fn().mockReturnThis(),
+    toggleClass: jest.fn().mockImplementation(function (this: MockElement, cls: string, force?: boolean) {
+      if (force === false) {
+        this._cls = this._cls.split(/\s+/).filter(candidate => candidate && candidate !== cls).join(' ');
+        return this;
+      }
+
+      if (!this._cls.split(/\s+/).includes(cls)) {
+        this._cls = `${this._cls} ${cls}`.trim();
+      }
+      return this;
+    }),
     hasClass: jest.fn(() => false),
     setText: jest.fn().mockImplementation(function (this: MockElement, text: string) {
       this.textContent = text;
