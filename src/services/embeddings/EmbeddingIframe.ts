@@ -140,7 +140,7 @@ export class EmbeddingIframe {
   <meta charset="utf-8">
   <script type="module">
     // Load transformers.js from CDN - pure browser mode
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
 
     // Configure for browser mode
     env.useBrowserCache = true;

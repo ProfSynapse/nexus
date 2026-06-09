@@ -49,7 +49,7 @@ import type { Plugin } from 'obsidian';
 
 export interface SQLiteCacheManagerOptions {
   app: App;
-  dbPath: string;  // e.g., '.nexus/cache.db' (used by VaultAdapter backend on mobile)
+  dbPath: string;  // plugin-scoped cache path used by VaultAdapter backend on mobile
   wasmPath?: string;
   autoSaveInterval?: number;  // ms between auto-saves (default: 30000)
   /**

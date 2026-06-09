@@ -6,7 +6,7 @@ This folder contains Nexus’s local embedding system used for semantic search a
 
 - **Desktop-only**: disabled on mobile via `Platform.isMobile`
 - **Local model execution**: embeddings are generated via a sandboxed iframe (`EmbeddingIframe`) that loads Transformers.js from a CDN; the model is cached locally (IndexedDB) after first download
-- **Local vector storage**: embeddings are stored in `.nexus/cache.db` via `SQLiteCacheManager` (sqlite3-vec WASM + sqlite-vec `vec0`)
+- **Local vector storage**: embeddings are stored in the rebuildable SQLite cache via `SQLiteCacheManager` (sqlite3-vec WASM + sqlite-vec `vec0`). Desktop uses `IndexedDBCacheBlobStore`; mobile uses `VaultAdapterCacheBlobStore` at the plugin-scoped `data/cache.db` path.
 
 ## Key Components
 
@@ -25,4 +25,3 @@ This folder contains Nexus’s local embedding system used for semantic search a
 
 - Verify `sqlite3.wasm` exists in the plugin folder (`.obsidian/plugins/nexus/sqlite3.wasm` or legacy `.obsidian/plugins/claudesidian-mcp/sqlite3.wasm`)
 - Check Obsidian console logs prefixed with `[EmbeddingManager]`, `[EmbeddingEngine]`, `[IndexingQueue]`, `[SQLiteCacheManager]`
-

@@ -142,7 +142,7 @@ if (editor) {
 }
 ```
 
-**Exception**: Hidden files (like `.nexus/`) aren't indexed by Obsidian, so `vault.adapter` is acceptable for those paths. Use `isHiddenPath()` helper.
+**Exception**: `vault.adapter` is acceptable for storage paths that Obsidian does not index or that must be addressed directly, including hidden legacy paths and configured Nexus data roots. Normalize paths first and keep storage roots settings-derived; do not hardcode `.nexus`.
 
 ### API Best Practices
 
@@ -321,7 +321,7 @@ For substantial UI work, create a mockup before touching production code. This i
 - `MessageStreamHandler.ts` — post-loop safety net: forces `state=complete` + accumulated toolCalls onto in-memory message before second save runs; prevents stale `draft/null` from overwriting good data
 - `ConversationService.ts` — try-catch around `JSON.parse(tc.function.arguments)` in `convertToLegacyConversation`; malformed JSON no longer crashes entire conversation load
 - `MessageRepository.ts` — defensive try-catch in `rowToMessage()` for toolCallsJson/metadataJson/alternativesJson
-- **Note for existing stale conversations**: Delete `.nexus/cache.db` to force JSONL rebuild; tool calls will reappear
+- **Note for existing stale conversations**: Use the `Nexus: Rebuild cache` command to force SQLite cache rebuild from the synced event store; tool calls will reappear if present in JSONL.
 
 **Feb 22**: TypeScript Build Fix ✅ (PR #31)
 - `IPCTransportManager.ts` — changed socket param from `NodeJS.ReadWriteStream` to `net.Socket`; removed 4 redundant casts
@@ -585,13 +585,23 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 ## Memory & Workspace System
 
 ### Storage Location
-`.nexus/` - All storage in single hidden folder:
-- `conversations/*.jsonl` - OpenAI fine-tuning format (syncs across devices)
-- `workspaces/*.jsonl` - Event-sourced workspace data
-- `cache.db` - SQLite local cache (auto-rebuilt, not synced)
+
+**Primary synced event store**: settings-derived vault root, `settings.storage.rootPath` (default `Nexus`) with managed data under `<rootPath>/data/`:
+- `conversations/<conversationId>/shard-*.jsonl` - sharded append-only conversation events
+- `workspaces/<workspaceId>/shard-*.jsonl` - sharded append-only workspace/session/state/trace events
+- `tasks/<workspaceId>/shard-*.jsonl` - sharded append-only task/project events
+- `_meta/` - storage and migration manifests
+
+**Configured root rules**: resolve with `resolveVaultRoot(settings, { configDir })`; never hardcode `Nexus` except as `DEFAULT_STORAGE_SETTINGS.rootPath`, and never hardcode `.nexus` for new writes.
+
+**Legacy read paths**: `.obsidian/plugins/<plugin-folder>/data/`, compatibility plugin folders (`nexus`, `claudesidian-mcp`), legacy `.nexus/`, and `storage.previousRootPaths` remain read/migration fallback sources. They are not the primary write target.
+
+**Local-only cache** (auto-rebuilt from JSONL, never source of truth):
+- Desktop: IndexedDB-backed via `IndexedDBCacheBlobStore`
+- Mobile: `vault.adapter` file backend at `.obsidian/plugins/<plugin-folder>/data/cache.db`
 
 ### Architecture
-- Hybrid JSONL + SQLite: JSONL = source of truth, SQLite = fast queries
+- Hybrid JSONL + SQLite: sharded JSONL event store = source of truth, SQLite = rebuildable fast query/vector cache
 - True database pagination with OFFSET/LIMIT
 - Workspace-scoped sessions and traces
 - Searchable via MemoryManager and SearchManager agents

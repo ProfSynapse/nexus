@@ -14,9 +14,9 @@
  * - Graceful error handling with logging
  *
  * File Structure:
- * - .nexus/workspaces/[workspaceId].jsonl - Workspace events
- * - .nexus/conversations/[conversationId].jsonl - Conversation events
- * - .nexus/sessions/[workspaceId]/[sessionId].jsonl - Session events
+ * - <rootPath>/data/workspaces/[workspaceId]/shard-*.jsonl - Workspace/session/state/trace events
+ * - <rootPath>/data/conversations/[conversationId]/shard-*.jsonl - Conversation events
+ * - <rootPath>/data/tasks/[workspaceId]/shard-*.jsonl - Task/project events
  *
  * Related Files:
  * - src/database/interfaces/StorageEvents.ts - Event type definitions
@@ -37,7 +37,7 @@ import { StorageRouter } from './StorageRouter';
 export interface JSONLWriterOptions {
   /** Obsidian app instance for vault operations */
   app: App;
-  /** Base path for storage (default: '.nexus') */
+  /** Legacy flat-file base path. Primary writes route through vaultEventStore when configured. */
   basePath: string;
   /** Ordered read roots for verified/fallback lookups */
   readBasePaths?: string[];
@@ -66,7 +66,7 @@ export type JSONLWriterBeforeWriteHook = (logicalPath: string) => void;
  *
  * Usage:
  * ```typescript
- * const writer = new JSONLWriter({ app, basePath: '.nexus' });
+ * const writer = new JSONLWriter({ app, basePath: legacyReadPath, vaultEventStore });
  *
  * // Append an event
  * const event = await writer.appendEvent('workspaces/workspace-123.jsonl', {

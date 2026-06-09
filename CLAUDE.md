@@ -98,7 +98,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 - `innerHTML` forbidden with dynamic content — use `createEl()` / `.textContent`
 - `registerDomEvent` for all DOM events (not `addEventListener` — causes memory leaks)
 - Use `requestUrl()` not `fetch()` for HTTP; `normalizePath()` for paths
-- Hidden files (`.nexus/`) are the only valid exception to `vault.adapter` usage
+- `vault.adapter` is acceptable for direct storage-path access when needed; normalize paths and resolve Nexus storage roots from settings instead of hardcoding `.nexus` or `Nexus`
 
 ### Mobile Compatibility (Critical)
 
@@ -313,24 +313,26 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 
 ### Storage Location
 
-**Primary (synced)**: `.obsidian/plugins/<plugin-folder>/data/` — plugin-scoped, included by Obsidian Sync:
-- `conversations/*.jsonl` - OpenAI fine-tuning format
-- `workspaces/*.jsonl` - Event-sourced workspace data
-- `tasks/tasks_[workspaceId].jsonl` - Task/project events per workspace
-- `migration/` - Migration manifest and verification state
+**Primary synced event store**: settings-derived vault root, `settings.storage.rootPath` (default `Nexus`) with managed data under `<rootPath>/data/`:
+- `conversations/<conversationId>/shard-*.jsonl` - sharded append-only conversation events
+- `workspaces/<workspaceId>/shard-*.jsonl` - sharded append-only workspace/session/state/trace events
+- `tasks/<workspaceId>/shard-*.jsonl` - sharded append-only task/project events
+- `_meta/` - storage and migration manifests
 
-**Legacy fallback**: `.nexus/` — original hidden folder, kept as read-only fallback after migration. Not deleted automatically.
+**Configured root rules**: resolve with `resolveVaultRoot(settings, { configDir })`; never hardcode `Nexus` except as `DEFAULT_STORAGE_SETTINGS.rootPath`, and never hardcode `.nexus` for new writes.
+
+**Legacy read paths**: `.obsidian/plugins/<plugin-folder>/data/`, compatibility plugin folders (`nexus`, `claudesidian-mcp`), legacy `.nexus/`, and `storage.previousRootPaths` remain read/migration fallback sources. They are not the primary write target.
 
 **Local-only cache** (auto-rebuilt from JSONL, never synced):
 - **Desktop (v5.8.12+)**: IndexedDB-backed via `IndexedDBCacheBlobStore`. Cloud-sync-immune. First-launch migration FSM upgrades existing `cache.db` installs.
 - **Mobile**: `vault.adapter` file backend via `VaultAdapterCacheBlobStore`.
 
-**Migration**: On first launch, JSONL files are copied from `.nexus/` to the plugin data folder. The migration is copy-only, idempotent, and verified before the plugin switches reads to the new location. Mobile users whose vault syncs after init can run **Nexus: Refresh synced data** from the command palette.
+**Migration**: On startup, legacy JSONL sources are read/migrated into the configured vault-root event store without deleting old files. Mobile users whose vault syncs after init can run **Nexus: Refresh synced data** from the command palette.
 
-**Path resolution**: The plugin folder name is resolved at runtime from `plugin.manifest.dir` (supports both `nexus` and legacy `claudesidian-mcp` installs). See `src/database/storage/PluginStoragePathResolver.ts`.
+**Path resolution**: Use `resolveVaultRoot()` for the configured synced event root and `resolvePluginStorageRoot()` for plugin-scoped compatibility/cache paths.
 
 ### Architecture
-- Hybrid JSONL + SQLite: JSONL = source of truth, SQLite = fast queries
+- Hybrid JSONL + SQLite: sharded JSONL event store = source of truth, SQLite = rebuildable fast query/vector cache
 - True database pagination with OFFSET/LIMIT
 - Workspace-scoped sessions and traces
 - Searchable via MemoryManager and SearchManager agents

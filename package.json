@@ -61,7 +61,6 @@
     "@huggingface/transformers": "^3.8.1",
     "@mlc-ai/web-llm": "^0.2.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@xenova/transformers": "^2.17.2",
     "diff-match-patch": "^1.0.5",
     "eventsource-parser": "^1.1.2",
     "fast-xml-parser": "^5.8.0",

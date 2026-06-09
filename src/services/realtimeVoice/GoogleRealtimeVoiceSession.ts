@@ -36,6 +36,20 @@ interface GoogleServerMessage {
   };
 }
 
+interface LegacyAudioProcessEvent extends Event {
+  readonly inputBuffer: AudioBuffer;
+}
+
+interface LegacyScriptProcessorNode extends AudioNode {
+  onaudioprocess: ((event: LegacyAudioProcessEvent) => void) | null;
+}
+
+type LegacyCreateScriptProcessor = (
+  bufferSize: number,
+  numberOfInputChannels: number,
+  numberOfOutputChannels: number
+) => LegacyScriptProcessorNode;
+
 const GOOGLE_SAMPLE_RATE_IN = 16000;
 const GOOGLE_SAMPLE_RATE_OUT = 24000;
 const GOOGLE_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
@@ -48,8 +62,7 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
   private captureSource: MediaStreamAudioSourceNode | null = null;
   // Obsidian/Electron still relies on the simpler ScriptProcessor path here until
   // we add a dedicated AudioWorklet processor bundle for live voice capture.
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
-  private captureProcessor: ScriptProcessorNode | null = null;
+  private captureProcessor: LegacyScriptProcessorNode | null = null;
   private captureSink: GainNode | null = null;
   private queuedSources = new Set<AudioBufferSourceNode>();
   private playbackCursorTime = 0;
@@ -176,7 +189,6 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
     this.clearPlaybackQueue();
 
     if (this.captureProcessor) {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
       this.captureProcessor.onaudioprocess = null;
       this.captureProcessor.disconnect();
       this.captureProcessor = null;
@@ -231,8 +243,8 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
     ]);
 
     const source = this.captureAudioContext.createMediaStreamSource(this.mediaStream);
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
-    const processor = this.captureAudioContext.createScriptProcessor(2048, 1, 1);
+    const createProcessor = this.getLegacyCreateScriptProcessor(this.captureAudioContext);
+    const processor = createProcessor(2048, 1, 1);
     const sink = this.captureAudioContext.createGain();
     sink.gain.value = 0;
 
@@ -240,13 +252,11 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
     processor.connect(sink);
     sink.connect(this.captureAudioContext.destination);
 
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
     processor.onaudioprocess = (event) => {
       if (this.stopped || !this.configured || !this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
       const inputBuffer = event.inputBuffer;
       const channelData = inputBuffer.getChannelData(0);
       const audioBase64 = encodeFloatPcm16Base64(channelData, inputBuffer.sampleRate, GOOGLE_SAMPLE_RATE_IN);
@@ -269,6 +279,14 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
     this.captureSource = source;
     this.captureProcessor = processor;
     this.captureSink = sink;
+  }
+
+  private getLegacyCreateScriptProcessor(audioContext: AudioContext): LegacyCreateScriptProcessor {
+    const candidate = (audioContext as unknown as Record<string, unknown>).createScriptProcessor;
+    if (typeof candidate !== 'function') {
+      throw new Error('Microphone capture is not available in this Obsidian environment.');
+    }
+    return candidate.bind(audioContext) as LegacyCreateScriptProcessor;
   }
 
   private sendMessage(payload: Record<string, unknown>): void {

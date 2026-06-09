@@ -7,9 +7,9 @@
  * (dependency-bundled ESM from esm.sh) and loaded locally thereafter.
  *
  * Load mechanism: the vendored file is read as text and imported via a Blob URL
- * (`import(blob:…)`), the same realm trick the Pyodide worker uses — this dodges
- * esbuild's static `import()` resolution (so hucre never enters the bundle) and
- * avoids `file://`/CSP quirks in the Electron renderer.
+ * (`import(blob:…)`), the same realm trick the Pyodide worker uses. esbuild
+ * preserves variable dynamic imports, so hucre stays a runtime asset and never
+ * enters main.js while avoiding `file://`/CSP quirks in the Electron renderer.
  *
  * ⚠️ PENDING Electron validation: the download URL shape and the Blob-import load
  * path must be exercised in a real Obsidian desktop build (not runnable headless).
@@ -109,11 +109,8 @@ export class HucreEnsurer {
 
     const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
     try {
-      // Function-wrapped native dynamic import so esbuild does not statically
-      // resolve/bundle it (hucre must stay a runtime asset, never in main.js).
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      const importEsm = new Function('u', 'return import(u);') as (u: string) => Promise<Record<string, unknown>>;
-      const mod = await importEsm(url);
+      // eslint-disable-next-line no-unsanitized/method -- The URL is a local blob created from the plugin's size-validated vendored ESM asset.
+      const mod = await import(url) as Record<string, unknown>;
       const openXlsx = mod.openXlsx as HucreModule['openXlsx'] | undefined;
       const saveXlsx = mod.saveXlsx as HucreModule['saveXlsx'] | undefined;
       if (typeof openXlsx !== 'function' || typeof saveXlsx !== 'function') {
