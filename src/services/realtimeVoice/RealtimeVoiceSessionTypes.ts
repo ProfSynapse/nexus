@@ -20,13 +20,31 @@ export interface RealtimeVoiceSessionRequest {
   callbacks: RealtimeVoiceSessionCallbacks;
 }
 
-export interface ResolvedRealtimeVoiceSessionRequest {
-  provider: 'openai';
+interface BaseResolvedRealtimeVoiceSessionRequest {
+  provider: 'openai' | 'google';
   model: string;
   voice: string;
   apiKey: string;
   instructions?: string;
   callbacks: RealtimeVoiceSessionCallbacks;
+}
+
+export interface ResolvedOpenAIRealtimeVoiceSessionRequest extends BaseResolvedRealtimeVoiceSessionRequest {
+  provider: 'openai';
+}
+
+export interface ResolvedGoogleRealtimeVoiceSessionRequest extends BaseResolvedRealtimeVoiceSessionRequest {
+  provider: 'google';
+}
+
+export type ResolvedRealtimeVoiceSessionRequest =
+  | ResolvedOpenAIRealtimeVoiceSessionRequest
+  | ResolvedGoogleRealtimeVoiceSessionRequest;
+
+export interface RealtimeVoiceSelection {
+  provider: 'openai' | 'google' | 'elevenlabs';
+  model: string;
+  voice: string;
 }
 
 export interface RealtimeVoiceAvailability {
