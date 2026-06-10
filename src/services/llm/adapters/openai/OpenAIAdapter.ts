@@ -25,6 +25,7 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
 import { buildBearerJsonHeaders } from '../shared/OpenAICompatHelpers';
+import { pumpSseEventQueue } from '../shared/SseStreamPump';
 import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 
 interface OpenAIResponsesTool {
@@ -409,14 +410,14 @@ export class OpenAIAdapter extends BaseAdapter {
     let currentReasoningId: string | null = null;
     let currentReasoningEncryptedContent: string | null = null;
     let isInReasoningPart = false;
-    let isCompleted = false;
+    const pumpState = { isCompleted: false };
 
     const eventQueue: StreamChunk[] = [];
 
     const parser = createParser((sseEvent) => {
-      if (sseEvent.type === 'reconnect-interval' || isCompleted) return;
+      if (sseEvent.type === 'reconnect-interval' || pumpState.isCompleted) return;
       if (sseEvent.data === '[DONE]') {
-        isCompleted = true;
+        pumpState.isCompleted = true;
         return;
       }
 
@@ -548,39 +549,16 @@ export class OpenAIAdapter extends BaseAdapter {
             toolCallsReady: toolCallsArray.length > 0,
             metadata
           });
-          isCompleted = true;
+          pumpState.isCompleted = true;
           break;
         }
       }
     });
 
     try {
-      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
-        if (isCompleted) break;
-        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-        parser.feed(text);
-
-        while (eventQueue.length > 0) {
-          const evt = eventQueue.shift();
-          if (!evt) {
-            break;
-          }
-          yield evt;
-          if (evt.complete) { isCompleted = true; break; }
-        }
-      }
-
-      while (eventQueue.length > 0) {
-        const evt = eventQueue.shift();
-        if (!evt) {
-          continue;
-        }
-        yield evt;
-      }
-
-      if (!isCompleted) {
-        yield { content: '', complete: true, usage };
-      }
+      yield* pumpSseEventQueue(nodeStream, (text) => parser.feed(text), eventQueue, pumpState, {
+        buildFinalChunk: () => ({ content: '', complete: true, usage })
+      });
     } catch (error) {
       console.error('[OpenAIAdapter] Error processing Responses API stream:', error);
       throw error;
