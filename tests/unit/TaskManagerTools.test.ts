@@ -346,6 +346,39 @@ describe('TaskManager Tools', () => {
       expect(result.error).toContain('title');
     });
 
+    it('should return error when title is whitespace-only', async () => {
+      const result = await tool.execute({
+        ...baseParams,
+        projectId: 'proj-1',
+        title: '   '
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('title');
+      expect(mockService.createTask).not.toHaveBeenCalled();
+    });
+
+    it('should return error when title is the wrong type', async () => {
+      const result = await tool.execute({
+        ...baseParams,
+        projectId: 'proj-1',
+        title: 123 as unknown as string
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('title');
+      expect(mockService.createTask).not.toHaveBeenCalled();
+    });
+
+    it('should return error when projectId is the wrong type', async () => {
+      const result = await tool.execute({
+        ...baseParams,
+        projectId: { id: 'p' } as unknown as string,
+        title: 'Task'
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('projectId');
+      expect(mockService.createTask).not.toHaveBeenCalled();
+    });
+
     it('should pass all optional params to service', async () => {
       mockService.createTask.mockResolvedValue('task-new');
 
