@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 interface AnthropicMessage {
   role: string;
@@ -266,26 +267,9 @@ export class AnthropicAdapter extends BaseAdapter {
   listModels(): Promise<ModelInfo[]> {
     try {
       return Promise.resolve(ANTHROPIC_MODELS.map(model => ({
+        ...staticModelToModelInfo(model),
         // For 1M context models, append :1m to make ID unique
-        id: model.contextWindow >= 1000000 ? `${model.apiName}:1m` : model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: model.capabilities.supportsThinking,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
+        id: model.contextWindow >= 1000000 ? `${model.apiName}:1m` : model.apiName
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -508,24 +492,7 @@ export class AnthropicAdapter extends BaseAdapter {
     return undefined;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(modelId));
-    if (!model) return undefined;
-
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
+    return Promise.resolve(getStaticModelPricing(ANTHROPIC_MODELS, this.normalizeModelId(modelId)));
   }
 }

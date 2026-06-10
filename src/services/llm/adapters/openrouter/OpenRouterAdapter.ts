@@ -24,6 +24,7 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 import { SSEToolCall } from '../../streaming/SSEStreamProcessor';
+import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 
 type JsonObject = Record<string, unknown>;
 
@@ -827,21 +828,7 @@ export class OpenRouterAdapter extends BaseAdapter {
    * Get model pricing
    */
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    try {
-      const models = ModelRegistry.getProviderModels('openrouter');
-      const model = models.find(m => m.apiName === modelId);
-      if (!model) {
-        return Promise.resolve(null);
-      }
-
-      return Promise.resolve({
-        rateInputPerMillion: model.inputCostPerMillion,
-        rateOutputPerMillion: model.outputCostPerMillion,
-        currency: 'USD'
-      });
-    } catch {
-      return Promise.resolve(null);
-    }
+    return Promise.resolve(getRegistryModelPricing('openrouter', modelId));
   }
 
   private convertTools(tools: Tool[]): OpenRouterTool[] {

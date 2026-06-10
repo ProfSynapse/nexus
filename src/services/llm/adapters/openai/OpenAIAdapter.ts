@@ -24,6 +24,8 @@ import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
+import { buildBearerJsonHeaders } from '../shared/OpenAICompatHelpers';
+import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 
 interface OpenAIResponsesTool {
   type: string;
@@ -656,10 +658,7 @@ export class OpenAIAdapter extends BaseAdapter {
   }
 
   private buildOpenAIHeaders(): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.apiKey}`
-    };
+    return buildBearerJsonHeaders(this.apiKey);
   }
 
   /**
@@ -798,21 +797,7 @@ export class OpenAIAdapter extends BaseAdapter {
    * Get model pricing
    */
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    try {
-      const models = ModelRegistry.getProviderModels('openai');
-      const model = models.find(m => m.apiName === modelId);
-      if (!model) {
-        return Promise.resolve(null);
-      }
-
-      return Promise.resolve({
-        rateInputPerMillion: model.inputCostPerMillion,
-        rateOutputPerMillion: model.outputCostPerMillion,
-        currency: 'USD'
-      });
-    } catch {
-      return Promise.resolve(null);
-    }
+    return Promise.resolve(getRegistryModelPricing('openai', modelId));
   }
 }
 
