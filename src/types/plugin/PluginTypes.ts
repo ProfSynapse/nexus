@@ -87,6 +87,10 @@ export interface MCPSettings {
   customPrompts?: CustomPromptsSettings;
   llmProviders?: LLMProviderSettings;
   apps?: AppsSettings;
+  // When true, API keys / credentials are stored in Obsidian's device-local
+  // secretStorage and stripped from the synced data.json. Off by default so
+  // keys keep syncing across devices unless the user opts in.
+  secureApiKeyStorage?: boolean;
   // Default selections for chat
   defaultWorkspaceId?: string;
   defaultPromptId?: string;
