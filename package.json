@@ -27,7 +27,7 @@
     "mcp",
     "claude"
   ],
-  "author": "",
+  "author": "Synaptic Labs",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
@@ -39,12 +39,10 @@
     "@types/istanbul-lib-report": "^3.0.3",
     "@types/jest": "^29.5.14",
     "@types/node": "^16.18.126",
-    "@types/request": "^2.48.13",
     "@types/yargs-parser": "^21.0.3",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
     "@typescript-eslint/utils": "^8.58.0",
-    "crypto": "^1.0.1",
     "esbuild": "^0.25.12",
     "eslint": "^9.39.4",
     "eslint-plugin-obsidianmd": "^0.3.0",
@@ -58,8 +56,6 @@
   },
   "dependencies": {
     "@dao-xyz/sqlite3-vec": "^0.0.19",
-    "@huggingface/transformers": "^3.8.1",
-    "@mlc-ai/web-llm": "^0.2.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "diff-match-patch": "^1.0.5",
     "eventsource-parser": "^1.1.2",
@@ -68,9 +64,6 @@
     "mammoth": "^1.12.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^5.7.284",
-    "streaming-markdown": "^0.2.15",
-    "tough-cookie": "^4.1.4",
-    "uuid": "^11.1.1",
-    "winston": "^3.19.0"
+    "streaming-markdown": "^0.2.15"
   }
 }

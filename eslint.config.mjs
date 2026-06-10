@@ -20,6 +20,7 @@ export default defineConfig([
             ".codex-temp/",
             ".history/",
             ".worktrees/",
+            ".claude/",
             "src/services/claude-code-sourcemap-main/**",
             // Config/build files — not application code
             "jest.config.js",
