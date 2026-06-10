@@ -43,6 +43,7 @@ import {
   SSEParsedUsage,
   SSEStreamOptions
 } from '../streaming/SSEStreamProcessor';
+import { pumpSseEventQueue } from './shared/SseStreamPump';
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache keys
@@ -181,13 +182,13 @@ export abstract class BaseAdapter {
     const { createParser } = await import('eventsource-parser');
 
     const eventQueue: StreamChunk[] = [];
-    let isCompleted = false;
+    const pumpState = { isCompleted: false };
     let usage: SSEParsedUsage | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
     const parser = createParser((event) => {
-      if (event.type === 'reconnect-interval' || isCompleted) return;
+      if (event.type === 'reconnect-interval' || pumpState.isCompleted) return;
 
       if (event.data === '[DONE]') {
         const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
@@ -199,7 +200,7 @@ export abstract class BaseAdapter {
           toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
           metadata
         });
-        isCompleted = true;
+        pumpState.isCompleted = true;
         return;
       }
 
@@ -299,7 +300,7 @@ export abstract class BaseAdapter {
             toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
             metadata
           });
-          isCompleted = true;
+          pumpState.isCompleted = true;
         }
       } catch (parseError) {
         if (options.onParseError) {
@@ -309,50 +310,14 @@ export abstract class BaseAdapter {
     });
 
     // Read from the Node.js stream and feed to the SSE parser
-    try {
-      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
-        if (isCompleted) break;
-
-        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
-        parser.feed(text);
-
-        // Yield queued events
-        while (eventQueue.length > 0) {
-          const event = eventQueue.shift();
-          if (!event) {
-            break;
-          }
-          yield event;
-          if (event.complete) {
-            isCompleted = true;
-            break;
-          }
-        }
-      }
-
-      // Yield remaining events after stream ends
-      while (eventQueue.length > 0) {
-        const event = eventQueue.shift();
-        if (event) {
-          yield event;
-        }
-      }
-
-      // If stream ended without a completion event, yield one
-      if (!isCompleted) {
-        yield {
-          content: '',
-          complete: true,
-          usage: this.formatStreamUsage(usage)
-        };
-      }
-    } catch (error) {
-      // If stream was destroyed (abort), yield completion
-      if (!isCompleted) {
-        yield { content: '', complete: true };
-      }
-      throw error;
-    }
+    yield* pumpSseEventQueue(nodeStream, (text) => parser.feed(text), eventQueue, pumpState, {
+      buildFinalChunk: () => ({
+        content: '',
+        complete: true,
+        usage: this.formatStreamUsage(usage)
+      }),
+      buildErrorChunk: () => ({ content: '', complete: true })
+    });
   }
 
   /**
