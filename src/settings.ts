@@ -1,6 +1,12 @@
 import { Plugin } from 'obsidian';
 import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
+import { SecretStore, type SecretStorageHost } from './services/secrets/SecretStore';
+import {
+    hydrateSecrets,
+    migrateLegacyPlaintext,
+    stripSecretsForPersist
+} from './services/secrets/SettingsSecrets';
 
 /**
  * Settings manager
@@ -8,6 +14,7 @@ import { pluginDataLock } from './utils/pluginDataLock';
  */
 export class Settings {
     private plugin: Plugin;
+    private secretStore: SecretStore;
     settings: MCPSettings;
 
     /**
@@ -16,6 +23,7 @@ export class Settings {
      */
     constructor(plugin: Plugin) {
         this.plugin = plugin;
+        this.secretStore = new SecretStore((plugin.app ?? {}) as unknown as SecretStorageHost);
         this.settings = DEFAULT_SETTINGS;
     }
 
@@ -27,6 +35,10 @@ export class Settings {
         try {
             const loadedData: unknown = await this.plugin.loadData();
             this.applyLoadedData(loadedData);
+            hydrateSecrets(this.settings, this.secretStore);
+            if (migrateLegacyPlaintext(this.settings, this.secretStore)) {
+                await this.saveSettings();
+            }
         } catch {
             // Continue with defaults - plugin should still function
         }
@@ -88,8 +100,15 @@ export class Settings {
     async saveSettings(): Promise<void> {
         await pluginDataLock.acquire(async () => {
             const loadedData: unknown = await this.plugin.loadData();
+            // Move secrets into app.secretStorage and persist a clone with the
+            // secret fields blanked. When secretStorage is unavailable this
+            // returns the original settings unchanged (plaintext fallback).
+            const { settings: persistableSettings } = stripSecretsForPersist(
+                this.settings,
+                this.secretStore
+            );
             const settingsWithoutRuntimeState = {
-                ...(this.settings as MCPSettings & { pluginStorage?: unknown })
+                ...(persistableSettings as MCPSettings & { pluginStorage?: unknown })
             };
             delete settingsWithoutRuntimeState.pluginStorage;
             const mergedData = loadedData && typeof loadedData === 'object'
