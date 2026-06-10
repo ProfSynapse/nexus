@@ -14,6 +14,7 @@ import { createErrorMessage } from '../../../../utils/errorUtils';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import { formatTaskRef } from '../../utils/taskRefs';
+import { ToolParamValidator } from '../../../validation/ToolParamValidator';
 
 export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskResult> {
   constructor(private taskService: TaskService) {
@@ -31,15 +32,11 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
 
   async execute(params: CreateTaskParameters): Promise<CreateTaskResult> {
     try {
-      if (!params.projectId) {
-        return this.prepareResult(false, undefined, 'projectId is required');
-      }
-      if (!params.title) {
-        return this.prepareResult(false, undefined, 'title is required');
-      }
+      const projectId = ToolParamValidator.requireString(params.projectId, 'projectId');
+      const title = ToolParamValidator.requireString(params.title, 'title');
 
-      const taskId = await this.taskService.createTask(params.projectId, {
-        title: params.title,
+      const taskId = await this.taskService.createTask(projectId, {
+        title,
         description: params.description,
         parentTaskId: params.parentTaskId,
         priority: params.priority,
