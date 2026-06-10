@@ -10,8 +10,9 @@
  * Note: Default provider/model/thinking settings moved to DefaultsTab
  */
 
-import { App, Notice } from 'obsidian';
+import { App, Notice, Setting } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { LLMProviderSettings, LLMProviderConfig } from '../../types/llm/ProviderTypes';
 import { LLMProviderModal, LLMProviderModalConfig } from '../../components/LLMProviderModal';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
@@ -402,8 +403,69 @@ export class ProvidersTab {
     render(): void {
         this.container.empty();
 
-        // Provider groups only - defaults moved to DefaultsTab
+        // Opt-in secure key storage, then the provider groups.
+        this.renderSecuritySection();
         this.renderProviders();
+    }
+
+    /**
+     * Render the opt-in toggle that moves API keys into Obsidian's device-local
+     * secretStorage and out of the synced data.json. Disabled (with an
+     * explanatory note) when secretStorage is unavailable (Obsidian < 1.11.4).
+     */
+    private renderSecuritySection(): void {
+        const settings = this.services.settings;
+        const available = settings.isSecretStorageAvailable();
+        const enabled = settings.settings.secureApiKeyStorage === true;
+
+        new Setting(this.container)
+            .setName('Store API keys in secure storage')
+            .setDesc(available
+                ? 'Keep API keys in Obsidian’s device-local secure storage instead of the synced settings file. Keys never sync, so you’ll re-enter them once on each device.'
+                : 'Requires Obsidian 1.11.4 or later. On this version, API keys are stored in the settings file.')
+            .addToggle((toggle) => {
+                toggle
+                    .setValue(enabled)
+                    .setDisabled(!available)
+                    .onChange((value) => {
+                        void this.handleSecureStorageToggle(value);
+                    });
+            });
+    }
+
+    /**
+     * Confirm the security-toggle change, apply it, then re-render. A cancelled
+     * confirm re-renders with the unchanged value, resetting the toggle.
+     */
+    private async handleSecureStorageToggle(enable: boolean): Promise<void> {
+        const app = this.services.app;
+        const confirmed = enable
+            ? await ConfirmModal.confirm(app, {
+                variant: 'archive',
+                title: 'Move API keys to secure storage?',
+                body: 'Your API keys will be moved into Obsidian’s device-local secure storage and removed from the synced settings file. You’ll need to re-enter each key once on your other devices.',
+                ctaLabel: 'Move keys'
+            })
+            : await ConfirmModal.confirm(app, {
+                variant: 'remove',
+                title: 'Disable secure storage?',
+                body: 'Your API keys will be written back into the synced settings file and removed from secure storage. They will sync across your devices again.',
+                ctaLabel: 'Disable'
+            });
+
+        if (!confirmed) {
+            this.render();
+            return;
+        }
+
+        try {
+            await this.services.settings.setSecureApiKeyStorage(enable);
+            new Notice(enable ? 'API keys moved to secure storage' : 'Secure storage disabled');
+        } catch (error) {
+            console.error('Failed to update secure key storage:', error);
+            new Notice('Failed to update secure key storage');
+        }
+        this.render();
     }
 
     /**
