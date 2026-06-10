@@ -42,6 +42,7 @@ import {
   TaskNoteUnlinkedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+import { parseJsonColumn } from '../utils/jsonColumn';
 
 interface TaskRow extends DatabaseRow {
   id: string;
@@ -615,23 +616,8 @@ export class TaskRepository
 
   protected rowToEntity(row: DatabaseRow): TaskMetadata {
     const taskRow = row as TaskRow;
-    let tags: string[] | undefined;
-    if (taskRow.tagsJson) {
-      try {
-        tags = this.parseJsonValue<string[]>(taskRow.tagsJson);
-      } catch {
-        // Skip unparseable tags
-      }
-    }
-
-    let metadata: Record<string, unknown> | undefined;
-    if (taskRow.metadataJson) {
-      try {
-        metadata = this.parseJsonValue<Record<string, unknown>>(taskRow.metadataJson);
-      } catch {
-        // Skip unparseable metadata
-      }
-    }
+    const tags = parseJsonColumn<string[]>(taskRow.tagsJson, `TaskRepository.tags#${taskRow.id}`);
+    const metadata = parseJsonColumn<Record<string, unknown>>(taskRow.metadataJson, `TaskRepository.metadata#${taskRow.id}`);
 
     return {
       id: taskRow.id,
@@ -652,11 +638,4 @@ export class TaskRepository
     };
   }
 
-  private parseJsonValue<T>(json: string): T | undefined {
-    try {
-      return JSON.parse(json) as T;
-    } catch {
-      return undefined;
-    }
-  }
 }

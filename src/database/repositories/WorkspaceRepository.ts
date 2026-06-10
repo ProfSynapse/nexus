@@ -34,6 +34,7 @@ import {
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryOptions } from '../interfaces/IStorageAdapter';
 import { QueryCache } from '../optimizations/QueryCache';
+import { parseJsonColumn } from '../utils/jsonColumn';
 
 type SqliteValue = string | number | null;
 
@@ -383,9 +384,7 @@ export class WorkspaceRepository
 
   protected rowToEntity(row: DatabaseRow): WorkspaceMetadata {
     const workspaceRow = row as WorkspaceRow;
-    const context = workspaceRow.contextJson
-      ? this.parseJsonValue<WorkspaceMetadata['context']>(workspaceRow.contextJson)
-      : undefined;
+    const context = parseJsonColumn<WorkspaceMetadata['context']>(workspaceRow.contextJson, `WorkspaceRepository.context#${workspaceRow.id}`);
 
     return {
       id: workspaceRow.id,
@@ -401,11 +400,4 @@ export class WorkspaceRepository
     };
   }
 
-  private parseJsonValue<T>(json: string): T | undefined {
-    try {
-      return JSON.parse(json) as T;
-    } catch {
-      return undefined;
-    }
-  }
 }
