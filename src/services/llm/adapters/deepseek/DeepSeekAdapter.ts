@@ -37,6 +37,13 @@ import {
   isDeepSeekThinkingModel,
   resolveDeepSeekApiModel
 } from './DeepSeekModels';
+import {
+  buildBearerJsonHeaders,
+  mapOpenAiCompatFinishReason,
+  buildMessagesWithConversationHistory,
+  convertFunctionTools
+} from '../shared/OpenAICompatHelpers';
+import { getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 interface DeepSeekChatCompletionUsage {
   prompt_tokens?: number;
@@ -114,10 +121,7 @@ export class DeepSeekAdapter extends BaseAdapter {
         url: `${this.baseUrl}/chat/completions`,
         operation: 'streaming generation',
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: buildBearerJsonHeaders(this.apiKey),
         body: JSON.stringify(requestBody),
         timeoutMs: 120_000
       });
@@ -212,14 +216,7 @@ export class DeepSeekAdapter extends BaseAdapter {
   }
 
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const model = DEEPSEEK_MODELS.find(m => m.apiName === modelId);
-    if (!model) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: model.inputCostPerMillion,
-      rateOutputPerMillion: model.outputCostPerMillion,
-      currency: 'USD'
-    });
+    return Promise.resolve(getStaticModelPricing(DEEPSEEK_MODELS, modelId));
   }
 
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -229,10 +226,7 @@ export class DeepSeekAdapter extends BaseAdapter {
       url: `${this.baseUrl}/chat/completions`,
       operation: 'generation',
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
+      headers: buildBearerJsonHeaders(this.apiKey),
       body: JSON.stringify(requestBody),
       timeoutMs: 60_000
     });
@@ -322,30 +316,11 @@ export class DeepSeekAdapter extends BaseAdapter {
   }
 
   private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
-    return tools.map(tool => {
-      if (tool.type === 'function' && tool.function) {
-        return {
-          type: 'function' as const,
-          function: {
-            name: tool.function.name,
-            description: tool.function.description,
-            parameters: tool.function.parameters
-          }
-        };
-      }
-      throw new Error(`Unsupported tool type: ${tool.type}`);
-    });
+    return convertFunctionTools(tools);
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
-    if (!reason) return 'stop';
-    const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
-      stop: 'stop',
-      length: 'length',
-      tool_calls: 'tool_calls',
-      content_filter: 'content_filter'
-    };
-    return reasonMap[reason] || 'stop';
+    return mapOpenAiCompatFinishReason(reason);
   }
 
   protected extractUsage(response: DeepSeekChatCompletionResponse): TokenUsage | undefined {
@@ -360,16 +335,6 @@ export class DeepSeekAdapter extends BaseAdapter {
   }
 
   private buildMessagesForRequest(prompt: string, options?: GenerateOptions): DeepSeekChatCompletionMessageParam[] {
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      const messages = options.conversationHistory;
-      if (options.systemPrompt) {
-        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
-        if (!hasSystem) {
-          return [{ role: 'system', content: options.systemPrompt }, ...messages];
-        }
-      }
-      return messages;
-    }
-    return this.buildMessages(prompt, options?.systemPrompt);
+    return buildMessagesWithConversationHistory(prompt, options);
   }
 }

@@ -21,6 +21,7 @@ import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 type JsonObject = Record<string, unknown>;
 
@@ -441,27 +442,7 @@ export class GoogleAdapter extends BaseAdapter {
 
   listModels(): Promise<ModelInfo[]> {
     try {
-      return Promise.resolve(GOOGLE_MODELS.map(model => ({
-        id: model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: model.capabilities.supportsThinking,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
-      })));
+      return Promise.resolve(GOOGLE_MODELS.map(model => staticModelToModelInfo(model)));
     } catch (error) {
       this.handleError(error, 'listing models');
       return Promise.resolve([]);
@@ -803,25 +784,8 @@ export class GoogleAdapter extends BaseAdapter {
     return undefined;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = GOOGLE_MODELS.find(m => m.apiName === modelId);
-    if (!model) return undefined;
-    
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
+    return Promise.resolve(getStaticModelPricing(GOOGLE_MODELS, modelId));
   }
 }
 

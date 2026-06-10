@@ -14,6 +14,11 @@ import {
   TokenUsage,
 } from '../types';
 import { MISTRAL_MODELS, MISTRAL_DEFAULT_MODEL } from './MistralModels';
+import {
+  buildBearerJsonHeaders,
+  buildMessagesWithConversationHistory
+} from '../shared/OpenAICompatHelpers';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 interface MistralToolDefinition {
   type?: string;
@@ -117,13 +122,10 @@ export class MistralAdapter extends BaseAdapter {
         url: `${this.baseUrl}/v1/chat/completions`,
         operation: 'streaming generation',
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: buildBearerJsonHeaders(this.apiKey),
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.buildMessagesForRequest(prompt, options),
+          messages: buildMessagesWithConversationHistory(prompt, options),
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
           top_p: options?.topP,
@@ -155,25 +157,8 @@ export class MistralAdapter extends BaseAdapter {
   listModels(): Promise<ModelInfo[]> {
     try {
       return Promise.resolve(MISTRAL_MODELS.map(model => ({
-        id: model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: false,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
+        ...staticModelToModelInfo(model),
+        supportsThinking: false
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -228,10 +213,7 @@ export class MistralAdapter extends BaseAdapter {
       url: `${this.baseUrl}/v1/chat/completions`,
       operation: 'generation',
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
+      headers: buildBearerJsonHeaders(this.apiKey),
       body: JSON.stringify(requestBody),
       timeoutMs: 60_000
     });
@@ -287,10 +269,6 @@ export class MistralAdapter extends BaseAdapter {
     });
   }
 
-  private extractToolCalls(message: MistralMessage | undefined): Array<Record<string, unknown>> {
-    return message?.toolCalls || [];
-  }
-
   private extractMessageContent(content: MistralMessage['content']): string {
     if (typeof content === 'string') {
       return content;
@@ -302,19 +280,6 @@ export class MistralAdapter extends BaseAdapter {
         .join('');
     }
     return '';
-  }
-
-  private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
-    if (!reason) return 'stop';
-    
-    const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
-      'stop': 'stop',
-      'length': 'length',
-      'tool_calls': 'tool_calls',
-      'model_length': 'length',
-      'content_filter': 'content_filter'
-    };
-    return reasonMap[reason] || 'stop';
   }
 
   protected extractUsage(response: MistralChatResponse): TokenUsage | undefined {
@@ -329,42 +294,7 @@ export class MistralAdapter extends BaseAdapter {
     return undefined;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = MISTRAL_MODELS.find(m => m.apiName === modelId);
-    if (!model) return undefined;
-    
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
-  }
-
-  /**
-   * Build messages array, using conversationHistory for tool continuations
-   * and prepending system prompt if it was stripped by the context builder.
-   */
-  private buildMessagesForRequest(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      const messages = options.conversationHistory;
-      if (options.systemPrompt) {
-        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
-        if (!hasSystem) {
-          return [{ role: 'system', content: options.systemPrompt }, ...messages];
-        }
-      }
-      return messages;
-    }
-    return this.buildMessages(prompt, options?.systemPrompt);
+    return Promise.resolve(getStaticModelPricing(MISTRAL_MODELS, modelId));
   }
 }
