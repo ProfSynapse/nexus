@@ -52,12 +52,30 @@ export function getWebViewerLeaf(app: App): WorkspaceLeaf | null {
   return app.workspace.getLeavesOfType(WEB_VIEWER_VIEW_TYPE)[0] ?? null;
 }
 
+/**
+ * Reject any URL that is not http/https before it reaches the web viewer.
+ * Blocks file:// (local file reads) and other schemes an LLM-supplied URL
+ * could otherwise request. Throws on an invalid or unsupported URL.
+ */
+export function assertSafeWebUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Unsupported URL scheme "${parsed.protocol}" — only http and https URLs are allowed.`);
+  }
+}
+
 export async function openWebViewerUrl(
   app: App,
   url: string,
   mode: WebViewerOpenMode,
   focus: boolean
 ): Promise<WorkspaceLeaf> {
+  assertSafeWebUrl(url);
   const leaf = getLeafForMode(app, mode);
 
   await leaf.setViewState({
