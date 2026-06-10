@@ -185,6 +185,22 @@ export function migrateLegacyPlaintext(settings: MCPSettings, store: SecretStore
 }
 
 /**
+ * Remove every secret field's value from secretStorage. Called when the user
+ * turns the secure-storage option off: the in-memory settings still hold the
+ * plaintext values (which the caller persists to data.json before clearing),
+ * so dropping the stored copies leaves no orphaned secrets behind. No-op when
+ * secretStorage is unavailable.
+ */
+export function clearStoredSecrets(settings: MCPSettings, store: SecretStore): void {
+  if (!store.isAvailable()) {
+    return;
+  }
+  for (const field of collectSecretFields(settings)) {
+    store.clear(field.id);
+  }
+}
+
+/**
  * Clone the settings object deeply enough that mutating secret fields on the
  * copy does not touch the original's nested provider/app structures. Settings
  * are plain JSON-serializable data, so a JSON round-trip is sufficient and

@@ -154,6 +154,7 @@ describe('Settings class persistence boundary', () => {
 
     const settings = new Settings(plugin);
     settings.settings = settingsWithSecrets();
+    settings.settings.secureApiKeyStorage = true;
     await settings.saveSettings();
 
     const persisted = saved[saved.length - 1];
@@ -168,6 +169,7 @@ describe('Settings class persistence boundary', () => {
     const { api, map } = createMockSecretStorage();
     const legacy = {
       enabledVault: true,
+      secureApiKeyStorage: true,
       llmProviders: {
         providers: { openai: { apiKey: 'sk-legacy', enabled: true } },
         defaultModel: { provider: 'openai', model: 'gpt-4o' }
@@ -194,6 +196,7 @@ describe('Settings class persistence boundary', () => {
     api.setSecret('nexus-llm-openai-apikey', 'sk-stored');
     const blanked = {
       enabledVault: true,
+      secureApiKeyStorage: true,
       llmProviders: {
         providers: { openai: { apiKey: '', enabled: true } },
         defaultModel: { provider: 'openai', model: 'gpt-4o' }
@@ -217,5 +220,65 @@ describe('Settings class persistence boundary', () => {
     const persisted = saved[saved.length - 1];
     const providers = (persisted.llmProviders as MCPSettings['llmProviders'])!.providers;
     expect(providers.openai.apiKey).toBe('sk-openai');
+  });
+
+  it('with the option off, plaintext persists even when secretStorage is available', async () => {
+    const { api, map } = createMockSecretStorage();
+    const { plugin, saved } = makePlugin({ enabledVault: true }, api);
+
+    const settings = new Settings(plugin);
+    settings.settings = settingsWithSecrets();
+    await settings.saveSettings();
+
+    const persisted = saved[saved.length - 1];
+    const providers = (persisted.llmProviders as MCPSettings['llmProviders'])!.providers;
+    expect(providers.openai.apiKey).toBe('sk-openai');
+    expect(map.size).toBe(0);
+  });
+
+  it('setSecureApiKeyStorage(true) migrates keys into the store and strips data.json', async () => {
+    const { api, map } = createMockSecretStorage();
+    const { plugin, saved } = makePlugin({ enabledVault: true }, api);
+
+    const settings = new Settings(plugin);
+    settings.settings = settingsWithSecrets();
+    await settings.setSecureApiKeyStorage(true);
+
+    expect(settings.settings.secureApiKeyStorage).toBe(true);
+    expect(map.get('nexus-llm-openai-apikey')).toBe('sk-openai');
+    const persisted = saved[saved.length - 1];
+    const providers = (persisted.llmProviders as MCPSettings['llmProviders'])!.providers;
+    expect(providers.openai.apiKey).toBe('');
+    // Runtime keeps the populated value.
+    expect(settings.settings.llmProviders?.providers.openai.apiKey).toBe('sk-openai');
+  });
+
+  it('setSecureApiKeyStorage(false) writes keys back to data.json and clears the store', async () => {
+    const { api, map } = createMockSecretStorage();
+    const { plugin, saved } = makePlugin({ enabledVault: true }, api);
+
+    const settings = new Settings(plugin);
+    settings.settings = settingsWithSecrets();
+    await settings.setSecureApiKeyStorage(true);
+    expect(map.get('nexus-llm-openai-apikey')).toBe('sk-openai');
+
+    await settings.setSecureApiKeyStorage(false);
+
+    expect(settings.settings.secureApiKeyStorage).toBe(false);
+    const persisted = saved[saved.length - 1];
+    const providers = (persisted.llmProviders as MCPSettings['llmProviders'])!.providers;
+    expect(providers.openai.apiKey).toBe('sk-openai');
+    // Stored copy cleared (set to '' — there is no removeSecret API).
+    expect(map.get('nexus-llm-openai-apikey')).toBe('');
+  });
+
+  it('setSecureApiKeyStorage(true) is ignored when secretStorage is unavailable', async () => {
+    const { plugin } = makePlugin({ enabledVault: true });
+
+    const settings = new Settings(plugin);
+    settings.settings = settingsWithSecrets();
+    await settings.setSecureApiKeyStorage(true);
+
+    expect(settings.settings.secureApiKeyStorage).toBeFalsy();
   });
 });

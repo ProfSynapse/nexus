@@ -3,6 +3,7 @@ import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
 import { SecretStore, type SecretStorageHost } from './services/secrets/SecretStore';
 import {
+    clearStoredSecrets,
     hydrateSecrets,
     migrateLegacyPlaintext,
     stripSecretsForPersist
@@ -35,9 +36,13 @@ export class Settings {
         try {
             const loadedData: unknown = await this.plugin.loadData();
             this.applyLoadedData(loadedData);
-            hydrateSecrets(this.settings, this.secretStore);
-            if (migrateLegacyPlaintext(this.settings, this.secretStore)) {
-                await this.saveSettings();
+            // Secrets only leave data.json when the user has opted in. When the
+            // option is off, keys stay in the synced settings as before.
+            if (this.settings.secureApiKeyStorage) {
+                hydrateSecrets(this.settings, this.secretStore);
+                if (migrateLegacyPlaintext(this.settings, this.secretStore)) {
+                    await this.saveSettings();
+                }
             }
         } catch {
             // Continue with defaults - plugin should still function
@@ -101,12 +106,12 @@ export class Settings {
         await pluginDataLock.acquire(async () => {
             const loadedData: unknown = await this.plugin.loadData();
             // Move secrets into app.secretStorage and persist a clone with the
-            // secret fields blanked. When secretStorage is unavailable this
-            // returns the original settings unchanged (plaintext fallback).
-            const { settings: persistableSettings } = stripSecretsForPersist(
-                this.settings,
-                this.secretStore
-            );
+            // secret fields blanked, but only when the user has opted in. When
+            // the option is off (or secretStorage is unavailable) the original
+            // settings are persisted unchanged (plaintext fallback).
+            const { settings: persistableSettings } = this.settings.secureApiKeyStorage
+                ? stripSecretsForPersist(this.settings, this.secretStore)
+                : { settings: this.settings };
             const settingsWithoutRuntimeState = {
                 ...(persistableSettings as MCPSettings & { pluginStorage?: unknown })
             };
@@ -117,6 +122,32 @@ export class Settings {
 
             await this.plugin.saveData(mergedData);
         });
+    }
+
+    /**
+     * Whether Obsidian's secretStorage API is available (requires Obsidian
+     * 1.11.4+). Gates whether the secure-key-storage option can be enabled.
+     */
+    isSecretStorageAvailable(): boolean {
+        return this.secretStore.isAvailable();
+    }
+
+    /**
+     * Turn the secure-key-storage option on or off and migrate accordingly.
+     * Enabling persists the in-memory keys into secretStorage and strips them
+     * from data.json. Disabling persists the in-memory plaintext back into
+     * data.json (so keys sync again) and then clears the stored copies. An
+     * enable request is ignored when secretStorage is unavailable.
+     */
+    async setSecureApiKeyStorage(enabled: boolean): Promise<void> {
+        if (enabled && !this.secretStore.isAvailable()) {
+            return;
+        }
+        this.settings.secureApiKeyStorage = enabled;
+        await this.saveSettings();
+        if (!enabled) {
+            clearStoredSecrets(this.settings, this.secretStore);
+        }
     }
 }
 
