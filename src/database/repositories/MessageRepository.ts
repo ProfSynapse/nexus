@@ -439,12 +439,17 @@ export class MessageRepository
    * O(N) redundant JSONL events when callers pass the full message array
    * through ConversationService.updateConversation().
    */
-  async update(messageId: string, data: UpdateMessageData): Promise<void> {
+  async update(messageId: string, data: UpdateMessageData, expectedConversationId?: string): Promise<void> {
     try {
       // Load full current message — used for both change detection and conversationId
       const current = await this.getById(messageId);
       if (!current) {
         throw new Error(`Message ${messageId} not found`);
+      }
+      if (expectedConversationId !== undefined && current.conversationId !== expectedConversationId) {
+        throw new Error(
+          `Message ${messageId} belongs to conversation ${current.conversationId}, not ${expectedConversationId}`
+        );
       }
 
       // Skip entirely if nothing actually changed (prevents JSONL write amplification)

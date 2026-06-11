@@ -774,9 +774,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   updateSession = async (workspaceId: string, sessionId: string, updates: Partial<SessionMetadata>): Promise<void> => {
     await this.ensureInitialized();
-    // Extract fields that are valid for UpdateSessionData (includes required workspaceId)
-    const { name, description, endTime, isActive } = updates;
-    return this.sessionRepo.update(sessionId, { name, description, endTime, isActive, workspaceId });
+    // Extract fields that are valid for UpdateSessionData. The positional
+    // workspaceId always wins (it routes the JSONL write); moving a session
+    // goes through moveSessionToWorkspace instead.
+    const { name, description, startTime, endTime, isActive } = updates;
+    return this.sessionRepo.update(sessionId, { name, description, startTime, endTime, isActive, workspaceId });
   };
 
   moveSessionToWorkspace = async (sessionId: string, workspaceId: string): Promise<void> => {
@@ -942,12 +944,12 @@ export class HybridStorageAdapter implements IStorageAdapter {
   };
 
   updateMessage = async (
-    _conversationId: string,
+    conversationId: string,
     messageId: string,
     updates: Partial<MessageData>
   ): Promise<void> => {
     await this.ensureInitialized();
-    return this.messageRepo.update(messageId, updates);
+    return this.messageRepo.update(messageId, updates, conversationId);
   };
 
   deleteMessage = async (conversationId: string, messageId: string): Promise<void> => {

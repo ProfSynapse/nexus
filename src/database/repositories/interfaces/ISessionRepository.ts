@@ -32,6 +32,7 @@ export interface CreateSessionData {
 export interface UpdateSessionData {
   name?: string;
   description?: string;
+  startTime?: number;
   endTime?: number;
   isActive?: boolean;
   workspaceId?: string;

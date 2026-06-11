@@ -673,15 +673,15 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       expect(adapter.workspaceRepo.search).toHaveBeenCalledWith('query');
     });
 
-    it('session create merges workspaceId; update forwards only whitelisted fields', async () => {
+    it('session create merges workspaceId; update forwards updatable fields incl. startTime', async () => {
       const adapter = await makeHarness();
 
       await adapter.createSession('ws-1', { name: 'Session A' } as Omit<SessionMetadata, 'id' | 'workspaceId'>);
       expect(adapter.sessionRepo.create).toHaveBeenCalledWith({ name: 'Session A', workspaceId: 'ws-1' });
 
-      // pins current behavior; see report — updateSession overrides any
-      // workspaceId present in `updates` with the positional arg, and drops
-      // every field other than name/description/endTime/isActive.
+      // The positional workspaceId always wins over one in `updates` (it routes
+      // the JSONL write; moving a session goes through moveSessionToWorkspace).
+      // All other updatable SessionMetadata fields pass through, incl. startTime.
       await adapter.updateSession('ws-1', 'session-1', {
         name: 'Renamed',
         description: 'desc',
@@ -693,6 +693,7 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       expect(adapter.sessionRepo.update).toHaveBeenCalledWith('session-1', {
         name: 'Renamed',
         description: 'desc',
+        startTime: 999,
         endTime: 123,
         isActive: false,
         workspaceId: 'ws-1'
@@ -774,21 +775,19 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       ]);
     });
 
-    it('message methods delegate; updateMessage discards the conversationId arg', async () => {
+    it('message methods delegate; updateMessage forwards conversationId for validation', async () => {
       const adapter = await makeHarness();
       const message = { role: 'user', content: 'hi' };
       adapter.conversationRepo.getConversations.mockResolvedValue({ items: [] });
 
       await adapter.getMessages('conv-1', { page: 0, pageSize: 50 });
       await adapter.addMessage('conv-1', message as never);
-      // pins current behavior; see report — the conversationId positional arg
-      // is unused by updateMessage; only messageId + updates reach the repo.
-      await adapter.updateMessage('conv-IGNORED', 'msg-1', { content: 'edited' } as never);
+      await adapter.updateMessage('conv-1', 'msg-1', { content: 'edited' } as never);
       await adapter.deleteMessage('conv-1', 'msg-1');
 
       expect(adapter.messageRepo.getMessages).toHaveBeenCalledWith('conv-1', { page: 0, pageSize: 50 });
       expect(adapter.messageRepo.addMessage).toHaveBeenCalledWith('conv-1', message);
-      expect(adapter.messageRepo.update).toHaveBeenCalledWith('msg-1', { content: 'edited' });
+      expect(adapter.messageRepo.update).toHaveBeenCalledWith('msg-1', { content: 'edited' }, 'conv-1');
       expect(adapter.messageRepo.deleteMessage).toHaveBeenCalledWith('conv-1', 'msg-1');
     });
 

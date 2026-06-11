@@ -156,6 +156,7 @@ export interface SessionUpdatedEvent extends BaseStorageEvent {
   data: Partial<{
     name: string;
     description: string;
+    startTime: number;
     endTime: number;
     isActive: boolean;
     workspaceId: string;
