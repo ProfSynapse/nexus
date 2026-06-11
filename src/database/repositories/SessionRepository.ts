@@ -151,6 +151,7 @@ export class SessionRepository
             data: {
               name: data.name,
               description: data.description,
+              startTime: data.startTime,
               endTime: data.endTime,
               isActive: data.isActive
             }
@@ -168,6 +169,10 @@ export class SessionRepository
         if (data.description !== undefined) {
           setClauses.push('description = ?');
           params.push(data.description);
+        }
+        if (data.startTime !== undefined) {
+          setClauses.push('startTime = ?');
+          params.push(data.startTime);
         }
         if (data.endTime !== undefined) {
           setClauses.push('endTime = ?');

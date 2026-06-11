@@ -159,6 +159,7 @@ export class WorkspaceEventApplier {
 
     if (event.data.name !== undefined) { updates.push('name = ?'); values.push(event.data.name); }
     if (event.data.description !== undefined) { updates.push('description = ?'); values.push(event.data.description); }
+    if (event.data.startTime !== undefined) { updates.push('startTime = ?'); values.push(event.data.startTime); }
     if (event.data.endTime !== undefined) { updates.push('endTime = ?'); values.push(event.data.endTime); }
     if (event.data.isActive !== undefined) { updates.push('isActive = ?'); values.push(event.data.isActive ? 1 : 0); }
     if (event.data.workspaceId !== undefined) { updates.push('workspaceId = ?'); values.push(event.data.workspaceId); }
