@@ -295,7 +295,10 @@ async function loadWebLLM(): Promise<WebLLMLibrary> {
   try {
     // Dynamic import from jsDelivr's esm.run service
     // This serves ESM modules that work in browser contexts
-    const imported: unknown = await import('https://esm.run/@mlc-ai/web-llm');
+    // Pinned to match the model WASM version in WebLLMModels.ts (v0_2_80) and
+    // the worker import — an unpinned 'latest' would run whatever upstream
+    // publishes, in the renderer, with vault access.
+    const imported: unknown = await import('https://esm.run/@mlc-ai/web-llm@0.2.80');
     if (!isWebLLMLibrary(imported)) {
       throw new Error('CreateMLCEngine not found in module');
     }

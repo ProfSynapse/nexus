@@ -77,8 +77,8 @@ export class WebLLMWorkerService {
 // WebLLM Worker
 // Handles model loading and inference in a separate thread
 
-// Import WebLLM from CDN
-importScripts('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.78/lib/index.min.js');
+// Import WebLLM from CDN — pinned to match WebLLMEngine.ts and the model WASM (v0_2_80)
+importScripts('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.80/lib/index.min.js');
 
 let engine = null;
 let isGenerating = false;
