@@ -17,6 +17,12 @@ import {
 } from '../types';
 import type { SSEToolCall } from '../../streaming/SSEStreamProcessor';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
+import {
+  buildBearerJsonHeaders,
+  mapOpenAiCompatFinishReason,
+  convertFunctionTools
+} from '../shared/OpenAICompatHelpers';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 /**
  * Extended Groq chunk type with x_groq metadata
@@ -103,10 +109,7 @@ export class GroqAdapter extends BaseAdapter {
         url: `${this.baseUrl}/chat/completions`,
         operation: 'streaming generation',
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: buildBearerJsonHeaders(this.apiKey),
         body: JSON.stringify({
           model: options?.model || this.currentModel,
           messages: this.buildMessages(prompt, options?.systemPrompt),
@@ -176,25 +179,8 @@ export class GroqAdapter extends BaseAdapter {
   listModels(): Promise<ModelInfo[]> {
     try {
       return Promise.resolve(GROQ_MODELS.map(model => ({
-        id: model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: false,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
+        ...staticModelToModelInfo(model),
+        supportsThinking: false
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -261,10 +247,7 @@ export class GroqAdapter extends BaseAdapter {
       url: `${this.baseUrl}/chat/completions`,
       operation: 'generation',
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
+      headers: buildBearerJsonHeaders(this.apiKey),
       body: JSON.stringify(chatParams),
       timeoutMs: 60_000
     });
@@ -297,36 +280,11 @@ export class GroqAdapter extends BaseAdapter {
 
   // Private methods
   private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
-    return tools.map(tool => {
-      if (tool.type === 'function' && tool.function) {
-        return {
-          type: 'function' as const,
-          function: {
-            name: tool.function.name,
-            description: tool.function.description,
-            parameters: tool.function.parameters
-          }
-        };
-      }
-      // Fallback for malformed tools - should not happen with proper Tool type
-      throw new Error(`Unsupported tool type: ${tool.type}`);
-    });
-  }
-
-  private extractToolCalls(message: GroqChatCompletionMessage | null | undefined): unknown[] {
-    return message?.tool_calls || [];
+    return convertFunctionTools(tools);
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
-    if (!reason) return 'stop';
-    
-    const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
-      'stop': 'stop',
-      'length': 'length',
-      'tool_calls': 'tool_calls',
-      'content_filter': 'content_filter'
-    };
-    return reasonMap[reason] || 'stop';
+    return mapOpenAiCompatFinishReason(reason);
   }
 
   protected extractUsage(response: GroqChatCompletionChunk): TokenUsage | undefined {
@@ -346,42 +304,7 @@ export class GroqAdapter extends BaseAdapter {
     return undefined;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = GROQ_MODELS.find(m => m.apiName === modelId);
-    if (!model) return undefined;
-    
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
-  }
-
-  /**
-   * Build messages array, using conversationHistory for tool continuations
-   * and prepending system prompt if it was stripped by the context builder.
-   */
-  private buildMessagesForRequest(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      const messages = options.conversationHistory;
-      if (options.systemPrompt) {
-        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
-        if (!hasSystem) {
-          return [{ role: 'system', content: options.systemPrompt }, ...messages];
-        }
-      }
-      return messages;
-    }
-    return this.buildMessages(prompt, options?.systemPrompt);
+    return Promise.resolve(getStaticModelPricing(GROQ_MODELS, modelId));
   }
 }
