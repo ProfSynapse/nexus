@@ -14,6 +14,8 @@ import {
   ModelPricing
 } from '../types';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
+import { mapOpenAiCompatFinishReason, buildMessagesWithConversationHistory } from '../shared/OpenAICompatHelpers';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 /**
  * Requesty API response structure (OpenAI-compatible)
@@ -114,7 +116,7 @@ export class RequestyAdapter extends BaseAdapter {
         },
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.buildMessagesForRequest(prompt, options),
+          messages: buildMessagesWithConversationHistory(prompt, options),
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
           response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
@@ -157,26 +159,10 @@ export class RequestyAdapter extends BaseAdapter {
 
   listModels(): Promise<ModelInfo[]> {
     try {
+      // Thinking is surfaced per-upstream-model at the router, not advertised here.
       return Promise.resolve(REQUESTY_MODELS.map(model => ({
-        id: model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: false,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
+        ...staticModelToModelInfo(model),
+        supportsThinking: false
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -253,7 +239,7 @@ export class RequestyAdapter extends BaseAdapter {
     
     let text = choice.message?.content || '';
     const usage = this.extractUsage(data);
-    const finishReason = this.mapFinishReason(choice.finish_reason || null);
+    const finishReason = mapOpenAiCompatFinishReason(choice.finish_reason || null);
 
     // If tools were provided and we got tool calls, return placeholder text
     if (options?.tools && choice.message?.toolCalls && choice.message.toolCalls.length > 0) {
@@ -274,18 +260,6 @@ export class RequestyAdapter extends BaseAdapter {
     return message?.toolCalls || [];
   }
 
-  private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
-    if (!reason) return 'stop';
-    
-    const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
-      'stop': 'stop',
-      'length': 'length',
-      'tool_calls': 'tool_calls',
-      'content_filter': 'content_filter'
-    };
-    return reasonMap[reason] || 'stop';
-  }
-
   protected extractUsage(response: RequestyChatCompletionResponse): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
     const usage = response.usage;
     if (usage) {
@@ -298,42 +272,7 @@ export class RequestyAdapter extends BaseAdapter {
     return undefined;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = REQUESTY_MODELS.find(m => m.apiName === modelId);
-    if (!model) return undefined;
-    
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
-  }
-
-  /**
-   * Build messages array, using conversationHistory for tool continuations
-   * and prepending system prompt if it was stripped by the context builder.
-   */
-  private buildMessagesForRequest(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      const messages = options.conversationHistory;
-      if (options.systemPrompt) {
-        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
-        if (!hasSystem) {
-          return [{ role: 'system', content: options.systemPrompt }, ...messages];
-        }
-      }
-      return messages;
-    }
-    return this.buildMessages(prompt, options?.systemPrompt);
+    return Promise.resolve(getStaticModelPricing(REQUESTY_MODELS, modelId));
   }
 }

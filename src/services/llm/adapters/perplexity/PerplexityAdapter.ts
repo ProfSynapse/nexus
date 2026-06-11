@@ -17,6 +17,8 @@ import {
 } from '../types';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
+import { mapOpenAiCompatFinishReason } from '../shared/OpenAICompatHelpers';
+import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 
 export interface PerplexityOptions extends GenerateOptions {
   webSearch?: boolean;
@@ -140,26 +142,10 @@ export class PerplexityAdapter extends BaseAdapter {
 
   listModels(): Promise<ModelInfo[]> {
     try {
+      // Perplexity exposes no thinking models, so supportsThinking stays false.
       return Promise.resolve(PERPLEXITY_MODELS.map(model => ({
-        id: model.apiName,
-        name: model.name,
-        contextWindow: model.contextWindow,
-        maxOutputTokens: model.maxTokens,
-        supportsJSON: model.capabilities.supportsJSON,
-        supportsImages: model.capabilities.supportsImages,
-        supportsFunctions: model.capabilities.supportsFunctions,
-        supportsStreaming: model.capabilities.supportsStreaming,
-        supportsThinking: false,
-        costPer1kTokens: {
-          input: model.inputCostPerMillion / 1000,
-          output: model.outputCostPerMillion / 1000
-        },
-        pricing: {
-          inputPerMillion: model.inputCostPerMillion,
-          outputPerMillion: model.outputCostPerMillion,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
-        }
+        ...staticModelToModelInfo(model),
+        supportsThinking: false
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -219,7 +205,7 @@ export class PerplexityAdapter extends BaseAdapter {
     const usage = this.extractUsage(data);
     const rawFinishReason = choice.finish_reason || 'stop';
 
-    const finishReason = this.mapFinishReason(rawFinishReason);
+    const finishReason = mapOpenAiCompatFinishReason(rawFinishReason);
     const metadata = this.extractResponseMetadata(data);
 
     return this.buildLLMResponse(
@@ -297,18 +283,6 @@ export class PerplexityAdapter extends BaseAdapter {
     return Array.from(urls);
   }
 
-  private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
-    if (!reason) return 'stop';
-    
-    const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
-      'stop': 'stop',
-      'length': 'length',
-      'tool_calls': 'tool_calls',
-      'content_filter': 'content_filter'
-    };
-    return reasonMap[reason] || 'stop';
-  }
-
   protected extractUsage(response: PerplexityChatResponse): TokenUsage | undefined {
     const usage = response?.usage;
     if (usage) {
@@ -347,24 +321,7 @@ export class PerplexityAdapter extends BaseAdapter {
     return requestBody;
   }
 
-  private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
-    const model = PERPLEXITY_MODELS.find(m => m.apiName === modelId);
-    if (!model) return undefined;
-    
-    return {
-      input: model.inputCostPerMillion / 1000,
-      output: model.outputCostPerMillion / 1000
-    };
-  }
-
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
-    const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return Promise.resolve(null);
-
-    return Promise.resolve({
-      rateInputPerMillion: costs.input * 1000,
-      rateOutputPerMillion: costs.output * 1000,
-      currency: 'USD'
-    });
+    return Promise.resolve(getStaticModelPricing(PERPLEXITY_MODELS, modelId));
   }
 }
