@@ -1,7 +1,14 @@
 /**
  * Requesty Model Specifications
  * Requesty provides access to multiple providers through a unified API
- * Updated June 17, 2025
+ * Updated June 10, 2026 — aligned with OpenRouterModels.ts metadata.
+ *
+ * Slug conventions (verified against requesty.ai/models pages):
+ * - OpenAI and Google slugs match OpenRouter exactly (openai/gpt-5.5,
+ *   google/gemini-3.5-flash).
+ * - Anthropic slugs use Anthropic's upstream dashed IDs
+ *   (anthropic/claude-opus-4-8), NOT OpenRouter's dotted renames
+ *   (anthropic/claude-opus-4.8).
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -12,113 +19,65 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   // OpenAI models via Requesty
   {
     provider: 'requesty',
-    name: 'GPT-5.2',
-    apiName: 'openai/gpt-5.2',
-    contextWindow: 200000,
-    maxTokens: 65536,
+    name: 'GPT-5.5',
+    apiName: 'openai/gpt-5.5',
+    contextWindow: 1050000,
+    maxTokens: 128000,
     inputCostPerMillion: 5.00,
+    outputCostPerMillion: 30.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
+    name: 'GPT-5.4',
+    apiName: 'openai/gpt-5.4',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
     outputCostPerMillion: 15.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'GPT-5.2 Pro',
-    apiName: 'openai/gpt-5.2-pro',
-    contextWindow: 200000,
-    maxTokens: 65536,
-    inputCostPerMillion: 15.00,
-    outputCostPerMillion: 60.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: false, // Pro model does not support streaming
       supportsThinking: true
     }
   },
   {
     provider: 'requesty',
-    name: 'GPT-5.2 Mini',
-    apiName: 'openai/gpt-5.2-mini',
-    contextWindow: 200000,
-    maxTokens: 65536,
-    inputCostPerMillion: 0.25,
-    outputCostPerMillion: 1.00,
+    name: 'GPT-5.4 Mini',
+    apiName: 'openai/gpt-5.4-mini',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 4.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
+      supportsThinking: true
     }
   },
   {
     provider: 'requesty',
-    name: 'GPT-5 Nano',
-    apiName: 'openai/gpt-5-nano',
-    contextWindow: 200000,
-    maxTokens: 65536,
-    inputCostPerMillion: 0.05,
-    outputCostPerMillion: 0.20,
+    name: 'GPT-5.4 Nano',
+    apiName: 'openai/gpt-5.4-nano',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.20,
+    outputCostPerMillion: 1.25,
     capabilities: {
       supportsJSON: true,
-      supportsImages: false,
+      supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'o3',
-    apiName: 'openai/o3',
-    contextWindow: 200000,
-    maxTokens: 100000,
-    inputCostPerMillion: 2.00,
-    outputCostPerMillion: 8.00,
-    capabilities: {
-      supportsJSON: false,
-      supportsImages: false,
-      supportsFunctions: false,
-      supportsStreaming: false,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'o3 Pro',
-    apiName: 'openai/o3-pro',
-    contextWindow: 200000,
-    maxTokens: 100000,
-    inputCostPerMillion: 20.00,
-    outputCostPerMillion: 80.00,
-    capabilities: {
-      supportsJSON: false,
-      supportsImages: false,
-      supportsFunctions: false,
-      supportsStreaming: false,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'o4 Mini',
-    apiName: 'openai/o4-mini',
-    contextWindow: 200000,
-    maxTokens: 100000,
-    inputCostPerMillion: 1.10,
-    outputCostPerMillion: 4.40,
-    capabilities: {
-      supportsJSON: false,
-      supportsImages: false,
-      supportsFunctions: false,
-      supportsStreaming: false,
       supportsThinking: true
     }
   },
@@ -126,12 +85,12 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   // Google models via Requesty
   {
     provider: 'requesty',
-    name: 'Gemini 3.0 Flash Preview',
-    apiName: 'google/gemini-3-flash-preview',
+    name: 'Gemini 3.5 Flash',
+    apiName: 'google/gemini-3.5-flash',
     contextWindow: 1048576,
     maxTokens: 65536,
-    inputCostPerMillion: 0.50,
-    outputCostPerMillion: 3.00,
+    inputCostPerMillion: 1.50,
+    outputCostPerMillion: 9.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -142,10 +101,26 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   },
   {
     provider: 'requesty',
-    name: 'Gemini 2.5 Pro Experimental',
+    name: 'Gemini 3.1 Pro Preview',
+    apiName: 'google/gemini-3.1-pro-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 12.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
+    name: 'Gemini 2.5 Pro',
     apiName: 'google/gemini-2.5-pro',
     contextWindow: 1048576,
-    maxTokens: 65535,
+    maxTokens: 66000,
     inputCostPerMillion: 1.25,
     outputCostPerMillion: 10.00,
     capabilities: {
@@ -169,11 +144,59 @@ export const REQUESTY_MODELS: ModelSpec[] = [
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
+      supportsThinking: true
     }
   },
 
-  // Anthropic models via Requesty
+  // Anthropic models via Requesty (dashed upstream slugs)
+  {
+    provider: 'requesty',
+    name: 'Claude Fable 5',
+    apiName: 'anthropic/claude-fable-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 10.00,
+    outputCostPerMillion: 50.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
+    name: 'Claude Opus 4.8',
+    apiName: 'anthropic/claude-opus-4-8',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
+    name: 'Claude Sonnet 4.6',
+    apiName: 'anthropic/claude-sonnet-4-6',
+    contextWindow: 1000000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'requesty',
     name: 'Claude 4.5 Haiku',
@@ -188,22 +211,6 @@ export const REQUESTY_MODELS: ModelSpec[] = [
       supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: true
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'Claude 4 Sonnet',
-    apiName: 'anthropic/claude-sonnet-4-20250514',
-    contextWindow: 200000,
-    maxTokens: 64000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
     }
   },
 
@@ -226,4 +233,4 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   }
 ];
 
-export const REQUESTY_DEFAULT_MODEL = 'anthropic/claude-sonnet-4-20250514';
+export const REQUESTY_DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6';

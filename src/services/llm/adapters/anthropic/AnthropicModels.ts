@@ -1,6 +1,6 @@
 /**
  * Anthropic Model Specifications
- * Updated May 2026 with Claude Opus 4.8
+ * Updated June 2026 with Claude Fable 5
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -15,6 +15,24 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 5.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // Claude Fable 5
+  {
+    provider: 'anthropic',
+    name: 'Claude Fable 5',
+    apiName: 'claude-fable-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 10.00,
+    outputCostPerMillion: 50.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
