@@ -230,6 +230,7 @@ export const MIGRATIONS: Migration[] = [
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
       if (rows.length === 0) return;
 
+      let skipped = 0;
       for (const row of rows[0].values) {
         const id = row[0] as string;
         const metadataJson = row[1] as string;
@@ -256,7 +257,7 @@ export const MIGRATIONS: Migration[] = [
             sessionId = metadata.sessionId;
           }
         } catch {
-          // Skip conversations with unparseable metadataJson
+          skipped++;
           continue;
         }
 
@@ -266,6 +267,10 @@ export const MIGRATIONS: Migration[] = [
             [workspaceId, sessionId, id]
           );
         }
+      }
+
+      if (skipped > 0) {
+        console.warn(`[SchemaMigrator] workspaceId/sessionId backfill: skipped ${skipped} conversation(s) with unparseable metadataJson`);
       }
     },
   },
@@ -371,6 +376,7 @@ export const MIGRATIONS: Migration[] = [
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
       if (rows.length === 0) return;
 
+      let skipped = 0;
       for (const row of rows[0].values) {
         const id = row[0] as string;
         const metadataJson = row[1] as string;
@@ -389,8 +395,12 @@ export const MIGRATIONS: Migration[] = [
             );
           }
         } catch {
-          // Ignore unparseable metadata rows.
+          skipped++;
         }
+      }
+
+      if (skipped > 0) {
+        console.warn(`[SchemaMigrator] workflow metadata backfill: skipped ${skipped} conversation(s) with unparseable metadataJson`);
       }
     }
   },

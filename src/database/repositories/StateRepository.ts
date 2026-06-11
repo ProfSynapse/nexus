@@ -32,6 +32,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryParams } from './base/BaseRepository';
+import { parseJsonColumn } from '../utils/jsonColumn';
 
 interface StateRow extends DatabaseRow {
   id: string;
@@ -221,11 +222,11 @@ export class StateRepository
         return null;
       }
 
-      let content = this.parseJsonValue<unknown>(savedEvent.data.stateJson);
+      let content = parseJsonColumn<unknown>(savedEvent.data.stateJson, `StateRepository.state#${id}`);
 
       for (const event of events) {
         if (event.type === 'state_updated' && event.stateId === id && event.data.stateJson !== undefined) {
-          content = this.parseJsonValue<unknown>(event.data.stateJson);
+          content = parseJsonColumn<unknown>(event.data.stateJson, `StateRepository.state#${id}`);
         }
       }
 
@@ -418,15 +419,7 @@ export class StateRepository
       name: stateRow.name,
       description: stateRow.description ?? undefined,
       created: stateRow.created,
-      tags: stateRow.tagsJson ? this.parseJsonValue<string[]>(stateRow.tagsJson) : undefined
+      tags: parseJsonColumn<string[]>(stateRow.tagsJson, `StateRepository.tags#${stateRow.id}`)
     };
-  }
-
-  private parseJsonValue<T>(json: string): T | undefined {
-    try {
-      return JSON.parse(json) as T;
-    } catch {
-      return undefined;
-    }
   }
 }

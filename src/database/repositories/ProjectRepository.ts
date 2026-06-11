@@ -31,6 +31,7 @@ import {
   ProjectDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+import { parseJsonColumn } from '../utils/jsonColumn';
 
 interface ProjectRow extends DatabaseRow {
   id: string;
@@ -308,14 +309,7 @@ export class ProjectRepository
 
   protected rowToEntity(row: DatabaseRow): ProjectMetadata {
     const projectRow = row as ProjectRow;
-    let metadata: Record<string, unknown> | undefined;
-    if (projectRow.metadataJson) {
-      try {
-        metadata = JSON.parse(projectRow.metadataJson) as Record<string, unknown>;
-      } catch {
-        // Skip unparseable metadata
-      }
-    }
+    const metadata = parseJsonColumn<Record<string, unknown>>(projectRow.metadataJson, `ProjectRepository.metadata#${projectRow.id}`);
 
     return {
       id: projectRow.id,
