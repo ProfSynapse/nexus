@@ -79,7 +79,8 @@ export interface UpdateTaskData {
   tags?: string[];
   projectId?: string;
   parentTaskId?: string | null;
-  completedAt?: number;
+  /** number = completion timestamp; null = explicitly clear a stale timestamp; undefined = no change. */
+  completedAt?: number | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -114,7 +115,7 @@ export interface TaskListOptions extends PaginationParams {
 /**
  * Task repository interface
  */
-export interface ITaskRepository extends IRepository<TaskMetadata> {
+export interface ITaskRepository extends IRepository<TaskMetadata, Partial<TaskMetadata>, UpdateTaskData> {
   /**
    * Get tasks for a project with optional filtering/pagination
    */

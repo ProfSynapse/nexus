@@ -776,10 +776,43 @@ describe('TaskService', () => {
 
       await service.updateTask('task-1', { status: 'todo' });
 
+      // Must be null (not undefined): the repository's "no change" guards drop
+      // undefined before it reaches the JSONL event / SQLite, so undefined would
+      // leave the stale timestamp in place. null is the explicit-clear sentinel.
       expect(taskRepo.update).toHaveBeenCalledWith('task-1', expect.objectContaining({
         status: 'todo',
-        completedAt: undefined
+        completedAt: null
       }));
+    });
+
+    it('should heal a stale completedAt on a non-done task even when status is unchanged', async () => {
+      // Reporter's case: task is in_progress but carries a leftover completedAt.
+      taskRepo.getById.mockResolvedValue(createMockTask({ status: 'in_progress', completedAt: 5000 }));
+
+      await service.updateTask('task-1', { status: 'in_progress' });
+
+      const updateCall = taskRepo.update.mock.calls[0][1];
+      expect(updateCall.completedAt).toBeNull();
+    });
+
+    it('should heal a stale completedAt when updating an unrelated field on a non-done task', async () => {
+      // No status passed at all — the stale timestamp should still be cleared.
+      taskRepo.getById.mockResolvedValue(createMockTask({ status: 'in_progress', completedAt: 5000 }));
+
+      await service.updateTask('task-1', { title: 'Renamed' });
+
+      const updateCall = taskRepo.update.mock.calls[0][1];
+      expect(updateCall.completedAt).toBeNull();
+    });
+
+    it('should preserve completedAt when updating an unrelated field on a done task', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask({ status: 'done', completedAt: 5000 }));
+
+      await service.updateTask('task-1', { title: 'Renamed' });
+
+      // Invariant holds (status still done) — leave the timestamp untouched.
+      const updateCall = taskRepo.update.mock.calls[0][1];
+      expect(updateCall.completedAt).toBeUndefined();
     });
 
     it('should not set completedAt when moving to in_progress', async () => {

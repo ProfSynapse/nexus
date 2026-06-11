@@ -391,18 +391,21 @@ export class TaskService {
     }
     taskId = task.id;
 
-    const updateData: Partial<TaskMetadata> & { updated: number } = {
+    const updateData: Partial<Omit<TaskMetadata, 'completedAt'>> & { updated: number; completedAt?: number | null } = {
       ...data,
       updated: Date.now()
     };
 
-    // Set completedAt when marking done
-    if (data.status === 'done' && task.status !== 'done') {
+    // Invariant: completedAt exists iff the (post-update) status is 'done'.
+    // Use null (not undefined) to clear — undefined is dropped by the repository's
+    // "no change" guards and never reaches the JSONL event or SQLite.
+    const effectiveStatus = data.status ?? task.status;
+    if (effectiveStatus === 'done' && task.status !== 'done') {
+      // Newly completed — stamp the timestamp.
       updateData.completedAt = Date.now();
-    }
-    // Clear completedAt if re-opening
-    if (data.status && data.status !== 'done' && task.status === 'done') {
-      updateData.completedAt = undefined;
+    } else if (effectiveStatus !== 'done' && task.completedAt != null) {
+      // Re-opened, or a non-done task carrying a stale timestamp — clear it.
+      updateData.completedAt = null;
     }
 
     await this.taskRepo.update(taskId, updateData);

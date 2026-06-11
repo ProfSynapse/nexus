@@ -312,6 +312,32 @@ describe('TaskRepository', () => {
       expect(sqlCall[1]).toContain(5000);
     });
 
+    it('should persist a null completedAt to clear a stale timestamp', async () => {
+      // null is the explicit-clear sentinel and MUST flow through to both the
+      // JSONL event and SQLite (NULL). undefined, by contrast, means "no change"
+      // and is intentionally dropped — see the guards in TaskRepository.update.
+      await repo.update('task-1', { completedAt: null });
+
+      expect(deps.jsonlWriter.appendEvent).toHaveBeenCalledWith(
+        'tasks/tasks_ws-1.jsonl',
+        expect.objectContaining({
+          type: 'task_updated',
+          data: expect.objectContaining({ completedAt: null })
+        })
+      );
+
+      const sqlCall = (deps.sqliteCache.run as jest.Mock).mock.calls[0];
+      expect(sqlCall[0]).toContain('completedAt = ?');
+      expect(sqlCall[1]).toContain(null);
+    });
+
+    it('should NOT touch completedAt when it is undefined (no change)', async () => {
+      await repo.update('task-1', { title: 'Renamed' });
+
+      const sqlCall = (deps.sqliteCache.run as jest.Mock).mock.calls[0];
+      expect(sqlCall[0]).not.toContain('completedAt = ?');
+    });
+
     it('should handle projectId update (for moves)', async () => {
       await repo.update('task-1', { projectId: 'proj-2' });
 
