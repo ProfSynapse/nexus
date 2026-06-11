@@ -16,6 +16,7 @@
  * - D: Depends on repository abstractions
  *
  * Related Files:
+ * - src/database/adapters/HybridStorageAssembly.ts - Construction wiring
  * - src/database/repositories/* - Entity repositories
  * - src/database/services/* - Business services
  * - src/database/interfaces/IStorageAdapter.ts - Interface definition
@@ -42,7 +43,6 @@ import {
   ExportData,
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
-import { RepositoryDependencies } from '../repositories/base/BaseRepository';
 import { LegacyMigrator } from '../migration/LegacyMigrator';
 import { WorkspaceEvent, ConversationEvent, TaskEvent } from '../interfaces/StorageEvents';
 import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
@@ -68,14 +68,13 @@ import {
   VaultRootRelocationService,
   type VaultRootRelocationResult
 } from '../migration/VaultRootRelocationService';
-import { resolvePluginStorageRoot, resolveActivePluginFolderName } from '../storage/PluginStoragePathResolver';
 import { resolveVaultRoot } from '../storage/VaultRootResolver';
 import { VaultEventStore } from '../storage/vaultRoot/VaultEventStore';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 import { CacheBackendMigration, type CacheBackendStateAccessor } from '../migration/CacheBackendMigration';
-import { createCacheBlobStore, computeIdbKey } from '../storage/CacheBlobStoreFactory';
 import type { CacheBlobStore } from '../storage/CacheBlobStore';
 import { isDesktop } from '../../utils/platform';
+import { assembleHybridStorage } from './HybridStorageAssembly';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -88,10 +87,6 @@ import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TaskRepository } from '../repositories/TaskRepository';
 // Import services
 import { ExportService } from '../services/ExportService';
-
-type ExportServiceStateRepo = {
-  getStates(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: StateData[] }>;
-};
 
 /**
  * Configuration options for HybridStorageAdapter
@@ -197,71 +192,31 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.plugin = options.plugin;
     this.basePath = options.basePath ?? '.nexus';
     this.startupRebuildIdleTimeoutMs = options.startupRebuildIdleTimeoutMs ?? DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS;
-    const storageRoots = resolvePluginStorageRoot(this.app, this.plugin);
-    this.storageCoordinator = new PluginScopedStorageCoordinator(this.app, this.plugin, this.basePath);
 
-    // Initialize infrastructure
-    this.jsonlWriter = new JSONLWriter({
+    // Construction wiring lives in HybridStorageAssembly (split plan Phase 1);
+    // the adapter receives the assembled collaborators as a typed bundle.
+    const assembly = assembleHybridStorage({
       app: this.app,
-      basePath: this.basePath
+      plugin: this.plugin,
+      basePath: this.basePath,
+      cacheTTL: options.cacheTTL,
+      cacheMaxSize: options.cacheMaxSize
     });
-
-    // Build the cache-blob store ONCE here so the migration runner and the
-    // SQLiteCacheManager share the same instance. The store is selected by
-    // platform: IndexedDB on desktop (cloud-sync-immune), vault.adapter on
-    // mobile (iOS WKWebView IDB durability is insufficient for 150+ MB blobs).
-    const pluginFolderName = resolveActivePluginFolderName(this.plugin);
-    this.cacheBlobStore = createCacheBlobStore({
-      app: this.app,
-      vaultRelativePath: `${storageRoots.dataRoot}/cache.db`,
-      idbKey: computeIdbKey(this.app, pluginFolderName)
-    });
-
-    this.sqliteCache = new SQLiteCacheManager({
-      app: this.app,
-      dbPath: `${storageRoots.dataRoot}/cache.db`,
-      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`,
-      blobStore: this.cacheBlobStore,
-      plugin: this.plugin
-    });
-
-    this.syncCoordinator = new SyncCoordinator(
-      this.jsonlWriter,
-      this.sqliteCache
-    );
-
-    this.queryCache = new QueryCache({
-      defaultTTL: options.cacheTTL ?? 60000,
-      maxSize: options.cacheMaxSize ?? 500
-    });
-
-    // Create repository dependencies
-    const deps: RepositoryDependencies = {
-      jsonlWriter: this.jsonlWriter,
-      sqliteCache: this.sqliteCache,
-      queryCache: this.queryCache
-    };
-
-    // Initialize all repositories
-    this.workspaceRepo = new WorkspaceRepository(deps);
-    this.sessionRepo = new SessionRepository(deps);
-    this.stateRepo = new StateRepository(deps);
-    this.traceRepo = new TraceRepository(deps);
-    this.conversationRepo = new ConversationRepository(deps);
-    this.messageRepo = new MessageRepository(deps);
-    this.projectRepo = new ProjectRepository(deps);
-    this.taskRepo = new TaskRepository(deps);
-
-    // Initialize services
-    this.exportService = new ExportService({
-      app: this.app,
-      conversationRepo: this.conversationRepo,
-      messageRepo: this.messageRepo,
-      workspaceRepo: this.workspaceRepo,
-      sessionRepo: this.sessionRepo,
-      stateRepo: this.stateRepo as unknown as ExportServiceStateRepo,
-      traceRepo: this.traceRepo
-    });
+    this.storageCoordinator = assembly.storageCoordinator;
+    this.jsonlWriter = assembly.jsonlWriter;
+    this.cacheBlobStore = assembly.cacheBlobStore;
+    this.sqliteCache = assembly.sqliteCache;
+    this.syncCoordinator = assembly.syncCoordinator;
+    this.queryCache = assembly.queryCache;
+    this.workspaceRepo = assembly.workspaceRepo;
+    this.sessionRepo = assembly.sessionRepo;
+    this.stateRepo = assembly.stateRepo;
+    this.traceRepo = assembly.traceRepo;
+    this.conversationRepo = assembly.conversationRepo;
+    this.messageRepo = assembly.messageRepo;
+    this.projectRepo = assembly.projectRepo;
+    this.taskRepo = assembly.taskRepo;
+    this.exportService = assembly.exportService;
   }
 
   // ============================================================================
