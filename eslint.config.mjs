@@ -1,4 +1,5 @@
 import { defineConfig } from "eslint/config";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 import obsidianPlugin from "eslint-plugin-obsidianmd";
 import { DEFAULT_BRANDS } from "eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js";
@@ -65,10 +66,26 @@ export default defineConfig([
         },
     },
 
-    // Disable type-checked rules for any remaining JS files
+    // Disable type-checked rules for any remaining JS files.
+    // disableTypeChecked only covers typescript-eslint's own rules, so the
+    // obsidianmd typed rules (which call getParserServices) must be turned
+    // off explicitly — same as the package.json block above. Exposed when
+    // version-bump.mjs was restored (PR #255), the first non-ignored .mjs.
     {
         files: ["**/*.js", "**/*.mjs"],
         ...tseslint.configs.disableTypeChecked,
+        languageOptions: {
+            ...tseslint.configs.disableTypeChecked.languageOptions,
+            globals: globals.node,
+        },
+        rules: {
+            ...tseslint.configs.disableTypeChecked.rules,
+            "obsidianmd/no-plugin-as-component": "off",
+            "obsidianmd/no-view-references-in-plugin": "off",
+            "obsidianmd/no-unsupported-api": "off",
+            "obsidianmd/prefer-file-manager-trash-file": "off",
+            "obsidianmd/prefer-instanceof": "off",
+        },
     },
 
     // Project-specific rule overrides

@@ -31,11 +31,13 @@ import { OpenAIAdapter } from '../../src/services/llm/adapters/openai/OpenAIAdap
 import { OpenRouterAdapter } from '../../src/services/llm/adapters/openrouter/OpenRouterAdapter';
 import { OpenAICodexAdapter, type CodexOAuthTokens } from '../../src/services/llm/adapters/openai-codex/OpenAICodexAdapter';
 import { GoogleAdapter } from '../../src/services/llm/adapters/google/GoogleAdapter';
+import { RequestyAdapter } from '../../src/services/llm/adapters/requesty/RequestyAdapter';
+import { AnthropicAdapter } from '../../src/services/llm/adapters/anthropic/AnthropicAdapter';
 import type { GenerateOptions, LLMResponse } from '../../src/services/llm/adapters/types';
 
 jest.setTimeout(240_000);
 
-type SmokeProvider = 'openai' | 'openrouter' | 'openai-codex' | 'google';
+type SmokeProvider = 'openai' | 'openrouter' | 'openai-codex' | 'google' | 'requesty' | 'anthropic';
 
 interface ProviderSettingsShape {
   llmProviders?: {
@@ -59,7 +61,7 @@ interface SmokeTarget {
 }
 
 const RUN_LIVE = process.env.RUN_MODEL_SMOKE === '1';
-const PROVIDERS: SmokeProvider[] = ['openai', 'openrouter', 'openai-codex', 'google'];
+const PROVIDERS: SmokeProvider[] = ['openai', 'openrouter', 'openai-codex', 'google', 'requesty', 'anthropic'];
 
 function readDotEnv(): Map<string, string> {
   const envPath = path.join(process.cwd(), '.env');
@@ -128,6 +130,10 @@ function normalizeModelForProvider(provider: SmokeProvider, model: string): stri
     return model.slice('google/'.length);
   }
 
+  if (provider === 'anthropic' && model.startsWith('anthropic/')) {
+    return model.slice('anthropic/'.length);
+  }
+
   return model;
 }
 
@@ -138,6 +144,8 @@ function getProviderModel(provider: SmokeProvider): string {
     openrouter: getEnv('OPENROUTER_SMOKE_MODEL'),
     'openai-codex': getEnv('CODEX_SMOKE_MODEL'),
     google: getEnv('GOOGLE_SMOKE_MODEL'),
+    requesty: getEnv('REQUESTY_SMOKE_MODEL'),
+    anthropic: getEnv('ANTHROPIC_SMOKE_MODEL'),
   }[provider];
 
   const model = providerOverride || sharedOverride || DEFAULT_MODELS[provider];
@@ -190,7 +198,7 @@ function setRequestUrlToRealFetch(): void {
   });
 }
 
-function createAdapter(provider: SmokeProvider): OpenAIAdapter | OpenRouterAdapter | OpenAICodexAdapter | GoogleAdapter {
+function createAdapter(provider: SmokeProvider): OpenAIAdapter | OpenRouterAdapter | OpenAICodexAdapter | GoogleAdapter | RequestyAdapter | AnthropicAdapter {
   if (provider === 'openai') {
     const apiKey = getEnv('OPENAI_API_KEY');
     if (!apiKey) {
@@ -213,6 +221,22 @@ function createAdapter(provider: SmokeProvider): OpenAIAdapter | OpenRouterAdapt
       throw new Error('GEMINI_API_KEY is required for Google smoke tests');
     }
     return new GoogleAdapter(apiKey);
+  }
+
+  if (provider === 'requesty') {
+    const apiKey = getEnv('REQUESTY_API_KEY');
+    if (!apiKey) {
+      throw new Error('REQUESTY_API_KEY is required for Requesty smoke tests');
+    }
+    return new RequestyAdapter(apiKey);
+  }
+
+  if (provider === 'anthropic') {
+    const apiKey = getEnv('ANTHROPIC_API_KEY');
+    if (!apiKey) {
+      throw new Error('ANTHROPIC_API_KEY is required for Anthropic smoke tests');
+    }
+    return new AnthropicAdapter(apiKey);
   }
 
   const tokens = loadCodexTokensFromLocalDataJson();

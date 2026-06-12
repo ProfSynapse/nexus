@@ -3,9 +3,13 @@
  * Requesty provides access to multiple providers through a unified API
  * Updated June 10, 2026 — aligned with OpenRouterModels.ts metadata.
  *
- * Slug conventions (verified against requesty.ai/models pages):
- * - OpenAI and Google slugs match OpenRouter exactly (openai/gpt-5.5,
- *   google/gemini-3.5-flash).
+ * Slug conventions (verified live against router.requesty.ai/v1/models,
+ * 2026-06-12):
+ * - OpenAI slugs match OpenRouter exactly (openai/gpt-5.5).
+ * - Google slugs mostly match (google/gemini-3.1-pro-preview), EXCEPT
+ *   Gemini 3.5 Flash, which Requesty only serves as vertex/gemini-3.5-flash
+ *   (no google/ alias yet — google/gemini-3.5-flash returns "Provider
+ *   and/or model not supported").
  * - Anthropic slugs use Anthropic's upstream dashed IDs
  *   (anthropic/claude-opus-4-8), NOT OpenRouter's dotted renames
  *   (anthropic/claude-opus-4.8).
@@ -86,7 +90,7 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   {
     provider: 'requesty',
     name: 'Gemini 3.5 Flash',
-    apiName: 'google/gemini-3.5-flash',
+    apiName: 'vertex/gemini-3.5-flash',
     contextWindow: 1048576,
     maxTokens: 65536,
     inputCostPerMillion: 1.50,
