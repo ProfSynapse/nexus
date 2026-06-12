@@ -62,15 +62,18 @@ Ask the user if not specified:
 
 For a post-review compliance release from `5.9.0`, default to `5.9.1` unless the user requests otherwise.
 
-### 2. Bump Version in 3 Files
+### 2. Bump Version in 4 Files
 
-Do not use `npm version`; the repo has a stale `version` lifecycle script. Edit these files directly and keep all three in sync:
+Do not use `npm version`; the repo has a stale `version` lifecycle script. Edit these files directly and keep all four in sync:
 
 ```text
 package.json   -> "version": "X.Y.Z"
 manifest.json  -> "version": "X.Y.Z"
 CLAUDE.md      -> "- **Version**: X.Y.Z"
+versions.json  -> add "X.Y.Z": "<minAppVersion from manifest.json>" (tab-indented)
 ```
+
+The `versions.json` entry is mandatory: since 5.11.2, `release.yml` has a guard that fails the workflow if the tag, `manifest.json`, `package.json`, and `versions.json` disagree. Copy the `minAppVersion` value from `manifest.json` (do not bump it unless the release actually raises the minimum Obsidian version).
 
 ### 3. Rebuild
 
@@ -80,10 +83,11 @@ Rebuild after the version bump so generated release-adjacent content is current:
 npm run build
 ```
 
-Check the generated artifact sizes:
+Check the generated artifact sizes (macOS/Linux):
 
 ```bash
-Get-Item main.js,manifest.json,styles.css | Select-Object Name,Length
+stat -f "%N %z" main.js manifest.json styles.css   # macOS
+# or: ls -la main.js manifest.json styles.css
 ```
 
 `main.js` should stay below 5 MB for Obsidian Sync Standard compatibility.
@@ -93,7 +97,7 @@ Get-Item main.js,manifest.json,styles.css | Select-Object Name,Length
 Stage only the version bump and generated connector content if it changed:
 
 ```bash
-git add package.json manifest.json CLAUDE.md src/utils/connectorContent.ts
+git add package.json manifest.json CLAUDE.md versions.json src/utils/connectorContent.ts
 git commit -m "chore: bump version to X.Y.Z"
 git push origin main
 ```
@@ -145,7 +149,7 @@ Download `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsidi
 - Forgetting to pull latest `main` before the version bump
 - Using `npm version`
 - Forgetting to rebuild after the version bump
-- Missing one of the 3 version files
+- Missing one of the 4 version files (`versions.json` is the easy one to forget — the release workflow guard will fail the build)
 - Manually attaching unsupported release artifacts such as `connector.js`
 - Manually creating a release in a way that bypasses artifact attestations
 - Shipping new features without updating `README.md` / `guide/` docs
