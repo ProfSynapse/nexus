@@ -2,6 +2,34 @@
 
 ## June 2026
 
+**v5.11.2** — Security hardening, secure API key storage, model catalog refresh
+
+**Security & privacy** (plugin audit, PRs #250–#256)
+- **Opt-in secure API key storage** (PR #254) — a new "Store API keys in secure storage" toggle in the Providers tab moves LLM API keys, OAuth refresh tokens, and app credentials out of the synced `data.json` and into Obsidian's device-local `app.secretStorage` (requires Obsidian 1.11.4+; off by default — keys must be re-entered once per device when enabled).
+- MCP Unix socket is now `0600` instead of world-writable; WebLLM CDN imports pinned to `@0.2.80`; web tools reject non-`http(s)` URLs (blocks `file://` reads from LLM-supplied links) (PR #255).
+- Runtime validation for LLM-supplied tool arguments — malformed `createTask` input now returns a clean error instead of persisting bad data (PR #252).
+- Silent JSON-parse failures in the storage layer are now logged with repository/column/row context (PR #256).
+- Removed unused dependencies (`winston`, `uuid`, `tough-cookie`, npm copies of CDN-loaded WebLLM/transformers): 854 → 746 packages, 0 vulnerabilities (PR #251).
+
+**Models** (PR #258)
+- **Claude Fable 5** added to Anthropic, OpenRouter, and Requesty.
+- Requesty catalog refreshed (GPT-5.5/5.4 family, Gemini 3.5/3.1/2.5, Claude 4.x/Fable 5); default model is now `anthropic/claude-sonnet-4-6`. Live-smoke verified, including a post-merge slug fix: Gemini 3.5 Flash on Requesty is `vertex/gemini-3.5-flash`.
+
+**Fixes**
+- `updateSession` no longer drops `startTime`; `updateMessage` now validates its conversation id instead of silently applying cross-conversation (PR #264).
+- Reopening a done task clears its stale `completedAt` timestamp.
+- Release workflow now fails on tag/manifest/package/versions.json mismatch; `versions.json` backfilled (PR #255).
+
+**Internal**
+- LLM adapter deduplication with 83 characterization tests pinning provider behavior (PRs #253, #257); `HybridStorageAdapter` split into assembly + maintenance services, surfacing the two fixes above (PRs #260–#263).
+
+**v5.11.1** — Plugin review & audit compliance fixes.
+
+**v5.11.0** — Live voice + read-aloud
+- **Live voice chat**: OpenAI realtime (WebRTC) and Google Gemini live voice support, with transcripts appended to chat and prior-context priming (PRs #243, #248, #249).
+- **Read aloud**: unified save + embed audio UX; voice audio settings (PRs #241, #245).
+- Video generation artifact jobs (PR #242); short task refs (PR #239); slimmer YAML frontmatter bundle (PR #246); removed unused HTTP MCP transport (PR #247); security dep updates (MCP SDK 1.29.0).
+
 **v5.10.0** — Skills & Data Analysis Apps + Workspaces tab redesign
 
 **New Apps** (opt-in via Settings → Apps)

@@ -39,6 +39,10 @@ For Anthropic, OpenAI, Google AI, Groq, Mistral, OpenRouter, Perplexity, and Req
 
 If you want the simplest setup, an API key provider is usually the fastest path.
 
+### Secure key storage (optional)
+
+By default, API keys live in the plugin's settings file (`data.json`), which syncs with your vault. To keep keys out of synced files, enable **Store API keys in secure storage** in the Providers tab (requires Obsidian 1.11.4+). Keys (including OAuth tokens and app credentials) move into Obsidian's device-local secure storage and are stripped from `data.json` — you will need to re-enter them once on each device. Turning the toggle off writes keys back into `data.json`.
+
 ---
 
 ## Local Providers
