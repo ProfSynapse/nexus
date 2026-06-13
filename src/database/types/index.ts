@@ -43,7 +43,9 @@ export type {
   TraceInputMetadata,
   TraceOutcomeMetadata,
   TraceLegacyMetadata,
-  LegacyWorkspaceTraceMetadata
+  LegacyWorkspaceTraceMetadata,
+  RetrievalCandidate,
+  RetrievalOutcomeMetadata
 } from './memory/MemoryTypes';
 
 // Cache types

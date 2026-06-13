@@ -14,15 +14,28 @@
  * - Manages all embedding system components
  */
 
-import { App, Plugin, Platform } from 'obsidian';
+import { App, Plugin, Platform, Notice } from 'obsidian';
 import { EmbeddingEngine } from './EmbeddingEngine';
 import { EmbeddingService } from './EmbeddingService';
 import { EmbeddingWatcher } from './EmbeddingWatcher';
 import { ConversationEmbeddingWatcher } from './ConversationEmbeddingWatcher';
 import { IndexingQueue } from './IndexingQueue';
 import { EmbeddingStatusBar } from './EmbeddingStatusBar';
+import { createRetrievalDreamService, RetrievalDream } from './adapter/createRetrievalDreamService';
+import type { MemoryTraceQuery } from './adapter/RetrievalFeedbackSources';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import type { MessageRepository } from '../../database/repositories/MessageRepository';
+
+/** Structural view of the plugin's settings needed for adapter persistence + kill-switch. */
+interface PluginWithSettings {
+  settings?: {
+    storage?: unknown;
+    embeddings?: { retrievalLearning?: boolean };
+  };
+}
+
+/** How often a dream-consolidation cycle runs (ms). */
+const DREAM_INTERVAL_MS = 45 * 60 * 1000;
 
 /**
  * Embedding system manager
@@ -41,6 +54,7 @@ export class EmbeddingManager {
   private conversationWatcher: ConversationEmbeddingWatcher | null = null;
   private queue: IndexingQueue | null = null;
   private statusBar: EmbeddingStatusBar | null = null;
+  private retrievalDream: RetrievalDream | null = null;
 
   private isEnabled: boolean;
   private isInitialized = false;
@@ -99,6 +113,11 @@ export class EmbeddingManager {
       window.setTimeout(() => {
         void this.runBackgroundIndexing();
       }, 3000); // 3-second delay
+
+      // Wire the self-improving retrieval adapter ("dreaming"). Safe by design:
+      // identity until something trains, and the promotion gate prevents
+      // regressions, so this never degrades search.
+      this.initRetrievalLearning();
 
       this.isInitialized = true;
 
@@ -203,6 +222,76 @@ export class EmbeddingManager {
       conversationChunkCount: stats.conversationChunkCount,
       indexingInProgress: this.queue?.isIndexing() ?? false
     };
+  }
+
+  /**
+   * Set up the self-improving retrieval adapter: load any persisted adapter,
+   * schedule periodic dream cycles, and register a manual "dream now" command.
+   * Fully guarded — any failure here must never break embeddings.
+   */
+  private initRetrievalLearning(): void {
+    if (!this.service) return;
+
+    try {
+      const pluginSettings = (this.plugin as unknown as PluginWithSettings).settings;
+
+      this.retrievalDream = createRetrievalDreamService({
+        service: this.service,
+        db: this.db as unknown as MemoryTraceQuery,
+        fs: this.app.vault.adapter,
+        getSettings: () => (pluginSettings as never),
+        configDir: this.app.vault.configDir
+      });
+
+      // Apply a previously-trained adapter on startup (identity if none).
+      void this.retrievalDream.loadAndApply().catch((error) => {
+        console.error('[EmbeddingManager] Failed to load retrieval adapter:', error);
+      });
+
+      // Periodic consolidation, unless explicitly disabled.
+      if (pluginSettings?.embeddings?.retrievalLearning !== false) {
+        const interval = window.setInterval(() => {
+          void this.runDreamCycle(false);
+        }, DREAM_INTERVAL_MS);
+        this.plugin.registerInterval(interval);
+      }
+
+      this.plugin.addCommand({
+        id: 'consolidate-retrieval-memory',
+        name: 'Consolidate retrieval memory (dream now)',
+        callback: () => { void this.runDreamCycle(true); }
+      });
+    } catch (error) {
+      console.error('[EmbeddingManager] Failed to initialize retrieval learning:', error);
+    }
+  }
+
+  /**
+   * Run a single dream-consolidation cycle. Notifies the user only when an
+   * improved adapter is actually promoted (or on explicit manual trigger).
+   */
+  async runDreamCycle(notify: boolean): Promise<void> {
+    if (!this.retrievalDream) return;
+
+    try {
+      const report = await this.retrievalDream.dream.runDreamCycle();
+      if (report.promoted) {
+        const via = report.winner ? ` via ${report.winner}` : '';
+        new Notice(
+          `Nexus consolidated retrieval memory — search relevance improved${via} ` +
+          `(${report.minedExamples} examples).`
+        );
+      } else if (notify) {
+        new Notice(
+          report.reason === 'insufficient-data'
+            ? 'Not enough retrieval history to learn from yet.'
+            : 'Retrieval memory consolidated — no improvement to apply.'
+        );
+      }
+    } catch (error) {
+      console.error('[EmbeddingManager] Dream cycle failed:', error);
+      if (notify) new Notice('Retrieval memory consolidation failed (see console).');
+    }
   }
 
   private async runBackgroundIndexing(): Promise<void> {

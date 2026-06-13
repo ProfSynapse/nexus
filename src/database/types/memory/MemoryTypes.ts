@@ -93,6 +93,33 @@ export interface TraceInputMetadata {
 }
 
 /**
+ * A single candidate returned by a retrieval tool (search). `path` is the
+ * canonical identifier (note path, state id, conversation pair id, etc.).
+ * `score` is captured when the tool exposes one (often absent — e.g. semantic
+ * `searchContent` strips its internal distance from the public result).
+ */
+export interface RetrievalCandidate {
+  path: string;
+  score?: number;
+}
+
+/**
+ * Retrieval feedback substrate (Phase 0 of the self-improving retrieval
+ * adapter). When a search tool succeeds, we persist the candidate set it
+ * returned plus a stable `groupId`. The relevance LABEL is NOT captured here —
+ * it is mined later by joining a follow-up "use" of a candidate (a `read` /
+ * `loadState` / cite, or an in-session task completion) within the same
+ * session. Keeping capture to candidates-only keeps the surface minimal and
+ * the join in the (offline, "dreaming") miner.
+ */
+export interface RetrievalOutcomeMetadata {
+  /** Stable id for this retrieval instance; the miner keys feedback on it. */
+  groupId: string;
+  /** Returned candidate set, capped (see RETRIEVAL_CANDIDATE_CAP). */
+  candidates: RetrievalCandidate[];
+}
+
+/**
  * Outcome of the tool call. We only persist the durable signal (success/error)
  * instead of large response payloads.
  */
@@ -103,6 +130,8 @@ export interface TraceOutcomeMetadata {
     message: string;
     code?: string | number;
   };
+  /** Present only for successful retrieval (search) tools — see RetrievalOutcomeMetadata. */
+  retrieval?: RetrievalOutcomeMetadata;
 }
 
 /**

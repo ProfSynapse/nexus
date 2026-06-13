@@ -8,9 +8,30 @@ import { MemoryService } from '../../agents/memoryManager/services/MemoryService
 import { SessionContextManager } from '../SessionContextManager';
 import { WorkspaceService } from '../WorkspaceService';
 import { TraceMetadataBuilder } from '../memory/TraceMetadataBuilder';
-import { TraceContextMetadata, TraceOutcomeMetadata } from '../../database/workspace-types';
+import { TraceContextMetadata, TraceOutcomeMetadata, RetrievalCandidate, RetrievalOutcomeMetadata } from '../../database/workspace-types';
 import { formatTraceContent } from './TraceContentFormatter';
 import { splitTopLevelSegments, tokenizeWithMeta } from '../../agents/toolManager/services/ToolCliNormalizer';
+import { generateUUID } from '../../utils/uuid';
+
+/** Max candidates persisted per retrieval, to bound trace size. */
+const RETRIEVAL_CANDIDATE_CAP = 25;
+
+/** Agent names (normalized) that own retrieval (search) tools. */
+const RETRIEVAL_AGENTS = new Set(['searchmanager', 'search', 'vaultlibrarian']);
+/** Tool/mode names (normalized) that perform relevance retrieval we learn from. */
+const RETRIEVAL_MODES = new Set(['content', 'searchcontent', 'memory', 'searchmemory']);
+
+function normalizeToolToken(value: string): string {
+  return value.replace(/[-_\s]/g, '').toLowerCase();
+}
+
+/**
+ * True when (agent, mode) is a relevance-retrieval tool whose returned
+ * candidates are worth capturing for the retrieval-adapter feedback log.
+ */
+function isRetrievalTool(agent: string, mode: string): boolean {
+  return RETRIEVAL_AGENTS.has(normalizeToolToken(agent)) && RETRIEVAL_MODES.has(normalizeToolToken(mode));
+}
 
 type ToolCallParams = unknown;
 type ToolCallResponse = unknown;
@@ -245,6 +266,16 @@ export class ToolCallTraceService {
 
     const outcome = this.buildOutcomeMetadata(options.success, options.response);
 
+    // Phase 0 retrieval-feedback substrate: when a direct retrieval (search)
+    // call succeeds, persist the candidate set it returned. (Batched searches
+    // are handled per-sub-result in buildUseToolsBatchMetadata.)
+    if (options.success && isRetrievalTool(options.agent, options.mode)) {
+      const retrieval = this.buildRetrievalOutcome(asRecord(options.response));
+      if (retrieval) {
+        outcome.retrieval = retrieval;
+      }
+    }
+
     const metadata = TraceMetadataBuilder.create({
       tool: {
         id: `${options.agent}_${options.mode}`,
@@ -368,6 +399,15 @@ export class ToolCallTraceService {
         compactResult.params = compactParams;
       }
 
+      // Phase 0: capture the candidate set returned by a batched search tool.
+      if (success !== false && isRetrievalTool(resultAgent, resultTool)) {
+        const retrieval = this.buildRetrievalOutcome(responseResult);
+        if (retrieval) {
+          compactResult.groupId = retrieval.groupId;
+          compactResult.candidates = retrieval.candidates;
+        }
+      }
+
       results.push(compactResult);
     }
 
@@ -409,6 +449,66 @@ export class ToolCallTraceService {
     }
 
     return Object.keys(compact).length > 0 ? compact : undefined;
+  }
+
+  /**
+   * Build the retrieval-feedback substrate for a successful search response.
+   * Returns undefined when no candidates can be extracted (nothing to learn from).
+   */
+  private buildRetrievalOutcome(source: Record<string, unknown> | undefined): RetrievalOutcomeMetadata | undefined {
+    const candidates = this.extractRetrievalCandidates(source);
+    if (candidates.length === 0) {
+      return undefined;
+    }
+    return { groupId: generateUUID(), candidates };
+  }
+
+  /**
+   * Extract the candidate list a retrieval tool returned. Works across surfaces:
+   * note search (`filePath`), memory/state/trace search (`id`), conversation
+   * search (`pairId`). Scores are captured only when the tool exposes one.
+   */
+  private extractRetrievalCandidates(source: Record<string, unknown> | undefined): RetrievalCandidate[] {
+    if (!isRecord(source)) {
+      return [];
+    }
+
+    const items: unknown[] = [];
+    for (const key of ['results', 'matches']) {
+      if (Array.isArray(source[key])) {
+        items.push(...(source[key] as unknown[]));
+      }
+    }
+
+    const candidates: RetrievalCandidate[] = [];
+    const seen = new Set<string>();
+    for (const item of items) {
+      if (!isRecord(item)) {
+        continue;
+      }
+      const path =
+        getString(item.filePath) ||
+        getString(item.path) ||
+        getString(item.notePath) ||
+        getString(item.pairId) ||
+        getString(item.id);
+      if (!path || seen.has(path)) {
+        continue;
+      }
+      seen.add(path);
+
+      const candidate: RetrievalCandidate = { path };
+      const score = item.score ?? item.similarity ?? item.distance;
+      if (typeof score === 'number' && Number.isFinite(score)) {
+        candidate.score = score;
+      }
+      candidates.push(candidate);
+
+      if (candidates.length >= RETRIEVAL_CANDIDATE_CAP) {
+        break;
+      }
+    }
+    return candidates;
   }
 
   /**

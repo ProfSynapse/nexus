@@ -278,4 +278,132 @@ describe('ToolCallTraceService', () => {
     expect(trace.metadata.legacy).toBeUndefined();
     expect(JSON.stringify(trace.metadata)).not.toContain(bulkyResult);
   });
+
+  describe('retrieval-feedback capture (Phase 0)', () => {
+    function makeService() {
+      const memoryService = {
+        recordActivityTrace: jest.fn().mockResolvedValue('trace-1')
+      };
+      const sessionContextManager = {
+        getWorkspaceContext: jest.fn().mockReturnValue(null),
+        setWorkspaceContext: jest.fn()
+      };
+      const workspaceService = {
+        getWorkspaceByNameOrId: jest.fn().mockResolvedValue({ id: 'workspace-uuid', name: 'Workspace Name' })
+      };
+      const service = new ToolCallTraceService(
+        memoryService as never,
+        sessionContextManager as never,
+        workspaceService as never,
+        {} as never
+      );
+      return { service, memoryService };
+    }
+
+    const recorded = (memoryService: { recordActivityTrace: jest.Mock }) =>
+      memoryService.recordActivityTrace.mock.calls[0][0];
+
+    it('captures returned note candidates for a direct semantic searchContent call', async () => {
+      const { service, memoryService } = makeService();
+
+      await service.captureToolCall(
+        'searchManager_content',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', query: 'graph theory', semantic: true },
+        { success: true, results: [{ filePath: 'Notes/A.md' }, { filePath: 'Notes/B.md' }] },
+        true,
+        12
+      );
+
+      const retrieval = recorded(memoryService).metadata.outcome.retrieval;
+      expect(retrieval.candidates).toEqual([{ path: 'Notes/A.md' }, { path: 'Notes/B.md' }]);
+      expect(typeof retrieval.groupId).toBe('string');
+      expect(retrieval.groupId.length).toBeGreaterThan(0);
+    });
+
+    it('captures memory-surface candidates by id and preserves an exposed score', async () => {
+      const { service, memoryService } = makeService();
+
+      await service.captureToolCall(
+        'searchManager_memory',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', query: 'last sprint' },
+        { success: true, results: [{ id: 'trace-9', similarity: 0.82 }, { id: 'state-3' }] },
+        true,
+        12
+      );
+
+      const retrieval = recorded(memoryService).metadata.outcome.retrieval;
+      expect(retrieval.candidates).toEqual([{ path: 'trace-9', score: 0.82 }, { path: 'state-3' }]);
+    });
+
+    it('captures candidates per search sub-result inside a useTools batch', async () => {
+      const { service, memoryService } = makeService();
+
+      await service.captureToolCall(
+        'toolManager_useTools',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', tool: 'search content "graph theory"' },
+        {
+          success: true,
+          data: {
+            results: [
+              {
+                agent: 'searchManager',
+                tool: 'content',
+                success: true,
+                results: [{ filePath: 'Notes/A.md' }, { filePath: 'Notes/B.md' }]
+              }
+            ]
+          }
+        },
+        true,
+        12
+      );
+
+      const [batchResult] = recorded(memoryService).metadata.batch.results;
+      expect(batchResult.candidates).toEqual([{ path: 'Notes/A.md' }, { path: 'Notes/B.md' }]);
+      expect(typeof batchResult.groupId).toBe('string');
+    });
+
+    it('caps the candidate list to bound trace size', async () => {
+      const { service, memoryService } = makeService();
+      const results = Array.from({ length: 40 }, (_, i) => ({ filePath: `Notes/${i}.md` }));
+
+      await service.captureToolCall(
+        'searchManager_content',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', query: 'x', semantic: true },
+        { success: true, results },
+        true,
+        12
+      );
+
+      expect(recorded(memoryService).metadata.outcome.retrieval.candidates).toHaveLength(25);
+    });
+
+    it('does NOT attach retrieval for a failed search', async () => {
+      const { service, memoryService } = makeService();
+
+      await service.captureToolCall(
+        'searchManager_content',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', query: 'x', semantic: true },
+        { success: false, error: 'boom' },
+        false,
+        12
+      );
+
+      expect(recorded(memoryService).metadata.outcome.retrieval).toBeUndefined();
+    });
+
+    it('does NOT attach retrieval for a non-retrieval tool (read)', async () => {
+      const { service, memoryService } = makeService();
+
+      await service.captureToolCall(
+        'contentManager_read',
+        { workspaceId: 'Workspace Name', sessionId: 'session-1', filePath: 'Notes/A.md' },
+        { success: true, content: 'hello', filePath: 'Notes/A.md', results: [{ filePath: 'Notes/A.md' }] },
+        true,
+        12
+      );
+
+      expect(recorded(memoryService).metadata.outcome.retrieval).toBeUndefined();
+    });
+  });
 });

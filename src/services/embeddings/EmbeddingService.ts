@@ -25,6 +25,7 @@ import { EmbeddingEngine } from './EmbeddingEngine';
 import { NoteEmbeddingService } from './NoteEmbeddingService';
 import { TraceEmbeddingService } from './TraceEmbeddingService';
 import { ConversationEmbeddingService } from './ConversationEmbeddingService';
+import { EmbeddingAdapter } from './adapter/EmbeddingAdapter';
 import type { SimilarNote } from './NoteEmbeddingService';
 import type { TraceSearchResult } from './TraceEmbeddingService';
 import type { ConversationSearchResult } from './ConversationEmbeddingService';
@@ -51,6 +52,9 @@ export class EmbeddingService {
   private traceService: TraceEmbeddingService;
   private conversationService: ConversationEmbeddingService;
 
+  /** Query-side learned adapter; identity until a trained one is loaded. */
+  private adapter: EmbeddingAdapter;
+
   constructor(
     app: App,
     db: SQLiteCacheManager,
@@ -61,10 +65,27 @@ export class EmbeddingService {
     // Disable on mobile entirely
     this.isEnabled = !Platform.isMobile;
 
+    // Identity adapter = no behavior change until a trained model is applied.
+    this.adapter = EmbeddingAdapter.identity();
+
     // Create domain services
-    this.noteService = new NoteEmbeddingService(app, db, engine);
+    this.noteService = new NoteEmbeddingService(app, db, engine, this.adapter);
     this.traceService = new TraceEmbeddingService(db, engine);
     this.conversationService = new ConversationEmbeddingService(db, engine);
+  }
+
+  /**
+   * Apply a query-side retrieval adapter (loaded from AdapterStore or freshly
+   * trained by the dream job). Routed to every query-side surface.
+   */
+  setAdapter(adapter: EmbeddingAdapter): void {
+    this.adapter = adapter;
+    this.noteService.setQueryAdapter(adapter);
+  }
+
+  /** Current adapter version (0 = identity). For status surfaces. */
+  getAdapterVersion(): number {
+    return this.adapter.version;
   }
 
   /**
@@ -104,6 +125,23 @@ export class EmbeddingService {
   async removeEmbedding(notePath: string): Promise<void> {
     if (!this.isEnabled) return;
     return this.noteService.removeEmbedding(notePath);
+  }
+
+  /** Stored document vector for a note path (raw, no query adapter). */
+  async getNoteVector(notePath: string): Promise<Float32Array | null> {
+    if (!this.isEnabled) return null;
+    return this.noteService.getNoteVector(notePath);
+  }
+
+  /** Embed query text via the frozen encoder (no adapter — that's applied at search). */
+  async embedQueryText(query: string): Promise<Float32Array | null> {
+    if (!this.isEnabled) return null;
+    try {
+      return await this.engine.generateEmbedding(query);
+    } catch (error) {
+      console.error('[EmbeddingService] Failed to embed query text:', error);
+      return null;
+    }
   }
 
   async updatePath(oldPath: string, newPath: string): Promise<void> {
