@@ -8,7 +8,8 @@
 
 | Date | Phase | Status | Notes |
 |------|-------|--------|-------|
-| 2026-06-13 | — | **PLANNED** | Design doc written. No code yet. Grounded against `ToolCallTraceService.ts`, `NoteEmbeddingService.ts`, `schema.ts:261`, `WorkflowScheduleService.ts`, `IndexingQueue.ts`. |
+| 2026-06-13 | — | **PLANNED** | Design doc written. Grounded against `ToolCallTraceService.ts`, `NoteEmbeddingService.ts`, `schema.ts:261`, `WorkflowScheduleService.ts`, `IndexingQueue.ts`. Scope broadened to all retrieval surfaces (notes/traces/conversations/states) + workspace/project/task structure (scope, A* goal, task-completion reward). Serendipity safeguards + Q-learning/A* lenses + Appendix A (dream-time A* bridge-finder) added. |
+| 2026-06-13 | **PR1 / Phase 0** | **DONE (branch)** | Retrieval-feedback capture implemented in `ToolCallTraceService`: successful `searchContent`/`searchMemory` calls (direct **and** `useTools`-batched) now persist `outcome.retrieval = { groupId, candidates[] }` across surfaces (note `filePath`, memory/state `id`, conversation `pairId`), scores when exposed, capped at 25. New `RetrievalCandidate`/`RetrievalOutcomeMetadata` types. +6 unit tests (11 total in suite, 29 across trace suites). tsc + eslint clean. The substrate the adapter/miner builds on. |
 
 ---
 
@@ -23,6 +24,35 @@ We do **not** fine-tune the encoder. We keep `Xenova/all-MiniLM-L6-v2` frozen an
 - `W` initialized to identity means **day 0 is byte-for-byte today's behavior** — zero regression risk on launch.
 
 This is an asymmetric dual-tower setup (learned query tower, frozen document tower), which is standard in dense retrieval (DPR-style).
+
+---
+
+## Scope: all retrieval surfaces, not just notes
+
+The adapter is **query-side**, so it is target-agnostic by construction — the same learned `W` (or a small per-target head) improves retrieval over every vec0 table that exists today:
+
+| Surface | vec0 table (today) | Retrieval tool | "Used" signal mined |
+|---------|--------------------|----------------|----------------------|
+| **Notes** | `note_embeddings` (`schema.ts:264`) | `searchContent semantic` | a follow-up `read` of a returned note |
+| **Memory traces** | `trace_embeddings` (`schema.ts:284`) | `searchMemory` (traces) | a returned trace cited/loaded in the same session |
+| **Conversations** | `conversation_embeddings` (`schema.ts:321`) | `searchMemory` (conversations) | a returned QA pair re-surfaced/continued |
+| **States** | *(none — not embedded)* | `searchMemory` (states) | a returned state `loadState`'d |
+
+**Shared trunk, optional per-target heads.** Start with **one shared `W`** applied to the query before any of the four KNN calls (`NoteEmbeddingService.semanticSearch:177`, plus the equivalent lines in `TraceEmbeddingService`/`ConversationEmbeddingService`). If evaluation shows the notion of "relevance" diverges by surface (likely — a relevant *trace* is recency/goal-shaped, a relevant *note* is topical), split into `W_shared + head_target` low-rank heads. Decision deferred to data.
+
+**States need an embedding to participate semantically.** Today states are searched fuzzily, not by vector. Embedding state name+description into a new `state_embeddings` vec0 table is a small follow-on (mirrors the note path); until then, states still contribute to the *reward* side (a `loadState` after a `searchMemory` is a positive) even without their own vector. Tracked as a sub-task.
+
+## Workspace / project / task structure as scope, goal, and reward
+
+This is where the design gets materially stronger than generic RAG-tuning. Nexus's workspace → project → task DAG (sharded JSONL under `tasks/<workspaceId>/`, `TaskManager` agent) gives three things a flat note corpus can't:
+
+1. **Scope (conditioning).** Feedback is already `workspaceId`-partitioned (every trace carries it). Train per-workspace, or condition the adapter on a workspace vector, so "relevant" means *relevant to the work you're actually in*. Cheapest first step: partition the feedback log by workspace and let the shared `W` see all of it, with a `workspaceId` feature available for a future conditioned head.
+
+2. **Goal (grounds the A* heuristic).** A task is a concrete goal node with **linked notes** (`TaskService.getNoteLinks`) and **DAG dependencies** (`TaskService.getDependencies`). For the A* bridge-finder (Appendix A), the fuzzy "info-need" becomes an explicit target: *notes/resources relevant to completing task T*. Task dependencies + note links + semantic neighbors compose into **one unified graph** A* traverses — the dependency edges are first-class, author-asserted, and cheap to cross.
+
+3. **Reward (the real terminal signal).** The implicit "read after search" label is weak. **Task state transitions are ground truth.** A task moving `todo → doing → done` shortly after a retrieved note was read is a *terminal success* — the strongest positive the system can get, and exactly the signal Q-learning's multi-step credit assignment back-propagates to the retrievals that led there. The task/project event stream already records these transitions; mining them turns "did they click it" into "did it help finish the work." **This becomes the primary reward; read-follow is the fallback when no task is active.**
+
+**Implication for Phase 0:** the candidate-capture must cover `searchMemory` (traces/states/conversations) as well as `searchContent` (notes), and the trace's existing `workspaceId`/`sessionId` already give us the scoping keys for free. Task-completion reward mining is a later phase (needs the task event join), but Phase 0's `retrievalGroupId` + per-surface candidates are the substrate it builds on.
 
 ---
 
@@ -168,7 +198,7 @@ In the retrieval tool's trace outcome (additive, lives in `metadataJson` via the
 }
 ```
 
-The **label** is derived later, not captured inline: at dream time, a `read` (or cite) of a candidate `p` within the same session/`groupId` ⇒ positive `(query, p)`; the other candidates ⇒ negatives. Minimal capture surface; labels are mined.
+The **label** is derived later, not captured inline. At dream time, a follow-up *use* of a returned candidate `p` within the same session ⇒ positive `(query, p)`; the other candidates ⇒ negatives. "Use" is surface-specific: a `read` for a note, a `loadState` for a state, a cite/continue for a trace/conversation, and — strongest of all — a **task completion** in that session/workspace (see Workspace/project/task section). Capture is the same compact `{candidates, groupId}` shape regardless of surface (`searchContent` *and* `searchMemory`); the per-surface "use" join is the miner's job, not the capture's. Minimal capture surface; labels are mined.
 
 #### Key Decisions
 
@@ -227,12 +257,15 @@ interface DreamReport { newExamples: number; explorationHits: number; mrrBefore:
 **Effort**: Medium.
 
 - **EmbeddingAdapter**: identity transform == input (renormalized); known `U,V` produces expected rotation; serialization round-trip; dimension guard.
-- **Phase 0 capture**: a semantic `searchContent` trace persists `retrieval.candidates` + `groupId`; non-retrieval tools unaffected; candidate cap respected; `metadataJson` parses.
+- **Phase 0 capture (all surfaces)**: a semantic `searchContent` trace **and** a `searchMemory` trace each persist `retrieval.candidates` + `groupId`; both direct calls and `useTools`-batched calls; non-retrieval tools unaffected; candidate cap respected; `metadataJson` parses; `workspaceId`/`sessionId` present for scoping.
 - **Miner**: synthetic trace stream (search then read of candidate B) yields `(query, B, [A,C])`; no read ⇒ no example; cross-session reads don't leak.
 - **Trainer**: on a separable synthetic set, post-train held-out MRR > identity; identity-init + zero data ⇒ returns identity; regularization keeps `‖W−I‖` bounded.
 - **Evaluator/promotion**: a `W` that worsens held-out MRR is **not** promoted; the better one is.
 - **Apply site**: `semanticSearch` with identity adapter returns byte-identical ranking to pre-change (regression guard via counter-test).
+- **Multi-surface miner**: read-follow yields a note positive; `loadState`-follow yields a state positive; **task `done` transition** in-session yields the strongest positive and back-credits the in-session retrievals; cross-workspace feedback never mixes.
 - **Mobile**: `EmbeddingAdapter` imports nothing Node; `AdapterStore` loads via `vault.adapter`; training services are desktop-gated and never constructed on mobile.
+
+> **Every PR ships its own tests** (unit + the counter-test regression guards noted above). No phase merges without green tests + clean build/lint, per repo convention.
 
 ---
 
@@ -267,6 +300,61 @@ Today the adapter **only affects desktop semantic search**, because mobile has n
 ## Optional bolt-on (same machinery): learned reranker
 
 The hardcoded rerank weights in `NoteEmbeddingService.semanticSearch:204-224` (recency 15%, path-match 10/20%) can be **learned** from the exact same feedback log via logistic regression — ~10 floats, mobile-safe arithmetic. Not in scope for the four PRs above, but the dream job and feedback table serve it with no new infrastructure. Track as a follow-up.
+
+## Appendix A — Dream-time A* bridge-finder (design)
+
+> The **structural** serendipity channel. Stochastic wildcards (ε-greedy) surface random surprises; this surfaces *connected* surprises — non-obvious chains between notes you never linked. Runs offline during the dream, desktop-only, time-boxed. Experimental tier (after the 4 core PRs).
+
+### Goal
+
+Find **bridges**: pairs/clusters of notes that are *far apart in the link graph* but *close in adapted embedding space*, and produce the **explainable path** between them ("A connects to B via C → D"). The path is what turns a similarity score into an insight — and it's exactly what A*-style search gives you that bare KNN cannot.
+
+### Graph construction
+
+- **Nodes** = vault notes that have an embedding in `note_embeddings`.
+- **Edges** (two kinds, union):
+  - *Explicit*: Obsidian wiki-links (already extracted in `EmbeddingUtils`), weight ≈ low cost (cheap to traverse — author asserted the link).
+  - *Implicit*: top-`m` semantic neighbors per node via `vec_distance_l2` in **adapted** space (`m` ≈ 8), weight = adapted distance.
+- Built incrementally and cached; only re-expanded around notes changed since the last dream (the indexing queue already tracks content hashes).
+
+### Two composable formulations
+
+**(1) Tension score (which pairs are bridge-worthy):**
+```
+bridge(a, b) = semanticSim_adapted(a, b)  −  λ · graphProximity(a, b)
+```
+High when two notes are semantically near **but** graph-distant (few/long link paths between them). `graphProximity` = inverse shortest-link-path length (or Personalized PageRank). This ranks *candidate* bridges cheaply, before paying for path search.
+
+**(2) A*/best-first path (the explainable chain connecting them):**
+For a top-tension pair `(a, b)`, run best-first search from `a` toward `b`:
+- `g(n)` = accumulated edge cost from `a` to `n` (hops × edge weight; explicit links cheaper than implicit).
+- `h(n)` = **adapter distance from `n` to the goal `b`** — i.e. `W` is the heuristic. The same matrix that's the retrieval metric guides the planner.
+- Expand the frontier note minimizing `f = g + h`. **Beam-limited** (frontier ≤ `B` ≈ 32) and **depth-capped** (≤ 4 hops) so it's bounded.
+- Stop when `b` is reached or budget hits; emit the path. If no short path exists, the pair is *too* disconnected — drop it (a bridge needs a story).
+
+### Honest caveats
+
+- The goal `b` is a concrete note here (not a fuzzy info-need), so A* is well-posed — **but** the learned `h` is not guaranteed admissible, so this is **best-first / beam search**, not optimality-guaranteed A*. Fine for suggestions; don't claim shortest-path.
+- It's `O(pairs × beam × depth)` — that's why it's **dream-time and time-boxed**, never per-keystroke. Budget per cycle (e.g. ≤ N candidate pairs, hard wall-clock cap), resume next dream.
+
+### Output & UX
+
+```typescript
+interface BridgeSuggestion {
+  a: string; b: string;          // note paths
+  path: string[];                // explainable chain a → … → b
+  surprise: number;              // tension score
+  rationale: string;             // "near in meaning, 4 links apart via C, D"
+}
+```
+Surfaced as a quiet "Connections from last night's dream" list (dismiss / open / "link these"). Following a bridge **is exploration feedback**: a used suggestion becomes an off-distribution positive for the trainer — closing the loop between the structural channel and the learned metric.
+
+### Reuse / safety
+
+- Reuses `EmbeddingUtils` wiki-link extraction, `note_embeddings` for implicit edges, the **adapter as heuristic**, and the dream scheduler/budget.
+- Desktop-only (needs the encoder), idle-gated, incremental, fully derivable (no synced state — suggestions are ephemeral cache).
+
+---
 
 ## Explicitly out of scope (future / "north star")
 
