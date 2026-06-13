@@ -244,6 +244,7 @@ export type ImageModel =
   | 'gemini-3-pro-image-preview' // Google Nano Banana Pro (advanced)
   | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 (flash speed, pro quality)
   | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
+  | 'gpt-5.4-image-2'                // OpenAI GPT-5.4 Image 2 (OpenRouter only)
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
   | 'flux-2-flex';                   // Black Forest Labs FLUX.2 Flex (OpenRouter only)
 
