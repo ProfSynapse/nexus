@@ -1,50 +1,175 @@
 - name: read-then-write-then-move
-  description: Read a note, write a summary, move it to archive
-  toolSet: nexus
+  description: Read a note, write a summary, move it to archive — via two-tool meta
+  toolSet: meta
   allowReorder: true
   turns:
     - userMessage: "Read notes/meeting.md, write a summary to notes/summary.md, then move it to archive/"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/meeting.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+              - agent: contentManager
+                tool: write
+                description: Write content to a file
+                command: "content write"
+                usage: "content write <path> <content>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: content
+                    flag: --content
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content write "path-value" "content-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Q2 Meeting\n- Roadmap reviewed\n- Budget approved\n- Launch date: June 15"
         contentManager_read:
           success: true
           result:
             content: "# Q2 Meeting\n- Roadmap reviewed\n- Budget approved\n- Launch date: June 15"
 
     - expectedTools:
-        - name: contentManager_write
+        - name: useTools
           params:
-            path: notes/summary.md
+            tool: "content write"
       mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_write
+                success: true
+                result:
+                  path: notes/summary.md
         contentManager_write:
           success: true
           result:
             path: notes/summary.md
 
     - expectedTools:
-        - name: storageManager_move
+        - name: getTools
           params:
-            path: notes/summary.md
-            destination: archive/
+            tool: "storage"
+          optional: true
+        - name: useTools
+          params:
+            tool: "storage move"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: move
+                description: Move a file to a new location
+                command: "storage move"
+                usage: "storage move <path> <newPath>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: newPath
+                    flag: --new-path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage move "path-value" "newPath-value"'
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: storageManager_move
+                success: true
+                result:
+                  newPath: archive/summary.md
         storageManager_move:
           success: true
           result:
             newPath: archive/summary.md
 
 - name: search-and-read
-  description: Search for notes about a topic, then read the top result
-  toolSet: nexus
+  description: Search for notes about a topic, then read the top result — via two-tool meta
+  toolSet: meta
   allowReorder: true
   turns:
     - userMessage: "Find notes about project roadmap and show me the full content of the best match"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: getTools
+          params:
+            tool: "search"
       mockResponses:
-        searchManager_searchContent:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: content
+                description: Search for notes by content keyword
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "search content"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchManager_content
+                success: true
+                result:
+                  results:
+                    - path: notes/roadmap-q2.md
+                      score: 0.95
+        searchManager_content:
           success: true
           result:
             results:
@@ -52,10 +177,39 @@
                 score: 0.95
 
     - expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/roadmap-q2.md
+            tool: "content"
+          optional: true
+        - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Q2 Roadmap\n1. Mobile launch\n2. Plugin store\n3. Performance"
         contentManager_read:
           success: true
           result:

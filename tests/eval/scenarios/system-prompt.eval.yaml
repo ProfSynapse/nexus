@@ -1,13 +1,45 @@
 - name: default-prompt-routes-correctly
-  description: Production prompt routes a read request to contentManager_read
-  toolSet: nexus
+  description: Production prompt routes a read request via the two-tool meta architecture
+  toolSet: meta
   turns:
     - userMessage: "Read the file notes/meeting.md"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/meeting.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Meeting Notes\n- Reviewed roadmap"
+                  path: notes/meeting.md
         contentManager_read:
           success: true
           result:
@@ -15,15 +47,47 @@
             path: notes/meeting.md
 
 - name: minimal-prompt-still-uses-tools
-  description: Production prompt triggers tool usage for a direct request
-  toolSet: nexus
+  description: Production prompt triggers two-tool flow for a direct read request
+  toolSet: meta
   turns:
     - userMessage: "Show me what's in notes/daily.md"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/daily.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Daily Notes\n- Standup at 10am"
+                  path: notes/daily.md
         contentManager_read:
           success: true
           result:
@@ -31,14 +95,50 @@
             path: notes/daily.md
 
 - name: restrictive-prompt-limits-tools
-  description: Production prompt routes search request to searchManager
-  toolSet: nexus
+  description: Production prompt routes search request via the two-tool meta architecture
+  toolSet: meta
   turns:
     - userMessage: "Search for any notes about the quarterly review"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: getTools
+          params:
+            tool: "search"
       mockResponses:
-        searchManager_searchContent:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: content
+                description: Search for notes by content keyword
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "search content"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchManager_content
+                success: true
+                result:
+                  results:
+                    - path: notes/q2-review.md
+                      score: 0.91
+                  totalResults: 1
+        searchManager_content:
           success: true
           result:
             results:

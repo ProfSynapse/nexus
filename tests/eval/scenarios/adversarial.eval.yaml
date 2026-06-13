@@ -1,13 +1,44 @@
 - name: ambiguous-prompt
-  description: Ambiguous user request — model should search or ask for clarification
-  toolSet: nexus
+  description: Ambiguous user request — model should search or ask for clarification (via two-tool meta)
+  toolSet: meta
   turns:
     - userMessage: "Do something with my notes about the project"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: getTools
+          optional: true
+        - name: useTools
           optional: true
       mockResponses:
-        searchManager_searchContent:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: content
+                description: Search for notes by content keyword
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchManager_content
+                success: true
+                result:
+                  results:
+                    - path: notes/project.md
+                      score: 0.88
+                      snippet: "Project overview and status..."
+                  totalResults: 1
+        searchManager_content:
           success: true
           result:
             results:
@@ -17,22 +48,48 @@
             totalResults: 1
 
 - name: tool-returns-error
-  description: Tool call returns an error — model should handle gracefully
-  toolSet: nexus
+  description: Tool call returns an error — model should handle gracefully (via two-tool meta)
+  toolSet: meta
   turns:
     - userMessage: "Read the file at notes/secret.md"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/secret.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: false
+          error: "Permission denied: cannot access protected file"
         contentManager_read:
           success: false
           error: "Permission denied: cannot access protected file"
 
 - name: model-refuses-tools
   description: Model responds with text instead of calling tools — acceptable fallback
-  toolSet: nexus
+  toolSet: meta
   temperature: 0.3
   turns:
     - userMessage: "What do you think about the weather today?"
@@ -40,13 +97,61 @@
       mockResponses: {}
 
 - name: large-tool-response
-  description: Tool returns a large payload — continuation should not break
-  toolSet: nexus
+  description: Tool returns a large payload — continuation should not break (via two-tool meta)
+  toolSet: meta
   turns:
     - userMessage: "List all files in the vault root"
       expectedTools:
-        - name: storageManager_list
+        - name: getTools
+          params:
+            tool: "storage"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: list
+                description: List files and folders in a directory
+                command: "storage list"
+                usage: "storage list [--path <path>]"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: false
+                    positional: false
+                examples:
+                  - 'storage list'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "storage list"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: storageManager_list
+                success: true
+                result:
+                  path: /
+                  files:
+                    - {name: "note1.md", type: "file"}
+                    - {name: "note2.md", type: "file"}
+                    - {name: "note3.md", type: "file"}
+                    - {name: "note4.md", type: "file"}
+                    - {name: "note5.md", type: "file"}
+                    - {name: "note6.md", type: "file"}
+                    - {name: "note7.md", type: "file"}
+                    - {name: "note8.md", type: "file"}
+                    - {name: "note9.md", type: "file"}
+                    - {name: "note10.md", type: "file"}
+                  folders:
+                    - {name: "archive", type: "folder"}
+                    - {name: "notes", type: "folder"}
+                    - {name: "projects", type: "folder"}
         storageManager_list:
           success: true
           result:

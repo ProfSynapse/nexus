@@ -60,10 +60,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -71,18 +71,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -153,20 +153,20 @@
                 tool: copy
                 description: Copy a file or folder
                 command: "storage copy"
-                usage: "storage copy <path> <destination>"
+                usage: "storage copy <path> <newPath>"
                 arguments:
                   - name: path
                     flag: --path
                     type: string
                     required: true
                     positional: true
-                  - name: destination
-                    flag: --destination
+                  - name: newPath
+                    flag: --new-path
                     type: string
                     required: true
                     positional: true
                 examples:
-                  - 'storage copy "path-value" "destination-value"'
+                  - 'storage copy "path-value" "newPath-value"'
 
     - expectedTools:
         - name: useTools
@@ -198,10 +198,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -209,18 +209,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -286,20 +286,20 @@
                 tool: move
                 description: Move a file or folder
                 command: "storage move"
-                usage: "storage move <path> <destination>"
+                usage: "storage move <path> <newPath>"
                 arguments:
                   - name: path
                     flag: --path
                     type: string
                     required: true
                     positional: true
-                  - name: destination
-                    flag: --destination
+                  - name: newPath
+                    flag: --new-path
                     type: string
                     required: true
                     positional: true
                 examples:
-                  - 'storage move "path-value" "destination-value"'
+                  - 'storage move "path-value" "newPath-value"'
 
     - expectedTools:
         - name: useTools

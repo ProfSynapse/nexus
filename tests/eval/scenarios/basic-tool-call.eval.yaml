@@ -1,13 +1,48 @@
 - name: read-single-note
-  description: Basic single tool call — read a note by path
-  toolSet: nexus
+  description: Basic single tool call via two-tool meta — read a note by path
+  toolSet: meta
   turns:
     - userMessage: "Read the file at notes/meeting.md"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/meeting.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Q2 Meeting\n- Roadmap reviewed\n- Budget approved\n- Launch date: June 15"
+                  path: notes/meeting.md
+                  totalLines: 4
+                  startLine: 1
+                  endLine: 4
         contentManager_read:
           success: true
           result:
@@ -18,15 +53,52 @@
             endLine: 4
 
 - name: write-new-note
-  description: Basic single tool call — write a new note
-  toolSet: nexus
+  description: Basic single tool call via two-tool meta — write a new note
+  toolSet: meta
   turns:
     - userMessage: "Create a note at notes/todo.md with the content 'Buy groceries'"
       expectedTools:
-        - name: contentManager_write
+        - name: getTools
           params:
-            path: notes/todo.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: write
+                description: Write content to a file
+                command: "content write"
+                usage: "content write <path> <content>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: content
+                    flag: --content
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content write "path-value" "content-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content write"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_write
+                success: true
+                result:
+                  path: notes/todo.md
+                  created: true
         contentManager_write:
           success: true
           result:
@@ -34,16 +106,52 @@
             created: true
 
 - name: search-notes
-  description: Basic single tool call — search for notes
-  toolSet: nexus
+  description: Basic single tool call via two-tool meta — search for notes
+  toolSet: meta
   turns:
     - userMessage: "Find notes about project roadmap"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: getTools
           params:
-            query: project roadmap
+            tool: "search"
       mockResponses:
-        searchManager_searchContent:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: content
+                description: Search for notes by content keyword
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "search content"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchManager_content
+                success: true
+                result:
+                  results:
+                    - path: notes/roadmap-q2.md
+                      score: 0.95
+                      snippet: "Q2 roadmap priorities..."
+                  totalResults: 1
+                  query: project roadmap
+        searchManager_content:
           success: true
           result:
             results:

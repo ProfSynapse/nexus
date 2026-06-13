@@ -2,7 +2,7 @@
 # for different flavors of "find/search/list" user requests.
 
 - name: search-by-content-keyword
-  description: User asks to find notes about a topic — should use searchManager_searchContent
+  description: User asks to find notes about a topic — should use searchManager_content
   toolSet: meta
   turns:
     - userMessage: "Find all my notes about machine learning"
@@ -16,10 +16,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query> [--limit <limit>]"
+                command: "search content"
+                usage: "search content <query> [--limit <limit>]"
                 arguments:
                   - name: query
                     flag: --query
@@ -32,18 +32,18 @@
                     required: false
                     positional: false
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -70,7 +70,7 @@
                 tool: list
                 description: List files and folders in a directory
                 command: "storage list"
-                usage: "storage list <path>"
+                usage: "storage list [--path <path>]"
                 arguments:
                   - name: path
                     flag: --path
@@ -114,10 +114,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -125,7 +125,7 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
               - agent: contentManager
                 tool: read
                 description: Read content from a file
@@ -148,13 +148,13 @@
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -176,7 +176,7 @@
                   content: "# Q2 Budget\n\nTotal: $1.2M\n- Engineering: $800K\n- Marketing: $400K"
 
 - name: directory-search-not-content-search
-  description: User asks to find a specific file by name — should use searchManager_searchDirectory not searchContent
+  description: User asks to find a specific file by name — should use searchManager_directory not searchContent
   toolSet: meta
   turns:
     - userMessage: "Where is the file called meeting-notes.md?"
@@ -190,10 +190,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchDirectory
+                tool: directory
                 description: Search for files and folders by name pattern
-                command: "search search-directory"
-                usage: "search search-directory <query>"
+                command: "search directory"
+                usage: "search directory <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -201,12 +201,12 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-directory "query-value"'
+                  - 'search directory "query-value"'
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -214,18 +214,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-directory"
+            tool: "search directory"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchDirectory
+              - tool: directory
                 success: true
                 data:
                   results:

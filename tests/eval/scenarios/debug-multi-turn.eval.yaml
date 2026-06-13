@@ -55,10 +55,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -66,7 +66,7 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
@@ -76,7 +76,7 @@
           result:
             results:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 success: true
                 data:
                   results:
