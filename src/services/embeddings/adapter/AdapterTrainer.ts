@@ -32,6 +32,12 @@ export interface TrainingExample {
   positive: Float32Array;
   /** Unit-norm embeddings of returned-but-ignored (negative) candidates. */
   negatives: Float32Array[];
+  /**
+   * Relative importance of this example (default 1). The miner raises it for
+   * task-completion-linked feedback — the strongest reward signal — so those
+   * gradients count more without duplicating rows.
+   */
+  weight?: number;
 }
 
 export interface TrainConfig {
@@ -138,7 +144,8 @@ export class AdapterTrainer {
 
       let epochLoss = 0;
       for (const idx of order) {
-        epochLoss += AdapterTrainer.step(examples[idx], U, V, dim, rank, alpha, tau, cfg.learningRate, cfg.l2);
+        const weight = examples[idx].weight ?? 1;
+        epochLoss += AdapterTrainer.step(examples[idx], U, V, dim, rank, alpha, tau, cfg.learningRate, cfg.l2, weight);
       }
       epochLoss /= order.length;
       if (epoch === 0) initialLoss = epochLoss;
@@ -174,7 +181,8 @@ export class AdapterTrainer {
     alpha: number,
     tau: number,
     lr: number,
-    l2: number
+    l2: number,
+    weight: number
   ): number {
     const q = ex.query;
     const docs = [ex.positive, ...ex.negatives.filter(n => n.length === dim)];
@@ -225,7 +233,7 @@ export class AdapterTrainer {
     const gradU = zeros(dim, rank);
     const gradV = zeros(dim, rank);
     for (let j = 0; j < n; j++) {
-      const g = (alpha / tau) * (p[j] - (j === 0 ? 1 : 0));
+      const g = weight * (alpha / tau) * (p[j] - (j === 0 ? 1 : 0));
       if (g === 0) continue;
       const d = docs[j];
 
