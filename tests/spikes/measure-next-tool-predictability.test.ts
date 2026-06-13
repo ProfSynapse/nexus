@@ -4,8 +4,7 @@
  * Answers the one go/no-go question for the steering-nudge idea
  * (docs/plans/agent-steering-nudge-plan.md): on YOUR real tool-call history,
  * what fraction of next-tool transitions clear a high-confidence bar, and how
- * accurate are we there? If the high-confidence slice is small or inaccurate,
- * the steering nudge isn't worth building.
+ * accurate are we there?
  *
  * It reads the JSONL trace store directly (no Obsidian / SQLite needed).
  *
@@ -16,7 +15,26 @@
  * (Point NEXUS_TRACE_DIR at the folder that contains `workspaces/`. Without it,
  * the suite is skipped.)
  *
- * This is FREQUENCY-based predictability (the ceiling). It does NOT yet apply
+ * ── Corrected 2026-06-13 (after first-run gave a FALSE GREEN). Three fixes: ──
+ *  1. WRONG LAYER: the real inner tool is NOT meta.tool (that's always the outer
+ *     `toolManager_useTools` wrapper). It lives in `meta.input.arguments`.
+ *  2. THREE SCHEMA GENERATIONS (the store spans ~150 days of schema drift):
+ *       a) `arguments.calls[]`  — legacy nested {agent, tool, params}
+ *       b) `arguments.tool`     — CLI string, v5.9.0+ (comma-separated batches)
+ *       c) `batch.results[]`    — execution-result form
+ *     Agent + command names are normalized across eras (memoryManager→memory,
+ *     create-workspace/createWorkspace→createworkspace) so the same operation
+ *     isn't split into two tokens.
+ *  3. SELF-LOOP INFLATION: a batched useTools (calls:[read,read,read]) expands to
+ *     identical consecutive steps. "next tool == the tool I'm mid-batch on" is
+ *     trivially right and useless for prefetch (you already have the batch), so
+ *     consecutive duplicate tokens are collapsed before modelling.
+ *
+ *  Real-data verdict (3 vaults, 2026-06-13): after these corrections exact-tool
+ *  prediction is WEAK / workload-dependent — the steering predictor is shelved.
+ *  See docs/plans/agent-steering-nudge-plan.md "Phase 0 real-data verdict".
+ *
+ * This is FREQUENCY-based predictability (the ceiling). It does NOT apply
  * success-weighting — that needs the reward signal and is a later step.
  */
 
@@ -27,11 +45,34 @@ const TRACE_DIR = process.env.NEXUS_TRACE_DIR;
 
 interface Step { sessionId: string; ts: number; order: number; token: string; family: 'inspect' | 'explore' | 'exploit'; }
 
+// Normalize agent aliases that drifted across schema eras to one token.
+const AGENT_ALIAS: Record<string, string> = {
+  memory: 'memory', memorymanager: 'memory', state: 'memory',
+  search: 'search', searchmanager: 'search',
+  content: 'content', contentmanager: 'content',
+  storage: 'storage', storagemanager: 'storage',
+  canvas: 'canvas', canvasmanager: 'canvas',
+  task: 'task', taskmanager: 'task',
+  prompt: 'prompt', promptmanager: 'prompt',
+  web: 'web', webtools: 'web',
+  ingest: 'ingest', ingestmanager: 'ingest',
+  compose: 'compose', composer: 'compose',
+};
+const KNOWN_AGENTS = 'memory|search|content|storage|state|task|prompt|web|canvas|ingest|compose';
+
 function classifyFamily(mode: string): Step['family'] {
   const m = mode.toLowerCase();
   if (/(create|write|replace|insert|update|move|copy|archive|delete|set|save|append|prepend|generate|compose|ingest)/.test(m)) return 'exploit';
   if (/(search|directory|find|list)/.test(m)) return 'explore';
   return 'inspect'; // read/get/load/query/open/…
+}
+
+/** agent+command → canonical token, normalized across naming eras. null if unrecognized. */
+function toToken(agent: string | undefined, cmd: string | undefined): { token: string; family: Step['family'] } | null {
+  const a = AGENT_ALIAS[String(agent ?? '').toLowerCase()];
+  const c = String(cmd ?? '').toLowerCase().replace(/[^a-z]/g, ''); // create-workspace == createWorkspace
+  if (!a || !c) return null;
+  return { token: `${a}_${c}`, family: classifyFamily(c) };
 }
 
 function walkJsonl(dir: string): string[] {
@@ -55,7 +96,18 @@ function rec(v: unknown): Record<string, unknown> {
 }
 function str(v: unknown): string | undefined { return typeof v === 'string' ? v : undefined; }
 
-/** Extract ordered tool steps from all trace_added events under the dir. */
+/** Split a CLI `tool` string into commands on whitespace-gated commas before a known agent. */
+function parseCliTool(toolStr: string): Array<{ agent: string; cmd: string }> {
+  const out: Array<{ agent: string; cmd: string }> = [];
+  const parts = toolStr.split(new RegExp(`,\\s+(?=(?:${KNOWN_AGENTS})\\b)`));
+  for (const part of parts) {
+    const toks = part.trim().split(/\s+/);
+    if (toks[0] && toks[1]) out.push({ agent: toks[0], cmd: toks[1] });
+  }
+  return out;
+}
+
+/** Extract ordered REAL inner tool steps from all trace_added events under the dir. */
 function loadSteps(dir: string): Step[] {
   const steps: Step[] = [];
   for (const file of walkJsonl(dir)) {
@@ -78,21 +130,25 @@ function loadSteps(dir: string): Step[] {
       const ts = typeof evt.timestamp === 'number' ? evt.timestamp : 0;
       if (!sessionId) continue;
 
-      const push = (agent: string, mode: string, order: number) => {
-        if (!agent || !mode) return;
-        steps.push({ sessionId, ts, order, token: `${agent}_${mode}`, family: classifyFamily(mode) });
+      const push = (agent: string | undefined, cmd: string | undefined, order: number) => {
+        const t = toToken(agent, cmd);
+        if (t) steps.push({ sessionId, ts, order, token: t.token, family: t.family });
       };
 
+      const args = rec(meta.input).arguments ? rec(rec(meta.input).arguments) : undefined;
       const batch = rec(meta.batch);
-      if (Array.isArray(batch.results)) {
-        batch.results.forEach((r, i) => {
-          const rr = rec(r);
-          push(str(rr.agent) ?? '', str(rr.tool) ?? '', i);
-        });
-      } else {
-        const tool = rec(meta.tool);
-        push(str(tool.agent) ?? '', str(tool.mode) ?? '', 0);
+
+      // Schema (a): legacy nested calls[]
+      if (args && Array.isArray(args.calls)) {
+        args.calls.forEach((c, i) => { const cc = rec(c); push(str(cc.agent), str(cc.tool) ?? str(cc.mode), i); });
+      // Schema (c): execution-result batch
+      } else if (Array.isArray(batch.results)) {
+        batch.results.forEach((r, i) => { const rr = rec(r); push(str(rr.agent), str(rr.tool) ?? str(rr.mode), i); });
+      // Schema (b): CLI string (may itself be a comma-batched list)
+      } else if (args && str(args.tool)) {
+        parseCliTool(str(args.tool)!).forEach((c, i) => push(c.agent, c.cmd, i));
       }
+      // else: only the outer toolManager_useTools wrapper — no inner tool to score.
     }
   }
   return steps;
@@ -108,7 +164,9 @@ function sequences(steps: Step[], key: (s: Step) => string): { id: string; seq: 
   const out: { id: string; seq: string[]; firstTs: number }[] = [];
   for (const [id, list] of bySession) {
     list.sort((a, b) => a.ts - b.ts || a.order - b.order);
-    out.push({ id, seq: list.map(key), firstTs: list[0]?.ts ?? 0 });
+    // Collapse self-loops: intra-batch repetition isn't a prediction worth making.
+    const seq = list.map(key).filter((v, i, arr) => i === 0 || v !== arr[i - 1]);
+    out.push({ id, seq, firstTs: list[0]?.ts ?? 0 });
   }
   return out;
 }
@@ -118,7 +176,7 @@ function buildModel(seqs: string[][], order: 1 | 2): Model {
   const m: Model = new Map();
   for (const seq of seqs) {
     for (let i = order; i < seq.length; i++) {
-      const ctx = order === 1 ? seq[i - 1] : `${seq[i - 2]}${seq[i - 1]}`;
+      const ctx = order === 1 ? seq[i - 1] : `${seq[i - 2]}${seq[i - 1]}`;
       const next = seq[i];
       if (!m.has(ctx)) m.set(ctx, new Map());
       const row = m.get(ctx)!;
@@ -138,7 +196,7 @@ function evaluate(model: Model, testSeqs: string[][], order: 1 | 2) {
   const pairs: Array<{ conf: number; correct: boolean }> = [];
   for (const seq of testSeqs) {
     for (let i = order; i < seq.length; i++) {
-      const ctx = order === 1 ? seq[i - 1] : `${seq[i - 2]}${seq[i - 1]}`;
+      const ctx = order === 1 ? seq[i - 1] : `${seq[i - 2]}${seq[i - 1]}`;
       const { pred, conf } = topAndConf(model.get(ctx));
       if (pred === null) continue; // unseen context: we'd stay silent, so don't score it
       pairs.push({ conf, correct: pred === seq[i] });
@@ -170,6 +228,7 @@ function evaluate(model: Model, testSeqs: string[][], order: 1 | 2) {
     const vocab = new Set(steps.map(s => s.token)).size;
 
     const report = {
+      _methodology: '3 input schemas parsed (calls[]/tool-CLI/batch.results); agent+command normalized across eras; intra-batch self-loops collapsed',
       sessions: toolSeqs.length,
       totalSteps: steps.length,
       toolVocab: vocab,

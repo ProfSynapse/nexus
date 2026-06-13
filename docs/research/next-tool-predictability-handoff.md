@@ -1,5 +1,14 @@
 # Handoff: Measure next-tool predictability on your real vault
 
+> **STATUS 2026-06-13 — RUN & RESOLVED → SHELVE.** Ran on 3 real vaults (Rose N Thorn,
+> Synaptic Labs, Professor Synapse). The first run was a **false green** (the script
+> read the outer `toolManager_useTools` wrapper, missed 2 of 3 input-schema generations,
+> and self-loops inflated accuracy — all now fixed in the spike). Corrected: exact-tool
+> prediction is weak/workload-dependent, next-file prediction fails (cold-start), and
+> load-time prefetch has a ~16% ceiling. The learned predictor + prefetch are **shelved**;
+> the only shipped change is a prompt nudge to batch reads (PR #266). Full verdict +
+> numbers: `docs/plans/agent-steering-nudge-plan.md` → "Phase 0 real-data verdict".
+
 > Purpose: the single go/no-go gut-check for the steering-nudge idea
 > (`docs/plans/agent-steering-nudge-plan.md`). Run it locally against your real
 > tool-call history and read three numbers. Everything downstream depends on

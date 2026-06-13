@@ -47,6 +47,24 @@ GC-2  rewards:                 genuine 1.0 | farmerBasic 0 | farmerSneaky 0
 
 **Decision:** proceed **prefetch-only** (safe at any accuracy); treat the worded nudge as unproven — gate at conf≥~0.8, low coverage expected, A/B vs no-nudge on real data before trusting it.
 
+## Phase 0 real-data verdict (2026-06-13) — **SHELVE the predictor; ship a prompt nudge instead**
+
+The synthetic gut-check above said "prefetch-only, gated." Run against **real** traces it did not survive. Measured 4 vaults via `tests/spikes/measure-next-tool-predictability.test.ts` (+ ad-hoc file/batchability analysis): Rose N Thorn (4083 traces, creative writing), Synaptic Labs (4692, org work), Professor Synapse (1074, agent/task work); the Code dev vault was discarded as synthetic/regression noise.
+
+First run gave a **false green** — three measurement bugs, all fixed in the spike: (1) it read the outer `toolManager_useTools` wrapper instead of the inner tool in `meta.input.arguments`; (2) the store spans **three schema generations** (`arguments.calls[]` → `arguments.tool` CLI string → `batch.results[]`) and only a rare one was parsed; (3) batched `useTools` self-loops inflated accuracy. Corrected findings:
+
+| Hypothesis the plan rests on | Real-data result |
+|---|---|
+| Next **tool** is confidently predictable | Weak & workload-dependent after collapsing self-loops (~0.71–0.77 acc, small n). Not the bimodal "fires when sure" shape the synthetic showed. |
+| Next **file** is predictable | **Fails** — paths are high-cardinality, every cross-session pair is cold-start. |
+| The next read's path sits in the **prior tool result** (prefetchable) | **0%** across all vaults — next-read paths are not in the previous result. |
+| Read-after-write verification is standing waste | **Already gone** — newer response architecture drove it Jan 0.49 → **May/Jun 0.00**. |
+| Load-time content **prefetch** pays off | Coverage ceiling ~**16%** even shipping the 20 most-read notes; cross-session read recurrence **22.6%**; `keyFiles` populated in **0 / 39** workspaces. ~78% of reads are notes never read before in that workspace. Not worth the context cost. |
+
+**What survived:** the only consistent, non-declining signal is **batchability** — ~**30–35%** of read *turns* across all three vaults are consecutive single `content read` invocations that could share one `useTools` call (the capability already exists; nothing told the agent to use it). The only learned signal left standing was family-level (inspect/explore/exploit) mode prediction on the high-volume creative vault (~0.89), not worth the predictor/reward/debias/bake-off machinery.
+
+**Decision (supersedes the synthetic "prefetch-only" above):** **shelve the learned predictor and load-time prefetch.** Ship the one thing the evidence backs — an agent-facing **prompt nudge** to batch known multi-file reads into one parallel `useTools` call (merged to main, PR #266, zero new infrastructure). Revisit eager prefetch *only* if `keyFiles` becomes a curated input (small, intentional set → eager-inclusion defensible). Everything below is preserved as the design that was **not** built.
+
 ## Design (if it survives Phase 0)
 
 **The exploit/explore/inspect partition = the speculation-safety partition** (the load-bearing idea):
