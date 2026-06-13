@@ -2,6 +2,22 @@
 
 ## June 2026
 
+**v5.12.0** — Adaptive Search: semantic search that learns from you, on-device
+
+**Adaptive Search (new)** (PR #265)
+- **Search that learns from which notes you actually open** — when you run a semantic search and then open one of the results, Nexus treats that as a small signal of what was useful, and gradually tunes how *future searches* are interpreted to fit your vault. It tunes the query, never your notes — nothing is re-indexed.
+- **It can't make your search worse.** Every so often, while idle, Nexus runs a short "dream" consolidation: it mines recent search-then-open history, trains a few candidate tunings, tests each against held-out searches, and adopts the winner *only if it measurably beats* what you already have. Otherwise it changes nothing. Until something is provably learned, search behaves exactly as before — zero change on day one — and any adopted tuning is fully reversible.
+- **Fully local and private.** Training runs entirely on-device against your own usage. No queries, behavior, or notes ever leave your machine.
+- **On by default**, desktop-only — it rides on the existing local embedding model from Semantic search. Opt out with `embeddings.retrievalLearning: false`. Trigger a pass yourself anytime via the command palette: **"Consolidate retrieval memory (dream now)."** You'll get a brief notice only when an improvement is actually adopted.
+- Guards against filter bubbles on purpose: it learns most from the searches it got *wrong*, rejects tunings that narrow your results, and keeps occasional wildcard results so new connections still surface. See the [Adaptive Search guide](../guide/adaptive-search.md).
+
+**Task Board** (PR #267)
+- **Delete a task directly from the board** — each card now has a delete icon next to edit, with a confirmation prompt.
+- **Fixed the board showing "No tasks" on a cold start** — it now waits for the local cache to finish hydrating before rendering, instead of briefly appearing empty.
+
+**Under the hood**
+- The MCP agent is now nudged to batch multiple known file reads into a single parallel call, reducing round-trips during multi-file operations (PR #266). Agent-facing guidance only — no behavior change for your data.
+
 **v5.11.2** — Security hardening, secure API key storage, model catalog refresh
 
 **Security & privacy** (plugin audit, PRs #250–#256)
