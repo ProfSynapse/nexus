@@ -252,6 +252,30 @@ export class NoteEmbeddingService {
   }
 
   /**
+   * Fetch the stored (document-side) embedding vector for a note, if present.
+   * Used by the retrieval-feedback miner to build training candidates without
+   * re-embedding. Returns the raw stored vector (no query adapter applied).
+   */
+  async getNoteVector(notePath: string): Promise<Float32Array | null> {
+    try {
+      const row = await this.db.queryOne<{ embedding: Uint8Array }>(
+        `SELECT ne.embedding FROM note_embeddings ne
+         JOIN embedding_metadata em ON em.rowid = ne.rowid
+         WHERE em.notePath = ?`,
+        [notePath]
+      );
+      if (!row?.embedding) {
+        return null;
+      }
+      const buf = row.embedding;
+      return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4));
+    } catch (error) {
+      console.error(`[NoteEmbeddingService] Failed to read vector for ${notePath}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Remove embedding for a note
    *
    * @param notePath - Path to the note

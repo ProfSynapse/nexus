@@ -127,6 +127,23 @@ export class EmbeddingService {
     return this.noteService.removeEmbedding(notePath);
   }
 
+  /** Stored document vector for a note path (raw, no query adapter). */
+  async getNoteVector(notePath: string): Promise<Float32Array | null> {
+    if (!this.isEnabled) return null;
+    return this.noteService.getNoteVector(notePath);
+  }
+
+  /** Embed query text via the frozen encoder (no adapter — that's applied at search). */
+  async embedQueryText(query: string): Promise<Float32Array | null> {
+    if (!this.isEnabled) return null;
+    try {
+      return await this.engine.generateEmbedding(query);
+    } catch (error) {
+      console.error('[EmbeddingService] Failed to embed query text:', error);
+      return null;
+    }
+  }
+
   async updatePath(oldPath: string, newPath: string): Promise<void> {
     if (!this.isEnabled) return;
     return this.noteService.updatePath(oldPath, newPath);
