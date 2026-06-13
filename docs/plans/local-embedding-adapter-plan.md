@@ -397,6 +397,44 @@ The system trains on data **its own ranking generated**, so the central risk is 
 
 ---
 
+## Appendix C — Literature review: how our method compares, and better/recent algorithms (2026-06-13)
+
+Five-angle cited research pass (arXiv/ACL/SIGIR/WSDM/KDD/NeurIPS). Bottom line: **the core architecture is well-validated prior art; the learning objective and the debiasing are where we lag and should upgrade.** Vendor/blog numbers are flagged; several arXiv PDFs were 403 to the fetcher, so a few exact figures are abstract-sourced — names/years/venues are reliable.
+
+### What the literature VALIDATES about our design
+
+- **Query-side linear/low-rank adapter over a frozen encoder, documents frozen** is an established, named pattern — we re-derived a known good design:
+  - *Chroma "Embedding Adapters"* (2024, tech report) — query-only linear transform, frozen docs, explicitly names personalization-from-feedback; closest analog. https://research.trychroma.com/embedding-adapters
+  - *LlamaIndex linear adapter* (2023) — `W·q(+b)` query-only, "retrain without re-embedding the corpus"; ships Linear/MLP heads. + an existing **MiniLM-384** implementation (ALucek). https://www.llamaindex.ai/blog/fine-tuning-a-linear-adapter-for-any-embedding-model-8dd0a142d383
+  - *DREditor* (arXiv:2401.12540, 2024) — query-side map solved in **closed form** (least-squares), 100–300× faster than fine-tuning. https://arxiv.org/abs/2401.12540
+  - *Search-Adaptor* (ACL 2024, arXiv:2310.08750) — transform over frozen embeddings; found a **skip/residual connection helps** (validates `W=I+Δ`) and a ranking loss matters most. https://arxiv.org/abs/2310.08750
+  - *QuARI* (NeurIPS 2025, arXiv:2505.21647) — per-query **rank-64 low-rank** projection; peer-reviewed precedent for low-rank query adaptation. https://arxiv.org/abs/2505.21647
+  - *DPR* (EMNLP 2020) gives the asymmetric query/doc tower license; *LP-FT* (ICLR 2022, arXiv:2202.10054) and *RepLLaMA* (SIGIR 2024) show **low-rank/linear generalizes better than full fine-tuning on small/OOD data** — backs our low-rank + identity-reg choice.
+- **Our specific combination appears genuinely novel**: a *persistent, synced, on-device query transform* learned from *passive personal-vault read/use behavior* (vs. adapters trained on labeled pairs, vs. PRF's stateless per-query reweighting). The pieces exist separately; the combination wasn't found.
+- **Feedback-loop hygiene graded B+/A−**: we already have the two things most systems lack — explicit exploration and a diversity/coverage floor on promotion (cf. *Fairness of Exposure*, Singh & Joachims KDD 2018; beyond-accuracy metrics, Kaminskas & Bridge 2016).
+
+### Where we LAG — prioritized upgrades (named methods)
+
+1. **Objective: InfoNCE + skip-above is a false-negative generator.** InfoNCE pushes every skipped-above item away at full force, but skipped ≠ irrelevant — *"Hard Negatives or False Negatives"* (CIKM 2022, 10.1145/3511808.3557343) shows this **degrades** ranking. Skip-above is natively a *preference* ("used ≻ skipped-above"), so use a **regularized pairwise preference loss**, not contrastive: **BPR** (robust, low-data) or **IPO** (arXiv:2310.12036, 2023 — fixes DPO overfit on tiny near-deterministic data; we have no KL/reference so plain DPO doesn't transplant), or **KTO** (ICML 2024, arXiv:2402.01306) for unpaired binary click/skip signal. *Highest-value objective change.*
+2. **Debiasing: graduate skip-above heuristic → IPS → Doubly-Robust.** Our skip-above + exposure-weighting is the *2005 Joachims heuristic*; the formal versions are **IPS** (Joachims/Swaminathan/Schnabel, WSDM 2017, arXiv:1608.04468) and **Doubly-Robust** (Oosterhuis, SIGIR 2023, arXiv:2203.17118) — DR specifically tames IPS's brutal small-data variance. Get propensities cheaply via **regression-EM** (Wang 2018) or **intervention harvesting** (Fang/Agarwal 2019) — and we already produce *multiple adapter versions over time*, which intervention harvesting turns into free propensity estimates. **⚠️ Critical caveat:** *"ULTR Meets Reality"* (Hager et al., SIGIR 2024, arXiv:2404.02543) found IPS/two-tower corrections **don't reliably beat naive baselines on real noisy data** — so A/B (DR as the evaluator) the corrected vs. naive variant before committing. Don't assume the formal method wins.
+3. **Promotion gate: add counterfactual off-policy eval + interleaving.** Our held-out MRR is incumbent-biased (favors what the old ranker exposed). Add an **IPS/DR off-policy estimate** with a **risk-minimization safety bound** (Gupta/Oosterhuis/de Rijke, SIGIR 2023) and **interleaving** as a high-sensitivity shadow test (Chapelle 2012; Airbnb KDD 2025 reports ~10–100× sensitivity vs A/B) with a real significance test, not a point threshold.
+4. **Make exploration propensity-logged.** Wildcard/ε slots are the *only* unbiased feedback; logging the show-probability lets us IPS-correct them, converting exploration from "occasional randomness" into unbiased training data (the actual mechanism that breaks the loop; Jiang et al., DeepMind 2019, arXiv:1902.10730).
+5. **Beat the training-free baselines (sanity).** *Vector-PRF "Average"* (ECIR 2021/22, arXiv:2112.06400) — average the query with recently-used note vectors — and *DIME* dimension-masking are zero-training query-side transforms. If our learned adapter can't beat averaging-in-used-notes, that's a red flag.
+6. **Guard tail/OOD queries.** *NUDGE* (ICLR 2025, arXiv:2409.02343) and *"Successes and Pitfalls of dense PRF"* (TOIS 2023) warn parametric query-side transforms can hurt rare/novel queries — keep the identity-reg/‖W−I‖ bound (we have it), and consider NUDGE's alternative of editing the index instead of the query.
+
+### Recent algorithms worth a look (menu, not all recommended)
+Listwise preference optimization — **LiPO-λ** (arXiv:2402.01878), **IRPO** (COLM 2025) — *only if ≥3 graded items per query* (directly optimizes NDCG; our skip-above usually yields few negatives, so pairwise stays the default). GRPO rerankers (**Rank-R1** 2025) and online **Neural Dueling Bandits** (AISTATS 2025) — principled for streaming preference, but LLM-generative / theory-heavy, **not** a fit for a per-user linear adapter. **DREditor**'s closed-form least-squares solve is an intriguing alternative to SGD for our tiny-data regime (more stable, no learning-rate).
+
+### Honest caveats
+- No paper studies *exactly* our setting (frozen-encoder + linear adapter + per-user tiny data + implicit feedback); recommendations are extrapolations from adjacent results.
+- The *theoretical* superiority of IPS/DR/preference-losses over our heuristics is solid; the *practical* win on real small noisy data is **contested** (Hager 2024) — hence "validate, don't assume."
+- Vendor magnitudes (Chroma ~70%, Airbnb ~100×) are directional, not guarantees.
+
+### Net recommendation
+**Keep the architecture** (query-side low-rank residual over frozen MiniLM — it's validated prior art and the right engineering trade-off). **Change the objective** from InfoNCE to a regularized pairwise-preference loss (BPR → IPO), **add IPS/DR propensity weighting** to the skip-above pairs, **strengthen the promotion gate** with counterfactual OPE + interleaving, and **A/B every change against the current heuristic** before shipping — because the literature's own reality-check says the fancy method doesn't always win.
+
+---
+
 ## Explicitly out of scope (future / "north star")
 
 True local encoder fine-tune (updating MiniLM weights) — needs a training-capable runtime (ONNX Runtime training session or a desktop-only ML sidecar), thousands of accumulated examples, and full-vault re-embedding on every model change. Revisit only after the adapter demonstrably saturates over months of use.
