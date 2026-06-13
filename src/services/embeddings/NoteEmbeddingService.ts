@@ -25,6 +25,7 @@ import type { EmbeddingEngine } from './EmbeddingEngine';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import type { QueryParams } from '../../database/repositories/base/BaseRepository';
+import { EmbeddingAdapter, type QueryAdapter } from './adapter/EmbeddingAdapter';
 
 const asQueryParams = (params: unknown[]): QueryParams => params as unknown as QueryParams;
 
@@ -37,11 +38,19 @@ export class NoteEmbeddingService {
   private app: App;
   private db: SQLiteCacheManager;
   private engine: EmbeddingEngine;
+  /** Query-side learned transform; identity by default (no behavior change). */
+  private queryAdapter: QueryAdapter;
 
-  constructor(app: App, db: SQLiteCacheManager, engine: EmbeddingEngine) {
+  constructor(app: App, db: SQLiteCacheManager, engine: EmbeddingEngine, queryAdapter?: QueryAdapter) {
     this.app = app;
     this.db = db;
     this.engine = engine;
+    this.queryAdapter = queryAdapter ?? EmbeddingAdapter.identity();
+  }
+
+  /** Swap the query-side adapter (e.g. after the dream job trains a new one). */
+  setQueryAdapter(adapter: QueryAdapter): void {
+    this.queryAdapter = adapter;
   }
 
   /**
@@ -173,9 +182,11 @@ export class NoteEmbeddingService {
    */
   async semanticSearch(query: string, limit = 10): Promise<SimilarNote[]> {
     try {
-      // Generate query embedding
+      // Generate query embedding, then apply the query-side adapter.
+      // Identity adapter returns the vector untouched (zero behavior change).
       const queryEmbedding = await this.engine.generateEmbedding(query);
-      const queryBuffer = Buffer.from(queryEmbedding.buffer);
+      const adaptedQuery = this.queryAdapter.transform(queryEmbedding);
+      const queryBuffer = Buffer.from(adaptedQuery.buffer);
 
       // 1. FETCH CANDIDATES
       // Fetch 3x the limit to allow for re-ranking

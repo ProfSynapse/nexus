@@ -25,6 +25,7 @@ import { EmbeddingEngine } from './EmbeddingEngine';
 import { NoteEmbeddingService } from './NoteEmbeddingService';
 import { TraceEmbeddingService } from './TraceEmbeddingService';
 import { ConversationEmbeddingService } from './ConversationEmbeddingService';
+import { EmbeddingAdapter } from './adapter/EmbeddingAdapter';
 import type { SimilarNote } from './NoteEmbeddingService';
 import type { TraceSearchResult } from './TraceEmbeddingService';
 import type { ConversationSearchResult } from './ConversationEmbeddingService';
@@ -51,6 +52,9 @@ export class EmbeddingService {
   private traceService: TraceEmbeddingService;
   private conversationService: ConversationEmbeddingService;
 
+  /** Query-side learned adapter; identity until a trained one is loaded. */
+  private adapter: EmbeddingAdapter;
+
   constructor(
     app: App,
     db: SQLiteCacheManager,
@@ -61,10 +65,27 @@ export class EmbeddingService {
     // Disable on mobile entirely
     this.isEnabled = !Platform.isMobile;
 
+    // Identity adapter = no behavior change until a trained model is applied.
+    this.adapter = EmbeddingAdapter.identity();
+
     // Create domain services
-    this.noteService = new NoteEmbeddingService(app, db, engine);
+    this.noteService = new NoteEmbeddingService(app, db, engine, this.adapter);
     this.traceService = new TraceEmbeddingService(db, engine);
     this.conversationService = new ConversationEmbeddingService(db, engine);
+  }
+
+  /**
+   * Apply a query-side retrieval adapter (loaded from AdapterStore or freshly
+   * trained by the dream job). Routed to every query-side surface.
+   */
+  setAdapter(adapter: EmbeddingAdapter): void {
+    this.adapter = adapter;
+    this.noteService.setQueryAdapter(adapter);
+  }
+
+  /** Current adapter version (0 = identity). For status surfaces. */
+  getAdapterVersion(): number {
+    return this.adapter.version;
   }
 
   /**
