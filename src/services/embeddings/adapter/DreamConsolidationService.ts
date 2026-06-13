@@ -36,6 +36,8 @@ export interface DreamConfig {
   holdoutFraction?: number;
   /** Don't run a cycle below this many mined examples. */
   minExamples?: number;
+  /** Don't promote unless the held-out set is at least this big (anti-noise). */
+  minHoldout?: number;
   train?: TrainConfig;
   promotion?: PromotionConfig;
   mine?: MineConfig;
@@ -63,7 +65,7 @@ export interface DreamReport {
   reason?: string;
 }
 
-const DEFAULTS = { holdoutFraction: 0.25, minExamples: 20 };
+const DEFAULTS = { holdoutFraction: 0.25, minExamples: 20, minHoldout: 8 };
 
 export class DreamConsolidationService {
   private running = false;
@@ -113,7 +115,10 @@ export class DreamConsolidationService {
       );
       const after = AdapterEvaluator.evaluate(trained.adapter, holdoutEval);
 
-      const promoted = trained.stats.trained &&
+      // Don't promote on a held-out set too small for the MRR delta to be real
+      // signal rather than noise (a thin-data Goodhart guard).
+      const enoughHoldout = before.examples >= cfg.minHoldout;
+      const promoted = trained.stats.trained && enoughHoldout &&
         AdapterEvaluator.shouldPromote(before, after, cfg.promotion);
 
       if (promoted) {

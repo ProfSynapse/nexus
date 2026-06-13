@@ -70,9 +70,13 @@ export interface MineConfig {
   taskRewardWeight?: number;
   /** Cap negatives kept per example (hard negatives are the returned ones). */
   maxNegatives?: number;
+  /** Per-rank exposure-debias slope: how much more a deeper-buried hit counts. */
+  exposureStep?: number;
+  /** Hard cap on any single example's weight. */
+  maxWeight?: number;
 }
 
-const DEFAULTS = { taskRewardWeight: 3, maxNegatives: 12 };
+const DEFAULTS = { taskRewardWeight: 3, maxNegatives: 12, exposureStep: 0.5, maxWeight: 8 };
 
 /** A "use" of one of a search's candidates (or a task completion) in-session. */
 function isUseRecord(r: RetrievalTraceRecord): boolean {
@@ -125,12 +129,30 @@ export class RetrievalFeedbackMiner {
         }
         if (!usedPath) continue;
 
+        // Skip-above (Joachims): negatives are ONLY the candidates the retriever
+        // ranked above the used one — the ones it confidently put too high.
+        // Candidates ranked BELOW the used one are not evidence of irrelevance
+        // (often relevant-but-redundant), so excluding them avoids training the
+        // model to suppress good results (the false-negative cheat).
+        const usedRank = candidatePaths.indexOf(usedPath);
+        const negativePaths = candidatePaths.slice(0, usedRank);
+
+        // A rank-0 use confirms the retriever and carries NO contrastive signal —
+        // training on it only reinforces the status quo (the self-confirmation
+        // cheat). Drop it; we learn from the retriever's mistakes.
+        if (negativePaths.length === 0) continue;
+
+        // Exposure-debias: the deeper the used item was buried, the more wrong
+        // the retriever was, so the more this example should count.
+        const exposureWeight = 1 + (usedRank - 1) * cfg.exposureStep;
+        const weight = Math.min(cfg.maxWeight, exposureWeight * (taskRewarded ? cfg.taskRewardWeight : 1));
+
         const example = await this.buildExample(
           search.query,
           usedPath,
-          candidatePaths.filter(p => p !== usedPath),
+          negativePaths,
           search.timestamp,
-          taskRewarded ? cfg.taskRewardWeight : 1,
+          weight,
           cfg.maxNegatives
         );
         if (example) out.push(example);

@@ -37,10 +37,19 @@ function buildWorld(n: number, relevance: 'swap' | 'identity-optimal', seed = 9)
     docs[`match${i}`] = match;
     docs[`distract${i}`] = distract;
 
+    // Candidates in the CURRENT (identity) retriever's ranked order. For 'swap',
+    // identity wrongly ranks the distractor first, so the used match is buried at
+    // rank 1 — exactly the informative, non-self-confirming case. For
+    // 'identity-optimal', identity already ranks the match first (rank 0), so
+    // skip-above correctly yields nothing to learn.
+    const candidates = relevance === 'swap'
+      ? [{ path: `distract${i}` }, { path: `match${i}` }]
+      : [{ path: `match${i}` }, { path: `distract${i}` }];
+
     records.push({
       sessionId: `s${i}`, workspaceId: 'w', timestamp: i * 2, agent: 'searchManager', mode: 'content',
       query: `q${i}`,
-      retrieval: { groupId: `g${i}`, candidates: [{ path: `match${i}` }, { path: `distract${i}` }] }
+      retrieval: { groupId: `g${i}`, candidates }
     });
     records.push({
       sessionId: `s${i}`, workspaceId: 'w', timestamp: i * 2 + 1, agent: 'contentManager', mode: 'read',
@@ -107,7 +116,7 @@ describe('DreamConsolidationService', () => {
     expect(dot(adapted, match)).toBeGreaterThan(dot(adapted, distract)); // adapter: match wins
   });
 
-  it('does not promote (or apply) when there is nothing to improve', async () => {
+  it('finds nothing to learn when the retriever is already optimal (all hits self-confirming)', async () => {
     const world = buildWorld(40, 'identity-optimal');
     const { deps, applied, save } = makeDeps({
       getTraceRecords: async () => world.records,
@@ -115,9 +124,10 @@ describe('DreamConsolidationService', () => {
     });
     const report = await new DreamConsolidationService(deps).runDreamCycle();
 
-    expect(report.trained).toBe(true);
+    // Every used note was already rank-0, so skip-above drops them all — there
+    // is no informative feedback to train on, and nothing is promoted.
+    expect(report.minedExamples).toBe(0);
     expect(report.promoted).toBe(false);
-    expect(report.mrrBefore).toBeGreaterThan(0.9); // identity already optimal
     expect(save).not.toHaveBeenCalled();
     expect(applied).toHaveLength(0); // live adapter untouched
   });

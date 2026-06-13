@@ -359,6 +359,44 @@ Surfaced as a quiet "Connections from last night's dream" list (dismiss / open /
 
 ---
 
+## Appendix B — Reward hacking / "learning to cheat" (threat model + defenses)
+
+The system trains on data **its own ranking generated**, so the central risk is **Goodhart**: the adapter improves the *measure* (held-out MRR, contrastive loss) without improving *retrieval* — by exploiting how the feedback was produced rather than learning relevance. The reframing that organizes everything: *a metric computed over the policy's own logs is contaminated by that policy.* Break the loop and the cheats lose oxygen.
+
+### The cheats this system is specifically exposed to
+
+| # | Cheat | Why it works here |
+|---|-------|-------------------|
+| 1 | **Self-confirmation** | Adapter surfaces X → only X can be "used" → that use trains the adapter to surface X harder. It learns to predict its own past behavior. |
+| 2 | **Position/exposure bias** | The "used" note is often just whatever was ranked #1 (read top-down). The adapter learns the *logging policy's* rank, not relevance. |
+| 3 | **False negatives** | "Returned but not used" ≠ irrelevant — it may be relevant-but-redundant. Training pushes genuinely good docs away, raising MRR while hurting recall/diversity. |
+| 4 | **Trivial positives** | Title-search → read-that-exact-note pairs let the adapter overfit identity-spikes that ace freebies and do nothing for conceptual retrieval. |
+| 5 | **Metric blind spot** | MRR is computed only over the *logged candidate set*, so the adapter is never penalized for failing to surface things the old retriever never returned. |
+| 6 | **Norm/scale gaming** | Inflating ‖Wq‖ to game L2 distances, or pushing all queries into a dense region to raise average similarity without discriminating. |
+| 7 | **Spurious task credit** | Up-weighting "preceded a task completion" can reward whatever notes are incidentally open near completions (daily/hub notes), not relevance. |
+| 8 | **Slow drift / compounding** | Each warm-started cycle nudges; small biases compound across many "dreams" into a locally-rewarded but globally degenerate map. |
+
+### Defenses — implemented now
+
+- **Train on mistakes, not hits (skip-above + drop rank-0).** Negatives are only candidates the retriever ranked *above* the used one; a use that was already rank-0 is dropped entirely (no contrastive signal). Directly defuses #1, #2, #3: self-confirming hits contribute nothing, and lower-ranked possibly-relevant docs are never used as negatives. (`RetrievalFeedbackMiner`.)
+- **Exposure-debias weighting.** The deeper the used note was buried, the more the example counts — concentrating learning where the retriever was *wrong*. (#1, #2.)
+- **Renormalize after transform.** Ranking depends only on direction, not magnitude, closing the scale cheat. (#6, partial.)
+- **Promotion gate = relevance gain AND coverage floor.** A model that "wins" by collapsing diversity is rejected. (#3, #6.)
+- **Held-out sample floor.** No promotion unless the held-out set is large enough for the MRR delta to be signal not noise. (#5/#8, partial.)
+- **Identity init + L2 pull-to-identity + reversible identity adapter.** Bounds and reverses drift. (#8.)
+- **Weight cap.** No single example (even task-rewarded) can dominate. (#7.)
+
+### Defenses — roadmap (documented, not yet built)
+
+- **Exploration-sourced positives weighted highest.** Wildcard/ε-slots are the *only* unbiased feedback (shown independently of the adapter's score). Mark their provenance at capture and prefer them; track "fraction of signal from exploration" as a loop-health metric — near zero means the loop is eating its tail. (Depends on the exploration apply-path.)
+- **Full-vault / off-policy evaluation.** Periodically evaluate over the whole vault as the candidate pool (not just logged candidates), and/or against a small curated golden set with policy-independent positives (manually linked/graph-opened notes). This is the real fix for the #5 blind spot — it measures what the adapter *missed*.
+- **Shadow mode before promotion.** Run a new adapter in shadow, logging what it *would* have ranked vs. what gets used on genuinely fresh interactions; promote only if it holds up on the future, not the past. The cleanest anti-Goodhart.
+- **Hard trust region.** Project ‖W − I‖ back into a ball each cycle so a persistent wrong gradient cannot run away regardless of reward. (#8.)
+- **Causal task credit.** Require the retrieved note to be plausibly *on the path* to the completed task (linked to it / read inside its session), not merely temporally near. (#7.)
+- **Rollback canary.** A few stable human-meaningful queries with known answers; if a new adapter ranks any worse than identity, freeze/rollback. Cheap global sanity check.
+
+---
+
 ## Explicitly out of scope (future / "north star")
 
 True local encoder fine-tune (updating MiniLM weights) — needs a training-capable runtime (ONNX Runtime training session or a desktop-only ML sidecar), thousands of accumulated examples, and full-vault re-embedding on every model change. Revisit only after the adapter demonstrably saturates over months of use.
