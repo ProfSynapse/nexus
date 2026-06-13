@@ -71,4 +71,31 @@ describe('AdapterTrainer', () => {
     expect(stats.finalLoss).toBeLessThan(stats.initialLoss);
     expect(stats.finalLoss).toBeLessThan(0.4); // below the log(2) ≈ 0.69 uniform baseline
   });
+
+  it('learns the swap task under the BPR pairwise-preference objective', () => {
+    const { train, evalSet } = makeSwapData(80, 13);
+    const before = AdapterEvaluator.evaluate(EmbeddingAdapter.identity(2), evalSet);
+    const { adapter } = AdapterTrainer.train(train, {
+      loss: 'bpr', rank: 4, alpha: 1, epochs: 200, learningRate: 0.3, minExamples: 20, seed: 3
+    });
+    const after = AdapterEvaluator.evaluate(adapter, evalSet);
+    expect(before.mrr).toBeCloseTo(0.5, 1);
+    expect(after.mrr).toBeGreaterThan(0.9);
+  });
+
+  it('learns the swap task under the KTO (prospect-theory) objective', () => {
+    const { train, evalSet } = makeSwapData(80, 17);
+    const before = AdapterEvaluator.evaluate(EmbeddingAdapter.identity(2), evalSet);
+    const { adapter } = AdapterTrainer.train(train, {
+      loss: 'kto', rank: 4, alpha: 1, epochs: 400, learningRate: 0.5,
+      ktoBeta: 4, ktoLambdaDesirable: 1, ktoLambdaUndesirable: 1.33, minExamples: 20, seed: 3
+    });
+    const after = AdapterEvaluator.evaluate(adapter, evalSet);
+    expect(before.mrr).toBeCloseTo(0.5, 1);
+    // KTO learns the right direction (well above identity's 0.5). It plateaus
+    // below BPR/InfoNCE on this 2-candidate symmetric toy because its
+    // mean-baseline signal is softer — exactly why a bake-off, not a fixed
+    // objective, is the unbiased choice.
+    expect(after.mrr).toBeGreaterThan(0.7);
+  });
 });

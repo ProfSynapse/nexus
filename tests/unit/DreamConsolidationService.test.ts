@@ -145,4 +145,57 @@ describe('DreamConsolidationService', () => {
     expect(save).not.toHaveBeenCalled();
     expect(applied).toHaveLength(0);
   });
+
+  describe('bake-off', () => {
+    const contestants = [
+      { loss: 'infonce' as const, label: 'infonce', rank: 4, alpha: 1, epochs: 200, learningRate: 0.3, temperature: 0.1, seed: 3 },
+      { loss: 'bpr' as const, label: 'bpr', rank: 4, alpha: 1, epochs: 200, learningRate: 0.3, seed: 3 },
+      { loss: 'kto' as const, label: 'kto', rank: 4, alpha: 1, epochs: 400, learningRate: 0.5, ktoBeta: 4, ktoLambdaUndesirable: 1.33, seed: 3 }
+    ];
+
+    function bakeOffDeps() {
+      const applied: EmbeddingAdapter[] = [];
+      const save = jest.fn().mockResolvedValue(undefined);
+      const world = buildWorld(60, 'swap');
+      const deps: DreamDeps = {
+        getTraceRecords: async () => world.records,
+        embeddings: world.embeddings,
+        store: { load: async () => EmbeddingAdapter.identity(2), save },
+        applyAdapter: (a) => applied.push(a),
+        config: {
+          minExamples: 20, holdoutFraction: 0.25,
+          contestants,
+          promotion: { mrrMargin: 0.05, coverageFloor: 0.5 }
+        }
+      };
+      return { deps, applied, save };
+    }
+
+    it('runs all objectives and promotes the best one (best wins the round)', async () => {
+      const { deps, applied, save } = bakeOffDeps();
+      const report = await new DreamConsolidationService(deps).runDreamCycle();
+
+      expect(report.leaderboard).toHaveLength(3);
+      // leaderboard is sorted best-MRR first
+      expect(report.leaderboard![0].mrr).toBeGreaterThanOrEqual(report.leaderboard![2].mrr);
+      expect(report.promoted).toBe(true);
+      expect(['infonce', 'bpr', 'kto']).toContain(report.winner);
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(applied).toHaveLength(1);
+      expect(applied[0].isIdentity).toBe(false);
+    });
+
+    it('promotes nobody when no contestant clears the bar, but still reports the leaderboard', async () => {
+      const { deps, applied, save } = bakeOffDeps();
+      deps.config!.promotion = { mrrMargin: 0.95, coverageFloor: 0.5 }; // impossibly high
+
+      const report = await new DreamConsolidationService(deps).runDreamCycle();
+
+      expect(report.leaderboard).toHaveLength(3); // everyone still scored
+      expect(report.promoted).toBe(false);
+      expect(report.winner).toBeUndefined();
+      expect(save).not.toHaveBeenCalled();
+      expect(applied).toHaveLength(0); // incumbent untouched
+    });
+  });
 });

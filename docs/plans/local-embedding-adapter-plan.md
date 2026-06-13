@@ -435,6 +435,26 @@ Listwise preference optimization — **LiPO-λ** (arXiv:2402.01878), **IRPO** (C
 
 ---
 
+## Appendix D — Objective bake-off ("best wins the round") + implemented
+
+Resolves Appendix C's recommendation #1 (and the "ship-the-fancy-method-only-if-it-wins" caveat from Hager 2024) **empirically rather than by belief**: every dream round trains several objectives on the same train slice, scores them on the same held-out slice, and the best one that also beats the incumbent is promoted. The objective is *selected per user from their own data*, not chosen up front.
+
+**Implemented (branch):**
+- `AdapterTrainer` refactored to a **pluggable objective** — all three share the identical (already-validated) backprop into the low-rank factors; only the per-candidate score gradient differs:
+  - **`infonce`** — contrastive softmax (the original).
+  - **`bpr`** — pairwise logistic over (used ≻ each skipped-above). Treats skip-above as *preferences*, not hard negatives — the literature's fix for the InfoNCE false-negative penalty (Appendix C #1). [Rendle 2009]
+  - **`kto`** — Kahneman–Tversky prospect-theory loss with **loss aversion** (`λ_undesirable > λ_desirable`); reference point = in-example mean score (adapted: a batch baseline, not a policy log-ratio). [Ethayarajh 2024]
+- `DreamConsolidationService` runs the **bake-off**: `contestants: TrainConfig[]`, trains+evaluates each on the shared holdout, returns a **leaderboard** (`{label, loss, mrr, coverage}` best-first) and a `winner`, and promotes the best **only if it clears the coverage floor AND beats the incumbent by a margin that grows with the contestant count** — a **winner's-curse / multiple-comparisons guard** (selecting the max over K noisy holdout scores is itself a way to cheat, so the bar rises with K). Production default = `{infonce, bpr, kto}` every round; the promoted Notice names the winning objective.
+- Cost is negligible: each linear adapter trains in <1s on tiny data, so a 3-way bake-off per idle cycle is free — a direct benefit of the lightweight design.
+
+**On KTO specifically (avoiding bias):** prospect theory is appealing (loss aversion = weight "missed a used note" more than "surfaced an extra one"), and the reference-point structure fits naturally (the incumbent/mean is the reference). But on our 2-candidate test toy KTO *plateaus below* BPR/InfoNCE because its mean-baseline signal is softer there — a concrete reminder that the right objective is **data-dependent**. The bake-off is exactly the unbiased arbiter: KTO earns promotion on the rounds where prospect theory genuinely helps, and loses the rounds where it doesn't.
+
+**Tests:** BPR and KTO each learn the separable task (MRR ≫ identity); the bake-off promotes the best contestant and reports the leaderboard; an impossibly-high margin promotes nobody yet still scores everyone. Full suite 3623 passed / 0 failed; build clean.
+
+**Still roadmap (Appendix C, unchanged):** IPS/Doubly-Robust propensity weighting on the skip-above pairs; counterfactual off-policy eval + interleaving in the gate; exploration-propensity logging. The bake-off makes these *additional contestants/evaluators*, not rewrites.
+
+---
+
 ## Explicitly out of scope (future / "north star")
 
 True local encoder fine-tune (updating MiniLM weights) — needs a training-capable runtime (ONNX Runtime training session or a desktop-only ML sidecar), thousands of accumulated examples, and full-vault re-embedding on every model change. Revisit only after the adapter demonstrably saturates over months of use.

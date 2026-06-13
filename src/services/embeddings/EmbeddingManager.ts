@@ -276,8 +276,9 @@ export class EmbeddingManager {
     try {
       const report = await this.retrievalDream.dream.runDreamCycle();
       if (report.promoted) {
+        const via = report.winner ? ` via ${report.winner}` : '';
         new Notice(
-          `Nexus consolidated retrieval memory — search relevance improved ` +
+          `Nexus consolidated retrieval memory — search relevance improved${via} ` +
           `(${report.minedExamples} examples).`
         );
       } else if (notify) {

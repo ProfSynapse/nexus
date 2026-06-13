@@ -38,9 +38,27 @@ export interface DreamConfig {
   minExamples?: number;
   /** Don't promote unless the held-out set is at least this big (anti-noise). */
   minHoldout?: number;
+  /** Single training config (used when `contestants` is not set). */
   train?: TrainConfig;
+  /**
+   * Bake-off: train each config on the same data and let the best beat the
+   * incumbent. This is how we pick an objective (InfoNCE vs BPR vs KTO …)
+   * empirically per user, instead of by prior belief.
+   */
+  contestants?: TrainConfig[];
+  /** Extra MRR margin added per doubling of contestant count (winner's-curse guard). */
+  comparisonPenalty?: number;
   promotion?: PromotionConfig;
   mine?: MineConfig;
+}
+
+/** One contestant's held-out scoreboard line. */
+export interface LeaderboardEntry {
+  label: string;
+  loss: string;
+  mrr: number;
+  coverage: number;
+  trained: boolean;
 }
 
 export interface DreamDeps {
@@ -62,10 +80,14 @@ export interface DreamReport {
   mrrAfter: number;
   coverageBefore: number;
   coverageAfter: number;
+  /** Per-contestant held-out scores, best first. */
+  leaderboard?: LeaderboardEntry[];
+  /** Label of the promoted contestant, if any. */
+  winner?: string;
   reason?: string;
 }
 
-const DEFAULTS = { holdoutFraction: 0.25, minExamples: 20, minHoldout: 8 };
+const DEFAULTS = { holdoutFraction: 0.25, minExamples: 20, minHoldout: 8, comparisonPenalty: 0.01 };
 
 export class DreamConsolidationService {
   private running = false;
@@ -106,27 +128,62 @@ export class DreamConsolidationService {
       }
 
       const holdoutEval = holdoutSlice.map(toEvalExample);
+      const trainExamples = trainSlice.map(toTrainingExample);
       const current = await this.deps.store.load();
       const before = AdapterEvaluator.evaluate(current, holdoutEval);
 
-      const trained = AdapterTrainer.train(
-        trainSlice.map(toTrainingExample),
-        { minExamples: cfg.minExamples, ...cfg.train }
-      );
-      const after = AdapterEvaluator.evaluate(trained.adapter, holdoutEval);
+      // ---- Bake-off: train every contestant on the SAME data, score on the
+      // SAME held-out slice, best-that-clears-the-coverage-floor wins. ----
+      const contestants: TrainConfig[] =
+        cfg.contestants && cfg.contestants.length > 0 ? cfg.contestants : [cfg.train ?? {}];
+      const coverageFloor = cfg.promotion?.coverageFloor ?? 0.5;
+      const nextVersion = (current.version || 0) + 1;
 
-      // Don't promote on a held-out set too small for the MRR delta to be real
-      // signal rather than noise (a thin-data Goodhart guard).
+      const leaderboard: LeaderboardEntry[] = [];
+      let best: { adapter: EmbeddingAdapter; result: EvalResult; label: string } | null = null;
+
+      for (let i = 0; i < contestants.length; i++) {
+        const contestant = contestants[i];
+        const trained = AdapterTrainer.train(trainExamples, {
+          minExamples: cfg.minExamples,
+          version: nextVersion,
+          ...contestant
+        });
+        const score = AdapterEvaluator.evaluate(trained.adapter, holdoutEval);
+        const label = contestant.label || contestant.loss || `contestant-${i}`;
+        leaderboard.push({
+          label, loss: contestant.loss ?? 'infonce',
+          mrr: score.mrr, coverage: score.coverage, trained: trained.stats.trained
+        });
+        // Eligible only if it actually trained and didn't collapse diversity.
+        if (trained.stats.trained && score.coverage >= coverageFloor &&
+            (!best || score.mrr > best.result.mrr)) {
+          best = { adapter: trained.adapter, result: score, label };
+        }
+      }
+      leaderboard.sort((a, b) => b.mrr - a.mrr);
+
+      // Winner's-curse guard: picking the max over K noisy contestants inflates
+      // the apparent gain, so the bar to beat the incumbent rises with K.
+      const baseMargin = cfg.promotion?.mrrMargin ?? 0.01;
+      const effectiveMargin = baseMargin + cfg.comparisonPenalty * Math.log2(Math.max(1, contestants.length));
       const enoughHoldout = before.examples >= cfg.minHoldout;
-      const promoted = trained.stats.trained && enoughHoldout &&
-        AdapterEvaluator.shouldPromote(before, after, cfg.promotion);
 
-      if (promoted) {
-        await this.deps.store.save(trained.adapter);
-        this.deps.applyAdapter(trained.adapter);
+      const promoted = !!best && enoughHoldout &&
+        AdapterEvaluator.shouldPromote(before, best.result, { ...cfg.promotion, mrrMargin: effectiveMargin });
+
+      if (promoted && best) {
+        await this.deps.store.save(best.adapter);
+        this.deps.applyAdapter(best.adapter);
       }
 
-      return this.report(base, mined, trained.stats.trained, promoted, before, after);
+      const after = best ? best.result : before;
+      const anyTrained = leaderboard.some(e => e.trained);
+      return {
+        ...this.report(base, mined, anyTrained, promoted, before, after),
+        leaderboard,
+        winner: promoted && best ? best.label : undefined
+      };
     } finally {
       this.running = false;
     }

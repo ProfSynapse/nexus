@@ -40,7 +40,25 @@ export interface TrainingExample {
   weight?: number;
 }
 
+/**
+ * Training objective. All three share the SAME backprop into the low-rank
+ * factors; they differ only in the per-candidate score gradient:
+ *  - 'infonce': contrastive softmax (binary positive-vs-rest).
+ *  - 'bpr':     pairwise logistic — used ≻ each skipped-above. Treats
+ *               skip-above as PREFERENCES, not hard negatives (avoids the
+ *               false-negative penalty InfoNCE imposes). [Rendle 2009]
+ *  - 'kto':     Kahneman–Tversky prospect-theory loss with loss-aversion
+ *               (undesirable losses loom larger than desirable gains).
+ *               Reference point = in-example mean score. [Ethayarajh 2024,
+ *               adapted: reference is a batch baseline, not a policy ratio.]
+ */
+export type TrainObjective = 'infonce' | 'bpr' | 'kto';
+
 export interface TrainConfig {
+  /** Which loss to optimize (default 'infonce'). */
+  loss?: TrainObjective;
+  /** Human-readable label for bake-off leaderboards. */
+  label?: string;
   rank?: number;
   /** Blend/strength used in BOTH training and inference (kept consistent). */
   alpha?: number;
@@ -48,8 +66,14 @@ export interface TrainConfig {
   learningRate?: number;
   /** L2 pull toward identity (regularization coefficient). */
   l2?: number;
-  /** Softmax temperature. */
+  /** Softmax temperature (InfoNCE). */
   temperature?: number;
+  /** KTO: logit scale on cosine scores. */
+  ktoBeta?: number;
+  /** KTO: weight on desirable (used) examples. */
+  ktoLambdaDesirable?: number;
+  /** KTO: weight on undesirable (skipped) examples — > desirable encodes loss aversion. */
+  ktoLambdaUndesirable?: number;
   /** Below this many examples, return identity (don't train on noise). */
   minExamples?: number;
   /** Seed for reproducible factor init. */
@@ -72,16 +96,81 @@ export interface TrainResult {
 }
 
 const DEFAULTS = {
+  loss: 'infonce' as TrainObjective,
+  label: '',
   rank: 16,
   alpha: 1.0,
   epochs: 60,
   learningRate: 0.5,
   l2: 1e-3,
   temperature: 0.1,
+  ktoBeta: 5,
+  ktoLambdaDesirable: 1.0,
+  ktoLambdaUndesirable: 1.33, // mild loss aversion (prospect theory)
   minExamples: 20,
   seed: 1,
   version: 1
 };
+
+type MergedConfig = typeof DEFAULTS;
+
+const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
+
+/**
+ * Per-candidate score gradient g_j = ∂L/∂score_j for the chosen objective.
+ * Candidate 0 is the positive (used) item; 1..n-1 are skipped-above negatives.
+ * `dot` are raw (untempered) similarity scores. Returns loss for monitoring.
+ */
+function objectiveGradients(dot: Float64Array, cfg: MergedConfig): { loss: number; g: Float64Array } {
+  const n = dot.length;
+  const g = new Float64Array(n);
+
+  if (cfg.loss === 'bpr') {
+    // Σ_j -log σ(s0 - sj):  used preferred over each skipped-above item.
+    let loss = 0;
+    for (let j = 1; j < n; j++) {
+      const m = sigmoid(dot[0] - dot[j]);
+      loss += -Math.log(Math.max(m, 1e-12));
+      g[0] += -(1 - m);
+      g[j] += (1 - m);
+    }
+    return { loss, g };
+  }
+
+  if (cfg.loss === 'kto') {
+    // Prospect-theory value around an in-example reference point z (the mean
+    // score). Desirable (used) should sit above z; undesirable below it.
+    const beta = cfg.ktoBeta;
+    let z = 0;
+    for (let j = 0; j < n; j++) z += beta * dot[j];
+    z /= n; // reference point (detached)
+
+    let loss = 0;
+    const v0 = sigmoid(beta * dot[0] - z);
+    loss += cfg.ktoLambdaDesirable * (1 - v0);
+    g[0] += -cfg.ktoLambdaDesirable * beta * v0 * (1 - v0);
+    for (let j = 1; j < n; j++) {
+      const uj = sigmoid(z - beta * dot[j]);
+      loss += cfg.ktoLambdaUndesirable * (1 - uj);
+      g[j] += cfg.ktoLambdaUndesirable * beta * uj * (1 - uj);
+    }
+    return { loss, g };
+  }
+
+  // 'infonce': softmax over s/τ; g_j = (1/τ)(p_j − y_j).
+  const tau = cfg.temperature;
+  let maxS = -Infinity;
+  for (let j = 0; j < n; j++) if (dot[j] / tau > maxS) maxS = dot[j] / tau;
+  let sumExp = 0;
+  const p = new Float64Array(n);
+  for (let j = 0; j < n; j++) {
+    p[j] = Math.exp(dot[j] / tau - maxS);
+    sumExp += p[j];
+  }
+  for (let j = 0; j < n; j++) p[j] /= sumExp;
+  for (let j = 0; j < n; j++) g[j] = (1 / tau) * (p[j] - (j === 0 ? 1 : 0));
+  return { loss: -Math.log(Math.max(p[0], 1e-12)), g };
+}
 
 /** Deterministic small PRNG (mulberry32) for reproducible init. */
 function mulberry32(seed: number): () => number {
@@ -117,8 +206,6 @@ export class AdapterTrainer {
 
     const dim = examples[0].query.length;
     const rank = cfg.rank;
-    const alpha = cfg.alpha;
-    const tau = cfg.temperature;
 
     // Identity-ish init: tiny random factors so W ≈ I.
     const rand = mulberry32(cfg.seed);
@@ -145,7 +232,7 @@ export class AdapterTrainer {
       let epochLoss = 0;
       for (const idx of order) {
         const weight = examples[idx].weight ?? 1;
-        epochLoss += AdapterTrainer.step(examples[idx], U, V, dim, rank, alpha, tau, cfg.learningRate, cfg.l2, weight);
+        epochLoss += AdapterTrainer.step(examples[idx], U, V, dim, rank, cfg, weight);
       }
       epochLoss /= order.length;
       if (epoch === 0) initialLoss = epochLoss;
@@ -156,7 +243,7 @@ export class AdapterTrainer {
       version: cfg.version,
       dim,
       rank,
-      alpha,
+      alpha: cfg.alpha,
       U,
       V,
       trainedAt: Date.now()
@@ -178,12 +265,12 @@ export class AdapterTrainer {
     V: number[][],
     dim: number,
     rank: number,
-    alpha: number,
-    tau: number,
-    lr: number,
-    l2: number,
+    cfg: MergedConfig,
     weight: number
   ): number {
+    const alpha = cfg.alpha;
+    const lr = cfg.learningRate;
+    const l2 = cfg.l2;
     const q = ex.query;
     const docs = [ex.positive, ...ex.negatives.filter(n => n.length === dim)];
     const n = docs.length;
@@ -208,32 +295,22 @@ export class AdapterTrainer {
       Wq[i] = q[i] + alpha * delta;
     }
 
-    // scores + softmax over s/τ
-    const s = new Float64Array(n);
-    let maxS = -Infinity;
+    // Raw similarity scores, then objective-specific per-candidate gradient.
+    const dot = new Float64Array(n);
     for (let j = 0; j < n; j++) {
-      let dot = 0;
+      let acc = 0;
       const d = docs[j];
-      for (let i = 0; i < dim; i++) dot += Wq[i] * d[i];
-      s[j] = dot / tau;
-      if (s[j] > maxS) maxS = s[j];
+      for (let i = 0; i < dim; i++) acc += Wq[i] * d[i];
+      dot[j] = acc;
     }
-    let sumExp = 0;
-    const p = new Float64Array(n);
-    for (let j = 0; j < n; j++) {
-      p[j] = Math.exp(s[j] - maxS);
-      sumExp += p[j];
-    }
-    for (let j = 0; j < n; j++) p[j] /= sumExp;
+    const { loss, g: gScore } = objectiveGradients(dot, cfg);
 
-    const loss = -Math.log(Math.max(p[0], 1e-12)); // positive is index 0
-
-    // g_j = (1/τ)(p_j − y_j); Uᵀd_j precomputed per candidate
-    // ∂L/∂U += α·g_j·(d_j aᵀ) ; ∂L/∂V += α·g_j·(q (Uᵀd_j)ᵀ)
+    // Shared backprop into the low-rank factors (identical across objectives):
+    // ∂score_j/∂U = α·d_j aᵀ ; ∂score_j/∂V = α·q (Uᵀd_j)ᵀ
     const gradU = zeros(dim, rank);
     const gradV = zeros(dim, rank);
     for (let j = 0; j < n; j++) {
-      const g = weight * (alpha / tau) * (p[j] - (j === 0 ? 1 : 0));
+      const g = weight * alpha * gScore[j];
       if (g === 0) continue;
       const d = docs[j];
 

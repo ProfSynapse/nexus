@@ -18,6 +18,19 @@ import {
 
 type VaultSettings = ConstructorParameters<typeof AdapterStore>[1];
 
+/**
+ * Default bake-off: each dream round trains all three objectives on the same
+ * data and the best-on-held-out wins. This is how the objective is chosen
+ * empirically per user (InfoNCE = contrastive; BPR = pairwise preference, the
+ * literature's fix for skip-above false negatives; KTO = prospect-theory with
+ * loss aversion) rather than by prior belief.
+ */
+export const DEFAULT_CONTESTANTS = [
+  { loss: 'infonce' as const, label: 'infonce' },
+  { loss: 'bpr' as const, label: 'bpr' },
+  { loss: 'kto' as const, label: 'kto' }
+];
+
 export interface RetrievalDreamWiring {
   service: EmbeddingService;
   db: MemoryTraceQuery;
@@ -47,7 +60,10 @@ export function createRetrievalDreamService(w: RetrievalDreamWiring): RetrievalD
     embeddings,
     store,
     applyAdapter: (adapter) => w.service.setAdapter(adapter),
-    config: w.dreamConfig
+    config: {
+      contestants: DEFAULT_CONTESTANTS,
+      ...w.dreamConfig
+    }
   });
 
   return {
