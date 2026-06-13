@@ -11,6 +11,7 @@ interface TaskBoardRendererDependencies {
   groupTasksByParent: (columnTasks: TaskBoardTask[]) => SwimlaneGroup[];
   onTaskStatusDrop: (taskId: string, newStatus: TaskStatus) => Promise<void>;
   onEditTask: (task: TaskBoardTask) => void;
+  onDeleteTask: (task: TaskBoardTask) => void;
   onFlushPendingEvent: () => Promise<void>;
 }
 
@@ -153,7 +154,9 @@ export class TaskBoardRenderer {
       text: task.title
     });
 
-    const editButton = row.createEl('button', {
+    const actions = row.createDiv('nexus-task-board-card-actions');
+
+    const editButton = actions.createEl('button', {
       cls: 'clickable-icon nexus-task-board-icon-button',
       attr: {
         'aria-label': `Edit ${task.title}`,
@@ -164,6 +167,19 @@ export class TaskBoardRenderer {
     this.safeRegisterDomEvent(editButton, 'click', (event: MouseEvent) => {
       event.stopPropagation();
       this.deps.onEditTask(task);
+    });
+
+    const deleteButton = actions.createEl('button', {
+      cls: 'clickable-icon nexus-task-board-icon-button nexus-icon-danger',
+      attr: {
+        'aria-label': `Delete ${task.title}`,
+        type: 'button'
+      }
+    });
+    setIcon(deleteButton, 'trash');
+    this.safeRegisterDomEvent(deleteButton, 'click', (event: MouseEvent) => {
+      event.stopPropagation();
+      this.deps.onDeleteTask(task);
     });
 
     card.createDiv({

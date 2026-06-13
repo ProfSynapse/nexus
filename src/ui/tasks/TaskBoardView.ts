@@ -101,6 +101,7 @@ export class TaskBoardView extends ItemView {
       groupTasksByParent: (columnTasks) => this.groupTasksByParent(columnTasks),
       onTaskStatusDrop: (taskId, newStatus) => this.handleTaskStatusDrop(taskId, newStatus),
       onEditTask: (task) => this.openEditModal(task),
+      onDeleteTask: (task) => void this.editCoordinator.deleteTask(task),
       onFlushPendingEvent: () => this.syncCoordinator.flushPendingEvent()
     });
   }

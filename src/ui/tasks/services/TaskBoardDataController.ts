@@ -2,6 +2,7 @@ import type NexusPlugin from '../../../main';
 import type { WorkspaceService } from '../../../services/WorkspaceService';
 import type { AgentRegistrationService } from '../../../services/agent/AgentRegistrationService';
 import type { AgentManager } from '../../../services/AgentManager';
+import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { WorkspaceMetadata } from '../../../types/storage/StorageTypes';
 import type { TaskService } from '../../../agents/taskManager/services/TaskService';
 import type { ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
@@ -25,6 +26,7 @@ export class TaskBoardDataController {
   private workspaceService: WorkspaceService | null = null;
   private agentRegistrationService: AgentRegistrationService | null = null;
   private taskService: TaskService | null = null;
+  private storageAdapter: HybridStorageAdapter | null = null;
 
   constructor(private plugin: NexusPlugin) {}
 
@@ -61,6 +63,25 @@ export class TaskBoardDataController {
     }
 
     this.taskService = taskAgent.getTaskService();
+
+    if (!this.storageAdapter) {
+      this.storageAdapter = await this.plugin.getService<HybridStorageAdapter>('hybridStorageAdapter');
+    }
+  }
+
+  /**
+   * Block until the local SQLite cache is hydrated from JSONL so the first
+   * board load reads real data instead of an empty cache. During a cold start
+   * or cache rebuild the adapter reports query-ready only once hydration has
+   * finished; without this gate `getWorkspaces()` returns [] and the board
+   * renders "No tasks" with no later refresh. Resolves (and proceeds) on the
+   * adapter's own idle timeout rather than hanging forever.
+   */
+  private async waitForQueryReady(): Promise<void> {
+    const adapter = this.storageAdapter;
+    if (adapter && typeof adapter.waitForQueryReady === 'function') {
+      await adapter.waitForQueryReady();
+    }
   }
 
   async loadBoardData(filterState: TaskBoardViewState): Promise<TaskBoardDataSnapshot> {
@@ -69,6 +90,8 @@ export class TaskBoardDataController {
     if (!workspaceService || !taskService) {
       throw new Error('Task board services are not initialized');
     }
+
+    await this.waitForQueryReady();
 
     const nextFilterState = TaskBoardFilterController.normalizeState(filterState);
     const workspaces = (await workspaceService.getWorkspaces({

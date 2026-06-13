@@ -7624,6 +7624,12 @@ body.is-mobile .nexus-branch-task {
     line-height: 1.35;
 }
 
+.nexus-task-board-card-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: var(--space-xs);
+}
+
 .nexus-task-board-card-meta {
     margin-top: var(--space-xs);
 }
