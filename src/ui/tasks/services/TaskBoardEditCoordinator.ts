@@ -1,4 +1,5 @@
 import { Notice, type App } from 'obsidian';
+import { ConfirmModal } from '../../../settings/components/ConfirmModal';
 import type { LinkType } from '../../../database/repositories/interfaces/ITaskRepository';
 import type { ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { TaskService } from '../../../agents/taskManager/services/TaskService';
@@ -44,6 +45,33 @@ export class TaskBoardEditCoordinator {
         this.deps.onEditModalClose();
       }
     }).open();
+  }
+
+  async deleteTask(task: TaskBoardTask): Promise<void> {
+    const confirmed = await ConfirmModal.confirm(this.deps.app, {
+      variant: 'delete',
+      title: 'Delete task?',
+      body: `Delete task "${task.title}"? This also removes its dependency links and cannot be undone.`
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    const taskService = this.deps.getTaskService();
+    if (!taskService) {
+      new Notice('Task service is not available');
+      return;
+    }
+
+    try {
+      await taskService.deleteTask(task.id);
+      await this.deps.reloadBoard();
+      this.deps.renderBoard();
+      new Notice('Task deleted');
+    } catch (error) {
+      console.error('[TaskBoardEditCoordinator] Failed to delete task:', error);
+      new Notice('Failed to delete task');
+    }
   }
 
   async saveTaskChanges(originalTask: TaskBoardTask, updatedTask: TaskBoardEditableTask): Promise<void> {
