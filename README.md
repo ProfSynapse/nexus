@@ -21,7 +21,7 @@ Nexus can be used in two ways:
 - Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
 - Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md) for chat, live voice, read-aloud, and built-in audio/video generation
 - External agent over MCP: use **Nexus settings -> Get started -> MCP integration** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
-- Optional desktop features: [Semantic search](guide/semantic-search.md) and [Apps and integrations](guide/apps.md)
+- Optional desktop features: [Semantic search](guide/semantic-search.md), [Adaptive search](guide/adaptive-search.md), and [Apps and integrations](guide/apps.md)
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
 
@@ -54,6 +54,7 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 | Manage long-running work with persistent workspace context | [Workspace memory](guide/workspace-memory.md) |
 | Track projects, tasks, blockers, and dependencies | [Task management](guide/task-management.md) |
 | Search notes and past conversations by meaning | [Semantic search](guide/semantic-search.md) |
+| Have search learn from the notes you actually open, fully on-device | [Adaptive search](guide/adaptive-search.md) |
 | Edit selected text directly in notes | [Inline editing](guide/inline-editing.md) |
 | Open webpages in Obsidian and save them as Markdown, PNG, or PDF *(experimental)* | [Apps](guide/apps.md) |
 | Convert PDFs and audio files to Markdown notes — right-click in vault or auto on add *(experimental)* | [Apps](guide/apps.md) |
@@ -88,6 +89,7 @@ When a config file needs to be edited, show the exact snippet with my vault path
 - [Workspace memory](guide/workspace-memory.md)
 - [Task management](guide/task-management.md)
 - [Semantic search](guide/semantic-search.md)
+- [Adaptive search](guide/adaptive-search.md)
 - [Native chat](guide/native-chat.md)
 - [Inline editing](guide/inline-editing.md)
 - [Apps](guide/apps.md)
