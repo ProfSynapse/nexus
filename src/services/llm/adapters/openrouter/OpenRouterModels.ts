@@ -187,6 +187,26 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'Fusion',
+    apiName: 'openrouter/fusion',
+    contextWindow: 128000,
+    maxTokens: 32000,
+    // Fusion is a multi-model deliberation router, not a billable model itself —
+    // the meta-slug is free and actual spend (the underlying panel + judge) is
+    // reported per-request via OpenRouter's generation-stats endpoint, which the
+    // adapter already prefers over registry pricing.
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: false,
+      supportsStreaming: true,
+      supportsThinking: false
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'GLM 5.1',
     apiName: 'z-ai/glm-5.1',
     contextWindow: 202752,
