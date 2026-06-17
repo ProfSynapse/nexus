@@ -218,6 +218,41 @@ export const REQUESTY_MODELS: ModelSpec[] = [
     }
   },
 
+  // Z.ai / Moonshot models via Requesty (first-party provider slugs,
+  // verified live against router.requesty.ai/v1/models 2026-06-17)
+  {
+    provider: 'requesty',
+    name: 'GLM 5.2',
+    apiName: 'zai/glm-5.2',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.40,
+    outputCostPerMillion: 4.40,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
+    name: 'Kimi K2.7 Code',
+    apiName: 'moonshot/kimi-k2.7-code',
+    contextWindow: 262144,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.95,
+    outputCostPerMillion: 4.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Mistral models via Requesty
   {
     provider: 'requesty',

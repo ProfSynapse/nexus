@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated April 2026 - Added GPT-5.5 family
+ * Updated June 2026 — pruned the GPT-5 / GPT-5.1 generation (superseded by GPT-5.2+ and the 5.4/5.5 families)
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -172,72 +172,6 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 21.00,
     outputCostPerMillion: 168.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-
-  // GPT-5 model family
-  {
-    provider: 'openai',
-    name: 'GPT-5.1',
-    apiName: 'gpt-5.1-2025-11-13',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openai',
-    name: 'GPT-5',
-    apiName: 'gpt-5',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openai',
-    name: 'GPT-5 Mini',
-    apiName: 'gpt-5-mini',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0.25,
-    outputCostPerMillion: 2.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openai',
-    name: 'GPT-5 Nano',
-    apiName: 'gpt-5-nano',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0.05,
-    outputCostPerMillion: 0.40,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

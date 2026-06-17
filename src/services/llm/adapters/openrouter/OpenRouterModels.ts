@@ -1,7 +1,8 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated May 2026 with Claude Opus 4.8
+ * Updated June 2026 — added GLM 5.2 + Kimi K2.7 Code; pruned superseded
+ * Claude 4.5 Opus/Sonnet, Gemini 2.5 / 3.0 Preview, and GPT-5 / GPT-5.1 entries
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -17,38 +18,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 5.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Claude 4.5 Opus',
-    apiName: 'anthropic/claude-opus-4.5',
-    contextWindow: 200000,
-    maxTokens: 32000,
-    inputCostPerMillion: 5.00,
-    outputCostPerMillion: 25.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Claude 4.5 Sonnet',
-    apiName: 'anthropic/claude-sonnet-4.5',
-    contextWindow: 1000000,
-    maxTokens: 64000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -203,76 +172,28 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'GLM 5.2',
+    apiName: 'z-ai/glm-5.2',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.40,
+    outputCostPerMillion: 4.40,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'GLM 5V Turbo',
     apiName: 'z-ai/glm-5v-turbo',
     contextWindow: 202752,
     maxTokens: 65536,
     inputCostPerMillion: 1.20,
     outputCostPerMillion: 4.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Gemini 2.5 Flash',
-    apiName: 'google/gemini-2.5-flash',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0.15,
-    outputCostPerMillion: 0.60,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Gemini 2.5 Pro',
-    apiName: 'google/gemini-2.5-pro',
-    contextWindow: 1048576,
-    maxTokens: 66000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Gemini 3.0 Flash Preview',
-    apiName: 'google/gemini-3-flash-preview',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0.50,
-    outputCostPerMillion: 3.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Gemini 3.0 Pro Preview',
-    apiName: 'google/gemini-3-pro-preview',
-    contextWindow: 1048576,
-    maxTokens: 8192,
-    inputCostPerMillion: 2.00,
-    outputCostPerMillion: 12.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -321,70 +242,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 1.50,
     outputCostPerMillion: 9.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'GPT-5',
-    apiName: 'openai/gpt-5',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'GPT-5 Mini',
-    apiName: 'openai/gpt-5-mini',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0.25,
-    outputCostPerMillion: 2.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'GPT-5 Nano',
-    apiName: 'openai/gpt-5-nano',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0.05,
-    outputCostPerMillion: 0.40,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'GPT-5.1',
-    apiName: 'openai/gpt-5.1',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -547,6 +404,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     outputCostPerMillion: 180.00,
     capabilities: {
       supportsJSON: false,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Kimi K2.7 Code',
+    apiName: 'moonshotai/kimi-k2.7-code',
+    contextWindow: 262144,
+    maxTokens: 16384,
+    inputCostPerMillion: 0.74,
+    outputCostPerMillion: 3.50,
+    capabilities: {
+      supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,

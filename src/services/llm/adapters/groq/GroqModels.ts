@@ -1,7 +1,7 @@
 /**
  * Groq Model Specifications
- * Updated June 17, 2025 with latest Groq model releases
- * 
+ * Updated June 2026 — pruned the Llama 3.x and Gemma 2 generations (superseded by Llama 4 + GPT OSS)
+ *
  * Groq provides ultra-fast inference with OpenAI-compatible API
  * Specializes in high-performance LLM serving with extended usage metrics
  */
@@ -9,79 +9,7 @@
 import { ModelSpec } from '../modelTypes';
 
 export const GROQ_MODELS: ModelSpec[] = [
-  // Current Production Models (January 2025)
-  
-  // Llama 3.1 models - Text generation
-  {
-    provider: 'groq',
-    name: 'Llama 3.1 70B Versatile',
-    apiName: 'llama-3.1-70b-versatile',
-    contextWindow: 131072,
-    maxTokens: 8192,
-    inputCostPerMillion: 0.59,
-    outputCostPerMillion: 0.79,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'groq',
-    name: 'Llama 3.1 8B Instant',
-    apiName: 'llama-3.1-8b-instant',
-    contextWindow: 131072,
-    maxTokens: 8192,
-    inputCostPerMillion: 0.05,
-    outputCostPerMillion: 0.08,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-
-  // Llama 3.3 models
-  {
-    provider: 'groq',
-    name: 'Llama 3.3 70B Versatile',
-    apiName: 'llama-3.3-70b-versatile',
-    contextWindow: 128000,
-    maxTokens: 32768,
-    inputCostPerMillion: 0.59,
-    outputCostPerMillion: 0.79,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-
-  // Gemma models
-  {
-    provider: 'groq',
-    name: 'Gemma 2 9B IT',
-    apiName: 'gemma2-9b-it',
-    contextWindow: 8192,
-    maxTokens: 8192,
-    inputCostPerMillion: 0.20,
-    outputCostPerMillion: 0.20,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-
-  // New Llama 4 models
+  // Llama 4 models
   {
     provider: 'groq',
     name: 'Llama 4 Scout',
@@ -202,7 +130,7 @@ export const GROQ_MODELS: ModelSpec[] = [
   }
 ];
 
-export const GROQ_DEFAULT_MODEL = 'llama-3.1-70b-versatile';
+export const GROQ_DEFAULT_MODEL = 'llama-4-maverick-17bx128e';
 
 /**
  * Groq-specific model categories for easier selection
@@ -210,33 +138,32 @@ export const GROQ_DEFAULT_MODEL = 'llama-3.1-70b-versatile';
 export const GROQ_MODEL_CATEGORIES = {
   // Ultra-fast text generation
   FAST_TEXT: [
-    'llama-3.1-8b-instant',
-    'gemma2-9b-it'
+    'llama-4-scout-17bx16e',
+    'openai/gpt-oss-20b'
   ],
-  
+
   // High-quality text generation
   QUALITY_TEXT: [
-    'llama-3.1-70b-versatile',
-    'llama-3.3-70b-versatile',
-    'llama-4-maverick-17bx128e'
+    'llama-4-maverick-17bx128e',
+    'openai/gpt-oss-120b'
   ],
-  
+
   // New Llama 4 models
   LLAMA_4: [
     'llama-4-scout-17bx16e',
     'llama-4-maverick-17bx128e'
   ],
-  
+
   // Reasoning-optimized
   REASONING: [
     'deepseek-r1-distill-llama-70b'
   ],
-  
+
   // Content moderation
   MODERATION: [
     'meta-llama/llama-guard-4-12b'
   ],
-  
+
   // Preview/experimental models
   PREVIEW: [
     'deepseek-r1-distill-llama-70b',

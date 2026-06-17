@@ -254,10 +254,10 @@ Exact useTools payload shape:
 }
 
 CLI string rules:
-- Separate commands with a top-level comma outside quotes: `cmd1, cmd2`
+- Separate commands with a top-level comma outside quotes: \`cmd1, cmd2\`
 - Commas inside quoted values stay literal and do not split commands
-- For multiline content, quote the value and use `\\n` escapes; they are decoded before execution
-- Example: `content write --path note.md --content "# Title\\n\\nAlpha, beta, gamma"`
+- For multiline content, quote the value and use \`\\n\` escapes; they are decoded before execution
+- Example: \`content write --path note.md --content "# Title\\n\\nAlpha, beta, gamma"\`
 `;
 
     // Inject the live agent→tools catalog so the LLM knows what's available.
