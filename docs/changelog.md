@@ -2,6 +2,18 @@
 
 ## June 2026
 
+**v5.12.1** — New models + provider cleanup
+
+**New models**
+- **GLM 5.2** and **Kimi K2.7 Code** are now available through both **OpenRouter** and **Requesty**. Slugs and pricing were verified live and all four entries pass the provider smoke test.
+
+**Model list cleanup**
+- Removed a batch of superseded older models across providers to keep the model pickers current: Claude 4.5 Opus/Sonnet, Gemini 2.5 and Gemini 3.0 Preview, the GPT-5 / GPT-5.1 generation, and Groq's Llama 3.x + Gemma 2 models.
+- The Google and Groq provider defaults moved to current models (`gemini-3.1-pro-preview` and `llama-4-maverick`, respectively). If you had one of the removed models selected, pick a current one from the dropdown.
+
+**Fix**
+- Fixed a build-breaking parse error introduced in v5.12.0 (#268): an unescaped backtick in the agent CLI-guidance prompt template.
+
 **v5.12.0** — Adaptive Search: semantic search that learns from you, on-device
 
 **Adaptive Search (new)** (PR #265)
