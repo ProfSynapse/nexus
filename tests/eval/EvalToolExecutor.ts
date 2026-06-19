@@ -14,6 +14,9 @@
 import type { IToolExecutor, ToolResult, ToolExecutionContext } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
 import type { ToolCall, Tool } from '../../src/services/llm/adapters/types';
 import type { CapturedToolCall, MockToolResponse } from './types';
+// Reuse the SAME context-contract steering production enforces (UseToolTool),
+// so harness recovery grading matches real app behavior — single source.
+import { collectContextContractViolations, formatContextContractError } from '../../src/agents/toolManager/services/ToolCliNormalizer';
 
 type ResponseHandler = (args: Record<string, unknown>) => ToolResult;
 
@@ -139,6 +142,29 @@ export class EvalToolExecutor implements IToolExecutor {
   private responseHandlers: Map<string, ResponseHandler> = new Map();
   private capturedCalls: CapturedToolCall[] = [];
 
+  // Sequential (per-round) response mode. Off by default (name-keyed,
+  // last-write-wins — unchanged for existing scenarios). When on, responses for
+  // a tool are QUEUED in registration order and consumed FIFO across rounds, so
+  // the same tool can return error-then-success (recovery patterns like
+  // read→error→read→success). Queues are cleared per exchange in resetCalls.
+  private sequentialResponses = false;
+  private responseQueues: Map<string, ResponseHandler[]> = new Map();
+  private queueConsumed: Map<string, number> = new Map();
+
+  // Context-contract enforcement (recovery testing). When enabled, a useTools
+  // call whose context block fails the shared validator gets a recoverable
+  // steering error INSTEAD of executing — letting us observe whether the model
+  // self-corrects across rounds. Stats are per-exchange (reset in resetCalls).
+  private enforceContextContract = false;
+  private contextSteeringErrors = 0;
+  private contextRecovered = false;
+  private sawValidExecution = false;
+  // Deterministic recovery test: reject the first N useTools calls with a real
+  // steering error regardless of input, so recovery is exercised even when the
+  // model fills the context block acceptably. Reset per exchange.
+  private forceSteeringTotal = 0;
+  private forceSteeringRemaining = 0;
+
   /**
    * Domain tool definitions — set when running in two-tool (meta) mode.
    * Used by the getTools handler to return realistic tool schemas.
@@ -154,10 +180,71 @@ export class EvalToolExecutor implements IToolExecutor {
   }
 
   /**
+   * Enable/disable context-contract enforcement on useTools execution.
+   * When on, a useTools call with empty memory/goal (or junk IDs) is rejected
+   * with the shared production steering message so the model can recover.
+   */
+  setEnforceContextContract(enabled: boolean): void {
+    this.enforceContextContract = enabled;
+  }
+
+  /**
+   * Force the first N useTools calls to fail with a real context steering error
+   * (deterministic recovery test). The model must re-issue to proceed.
+   */
+  setForceContextSteering(rounds: number): void {
+    this.forceSteeringTotal = Math.max(0, rounds);
+    this.forceSteeringRemaining = this.forceSteeringTotal;
+  }
+
+  /**
+   * Per-exchange context-contract stats: how many steering errors were issued
+   * and whether a valid execution call eventually landed (recovery).
+   */
+  getContextContractStats(): { enforced: boolean; steeringErrors: number; recovered: boolean } {
+    return {
+      enforced: this.enforceContextContract || this.forceSteeringTotal > 0,
+      steeringErrors: this.contextSteeringErrors,
+      // First-try-valid is not "recovery"; recovery = valid call AFTER ≥1 steer.
+      recovered: this.contextSteeringErrors > 0 && this.contextRecovered,
+    };
+  }
+
+  /**
+   * Enable per-round (FIFO) response consumption so a tool can return different
+   * results across rounds (e.g. error then success). Off = last-write-wins.
+   */
+  setSequentialResponses(enabled: boolean): void {
+    this.sequentialResponses = enabled;
+  }
+
+  /**
+   * Resolve the handler for a tool. In sequential mode, consume the FIFO queue
+   * (clamping to the last entry once exhausted); otherwise the name-keyed map.
+   */
+  private resolveHandler(toolName: string): ResponseHandler | undefined {
+    if (this.sequentialResponses && this.responseQueues.has(toolName)) {
+      const queue = this.responseQueues.get(toolName) ?? [];
+      if (queue.length === 0) return undefined;
+      const consumed = this.queueConsumed.get(toolName) ?? 0;
+      const index = Math.min(consumed, queue.length - 1);
+      this.queueConsumed.set(toolName, consumed + 1);
+      return queue[index];
+    }
+    return this.responseHandlers.get(toolName);
+  }
+
+  /**
    * Register a dynamic handler for a tool name.
    * The handler receives parsed args and returns a ToolResult.
    */
   registerHandler(toolName: string, handler: ResponseHandler): void {
+    if (this.sequentialResponses) {
+      const queue = this.responseQueues.get(toolName) ?? [];
+      queue.push(handler);
+      this.responseQueues.set(toolName, queue);
+      return;
+    }
     this.responseHandlers.set(toolName, handler);
   }
 
@@ -165,13 +252,15 @@ export class EvalToolExecutor implements IToolExecutor {
    * Register a static mock response for a tool name.
    */
   registerStaticResponse(toolName: string, response: MockToolResponse): void {
-    this.responseHandlers.set(toolName, (_args: Record<string, unknown>) => ({
+    const handler: ResponseHandler = (_args: Record<string, unknown>) => ({
       id: '', // Will be filled at execution time
       name: toolName,
       success: response.success,
       result: response.result,
       error: response.error,
-    }));
+    });
+    // registerHandler routes to the FIFO queue in sequential mode, else the map.
+    this.registerHandler(toolName, handler);
   }
 
   /**
@@ -226,7 +315,7 @@ export class EvalToolExecutor implements IToolExecutor {
         // Direct domain tool call
         this.capturedCalls.push({ name: toolName, args, id: tc.id });
 
-        const handler = this.responseHandlers.get(toolName);
+        const handler = this.resolveHandler(toolName);
         if (handler) {
           const result = handler(args);
           result.id = tc.id;
@@ -266,7 +355,7 @@ export class EvalToolExecutor implements IToolExecutor {
     args: Record<string, unknown>
   ): ToolResult {
     // Check for scenario-specific mock response first
-    const handler = this.responseHandlers.get(toolName);
+    const handler = this.resolveHandler(toolName);
     if (handler) {
       const result = handler(args);
       result.id = id;
@@ -320,8 +409,40 @@ export class EvalToolExecutor implements IToolExecutor {
     toolName: string,
     args: Record<string, unknown>
   ): ToolResult {
+    // Recovery enforcement runs BEFORE any scripted response, exactly like
+    // production (UseToolTool validates before executing).
+    //
+    // 1. Forced steering: reject the first N calls with a real steering error
+    //    regardless of input — deterministic recovery test.
+    // 2. Contract enforcement: reject calls whose context block fails the shared
+    //    validator (empty memory/goal) — production-faithful.
+    // A call that survives both, after a prior steer, counts as recovery.
+    if (this.forceSteeringRemaining > 0) {
+      this.forceSteeringRemaining -= 1;
+      this.contextSteeringErrors += 1;
+      // Reuse the real production memory-steering message (goal filled → only
+      // the memory violation is reported).
+      const forced = collectContextContractViolations({ goal: 'forced-steering' });
+      return { id, name: toolName, success: false, error: formatContextContractError(forced) };
+    }
+    if (this.enforceContextContract) {
+      const violations = collectContextContractViolations(args);
+      if (violations.length > 0) {
+        this.contextSteeringErrors += 1;
+        return { id, name: toolName, success: false, error: formatContextContractError(violations) };
+      }
+    }
+    if (this.enforceContextContract || this.forceSteeringTotal > 0) {
+      // A call that reached here passed all gates. If we steered earlier, this
+      // is the recovery.
+      if (this.contextSteeringErrors > 0) {
+        this.contextRecovered = true;
+      }
+      this.sawValidExecution = true;
+    }
+
     // Check for scenario-specific mock response first
-    const handler = this.responseHandlers.get(toolName);
+    const handler = this.resolveHandler(toolName);
     if (handler) {
       const result = handler(args);
       result.id = id;
@@ -344,7 +465,7 @@ export class EvalToolExecutor implements IToolExecutor {
         id: `${id}_inner_${innerName}`,
       });
 
-      const innerHandler = this.responseHandlers.get(innerName);
+      const innerHandler = this.resolveHandler(innerName);
       if (innerHandler) {
         const innerResult = innerHandler(innerArgs);
         innerResults.push({
@@ -382,14 +503,27 @@ export class EvalToolExecutor implements IToolExecutor {
    */
   reset(): void {
     this.responseHandlers.clear();
+    this.responseQueues.clear();
+    this.queueConsumed.clear();
     this.capturedCalls = [];
   }
 
   /**
-   * Clear only captured calls (keep handlers).
+   * Clear only captured calls (keep handlers). Also resets per-exchange
+   * context-contract stats so recovery is measured within one exchange.
    */
   resetCalls(): void {
     this.capturedCalls = [];
+    this.contextSteeringErrors = 0;
+    this.contextRecovered = false;
+    this.sawValidExecution = false;
+    this.forceSteeringRemaining = this.forceSteeringTotal;
+    // Sequential queues are re-registered per exchange by EvalRunner; clear so
+    // they don't accumulate, and reset FIFO consumption to the start.
+    if (this.sequentialResponses) {
+      this.responseQueues.clear();
+    }
+    this.queueConsumed.clear();
   }
 
   private buildCliSchema(tool: Tool): Record<string, unknown> {

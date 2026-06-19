@@ -20,6 +20,11 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   }
 
   async execute(params: UseToolParams): Promise<UseToolResult> {
+    // Enforce the required context contract (memory + goal) before executing.
+    // Throws a recoverable steering error the model can self-correct from —
+    // matching how malformed CLI flags already steer in normalizeExecutionCalls.
+    this.cliNormalizer.validateExecutionContext(params);
+
     const normalizedParams: NormalizedUseToolParams = {
       context: this.cliNormalizer.normalizeContext(params),
       calls: this.cliNormalizer.normalizeExecutionCalls(params),

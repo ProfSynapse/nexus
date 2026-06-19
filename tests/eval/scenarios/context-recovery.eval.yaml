@@ -1,0 +1,63 @@
+# Context-contract recovery scenarios.
+#
+# forceContextSteering deterministically rejects the first N useTools calls with
+# a REAL production context steering error (the same message UseToolTool returns
+# for empty memory), regardless of what the model sent. The model must then
+# re-issue a valid call. This tests recovery reliably — it does not depend on the
+# model first making a mistake (which is non-deterministic across models/turns).
+#
+# allowReorder is set because the extra steered round would otherwise misalign
+# strict round-by-round ordering.
+
+- name: recover-context-on-write
+  description: First useTools is steered with a context error; model must recover and complete the write
+  forceContextSteering: 1
+  maxRecoveryRounds: 3
+  allowReorder: true
+  turns:
+    - userMessage: "Create a note at ideas/feature-requests.md with a '# Feature Requests' heading followed by an empty bullet list."
+      expectedTools:
+        - name: contentManager_write
+      mockResponses:
+        contentManager_write:
+          success: true
+          result: "Note created at ideas/feature-requests.md"
+
+- name: recover-context-on-read
+  description: First useTools is steered with a context error; model must recover and complete the read
+  forceContextSteering: 1
+  maxRecoveryRounds: 3
+  allowReorder: true
+  turns:
+    - userMessage: "Read the note at notes/today.md and tell me what it says."
+      expectedTools:
+        - name: contentManager_read
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Today\n\n- Ship the recovery feature."
+
+# Tool-result recovery (sequentialMockResponses): the SAME tool returns an error
+# on round 0 then success on round 1, so we test whether the model retries after
+# a genuine tool failure rather than giving up. Requires the per-round FIFO queue.
+- name: recover-from-tool-error
+  description: First read fails with a transient error; model should retry and succeed
+  sequentialMockResponses: true
+  maxRecoveryRounds: 3
+  allowReorder: true
+  turns:
+    - userMessage: "Read notes/today.md and tell me what it says."
+      expectedTools:
+        - name: contentManager_read
+      mockResponses:
+        contentManager_read:
+          success: false
+          error: "Transient read error (lock contention). Retry the same read."
+    - expectedTools:
+        - name: contentManager_read
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Today\n\n- Ship the recovery feature."

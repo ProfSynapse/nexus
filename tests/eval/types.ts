@@ -103,6 +103,34 @@ export interface EvalScenario {
    * execute search before read or vice versa.
    */
   allowReorder?: boolean;
+  /**
+   * Enforce the production context contract (memory + goal required) on useTools
+   * execution in mock mode. A bad context block gets the shared steering error
+   * so we can grade whether the model recovers. Also enabled globally via
+   * EVAL_ENFORCE_CONTEXT=1.
+   */
+  enforceContextContract?: boolean;
+  /**
+   * Max number of context steering errors tolerated before recovery is judged
+   * failed. Default 3. Only meaningful with enforceContextContract /
+   * forceContextSteering.
+   */
+  maxRecoveryRounds?: number;
+  /**
+   * Deterministically reject the first N useTools calls with a real context
+   * steering error (regardless of input), then grade whether the model
+   * re-issues a valid call. Use this to test recovery reliably — unlike
+   * enforceContextContract, it does not depend on the model first making a
+   * mistake. Implies recovery grading.
+   */
+  forceContextSteering?: number;
+  /**
+   * Consume mockResponses per round (FIFO) instead of last-write-wins, so the
+   * SAME tool can return different results across rounds — enabling recovery
+   * patterns like tool→error (round 0) then tool→success (round 1). Off by
+   * default; existing scenarios are unaffected.
+   */
+  sequentialMockResponses?: boolean;
   turns: EvalTurn[];
 }
 

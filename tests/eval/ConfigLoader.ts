@@ -10,6 +10,9 @@ import * as path from 'path';
 import { parse as parseYaml } from 'yaml';
 import type { EvalConfig, ProviderConfig } from './types';
 
+// Local providers run against a keyless localhost OpenAI-compatible endpoint.
+const KEYLESS_LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio']);
+
 const PROVIDER_API_KEY_ENV: Record<string, string> = {
   anthropic: 'ANTHROPIC_API_KEY',
   google: 'GOOGLE_API_KEY',
@@ -284,6 +287,13 @@ export function getEnabledProviders(
 
   for (const [id, providerConfig] of Object.entries(config.providers)) {
     if (!providerConfig.enabled) continue;
+
+    // Local providers (Ollama, LM Studio) run keyless against a localhost
+    // OpenAI-compatible endpoint — they have no API key to resolve.
+    if (KEYLESS_LOCAL_PROVIDERS.has(id)) {
+      result.push({ id, apiKey: '', models: providerConfig.models });
+      continue;
+    }
 
     const apiKey = resolveApiKey(providerConfig.apiKeyEnv);
     if (!apiKey) {

@@ -544,8 +544,139 @@ export function parseCliForDisplay(toolString: string): CliDisplaySegment[] {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Context-contract steering
+//
+// The two-tool surface declares memory + goal as required (see UseToolTool's
+// schema), but schema `required` is documentation only — nothing enforces it at
+// runtime. These pure helpers turn a poorly-filled context block into
+// predictable, model-facing steering so a model can self-correct. Shared by
+// production (UseToolTool execution) and the eval harness (recovery grading) so
+// both agree on what "filled correctly" means.
+// ---------------------------------------------------------------------------
+
+export type ContextContractField = 'memory' | 'goal' | 'workspaceId' | 'sessionId';
+
+export interface ContextContractViolation {
+  field: ContextContractField;
+  message: string;
+}
+
+// Placeholder detection. Models don't only send the empty string — they send
+// dismissive fillers ("N/A", "N/A (First turn)", "None yet", "TBD"). We
+// normalize (drop parentheticals + punctuation) then match against compact
+// tokens, known phrases, and a short leading-dismissive heuristic. Real
+// summaries (sentences) pass; one-word/dismissive fillers are caught.
+const COMPACT_PLACEHOLDERS = new Set([
+  'string', 'todo', 'tbd', 'tba', 'na', 'none', 'nil', 'null', 'undefined',
+  'xxx', 'idk', 'placeholder', 'example', 'memory', 'goal', 'empty', 'nothing',
+  'noidea', 'unknown',
+]);
+const PHRASE_PLACEHOLDERS = new Set([
+  'your memory here', 'your goal here', 'no memory', 'no memory yet', 'none yet',
+  'nothing yet', 'not applicable', 'no context', 'no prior context', 'first turn',
+  'no summary', 'to be determined', 'to be added', 'no goal', 'no goal yet',
+]);
+const LEADING_DISMISSIVE = new Set(['na', 'none', 'tbd', 'todo', 'nil', 'nothing', 'empty']);
+
+function normalizeForPlaceholder(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')   // drop parentheticals, e.g. "(first turn)"
+    .replace(/[^a-z0-9]+/g, ' ')   // punctuation/symbols -> space
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function isPlaceholderText(value: string): boolean {
+  const n = normalizeForPlaceholder(value);
+  if (n.length === 0) return true;
+  if (PHRASE_PLACEHOLDERS.has(n)) return true;
+  if (COMPACT_PLACEHOLDERS.has(n.replace(/ /g, ''))) return true;
+  const tokens = n.split(' ');
+  if (tokens.length <= 3 && LEADING_DISMISSIVE.has(tokens[0])) return true;
+  return false;
+}
+
+// memory/goal are required: empty OR placeholder/dismissive is a violation.
+function isMeaningfulContextValue(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (value.trim().length === 0) return false;
+  return !isPlaceholderText(value);
+}
+
+// workspaceId/sessionId carry valid silent defaults, so absence/empty is fine
+// ("default" / auto-session). Only a present, non-empty placeholder is junk.
+function isPlaceholderJunk(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  if (value.trim().length === 0) return false;
+  return isPlaceholderText(value);
+}
+
+/**
+ * Collect predictable steering for a useTools context block.
+ * - memory + goal: hard-required (empty or placeholder → steer).
+ * - workspaceId + sessionId: default silently; steer only if present-but-junk.
+ * Pure — no agent registry needed, so the eval harness can call it directly.
+ */
+export function collectContextContractViolations(
+  params: Pick<UseToolParams, 'memory' | 'goal' | 'workspaceId' | 'sessionId'>
+): ContextContractViolation[] {
+  const violations: ContextContractViolation[] = [];
+
+  if (!isMeaningfulContextValue(params.memory)) {
+    violations.push({
+      field: 'memory',
+      message: 'The "memory" field is empty. Fill it with a brief summary of the conversation so far — what you are doing and what you have learned — then re-issue the call.',
+    });
+  }
+  if (!isMeaningfulContextValue(params.goal)) {
+    violations.push({
+      field: 'goal',
+      message: 'The "goal" field is empty. State the current objective in one sentence, then re-issue the call.',
+    });
+  }
+  if (isPlaceholderJunk(params.workspaceId)) {
+    violations.push({
+      field: 'workspaceId',
+      message: 'The "workspaceId" looks like a placeholder. Use "default" for the global workspace, or a real workspace ID — or omit it to default to "default".',
+    });
+  }
+  if (isPlaceholderJunk(params.sessionId)) {
+    violations.push({
+      field: 'sessionId',
+      message: 'The "sessionId" looks like a placeholder. Reuse one stable, human-readable session name for the whole conversation.',
+    });
+  }
+
+  return violations;
+}
+
+/** Build one recoverable, model-facing steering message from violations. */
+export function formatContextContractError(violations: ContextContractViolation[]): string {
+  if (violations.length === 0) return '';
+  if (violations.length === 1) {
+    return `Context incomplete — ${violations[0].message}`;
+  }
+  const lines = violations.map((v) => `- ${v.message}`).join('\n');
+  return `Context incomplete. Fix the following, then re-issue the call:\n${lines}`;
+}
+
 export class ToolCliNormalizer {
   constructor(private agentRegistry: Map<string, IAgent>) {}
+
+  /**
+   * Enforce the required context contract for an EXECUTION (useTools) call.
+   * Throws a recoverable steering error if memory/goal are missing or any
+   * provided ID field is an obvious placeholder. Discovery (getTools) is exempt
+   * — it is often the first call, before there is any conversation to summarize.
+   */
+  validateExecutionContext(params: UseToolParams): void {
+    const violations = collectContextContractViolations(params);
+    if (violations.length > 0) {
+      throw new Error(formatContextContractError(violations));
+    }
+  }
 
   normalizeContext(params: GetToolsParams | UseToolParams): ToolContext {
     if (hasOwn(params, 'context')) {
