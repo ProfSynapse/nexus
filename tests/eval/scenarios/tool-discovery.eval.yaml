@@ -60,10 +60,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -71,18 +71,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -198,10 +198,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -209,18 +209,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:

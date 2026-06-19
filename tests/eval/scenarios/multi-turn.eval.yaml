@@ -42,9 +42,9 @@
   turns:
     - userMessage: "Find notes about project roadmap and show me the full content of the best match"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: searchManager_content
       mockResponses:
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

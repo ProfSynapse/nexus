@@ -4,10 +4,10 @@
   turns:
     - userMessage: "Do something with my notes about the project"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: searchManager_content
           optional: true
       mockResponses:
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

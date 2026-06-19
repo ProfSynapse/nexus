@@ -145,7 +145,14 @@ describe('LLM Eval Harness', () => {
 
       console.log(`  [${provider.id}/${shortModel}] Running: ${scenario.name}`);
 
-      const tools = resolveToolSet(scenario.toolSet);
+      // The production MCP surface is the two-tool architecture: the model is
+      // only ever given getTools/useTools and must discover domain tools through
+      // getTools. Present that same surface for every scenario so we grade tool
+      // use the way it actually happens in the app. (A scenario's expected
+      // domain tool — e.g. contentManager_read — is still asserted: useTools
+      // unwraps to it.) scenario.toolSet remains meaningful only as a filter
+      // key (EVAL_TOOL_SET), not as what schemas the model sees.
+      const tools = resolveToolSet('meta');
       const captureScopeId = sanitizeScopeId(`${provider.id}_${shortModel}_${scenario.name}`);
 
       const result = await capture.runWithScope(captureScopeId, async () => {
