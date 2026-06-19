@@ -39,11 +39,11 @@
   turns:
     - userMessage: "Find notes about project roadmap"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: searchManager_content
           params:
             query: project roadmap
       mockResponses:
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

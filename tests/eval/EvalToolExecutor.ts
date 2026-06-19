@@ -465,8 +465,102 @@ export class EvalToolExecutor implements IToolExecutor {
         const innerName = tool?.function?.name ?? `${tokens[0]}_${tokens[1]}`;
         return {
           name: innerName,
-          args: {},
+          args: this.parseCliArgs(tokens.slice(2), tool),
         };
       });
+  }
+
+  /**
+   * Parse the flag/positional tokens of a single CLI command into an args
+   * object, using the inner tool's JSON schema to map kebab-case flags and
+   * bare positionals back to their real parameter names and coerce value
+   * types. Mirrors the production ToolCliNormalizer closely enough for
+   * assertion fidelity, without needing a live agent registry — the prior
+   * implementation dropped all flags (returned `{}`), so every unwrapped
+   * domain call failed its "expected param" assertion even when the model
+   * emitted a correct CLI string.
+   */
+  private parseCliArgs(tokens: string[], tool: Tool | undefined): Record<string, unknown> {
+    const args: Record<string, unknown> = {};
+
+    const schema = isRecord(tool?.function?.parameters)
+      ? (tool?.function?.parameters as Record<string, unknown>)
+      : undefined;
+    const properties = schema && isRecord(schema.properties)
+      ? (schema.properties as Record<string, unknown>)
+      : {};
+    const required = new Set(
+      schema && Array.isArray(schema.required)
+        ? schema.required.filter((v): v is string => typeof v === 'string')
+        : [],
+    );
+
+    // Map kebab flag -> real property name, and remember each property's type.
+    const flagToName = new Map<string, string>();
+    const typeOf = new Map<string, string>();
+    for (const [name, raw] of Object.entries(properties)) {
+      flagToName.set(toKebabCase(name), name);
+      typeOf.set(name, getSchemaType(isRecord(raw) ? raw : {}));
+    }
+
+    // Positional order: required scalars (non-boolean/object/array), declared order.
+    const positionals = Object.keys(properties).filter((name) => {
+      const t = typeOf.get(name) ?? 'unknown';
+      return required.has(name) && t !== 'boolean' && t !== 'object' && !t.startsWith('array<');
+    });
+    let positionalIdx = 0;
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token.startsWith('--')) {
+        const flag = toKebabCase(token.slice(2));
+        const name = flagToName.get(flag) ?? flag.replace(/-([a-z])/g, (_m, c: string) => c.toUpperCase());
+        const type = typeOf.get(name) ?? 'unknown';
+        const next = tokens[i + 1];
+        if (type === 'boolean') {
+          if (next === 'true' || next === 'false') {
+            args[name] = next === 'true';
+            i++;
+          } else {
+            args[name] = true;
+          }
+        } else if (next === undefined || next.startsWith('--')) {
+          args[name] = true;
+        } else {
+          args[name] = this.coerceCliValue(next, type);
+          i++;
+        }
+      } else {
+        const name = positionals[positionalIdx++];
+        if (name) {
+          args[name] = this.coerceCliValue(token, typeOf.get(name) ?? 'string');
+        }
+      }
+    }
+
+    return args;
+  }
+
+  private coerceCliValue(value: string, type: string): unknown {
+    if (type === 'number' || type === 'integer') {
+      const n = Number(value);
+      return Number.isNaN(n) ? value : n;
+    }
+    if (type === 'boolean') {
+      return value === 'true';
+    }
+    if (type.startsWith('array<')) {
+      const trimmed = value.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+        } catch {
+          // Not valid JSON — fall through to single-element array.
+        }
+      }
+      return [value];
+    }
+    return value;
   }
 }

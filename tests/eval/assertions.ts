@@ -360,6 +360,13 @@ export function assertNoHallucinatedTools(
   const validSet = new Set(validToolNames);
 
   for (const call of actual) {
+    // Synthetic markers (e.g. __cli_parse_error__) are executor artifacts that
+    // record a recoverable runtime error surfaced back to the model — exactly
+    // as happens in the app. They are not model-emitted tool names, so they
+    // must not count as hallucinated tools.
+    if (call.name.startsWith('__') && call.name.endsWith('__')) {
+      continue;
+    }
     if (!validSet.has(call.name)) {
       errors.push(`Hallucinated tool call: "${call.name}" is not in the defined tool set`);
     }

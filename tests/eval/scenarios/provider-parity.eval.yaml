@@ -21,9 +21,9 @@
   turns:
     - userMessage: "Search for notes about meetings and read the first result"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: searchManager_content
       mockResponses:
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

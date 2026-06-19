@@ -16,10 +16,10 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -27,18 +27,18 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "search search-content"
+            tool: "search content"
       mockResponses:
         useTools:
           success: true
           result:
             results:
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:
@@ -204,10 +204,10 @@
                 examples:
                   - 'content read "path-value" 1'
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes containing specific content
-                command: "search search-content"
-                usage: "search search-content <query>"
+                command: "search content"
+                usage: "search content <query>"
                 arguments:
                   - name: query
                     flag: --query
@@ -215,12 +215,12 @@
                     required: true
                     positional: true
                 examples:
-                  - 'search search-content "query-value"'
+                  - 'search content "query-value"'
 
     - expectedTools:
         - name: useTools
           params:
-            tool: "content read, search search-content"
+            tool: "content read, search content"
       mockResponses:
         useTools:
           success: true
@@ -230,7 +230,7 @@
                 success: true
                 data:
                   content: "# Todo\n- Fix login bug\n- Update docs"
-              - tool: searchContent
+              - tool: content
                 success: true
                 data:
                   results:

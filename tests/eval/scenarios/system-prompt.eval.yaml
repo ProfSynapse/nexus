@@ -36,9 +36,9 @@
   turns:
     - userMessage: "Search for any notes about the quarterly review"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: searchManager_content
       mockResponses:
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:
