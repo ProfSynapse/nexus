@@ -103,6 +103,41 @@ export interface EvalScenario {
    * execute search before read or vice versa.
    */
   allowReorder?: boolean;
+  /**
+   * Enforce the production context contract (memory + goal required) on useTools
+   * execution in mock mode. A bad context block gets the shared steering error
+   * so we can grade whether the model recovers. Also enabled globally via
+   * EVAL_ENFORCE_CONTEXT=1.
+   */
+  enforceContextContract?: boolean;
+  /**
+   * Max number of context steering errors tolerated before recovery is judged
+   * failed. Default 3. Only meaningful with enforceContextContract /
+   * forceContextSteering.
+   */
+  maxRecoveryRounds?: number;
+  /**
+   * Deterministically reject the first N useTools calls with a real context
+   * steering error (regardless of input), then grade whether the model
+   * re-issues a valid call. Use this to test recovery reliably — unlike
+   * enforceContextContract, it does not depend on the model first making a
+   * mistake. Implies recovery grading.
+   */
+  forceContextSteering?: number;
+  /**
+   * Consume mockResponses per round (FIFO) instead of last-write-wins, so the
+   * SAME tool can return different results across rounds — enabling recovery
+   * patterns like tool→error (round 0) then tool→success (round 1). Off by
+   * default; existing scenarios are unaffected.
+   */
+  sequentialMockResponses?: boolean;
+  /**
+   * Exclude this scenario from leaderboard (byModel) aggregation. The result is
+   * still run and reported, but does not count toward a model's pass rate. Use
+   * for scenarios with a known fixture/scenario bug that would unfairly penalize
+   * correct model behavior until the fixture is re-verified.
+   */
+  excludeFromBoard?: boolean;
   turns: EvalTurn[];
 }
 
@@ -150,6 +185,8 @@ export interface ScenarioResult {
   retryCount: number;
   error?: string;
   tracePath?: string;
+  /** Run + reported, but excluded from byModel leaderboard aggregation (known fixture bug). */
+  excludedFromBoard?: boolean;
 }
 
 export interface EvalRunResult {

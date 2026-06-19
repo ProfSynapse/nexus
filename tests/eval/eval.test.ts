@@ -16,11 +16,13 @@
  *   RUN_EVAL=1 EVAL_MODE=live EVAL_TOOL_SET=meta EVAL_TARGETS='openrouter=deepseek/deepseek-v4-pro,openrouter=deepseek/deepseek-v4-flash' npx jest tests/eval/eval.test.ts --runInBand --no-coverage --verbose
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { loadConfig, getEnabledProviders } from './ConfigLoader';
 import { loadScenarios } from './ScenarioLoader';
 import { RequestCapture } from './RequestCapture';
 import { calculateMaxRetryDelayMs, runScenario } from './EvalRunner';
-import { generateReport, saveReport } from './ReportGenerator';
+import { generateReport, saveReport, generateReportJson, saveReportJson } from './ReportGenerator';
 import { META_TOOLS, NEXUS_TOOLS, SIMPLE_TOOLS } from './fixtures/tools';
 import { DEFAULT_SYSTEM_PROMPT, MINIMAL_SYSTEM_PROMPT, initializeSystemPrompts } from './fixtures/system-prompt';
 import type { EvalConfig, EvalScenario, ScenarioResult, ToolSetType } from './types';
@@ -75,6 +77,103 @@ function buildModelReportPrefix(providerId: string, model: string): string {
   return `eval-report-${providerId}-${model.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 }
 
+// ---------------------------------------------------------------------------
+// Concurrency control
+//
+// Cloud providers tolerate full fan-out, but local single-slot servers
+// (Ollama, LM Studio) serialize inference: firing every scenario at once just
+// makes them queue and blow past the per-request timeout (manifesting as a wave
+// of 500s and a discarded run). Default to serial for local providers; override
+// with EVAL_CONCURRENCY=N for any provider.
+// ---------------------------------------------------------------------------
+
+const LOCAL_PROVIDERS = new Set(['ollama', 'lmstudio']);
+
+function resolveConcurrency(providers: Array<{ id: string }>): number {
+  const override = Number(process.env.EVAL_CONCURRENCY);
+  if (Number.isFinite(override) && override >= 1) return Math.floor(override);
+  if (providers.some((p) => LOCAL_PROVIDERS.has(p.id))) return 1;
+  return Infinity;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (!Number.isFinite(limit) || limit >= items.length) {
+    return Promise.all(items.map((item, index) => fn(item, index)));
+  }
+
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, limit) }, () => worker()));
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Streaming progress log
+//
+// jest buffers stdout in non-TTY runs, so per-scenario console.log only surfaces
+// when the whole run ends. This appends one line per completed case to a log
+// file that can be `tail -f`'d live while a (often slow, local) run is in flight.
+// ---------------------------------------------------------------------------
+
+function createProgressLog(
+  artifactsDir: string,
+  startedAtMs: number,
+  totalJobs: number,
+  concurrency: number
+): { path: string; record: (line: string) => void } {
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  const stamp = new Date(startedAtMs).toISOString().replace(/[:.]/g, '-');
+  const logPath = path.join(artifactsDir, `eval-progress-${stamp}.log`);
+  const lanes = Number.isFinite(concurrency) ? String(concurrency) : 'all';
+  fs.writeFileSync(
+    logPath,
+    `# Eval progress — ${totalJobs} jobs, concurrency=${lanes} — started ${new Date(startedAtMs).toISOString()}\n`
+  );
+  return {
+    path: logPath,
+    record: (line: string) => {
+      try {
+        fs.appendFileSync(logPath, `${line}\n`);
+      } catch {
+        /* progress logging is best-effort — never fail a run over it */
+      }
+    },
+  };
+}
+
+// Cheap synchronous upper-bound count of scenario files for the glob's base dir.
+// Used only to size the jest test timeout — an overestimate is harmless.
+function countScenarioFiles(globPattern: string): number {
+  const base = (globPattern.split('**')[0] || 'tests/eval/scenarios/').replace(/\/+$/, '');
+  const root = path.isAbsolute(base) ? base : path.resolve(process.cwd(), base);
+  let count = 0;
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.eval.yaml')) count += 1;
+    }
+  };
+  walk(root);
+  return count;
+}
+
 function shouldRunScenario(scenario: EvalScenario, providerId: string, model: string): boolean {
   if (config.scenarioNames && !config.scenarioNames.includes(scenario.name)) {
     return false;
@@ -112,9 +211,26 @@ describe('LLM Eval Harness', () => {
 
   const allResults: ScenarioResult[] = [];
   const startTime = Date.now();
-  const testTimeoutMs = (
-    config.defaults.timeout * (config.defaults.maxRetries + 1) * 2
-  ) + calculateMaxRetryDelayMs(config.defaults.maxRetries, config) + 10_000;
+  // jest's per-test timeout must cover the WHOLE matrix. A parallel run finishes
+  // in roughly one case's worst-case budget; a serial run (local single-slot
+  // providers) needs the sum across every serialized lane. Scale by lane count
+  // so serial local grades don't trip the timeout mid-run. Override with
+  // EVAL_TEST_TIMEOUT_MS.
+  const perCaseBudgetMs =
+    config.defaults.timeout * (config.defaults.maxRetries + 1) +
+    calculateMaxRetryDelayMs(config.defaults.maxRetries, config);
+  const dispatchConcurrency = resolveConcurrency(enabledProviders);
+  const estimatedJobs = Math.max(
+    1,
+    countScenarioFiles(config.scenarios) *
+      enabledProviders.reduce((sum, p) => sum + p.models.length, 0)
+  );
+  const serialLanes = Number.isFinite(dispatchConcurrency)
+    ? Math.ceil(estimatedJobs / Math.max(1, dispatchConcurrency))
+    : 1;
+  const testTimeoutMs =
+    Number(process.env.EVAL_TEST_TIMEOUT_MS) ||
+    perCaseBudgetMs * (serialLanes + 1) + 10_000;
 
   it('runs the configured provider/model/scenario matrix in parallel', async () => {
     const scenarios = await loadScenarios(config.scenarios);
@@ -134,7 +250,19 @@ describe('LLM Eval Harness', () => {
       console.warn('[Eval] No runnable provider/model/scenario jobs after filters');
     }
 
-    const results = await Promise.all(jobs.map(async ({ provider, model, scenario }) => {
+    const concurrency = resolveConcurrency(enabledProviders);
+    const progress = createProgressLog(
+      config.capture.artifactsDir,
+      startTime,
+      jobs.length,
+      concurrency
+    );
+    let completed = 0;
+    console.log(
+      `  [Eval] ${jobs.length} jobs, concurrency=${Number.isFinite(concurrency) ? concurrency : 'all'} → live progress: ${progress.path}`
+    );
+
+    const results = await mapWithConcurrency(jobs, concurrency, async ({ provider, model, scenario }) => {
       const shortModel = model.split('/').pop() || model;
       const resolvedScenario = {
         ...scenario,
@@ -144,6 +272,29 @@ describe('LLM Eval Harness', () => {
       };
 
       console.log(`  [${provider.id}/${shortModel}] Running: ${scenario.name}`);
+
+      const jobStartMs = Date.now();
+      const finish = (result: ScenarioResult): ScenarioResult => {
+        if (scenario.excludeFromBoard) result.excludedFromBoard = true;
+        // Accumulate incrementally so a mid-run TEST TIMEOUT still yields a
+        // report. mapWithConcurrency only resolves once every job finishes, so
+        // pushing after it (the old behavior) lost ALL results when the test
+        // timed out partway — afterAll then saw an empty allResults and saved
+        // nothing. The per-scenario progress log was the only survivor.
+        allResults.push(result);
+        completed += 1;
+        const status = result.passed ? 'PASS' : 'FAIL';
+        const turnsPassed = result.turns.filter((t) => t.passed).length;
+        const detail = result.error
+          ? `ERROR: ${result.error}`
+          : `${turnsPassed}/${result.turns.length} turns`;
+        progress.record(
+          `[${new Date().toISOString()}] ${completed}/${jobs.length} ${status} ${provider.id}/${shortModel} :: ${scenario.name} (${detail}, ${(result.totalDurationMs / 1000).toFixed(1)}s)`
+        );
+        return result;
+      };
+
+      try {
 
       // The production MCP surface is the two-tool architecture: the model is
       // only ever given getTools/useTools and must discover domain tools through
@@ -187,10 +338,30 @@ describe('LLM Eval Harness', () => {
         }
       }
 
-      return result;
-    }));
+      return finish(result);
+      } catch (err) {
+        // A thrown job (e.g. an HTTP/timeout error from the adapter) used to
+        // reject the whole Promise.all and discard the entire report. Record it
+        // as a failed scenario instead so siblings still complete and a partial
+        // report is generated.
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`  [${provider.id}/${shortModel}] ERROR: ${scenario.name} — ${message}`);
+        return finish({
+          scenario: scenario.name,
+          description: scenario.description ?? '',
+          provider: provider.id,
+          model,
+          passed: false,
+          turns: [],
+          totalDurationMs: Date.now() - jobStartMs,
+          retryCount: 0,
+          error: message,
+        });
+      }
+    });
 
-    allResults.push(...results);
+    // NOTE: allResults is now populated incrementally in finish() (above) so a
+    // timeout still produces a report. Do not re-push here or results double.
 
     const resultsByModel = new Map<string, ScenarioResult[]>();
     for (const result of results) {
@@ -213,14 +384,17 @@ describe('LLM Eval Harness', () => {
       };
 
       const modelReport = generateReport(modelRunResult, config);
-      const modelReportPath = saveReport(
-        modelReport,
+      const modelReportPrefix = buildModelReportPrefix(providerId, shortModel);
+      const modelReportPath = saveReport(modelReport, config.capture.artifactsDir, modelReportPrefix);
+      const modelJsonPath = saveReportJson(
+        generateReportJson(modelRunResult, config),
         config.capture.artifactsDir,
-        buildModelReportPrefix(providerId, shortModel),
+        modelReportPrefix,
       );
 
       const passed = modelResults.filter((r) => r.passed).length;
       console.log(`  [${providerId}/${shortModel}] Report saved: ${modelReportPath}`);
+      console.log(`  [${providerId}/${shortModel}] JSON saved: ${modelJsonPath}`);
       console.log(`\n  [${providerId}/${shortModel}] Summary: ${passed}/${modelResults.length} scenarios passed`);
     }
 
@@ -240,7 +414,9 @@ describe('LLM Eval Harness', () => {
 
       const report = generateReport(runResult, config);
       const reportPath = saveReport(report, config.capture.artifactsDir);
+      const jsonPath = saveReportJson(generateReportJson(runResult, config), config.capture.artifactsDir);
       console.log(`\n[Eval] Report saved: ${reportPath}`);
+      console.log(`[Eval] JSON saved: ${jsonPath}`);
       console.log(report);
     }
   });

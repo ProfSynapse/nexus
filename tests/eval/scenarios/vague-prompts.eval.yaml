@@ -90,16 +90,23 @@
               - tool: write
                 success: true
 
+# Either discovery path is valid here: the model may LIST the folder or SEARCH
+# for 2024 notes before moving them. The getTools mock therefore exposes BOTH
+# storage AND search tools — otherwise a model that plans to search first asks
+# getTools for `search`, the selector-insensitive scripted mock hands back only
+# storage tools, the model reads that as "discovery is broken," and loops
+# getTools forever (gemma-31b: 24 calls / 1307s). See project memory: getTools
+# loops. Result mocks are DOMAIN-tool-keyed (storageManager_list /
+# searchManager_content / storageManager_move) so the executor dispatches per
+# inner command in any order/round. Required action graded = the two moves.
 - name: vague-organize-request
-  description: User asks to "clean up" which implies move/archive
+  description: User asks to "clean up" which implies move/archive; list-then-move or search-then-move both acceptable
   toolSet: meta
   allowReorder: true
   turns:
     - userMessage: "Can you clean up the old meeting notes? Move anything from 2024 to the archive folder."
       expectedTools:
         - name: getTools
-          params:
-            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -136,44 +143,59 @@
                     positional: true
                 examples:
                   - 'storage move "path-value" "destination-value"'
-
-    - expectedTools:
-        - name: useTools
-          params:
-            tool: "storage list"
-      mockResponses:
-        useTools:
+              - agent: searchManager
+                tool: content
+                description: Search for notes containing specific content
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+        # Domain-tool-keyed: both discovery paths surface the same 2024 files.
+        storageManager_list:
+          success: true
+          result:
+            items:
+              - name: "2024-q1-meeting.md"
+                type: file
+              - name: "2024-q2-meeting.md"
+                type: file
+              - name: "2025-q1-meeting.md"
+                type: file
+        searchManager_content:
           success: true
           result:
             results:
-              - tool: list
-                success: true
-                data:
-                  items:
-                    - name: "2024-q1-meeting.md"
-                      type: file
-                    - name: "2024-q2-meeting.md"
-                      type: file
-                    - name: "2025-q1-meeting.md"
-                      type: file
+              - path: "notes/2024-q1-meeting.md"
+                score: 0.92
+              - path: "notes/2024-q2-meeting.md"
+                score: 0.90
+        storageManager_move:
+          success: true
 
     - expectedTools:
         - name: useTools
           params:
             tool: "storage move, storage move"
-      mockResponses:
-        useTools:
-          success: true
-          result:
-            results:
-              - tool: move
-                success: true
-              - tool: move
-                success: true
 
+# NOTE: excludeFromBoard until re-verified on a strong model. This scenario was
+# previously a fixture trap: its single useTools turn returned the todo content
+# for EVERY read, so when a model followed the search hit and read
+# engineering/api-redesign.md it got the todo back, concluded "read is broken,"
+# and looped/bailed — penalizing correct chain-completion behavior. Rewritten as
+# a deterministic 3-round chain (mirrors search-then-read-chain) with
+# sequentialMockResponses so the api-redesign read returns real api content.
 - name: multi-intent-single-message
   description: User asks multiple things in one message — model needs multiple agents
   toolSet: meta
+  excludeFromBoard: true
+  allowReorder: true
+  sequentialMockResponses: true
   turns:
     - userMessage: "Read my todo list and also search for any notes about the API redesign"
       expectedTools:
@@ -217,6 +239,7 @@
                 examples:
                   - 'search content "query-value"'
 
+    # Round 1: read the todo list + search for the api-redesign notes.
     - expectedTools:
         - name: useTools
           params:
@@ -236,3 +259,18 @@
                   results:
                     - path: engineering/api-redesign.md
                       score: 0.91
+
+    # Round 2 (optional follow-up): if the model reads the file the search
+    # surfaced, it now gets the REAL api-redesign content — not the todo again.
+    # expectedTools is empty so this round is tolerated but not required; with
+    # sequentialMockResponses the queued response feeds this read.
+    - expectedTools: []
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# API Redesign\n\n- Move auth to OAuth2\n- Versioned endpoints under /v2\n- Deprecate /legacy by Q3"

@@ -9,6 +9,36 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { EvalRunResult, EvalConfig } from './types';
 
+/** Machine-readable shape of an eval run, emitted alongside the markdown report. */
+export interface EvalReportJson {
+  config: string;
+  mode: string;
+  providers: string[];
+  startTime: number;
+  endTime: number;
+  durationMs: number;
+  metrics: { totalScenarios: number; pass: number; fail: number; passRate: number; retriesUsed: number };
+  byModel: Array<{ model: string; pass: number; fail: number; total: number; passRate: number }>;
+  results: Array<{
+    scenario: string;
+    model: string;
+    fullModel: string;
+    passed: boolean;
+    excludedFromBoard: boolean;
+    error: string | null;
+    retryCount: number;
+    durationMs: number;
+    tracePath: string | null;
+    turns: Array<{
+      turnIndex: number;
+      passed: boolean;
+      errors: string[];
+      textContent: string;
+      toolCalls: Array<{ name: string; args: unknown }>;
+    }>;
+  }>;
+}
+
 /**
  * Generate a markdown report string from eval results.
  */
@@ -106,19 +136,97 @@ export function generateReport(runResult: EvalRunResult, config: EvalConfig): st
 }
 
 /**
+ * Generate a machine-readable JSON report from eval results.
+ *
+ * Mirrors the markdown report but keeps the full, untruncated structure so
+ * downstream analysis (failure-pattern bucketing, leaderboards, exact-payload
+ * extraction) can run with `jq`/Python instead of regex-scraping markdown.
+ * Tool-call args are kept as parsed objects, not stringified+truncated.
+ */
+export function generateReportJson(runResult: EvalRunResult, config: EvalConfig): EvalReportJson {
+  const providerNames = Object.keys(config.providers).filter((p) => config.providers[p].enabled);
+  const totalScenarios = runResult.results.length;
+  const passCount = runResult.results.filter((r) => r.passed).length;
+
+  // Per-model rollup so a leaderboard is one field away. Scenarios flagged
+  // excludeFromBoard (known fixture bugs) are run + reported but do not count
+  // toward pass rate.
+  const byModelMap = new Map<string, { model: string; pass: number; fail: number; total: number }>();
+  for (const r of runResult.results) {
+    if (r.excludedFromBoard) continue;
+    const key = shortModel(r.model);
+    const agg = byModelMap.get(key) ?? { model: key, pass: 0, fail: 0, total: 0 };
+    agg.total += 1;
+    if (r.passed) agg.pass += 1;
+    else agg.fail += 1;
+    byModelMap.set(key, agg);
+  }
+  const byModel = [...byModelMap.values()]
+    .map((m) => ({ ...m, passRate: m.total > 0 ? Math.round((m.pass / m.total) * 100) : 0 }))
+    .sort((a, b) => b.passRate - a.passRate);
+
+  return {
+    config: runResult.config,
+    mode: runResult.mode,
+    providers: providerNames,
+    startTime: runResult.startTime,
+    endTime: runResult.endTime,
+    durationMs: runResult.endTime - runResult.startTime,
+    metrics: {
+      totalScenarios,
+      pass: passCount,
+      fail: totalScenarios - passCount,
+      passRate: totalScenarios > 0 ? Math.round((passCount / totalScenarios) * 100) : 0,
+      retriesUsed: runResult.results.reduce((sum, r) => sum + r.retryCount, 0),
+    },
+    byModel,
+    results: runResult.results.map((r) => ({
+      scenario: r.scenario,
+      model: shortModel(r.model),
+      fullModel: r.model,
+      passed: r.passed,
+      excludedFromBoard: r.excludedFromBoard ?? false,
+      error: r.error ?? null,
+      retryCount: r.retryCount,
+      durationMs: r.totalDurationMs,
+      tracePath: r.tracePath ?? null,
+      turns: r.turns.map((t) => ({
+        turnIndex: t.turnIndex,
+        passed: t.passed,
+        errors: t.errors,
+        textContent: t.textContent,
+        toolCalls: t.actualToolCalls.map((c) => ({ name: c.name, args: c.args })),
+      })),
+    })),
+  };
+}
+
+/**
  * Save report to a timestamped file.
  */
 export function saveReport(report: string, artifactsDir: string, prefix = 'eval-report'): string {
+  const filePath = resolveReportPath(artifactsDir, prefix, 'md');
+  fs.writeFileSync(filePath, report, 'utf-8');
+  return filePath;
+}
+
+/**
+ * Save the machine-readable JSON report alongside the markdown one.
+ */
+export function saveReportJson(report: EvalReportJson, artifactsDir: string, prefix = 'eval-report'): string {
+  const filePath = resolveReportPath(artifactsDir, prefix, 'json');
+  fs.writeFileSync(filePath, JSON.stringify(report, null, 2), 'utf-8');
+  return filePath;
+}
+
+function resolveReportPath(artifactsDir: string, prefix: string, ext: string): string {
   const dir = path.resolve(process.cwd(), artifactsDir);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
-  const filePath = path.join(dir, `${safePrefix}-${timestamp}.md`);
-  fs.writeFileSync(filePath, report, 'utf-8');
-  return filePath;
+  return path.join(dir, `${safePrefix}-${timestamp}.${ext}`);
 }
 
 function shortModel(model: string): string {

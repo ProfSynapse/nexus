@@ -514,6 +514,20 @@ async function createToolExecutor(
   if (isMetaToolSet(tools)) {
     mockExecutor.setDomainTools(NEXUS_TOOLS);
   }
+  // Must be set before registerTurnResponses so registrations route to the
+  // per-round FIFO queue rather than the last-write-wins map.
+  if (scenario.sequentialMockResponses === true) {
+    mockExecutor.setSequentialResponses(true);
+  }
+  // Enforce the production context contract (recovery testing) when the scenario
+  // opts in, or globally via EVAL_ENFORCE_CONTEXT=1 (handy for probing whether a
+  // model that omits memory/goal can self-correct on the existing scenarios).
+  if (scenario.enforceContextContract === true || process.env.EVAL_ENFORCE_CONTEXT === '1') {
+    mockExecutor.setEnforceContextContract(true);
+  }
+  if (typeof scenario.forceContextSteering === 'number' && scenario.forceContextSteering > 0) {
+    mockExecutor.setForceContextSteering(scenario.forceContextSteering);
+  }
   return { executor: mockExecutor };
 }
 
@@ -674,6 +688,33 @@ async function executeScenario(
     const hallucinationAssertion = assertNoHallucinatedTools(capturedCalls, validToolNames);
 
     const errors = [...roundAssertion.errors, ...hallucinationAssertion.errors];
+
+    // Context-contract recovery grading. If enforcement steered the model
+    // (incomplete memory/goal), report whether it recovered within the allowed
+    // rounds. Non-recovery already fails the round assertion (no valid call was
+    // ever executed); this just gives a clearer, dedicated reason.
+    if (config.mode === 'mock' && toolExecutor instanceof EvalToolExecutor) {
+      const ctx = toolExecutor.getContextContractStats();
+      if (ctx.enforced && ctx.steeringErrors > 0) {
+        const maxRecovery = scenario.maxRecoveryRounds ?? 3;
+        if (!ctx.recovered) {
+          errors.push(
+            `Context-contract: received ${ctx.steeringErrors} steering error(s) for an incomplete context block (empty memory/goal) and never re-issued a valid useTools call — no recovery.`
+          );
+        } else if (ctx.steeringErrors > maxRecovery) {
+          errors.push(
+            `Context-contract: recovered, but only after ${ctx.steeringErrors} steering errors (max ${maxRecovery}).`
+          );
+        }
+        trace?.write('context_recovery', {
+          turnIndex,
+          steeringErrors: ctx.steeringErrors,
+          recovered: ctx.recovered,
+          maxRecovery,
+        });
+      }
+    }
+
     trace?.write('assertion_result', {
       turnIndex,
       passed: errors.length === 0,
@@ -783,6 +824,19 @@ async function createAdapter(provider: ProviderEntry): Promise<BaseAdapter> {
     case 'requesty': {
       const { RequestyAdapter } = await import('../../src/services/llm/adapters/requesty/RequestyAdapter');
       return new RequestyAdapter(provider.apiKey);
+    }
+    case 'ollama': {
+      // Ollama's OpenAI-compatible endpoint (/v1/chat/completions). The Nexus
+      // OllamaAdapter is text-only (supportsFunctions: false), so reuse the
+      // LMStudioAdapter — keyless, posts to `${serverUrl}/v1/chat/completions`,
+      // and parses tool calls (native + [TOOL_CALLS]/XML fallbacks). Override
+      // the host with OLLAMA_BASE_URL.
+      const { LMStudioAdapter } = await import('../../src/services/llm/adapters/lmstudio/LMStudioAdapter');
+      return new LMStudioAdapter(process.env.OLLAMA_BASE_URL || 'http://localhost:11434');
+    }
+    case 'lmstudio': {
+      const { LMStudioAdapter } = await import('../../src/services/llm/adapters/lmstudio/LMStudioAdapter');
+      return new LMStudioAdapter(process.env.LMSTUDIO_BASE_URL || 'http://localhost:1234');
     }
     case 'openrouter':
     default: {
