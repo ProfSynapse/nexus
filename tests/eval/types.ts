@@ -131,6 +131,13 @@ export interface EvalScenario {
    * default; existing scenarios are unaffected.
    */
   sequentialMockResponses?: boolean;
+  /**
+   * Exclude this scenario from leaderboard (byModel) aggregation. The result is
+   * still run and reported, but does not count toward a model's pass rate. Use
+   * for scenarios with a known fixture/scenario bug that would unfairly penalize
+   * correct model behavior until the fixture is re-verified.
+   */
+  excludeFromBoard?: boolean;
   turns: EvalTurn[];
 }
 
@@ -178,6 +185,8 @@ export interface ScenarioResult {
   retryCount: number;
   error?: string;
   tracePath?: string;
+  /** Run + reported, but excluded from byModel leaderboard aggregation (known fixture bug). */
+  excludedFromBoard?: boolean;
 }
 
 export interface EvalRunResult {

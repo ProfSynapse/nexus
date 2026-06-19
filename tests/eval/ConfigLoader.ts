@@ -105,6 +105,7 @@ function applyEnvOverrides(config: EvalConfig): EvalConfig {
 function applyDefaultEnvOverrides(defaults: EvalConfig['defaults']): EvalConfig['defaults'] {
   return {
     ...defaults,
+    temperature: getNumberEnv('EVAL_TEMP') ?? defaults.temperature,
     maxRetries: getNumberEnv('EVAL_MAX_RETRIES') ?? defaults.maxRetries,
     retryDelayMs: getNumberEnv('EVAL_RETRY_DELAY_MS') ?? defaults.retryDelayMs,
     retryBackoffMultiplier: getNumberEnv('EVAL_RETRY_BACKOFF_MULTIPLIER')

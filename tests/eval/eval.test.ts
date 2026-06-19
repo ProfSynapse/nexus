@@ -22,7 +22,7 @@ import { loadConfig, getEnabledProviders } from './ConfigLoader';
 import { loadScenarios } from './ScenarioLoader';
 import { RequestCapture } from './RequestCapture';
 import { calculateMaxRetryDelayMs, runScenario } from './EvalRunner';
-import { generateReport, saveReport } from './ReportGenerator';
+import { generateReport, saveReport, generateReportJson, saveReportJson } from './ReportGenerator';
 import { META_TOOLS, NEXUS_TOOLS, SIMPLE_TOOLS } from './fixtures/tools';
 import { DEFAULT_SYSTEM_PROMPT, MINIMAL_SYSTEM_PROMPT, initializeSystemPrompts } from './fixtures/system-prompt';
 import type { EvalConfig, EvalScenario, ScenarioResult, ToolSetType } from './types';
@@ -275,6 +275,13 @@ describe('LLM Eval Harness', () => {
 
       const jobStartMs = Date.now();
       const finish = (result: ScenarioResult): ScenarioResult => {
+        if (scenario.excludeFromBoard) result.excludedFromBoard = true;
+        // Accumulate incrementally so a mid-run TEST TIMEOUT still yields a
+        // report. mapWithConcurrency only resolves once every job finishes, so
+        // pushing after it (the old behavior) lost ALL results when the test
+        // timed out partway — afterAll then saw an empty allResults and saved
+        // nothing. The per-scenario progress log was the only survivor.
+        allResults.push(result);
         completed += 1;
         const status = result.passed ? 'PASS' : 'FAIL';
         const turnsPassed = result.turns.filter((t) => t.passed).length;
@@ -353,7 +360,8 @@ describe('LLM Eval Harness', () => {
       }
     });
 
-    allResults.push(...results);
+    // NOTE: allResults is now populated incrementally in finish() (above) so a
+    // timeout still produces a report. Do not re-push here or results double.
 
     const resultsByModel = new Map<string, ScenarioResult[]>();
     for (const result of results) {
@@ -376,14 +384,17 @@ describe('LLM Eval Harness', () => {
       };
 
       const modelReport = generateReport(modelRunResult, config);
-      const modelReportPath = saveReport(
-        modelReport,
+      const modelReportPrefix = buildModelReportPrefix(providerId, shortModel);
+      const modelReportPath = saveReport(modelReport, config.capture.artifactsDir, modelReportPrefix);
+      const modelJsonPath = saveReportJson(
+        generateReportJson(modelRunResult, config),
         config.capture.artifactsDir,
-        buildModelReportPrefix(providerId, shortModel),
+        modelReportPrefix,
       );
 
       const passed = modelResults.filter((r) => r.passed).length;
       console.log(`  [${providerId}/${shortModel}] Report saved: ${modelReportPath}`);
+      console.log(`  [${providerId}/${shortModel}] JSON saved: ${modelJsonPath}`);
       console.log(`\n  [${providerId}/${shortModel}] Summary: ${passed}/${modelResults.length} scenarios passed`);
     }
 
@@ -403,7 +414,9 @@ describe('LLM Eval Harness', () => {
 
       const report = generateReport(runResult, config);
       const reportPath = saveReport(report, config.capture.artifactsDir);
+      const jsonPath = saveReportJson(generateReportJson(runResult, config), config.capture.artifactsDir);
       console.log(`\n[Eval] Report saved: ${reportPath}`);
+      console.log(`[Eval] JSON saved: ${jsonPath}`);
       console.log(report);
     }
   });
