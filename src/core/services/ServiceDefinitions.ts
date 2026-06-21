@@ -170,6 +170,37 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         })
     },
 
+    // Notes query index — vault notes + frontmatter as queryable SQL rows.
+    // In-memory, rebuilt at startup from the vault, kept fresh via metadataCache
+    // events; NOT persisted in the cache blob. See
+    // docs/plans/notes-query-index-plan.md. Background stage (default) — never
+    // blocks boot; nothing depends on it.
+    {
+        name: 'notesIndex',
+        dependencies: ['hybridStorageAdapter'],
+        create: defineService(async (context) => {
+            const { NotesIndexService } = await import('../../database/services/notesIndex/NotesIndexService');
+            const { NotesIndexBuilder } = await import('../../database/services/notesIndex/NotesIndexBuilder');
+
+            const adapter = await context.serviceManager.getService<IStorageAdapter>('hybridStorageAdapter');
+            const readyable = adapter as unknown as { waitForQueryReady?: () => Promise<boolean> };
+            if (typeof readyable.waitForQueryReady === 'function') {
+                await readyable.waitForQueryReady();
+            }
+
+            const provider = adapter as unknown as { getSqliteCache?: () => import('../../database/storage/SQLiteCacheManager').SQLiteCacheManager };
+            const sqlite = typeof provider.getSqliteCache === 'function' ? provider.getSqliteCache() : undefined;
+            if (!sqlite) {
+                throw new Error('notesIndex: SQLite cache unavailable');
+            }
+
+            const service = new NotesIndexService(sqlite);
+            const builder = new NotesIndexBuilder(context.plugin.app, service);
+            void builder.startInBackground();
+            return builder;
+        })
+    },
+
     // Session service for session persistence
     {
         name: 'sessionService',

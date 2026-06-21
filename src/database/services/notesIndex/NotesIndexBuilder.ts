@@ -67,6 +67,18 @@ export class NotesIndexBuilder {
     this.subscribe();
   }
 
+  /**
+   * Boot variant for startup wiring: ensure the schema and subscribe to
+   * freshness synchronously, but run the (potentially large) initial walk in
+   * the background so it never blocks service initialization. Change events
+   * that arrive mid-build are safe — upserts are idempotent.
+   */
+  async startInBackground(): Promise<void> {
+    await this.service.ensureSchema();
+    this.subscribe();
+    void this.buildAll();
+  }
+
   /** Full (re)build: hash-gated upsert of every markdown note, then prune. */
   async buildAll(): Promise<void> {
     const files = this.app.vault.getMarkdownFiles();
