@@ -44,6 +44,19 @@ describe('assertReadOnlySelect', () => {
     // `created` contains "create" but is a distinct word → allowed.
     expect(assertReadOnlySelect('SELECT created FROM notes').ok).toBe(true);
   });
+
+  it('allows a write keyword inside a string literal value', () => {
+    expect(assertReadOnlySelect("SELECT path FROM notes WHERE status = 'delete'").ok).toBe(true);
+    expect(assertReadOnlySelect("SELECT path FROM notes WHERE title = 'drop everything'").ok).toBe(true);
+  });
+
+  it('allows a leading comment before SELECT', () => {
+    expect(assertReadOnlySelect('-- find active\nSELECT path FROM notes').ok).toBe(true);
+  });
+
+  it('still blocks a DML keyword outside any literal (WITH ... DELETE)', () => {
+    expect(assertReadOnlySelect('WITH x AS (SELECT 1) DELETE FROM notes').ok).toBe(false);
+  });
 });
 
 describe('QueryNotesTool.execute', () => {

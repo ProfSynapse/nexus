@@ -12,6 +12,7 @@ type MockSqlite = {
   run: jest.Mock;
   query: jest.Mock;
   queryOne: jest.Mock;
+  transaction: jest.Mock;
 };
 
 function createMockSqlite(): MockSqlite {
@@ -20,6 +21,8 @@ function createMockSqlite(): MockSqlite {
     run: jest.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 0 }),
     query: jest.fn().mockResolvedValue([]),
     queryOne: jest.fn().mockResolvedValue({ id: 1 }),
+    // Run the callback inline so SQL assertions see the issued statements.
+    transaction: jest.fn(async (fn: () => Promise<unknown>) => fn()),
   };
 }
 

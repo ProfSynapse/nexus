@@ -165,15 +165,24 @@ function clampRows(value: unknown): number {
 
 /** Allow exactly one leading SELECT/WITH statement with no write/DDL/PRAGMA keywords. */
 export function assertReadOnlySelect(sql: string): { ok: true } | { ok: false; error: string } {
+  // Strip string literals, quoted identifiers, and comments BEFORE the structural
+  // checks so a value or alias (e.g. `status = 'delete'`, `-- delete old`) is not
+  // mistaken for a write keyword — while `WITH x AS (...) DELETE ...` (keyword
+  // outside any literal) is still caught.
+  const stripped = sql
+    .replace(/'(?:''|[^'])*'/g, "''")
+    .replace(/"(?:""|[^"])*"/g, '""')
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ');
   // Strip a single trailing semicolon, then reject any further statement separator.
-  const trimmed = sql.replace(/;\s*$/, '').trim();
-  if (trimmed.includes(';')) {
+  const normalized = stripped.replace(/;\s*$/, '').trim();
+  if (normalized.includes(';')) {
     return { ok: false, error: 'Only a single SQL statement is allowed.' };
   }
-  if (!/^(select|with)\b/i.test(trimmed)) {
+  if (!/^(select|with)\b/i.test(normalized)) {
     return { ok: false, error: 'Only read-only SELECT/WITH queries are allowed.' };
   }
-  if (FORBIDDEN.test(trimmed)) {
+  if (FORBIDDEN.test(normalized)) {
     return { ok: false, error: 'Query contains a disallowed keyword; only read-only SELECT/WITH is permitted.' };
   }
   return { ok: true };

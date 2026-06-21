@@ -10,7 +10,7 @@
  */
 
 import type { App, Plugin, PluginManifest } from 'obsidian';
-import { Events } from 'obsidian';
+import { Events, Platform } from 'obsidian';
 import type { ServiceManager } from '../ServiceManager';
 import type { Settings } from '../../settings';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
@@ -195,7 +195,10 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             }
 
             const service = new NotesIndexService(sqlite);
-            const builder = new NotesIndexBuilder(context.plugin.app, service);
+            // Lower the degrade cap on mobile (tighter memory) than desktop.
+            const builder = new NotesIndexBuilder(context.plugin.app, service, {
+                maxNotes: Platform.isMobile ? 50_000 : 250_000,
+            });
             void builder.startInBackground();
             return builder;
         })

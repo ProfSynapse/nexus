@@ -219,15 +219,16 @@ evaluation may diverge from Bases-rendered output.) Not required for the core go
 
 ## 10. Phasing
 
-- **Phase 0 — `NotesIndexService`:** create tables in the in-memory DB, typed walk + upsert +
-  prune, `metadataCache` freshness, graceful-degrade cap. No tool yet — verify via direct SQL +
-  unit tests on a fixture vault.
-- **Phase 1 — `queryNotes` tool:** read-only SQL execution + guard + schema/describe in the tool
-  description, registered on SearchManager. **This is the usable MVP** — "get notes with these
-  properties, filter, and compute" all via agent SQL.
-- **Phase 2 — ergonomics & scale polish:** `describe` mode (distinct keys), example-query
-  library in the description, convenience SQL views for common shapes, mobile cap tuning,
-  optional separate-blob persistence if cold-rebuild proves slow.
+- **Phase 0 — DONE:** `NotesIndexService` (in-memory tables via `ensureSchema`, typed walk +
+  upsert + prune, `metadataCache` freshness, degrade cap) + pure `notesIndexMapping`. Unit-tested.
+- **Phase 1 — DONE:** `QueryNotesTool` on SearchManager (`search query-notes --sql …`) —
+  read-only SQL + guard + `describe`; `notesIndex` core service (BACKGROUND stage) runs the
+  builder at boot. **The usable MVP.** ⚠️ Unit-tested + builds, but NOT yet manually verified in
+  a live Obsidian session (startup → background walk → round-trip).
+- **Phase 2 — PARTIAL:** done — `describe` mode, transaction-wrapped per-note upsert,
+  mobile-aware degrade cap (50k mobile / 250k desktop), string/comment-stripping SQL guard.
+  Remaining — example-query library / convenience views, optional separate-blob persistence if
+  cold-rebuild proves slow, `fullRebuild` hook (the index already rebuilds at every startup).
 - **Phase 3 (optional) — `.base` interop:** `baseSet` CRUA + a `baseFile` path that loads a
   `.base` filter and runs the equivalent SQL.
 

@@ -102,46 +102,52 @@ export class NotesIndexService {
    * from the note must vanish from the index).
    */
   async upsertNote(input: NoteIndexInput): Promise<void> {
-    await this.sqlite.run(UPSERT_NOTE_SQL, [
-      input.path,
-      input.basename,
-      input.folder,
-      input.ext,
-      input.title,
-      input.ctime,
-      input.mtime,
-      input.size,
-      JSON.stringify(input.tags ?? []),
-      JSON.stringify(input.links ?? []),
-      JSON.stringify(input.frontmatter ?? {}),
-      input.contentHash,
-    ]);
+    // One transaction per note so the row + its property rows are always
+    // consistent (nesting-safe — the coordinator tracks depth).
+    await this.sqlite.transaction(async () => {
+      await this.sqlite.run(UPSERT_NOTE_SQL, [
+        input.path,
+        input.basename,
+        input.folder,
+        input.ext,
+        input.title,
+        input.ctime,
+        input.mtime,
+        input.size,
+        JSON.stringify(input.tags ?? []),
+        JSON.stringify(input.links ?? []),
+        JSON.stringify(input.frontmatter ?? {}),
+        input.contentHash,
+      ]);
 
-    const noteId = await this.noteId(input.path);
-    if (noteId === null) {
-      return;
-    }
-
-    await this.sqlite.run('DELETE FROM note_properties WHERE note_id = ?', [noteId]);
-
-    for (const [keyRaw, value] of Object.entries(input.frontmatter ?? {})) {
-      for (const r of coerceFrontmatterValue(keyRaw, value)) {
-        await this.sqlite.run(
-          `INSERT INTO note_properties (note_id, key, key_raw, value_text, value_num, value_type, position) VALUES (?,?,?,?,?,?,?)`,
-          [noteId, r.key, r.keyRaw, r.valueText, r.valueNum, r.valueType, r.position]
-        );
+      const noteId = await this.noteId(input.path);
+      if (noteId === null) {
+        return;
       }
-    }
+
+      await this.sqlite.run('DELETE FROM note_properties WHERE note_id = ?', [noteId]);
+
+      for (const [keyRaw, value] of Object.entries(input.frontmatter ?? {})) {
+        for (const r of coerceFrontmatterValue(keyRaw, value)) {
+          await this.sqlite.run(
+            `INSERT INTO note_properties (note_id, key, key_raw, value_text, value_num, value_type, position) VALUES (?,?,?,?,?,?,?)`,
+            [noteId, r.key, r.keyRaw, r.valueText, r.valueNum, r.valueType, r.position]
+          );
+        }
+      }
+    });
   }
 
   /** Remove a note and its property rows by path. No-op if absent. */
   async deleteNote(path: string): Promise<void> {
-    const noteId = await this.noteId(path);
-    if (noteId === null) {
-      return;
-    }
-    await this.sqlite.run('DELETE FROM note_properties WHERE note_id = ?', [noteId]);
-    await this.sqlite.run('DELETE FROM notes WHERE id = ?', [noteId]);
+    await this.sqlite.transaction(async () => {
+      const noteId = await this.noteId(path);
+      if (noteId === null) {
+        return;
+      }
+      await this.sqlite.run('DELETE FROM note_properties WHERE note_id = ?', [noteId]);
+      await this.sqlite.run('DELETE FROM notes WHERE id = ?', [noteId]);
+    });
   }
 
   /** Rename = delete the old path then upsert the new one (paths are the identity). */
