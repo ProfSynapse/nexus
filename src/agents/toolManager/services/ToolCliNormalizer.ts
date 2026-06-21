@@ -366,8 +366,6 @@ function coerceValue(raw: string, type: string): unknown {
  * Bare CSV like `[[A]],[[B]]` (no outer wrapper) is preserved: depth zeroes
  * out mid-string at the close of the first wikilink, so the function bails
  * and returns `raw` unchanged.
- *
- * Issue: ProfSynapse/nexus#TBD.
  */
 export function stripOuterArrayBrackets(raw: string): string {
   const trimmed = raw.trim();
@@ -474,8 +472,6 @@ export function splitCsvRespectingQuotes(input: string): string[] {
  * write the corrupted `[Note]` to frontmatter. Gating on comma presence keeps
  * `[[Note]]` intact (no comma → scalar) while still unwrapping a real wrapped
  * array like `[[[A]],[[B]],[[C]]]` (has commas → unwrap → 3 items).
- *
- * Issue: ProfSynapse/nexus#TBD.
  */
 export function splitArrayInput(raw: string): string[] {
   const direct = splitCsvRespectingQuotes(raw);

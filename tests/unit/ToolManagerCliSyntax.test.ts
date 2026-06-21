@@ -783,7 +783,7 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       // Regression: `set-property --value "[[Note]]"` is a lone wikilink, not a
       // one-element array literal. With no top-level comma it must be treated as
       // a scalar and returned verbatim. The old strip-then-split path ate the
-      // outer pair and wrote the corrupted `[Note]`. Issue: ProfSynapse/nexus#TBD.
+      // outer pair and wrote the corrupted `[Note]`.
       const [call] = makeNormalizer().normalizeExecutionCalls({
         tool: 'one-of set-prop "[[wikilink]]"',
       });
