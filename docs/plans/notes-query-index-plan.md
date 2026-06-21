@@ -159,6 +159,50 @@ Modeled on the live `VaultFileIndex` (freshness) + `SkillIndexService`/`SkillSyn
 - **Compute is free:** `CASE`/arithmetic for `if`-style derivations, `SUM/AVG/MIN/MAX/COUNT … GROUP BY`
   for rollups, `julianday()`/`date()` for date math — all native SQLite, nothing for us to maintain.
 
+## 7.1 Tool surface & placement (call shape + home)
+
+Grounded in the live CLI-first contract (`ToolCliNormalizer.buildCliSchema:745`,
+`normalizeExecutionCalls:732`; example invocation `tests/eval/fixtures/mock-responses.ts:141`).
+
+**Call shape — CLI-first.** The agent calls `useTools` with a top-level `tool` **string that is
+a CLI command**, context fields alongside it (not a JSON args object):
+
+```jsonc
+useTools({
+  tool: "search query-notes --sql \"SELECT n.path, json_extract(n.frontmatter_json,'$.status') AS status FROM notes n WHERE EXISTS (SELECT 1 FROM note_properties p WHERE p.note_id=n.id AND p.key='status' AND p.value_text='active') ORDER BY n.mtime DESC LIMIT 50\"",
+  workspaceId: "...", sessionId: "...", memory: "...", goal: "..."   // context stays top-level
+})
+```
+
+- **Base command** = `<agent-alias> <tool-slug-kebab>`. SearchManager's alias is `search`
+  (cf. `contentManager` → `content`), so `queryNotes` → **`search query-notes`**.
+- **`--sql` is a flag, not positional.** `buildCliSchema:755` makes a `required` string param
+  *positional*; a SQL blob full of quotes is awkward positionally, so `sql` is declared
+  **not-required** in the schema and presence is enforced in the service. This matches the house
+  rule (schema `required` is not runtime-validated — guards live in the service/normalizer).
+- **Internal id** (appears in results) = `searchManager_queryNotes` (cf. `contentManager_read`).
+- **Result** stays in the `{ success, … }` convention: `{ success, columns, rows, rowCount }`.
+  Per-tool `getResultSchema()` means this tool's arbitrary-column shape doesn't conflict with the
+  file/snippet shapes of its SearchManager siblings.
+
+**Home — SearchManager (tool) + core service (index).**
+
+- **Tool on SearchManager.** It is the retrieval/query agent (`searchContent` semantic,
+  `searchDirectory` path/name, `searchMemory` SQLite-backed). `queryNotes` is the 4th modality —
+  structured frontmatter query — and matches the agent's discovery mental model. `searchMemory`
+  already establishes the "SearchManager tool runs SQL via an injected resolver" precedent.
+- **Not StorageManager** — that agent is filesystem *mutation* (list/move/copy/archive); a
+  read-only query is a poor fit.
+- **Not its own agent yet** — a dedicated `DatabaseManager` costs `AgentInitializationService` +
+  `AgentRegistrationService` wiring for a single tool. Justified only once a *family* emerges
+  (`queryNotes` + `describe` + `baseSet` + cross-table `runSql`); promotion is cheap because the
+  service is independent.
+- **`NotesIndexService` is a core service, not inside the agent.** It has a real lifecycle
+  (startup build, `metadataCache` subscriptions, degrade cap), so it registers in
+  `ServiceDefinitions.ts` like `cacheManager`, and the tool receives it via a lazy resolver —
+  the same pattern `SearchMemoryTool` uses for its storage adapter (`searchManager.ts:154`
+  `registerLazyTool`). Keeps the agent a thin tool host.
+
 ## 8. What we deliberately do NOT build
 
 - ❌ Filter→SQL compiler (agent writes the `WHERE`).
