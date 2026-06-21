@@ -1,245 +1,222 @@
 # Notes Query Index — Implementation Plan
 
-**Status:** Proposed
-**Author:** research + plan, 2026-06-21
+**Status:** Committed design
+**Author:** research + plan, 2026-06-21 (rev. 2)
 **Branch:** `claude/practical-shannon-xbylz1`
 
 ## 1. Goal
 
-Give Nexus (and the AI surface) a **database-style query over vault notes**: "get all
-notes with these frontmatter properties, filter by this, calculate that." Concretely:
+Let the agent **return and compute data from a database** of vault notes: "get all notes
+with these frontmatter properties, filter by this, calculate that." Concretely, expose the
+vault's notes + frontmatter as **indexed SQL rows** the agent can query directly, so it can
+filter and aggregate without Nexus reimplementing a query language.
 
-```
-SELECT <props/computed> FROM notes WHERE <filter on file.* + frontmatter> ORDER BY … LIMIT …
-```
+This is the structured/metadata query axis, complementing `searchContent` (semantic/keyword
+over body text) and `searchDirectory` (path/name).
 
-This is the structured/metadata query axis that complements the existing `searchContent`
-(semantic/keyword over body text) and `searchDirectory` (path/name) tools.
+## 2. Core decisions (the short version)
 
-## 2. Why not just use Obsidian's Bases API
+1. **Index notes + frontmatter only — never body content.** Content stays on disk, read on
+   demand via `ContentManager`. Tiny rows → far higher scale ceiling.
+2. **EAV schema** (`notes` + `note_properties`) so *arbitrary* frontmatter keys are **indexed**.
+   This is the only model that gives O(log n) lookup for any property (generated columns need
+   keys known up front; a JSON column can't be indexed for arbitrary keys → full scan).
+3. **Agent writes SQL; SQLite computes.** No filter→SQL compiler, no formula evaluator. The
+   consumer is an LLM fluent in SQL, and SQLite already does `CASE`/arithmetic/aggregates/
+   `date()`. Dropping these two components removes the entire maintenance sink (no tracking of
+   Bases' evolving function set).
+4. **In-memory, rebuilt at startup, kept fresh via `metadataCache` events — not persisted in
+   the cache blob.** The index is 100% derived from the vault (like the existing
+   `VaultFileIndex`), so persistence is optional. Skipping it sidesteps the one thing that
+   actually breaks at scale (whole-DB blob serialization on save).
+5. **Right-sized to ~100–200k notes** comfortably, graceful degrade beyond. Real 1M is a
+   separate storage-engine project, explicitly out of scope.
 
-Researched and ruled out as the *query backend* (kept as an optional interop surface):
+## 3. Why not Obsidian's Bases API
 
-- **No headless execution.** The official Bases plugin API (`obsidian.d.ts`) only lets a
-  plugin **register a custom view** (`BasesViewFactory = (controller, containerEl) => BasesView`);
-  the framework runs the query and pushes results into `view.data`. `QueryController` is not
-  plugin-instantiable. There is **no** "run this `.base` and hand me rows" call. The
-  "API access to Bases results" forum request is open, not shipped.
-- **IndexedDB is not queryable.** It only persists the serialized sql.js blob; queries run
-  against in-memory WASM SQLite hydrated from it.
-- **The SQLite cache doesn't contain notes.** Its ~20 tables (`workspaces`, `sessions`,
-  `memory_traces`, `conversations`, `tasks`, `embedding_metadata`, `skills`, …) are Nexus's
-  own event store. **There is no `notes`/frontmatter table** — the dataset Bases queries over
-  lives in Obsidian's in-memory `metadataCache`, not in our DB.
+- **No headless execution.** The official Bases plugin API (`obsidian.d.ts`) only lets a plugin
+  register a *view* (`BasesViewFactory = (controller, containerEl) => BasesView`); the framework
+  runs the query and pushes results into `view.data`. `QueryController` is not plugin-instantiable.
+  There is no "run this `.base` and hand me rows." (Forum request open, not shipped.)
+- **The SQLite cache doesn't contain notes.** Its ~20 tables are Nexus's own event store; the
+  notes/frontmatter dataset lives only in Obsidian's in-memory `metadataCache`.
 
-**Conclusion:** the SQL engine and the freshness plumbing already exist; the missing piece is
-a *notes + frontmatter index* as SQL rows. Build that, and a query tool is a thin layer on top —
-fully headless, cross-platform (works on mobile, unlike reaching into Bases internals), and able
-to JOIN against `embedding_metadata` (semantic axis Bases can't touch).
+Bases is kept as an optional *interop* surface (§9), not the query backend.
 
-## 3. What already exists (reuse, don't rebuild)
+## 4. Scale analysis (why the limits are where they are)
 
-| Capability | Where | Reuse |
+Per note: one `notes` row (~300–500 B incl. `frontmatter_json`) + ~6 EAV rows (~150 B each).
+With indexes, ~2.5–3.5 KB/note all-in.
+
+| Notes | ~DB size | Status |
 |---|---|---|
-| Vault walk + frontmatter/tags/links read + **live freshness** via `metadataCache.on('changed'|'resolved')` + rename/delete handlers | `src/database/services/cache/VaultFileIndex.ts` (live service, owned by `CacheManager`, registered `cacheManager` in `ServiceDefinitions.ts:149`) | **Freshness pattern** (`setupMetadataCacheEvents`, `handleMetadataChanged`). It is in-memory Maps + lazy frontmatter, so not the storage layer — but it's the proven precedent. |
-| "Walk vault → upsert into SQLite → prune missing, preserving owned columns" | `src/agents/apps/skills/services/SkillScanner.ts` + `SkillIndexService.ts` (`syncFromScan` UPSERT + scoped prune) | **Template** for `NotesIndexService`. |
-| Debounced + coalesced vault watcher | `src/agents/apps/skills/services/SkillSyncWatcher.ts` (2000ms debounce, run-coalescing) | **Template** for the freshness loop. |
-| Schema migration | `SchemaMigrator.ts:76` (`CURRENT_SCHEMA_VERSION = 13`), `Migration { version, description, sql[], migrationFn? }`, idempotent `CREATE TABLE IF NOT EXISTS`; mirror into `schema.ts` SCHEMA_SQL for fresh installs | Add v14. |
-| Backend query API | `IStorageBackend.ts:88` `query<T>(sql, params?)`, `queryOne<T>`, `run`, `transaction`; positional `?` params | Query compiler target. Reach it the way repositories do (`BaseRepository` → `sqliteCache.query`). |
-| Full rebuild | `SyncCoordinator.fullRebuild()` clears + replays JSONL | Add a **vault-reindex step** (notes index is derived from the vault, not JSONL, so rebuild must re-walk). |
-| Tool patterns | `src/agents/searchManager/` — `BaseTool`, constructor `Plugin` injection (`this.plugin.app.metadataCache`), lazy service resolvers, `registerLazyTool`; array/object params handled by `ToolCliNormalizer` (CSV/JSON coercion) | Home + shape for `queryNotes`. |
+| 50k | ~150 MB | comfortable |
+| 100k | ~300 MB | **comfortable ceiling** |
+| 300k | ~1 GB | risky |
+| 1M | ~3 GB | different architecture |
 
-> Pinned gotcha (CLAUDE.md): tool-schema `required`/`enum` is **not** runtime-validated.
-> All field/shape guards must live in the service/normalizer layer, never the schema.
+What breaks, in order:
 
-## 4. Architecture decision
+1. **Query — not the limit.** EAV indexed on `(key, value_text)`/`(key, value_num)` → filters
+   are index seeks, single-digit-ms even at 500k+ rows.
+2. **In-memory size (~100–200k).** sql.js holds the whole DB in WASM linear memory (≈4 GB hard
+   cap, unhappy well before). → comfortable to ~100–200k.
+3. **Blob save (~300–500k) — the hard wall, which we avoid.** Persisting sql.js rewrites the
+   *entire* DB blob to IndexedDB on every save. **Decision #4 removes this** by not persisting
+   the notes tables — they rebuild in memory at startup.
 
-**Chosen: SQL-backed index (`notes` + `note_properties`) + a JS formula evaluator.**
+Obsidian itself (metadataCache/explorer/graph) strains well before 1M, so ~100–200k covers
+essentially every real vault, power users included.
 
-Split that mirrors how Bases itself works (filters can reference formulas):
-
-- **SQL does the coarse work** — `WHERE` over file.* columns and frontmatter props
-  (existence, equality, comparison, contains), `ORDER BY`, `LIMIT`, grouping. Scales to
-  large vaults; this is the "get notes with these properties + filter" half.
-- **A small JS expression evaluator does formulas** — `if()`, date math, `number()`,
-  string/list methods — over the fetched rows. Bases formulas use method-dispatch
-  (`value.method(...)`) that doesn't translate cleanly to SQLite; this is the "calculate that" half.
-
-Rejected alternative — *extend VaultFileIndex in-memory* (eager-load all frontmatter + JS
-predicate filter): smaller, no migration, but no real aggregation, recomputed per query, no
-embeddings JOIN, weaker at scale. Keep as the fallback if Phase 0 proves the SQL index too heavy.
-
-## 5. Schema (v13 → v14)
-
-EAV model so arbitrary frontmatter keys are queryable without per-property columns.
+## 5. Schema (in-memory tables; not in the persisted blob)
 
 ```sql
--- one row per note
+-- one row per note. integer id keeps the EAV table small (no repeated TEXT path).
 CREATE TABLE IF NOT EXISTS notes (
-  path        TEXT PRIMARY KEY,      -- vault-relative, normalized
+  id          INTEGER PRIMARY KEY,    -- surrogate; FK target for note_properties
+  path        TEXT NOT NULL UNIQUE,   -- vault-relative, normalized
   basename    TEXT NOT NULL,
   folder      TEXT NOT NULL,
   ext         TEXT NOT NULL,
-  title       TEXT,                  -- frontmatter title || basename
-  ctime       INTEGER NOT NULL,      -- file.stat.ctime (epoch ms)
-  mtime       INTEGER NOT NULL,      -- file.stat.mtime
+  title       TEXT,                   -- frontmatter title || basename
+  ctime       INTEGER NOT NULL,       -- epoch ms
+  mtime       INTEGER NOT NULL,
   size        INTEGER NOT NULL,
-  tags_json   TEXT,                  -- JSON array (merged frontmatter + inline tags)
-  links_json  TEXT,                  -- JSON array of outgoing link targets
-  content_hash TEXT NOT NULL,        -- hash(frontmatter + stat) — change-gate reindex
-  indexed_at  INTEGER NOT NULL
+  tags_json   TEXT,                   -- JSON array (frontmatter + inline tags)
+  links_json  TEXT,                   -- JSON array of outgoing link targets
+  frontmatter_json TEXT,              -- whole frontmatter as JSON (for projection via json_extract)
+  content_hash TEXT NOT NULL          -- hash(frontmatter + stat) → change-gate re-index
 );
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder);
 CREATE INDEX IF NOT EXISTS idx_notes_mtime  ON notes(mtime);
 
--- one row per frontmatter property (per list element for arrays)
+-- one row per frontmatter property (per list element for arrays). THE indexed filter path.
 CREATE TABLE IF NOT EXISTS note_properties (
-  note_path   TEXT NOT NULL REFERENCES notes(path) ON DELETE CASCADE,
-  key         TEXT NOT NULL,         -- frontmatter key (lowercased for match; original in key_raw)
-  key_raw     TEXT NOT NULL,
-  value_text  TEXT,                  -- normalized string form (for =, contains, sort)
-  value_num   REAL,                  -- populated when numeric or date-coercible (epoch ms)
-  value_type  TEXT NOT NULL,         -- 'string'|'number'|'boolean'|'date'|'list'|'object'|'null'
-  position    INTEGER                -- list element index, else NULL
+  note_id     INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  key         TEXT NOT NULL,          -- lowercased for matching
+  key_raw     TEXT NOT NULL,          -- original case
+  value_text  TEXT,                   -- normalized string form (=, contains, sort)
+  value_num   REAL,                   -- numeric or date-coerced (epoch ms)
+  value_type  TEXT NOT NULL,          -- 'string'|'number'|'boolean'|'date'|'list'|'object'|'null'
+  position    INTEGER                 -- list element index, else NULL
 );
 CREATE INDEX IF NOT EXISTS idx_np_key_text ON note_properties(key, value_text);
 CREATE INDEX IF NOT EXISTS idx_np_key_num  ON note_properties(key, value_num);
-CREATE INDEX IF NOT EXISTS idx_np_path     ON note_properties(note_path);
+CREATE INDEX IF NOT EXISTS idx_np_note     ON note_properties(note_id);
 ```
 
-Add to both `SchemaMigrator.MIGRATIONS` (v14) and `schema.ts` SCHEMA_SQL; bump
-`CURRENT_SCHEMA_VERSION` to 14. Pure `CREATE TABLE/INDEX IF NOT EXISTS` (no data migration —
-the index is rebuilt from the vault on first run).
+- **Division of labour:** filter via **EAV** (indexed, any key); project/return via
+  **`frontmatter_json`** + `json_extract` on the already-filtered small set; compute via SQL.
+- **Typing pass (load-bearing):** YAML frontmatter is untyped — on upsert, coerce each value
+  (number; ISO-8601 date → epoch ms in `value_num`; boolean; list → one row per element; object),
+  always storing a `value_text`. This is what makes `due < <epoch>` and numeric comparisons work.
+- **No schema migration / `CURRENT_SCHEMA_VERSION` bump:** these tables are created in the
+  in-memory DB at startup, not part of the persisted v-schema. (`CREATE TABLE IF NOT EXISTS`.)
 
-**Typing pass** (the load-bearing detail): YAML frontmatter is untyped. On upsert, coerce each
-value → detect number, ISO-8601 date (→ epoch ms in `value_num`), boolean, list, object; always
-store a `value_text` for equality/contains/sort. This is what makes `due < today()` and numeric
-comparisons work in SQL.
+## 6. `NotesIndexService` — build, freshness, lifecycle
 
-## 6. Index population & freshness — `NotesIndexService`
+Modeled on the live `VaultFileIndex` (freshness) + `SkillIndexService`/`SkillSyncWatcher`
+(upsert/prune/debounce). Owns the two tables in the existing in-memory sql.js instance.
 
-New service modeled on `SkillIndexService` + `SkillSyncWatcher`, owning the two tables.
+- **Startup build (background, non-blocking):** after cache ready, create the tables, walk
+  `vault.getMarkdownFiles()`, read `metadataCache.getFileCache()` (frontmatter + tags + links),
+  typed-upsert `notes` + `note_properties`. Batched so it never stalls boot. A few seconds at
+  100k is acceptable.
+- **Freshness:** subscribe to `metadataCache.on('changed')` + vault `rename`/`delete`
+  (the `VaultFileIndex.setupMetadataCacheEvents` pattern), debounced + coalesced
+  (`SkillSyncWatcher` shape). On change → re-upsert that note; on delete/rename → cascade.
+- **Not persisted:** the notes tables are excluded from the cache blob save; they rebuild from
+  the vault each launch. (If cold-rebuild time ever bites on huge vaults, persist them in a
+  *separate* sql.js blob on an idle debounce — deferred, not built now.)
+- **Graceful degrade:** above a configurable cap (default ~250k notes) skip the persistent index
+  build and warn; queries can fall back to bounded on-demand scans. Never crash.
+- **Mobile:** `getMarkdownFiles()`, `metadataCache`, sql.js all run on mobile; no Node built-ins,
+  no top-level npm imports. Lower comfortable cap on mobile (~25–50k) via the same setting.
 
-- **Initial build (background, non-blocking):** after cache ready, walk
-  `vault.getMarkdownFiles()`, read `metadataCache.getFileCache(file)` (frontmatter + tags +
-  links), upsert `notes` + `note_properties`, content-hash-gated (skip unchanged). Batch like
-  the embeddings backfill so it doesn't stall boot on large vaults.
-- **Freshness:** subscribe to `metadataCache.on('changed')` and the vault `rename`/`delete`
-  events (same pattern as `VaultFileIndex.setupMetadataCacheEvents`), debounced + coalesced
-  (reuse `SkillSyncWatcher` shape). On change: re-upsert that note's rows; on delete: cascade.
-- **Prune:** periodic / on full rebuild — drop `notes` rows whose path no longer exists.
-- **Rebuild hook:** add a vault-reindex step to `SyncCoordinator.fullRebuild()` (and the
-  "Nexus: Rebuild cache" command) since this table is derived from the vault, not JSONL.
-- **Mobile:** `vault.getMarkdownFiles()`, `metadataCache`, sql.js all work on mobile; no Node
-  built-ins — keep it that way (no top-level npm/Node imports).
-
-## 7. Query surface (mapped to the real Bases spec)
-
-Grounded in kepano/obsidian-skills (Obsidian's official agent reference). Property namespaces:
-**note/frontmatter** (bare name), **file.*** (`name basename path folder ext ctime mtime size
-tags links`), **formula.*** (computed).
-
-**Tier 1 — ship first (pure SQL compile):**
-- Filter object `and` / `or` / `not` (recursive) + comparisons `== != > < >= <=`
-- Conditions on `file.*` columns and frontmatter props (equality, comparison, existence)
-- Functions: `file.hasTag`, `file.inFolder`, `file.hasProperty`, `string.contains`,
-  `list.contains`, `isEmpty`
-- `select` properties, `sort`, `limit`
-
-Compilation: file.* → `notes` columns; frontmatter condition → correlated
-`EXISTS (SELECT 1 FROM note_properties p WHERE p.note_path = n.path AND p.key = ? AND <op>)`;
-`and/or/not` → nested boolean SQL; numeric/date ops use `value_num`, text ops use `value_text`.
-
-**Tier 2 — formula evaluator + aggregation (JS over fetched rows):**
-- Expression evaluator with a **type-dispatched method table** (string/number/date/list/file/
-  link/object) — `if`, `date`, `today`, `now`, arithmetic, `number`, date subtraction → `.days`,
-  then `string.startsWith/endsWith/lower/replace/slice/split`, `number.round/abs/floor/ceil`,
-  `list.map/filter/join/sort/unique`, `link`/`linksTo`
-- Computed columns + filters that reference `formula.*`
-- `groupBy` + `summaries`: `Sum Average Min Max Count`
-- **Security:** a small AST parser/interpreter over a fixed function table — **never `eval()`**.
-  This is the largest build cost; scope it deliberately.
-
-**Tier 3 — later:** `cards`/`list` output shapes, `reduce`, `regexp.matches`,
-`properties.displayName`, `relative()`/`format()` date formatting, custom summary expressions.
-
-> Tolerate both filter dialects when ingesting wild `.base` files: current method forms
-> (`file.hasTag`) and older global forms (`taggedWith(...)`) from early betas.
-
-## 8. Tool: `queryNotes` (SearchManager)
+## 7. Tool: `queryNotes` (SearchManager) — read-only SQL
 
 `BaseTool`, constructor-injected `Plugin` + a `NotesIndexService` resolver; registered via
-`registerLazyTool`. Structured params (CLI-normalizer handles array/object coercion). Validation
-guards in the service, not the schema.
+`registerLazyTool`. The agent passes SQL; the tool runs it read-only and returns rows.
 
 ```jsonc
-{
-  "from": "Projects",                       // optional folder scope; default whole vault
-  "where": {                                // Bases-shaped filter object
-    "and": [
-      { "prop": "status", "op": "!=", "value": "done" },
-      { "fn": "file.hasTag", "args": ["task"] },
-      { "or": [ { "prop": "priority", "op": ">=", "value": 2 },
-                { "fn": "file.inFolder", "args": ["Urgent"] } ] }
-    ]
-  },
-  "select": ["file.name", "status", "due", "formula.days_until_due"],
-  "compute": { "days_until_due": "if(due, (date(due) - today()).days, \"\")" },
-  "sort":   [{ "by": "due", "dir": "ASC" }],
-  "groupBy": { "property": "status" },      // Tier 2
-  "limit": 100,
-  "baseFile": "Tasks.base"                  // Tier 3 alt: load filters/formulas from a .base
-}
+// execute params
+{ "sql": "SELECT n.path, json_extract(n.frontmatter_json,'$.status') AS status FROM notes n WHERE EXISTS (SELECT 1 FROM note_properties p WHERE p.note_id=n.id AND p.key='status' AND p.value_text='active') ORDER BY n.mtime DESC LIMIT 50",
+  "params": [] }
+// result
+{ "success": true, "columns": [...], "rows": [...], "rowCount": N }
 ```
 
-Result: `{ success, rows: [{ path, ...selected, ...computed }], groups?, count }`.
+- **Read-only guard (in the service, never the schema — per the no-runtime-schema-validation
+  rule):** reject anything that isn't a single `SELECT`/`WITH` statement; block
+  `INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/ATTACH/PRAGMA` and multiple statements. The notes
+  tables live in the shared cache DB, so this guard protects the *whole* cache. (Upside of the
+  shared instance: the agent can JOIN notes against `tasks`/`conversations`/`embedding_metadata`.)
+  The index is rebuildable anyway, so worst case is recoverable — but guard regardless.
+- **Agent ergonomics:** the tool description carries the schema (column list + "filter via
+  `note_properties`, project via `json_extract(frontmatter_json,'$.key')`, dates are epoch ms in
+  `value_num`") and 2–3 example queries. Optionally a `describe` mode returns the live schema +
+  the set of distinct `key`s present. LLMs drive SQLite reliably; SQL errors self-correct on retry.
+- **Compute is free:** `CASE`/arithmetic for `if`-style derivations, `SUM/AVG/MIN/MAX/COUNT … GROUP BY`
+  for rollups, `julianday()`/`date()` for date math — all native SQLite, nothing for us to maintain.
+
+## 8. What we deliberately do NOT build
+
+- ❌ Filter→SQL compiler (agent writes the `WHERE`).
+- ❌ Formula/expression evaluator + Bases function table (SQLite + agent SQL replace it).
+- ❌ Schema migration / blob persistence for the index (in-memory rebuild instead).
+- ❌ Body-content indexing (`searchContent` owns that; content read on demand).
 
 ## 9. Optional companion: `.base` round-trip (`baseSet`)
 
 Independent, cheap, zero Bases-API dependency — a `.base` is just a YAML file
 (`vault.create`/`modify`/archive). Lets the agent author a persistent, **user-visible** database
-view the human opens in Obsidian's native Bases UI, while `queryNotes`/`baseFile` re-runs the same
-`.base` headlessly through our engine. Slot in any time after Tier 1. (Document that our evaluation
-of a `.base` may diverge from Bases-rendered output on unsupported functions.)
+view the human opens in Obsidian's native Bases UI. Slot in any time. (Document that our SQL
+evaluation may diverge from Bases-rendered output.) Not required for the core goal.
 
 ## 10. Phasing
 
-- **Phase 0** — v14 schema + `NotesIndexService` (walk, typed upsert, prune, freshness, rebuild
-  hook). No tool. Verify via direct SQL + unit tests on a fixture vault.
-- **Phase 1** — `queryNotes` Tier 1 (SQL compile: file.* + frontmatter filters, and/or/not, sort,
-  limit, select). The usable MVP for "get notes with these properties, filter by this."
-- **Phase 2** — formula evaluator (AST interpreter) + computed columns + groupBy/summaries.
-  Delivers "calculate that."
-- **Phase 3** — `.base` ingestion (`baseFile`) + Tier 2/3 functions + `baseSet` CRUA companion.
+- **Phase 0 — `NotesIndexService`:** create tables in the in-memory DB, typed walk + upsert +
+  prune, `metadataCache` freshness, graceful-degrade cap. No tool yet — verify via direct SQL +
+  unit tests on a fixture vault.
+- **Phase 1 — `queryNotes` tool:** read-only SQL execution + guard + schema/describe in the tool
+  description, registered on SearchManager. **This is the usable MVP** — "get notes with these
+  properties, filter, and compute" all via agent SQL.
+- **Phase 2 — ergonomics & scale polish:** `describe` mode (distinct keys), example-query
+  library in the description, convenience SQL views for common shapes, mobile cap tuning,
+  optional separate-blob persistence if cold-rebuild proves slow.
+- **Phase 3 (optional) — `.base` interop:** `baseSet` CRUA + a `baseFile` path that loads a
+  `.base` filter and runs the equivalent SQL.
 
 ## 11. Risks & open questions
 
-- **EAV row count** — one row per property (per list element) per note. Index carefully; this is
-  the same order of data Dataview holds in memory. Validate on a large vault in Phase 0.
-- **Type coercion fidelity** — date/number detection drives all comparison correctness; needs a
-  tested coercion module (ISO dates → epoch, `value_num`).
-- **Formula evaluator scope/security** — biggest cost; fixed-function AST interpreter, no `eval`.
-  Keep Tier 1 SQL-only so the MVP ships without it.
-- **Freshness races** — `changed` fires before `resolved`; debounce/coalesce (SkillSyncWatcher).
-- **Rebuild semantics** — index is vault-derived, so `fullRebuild` must re-walk, not replay JSONL.
-- **Divergence from native Bases output** — acceptable and documented; we mirror a subset.
-- **Boot cost** — initial walk must be background + hash-gated; never block startup.
+- **Typing/coercion fidelity** drives all comparison correctness (ISO date → epoch). Needs a
+  tested coercion module — the main correctness surface now that there's no evaluator.
+- **Cold-rebuild time** at the top of the range (100–200k): must be background + hash-gated;
+  measure, and only add separate-blob persistence if it actually bites.
+- **Agent SQL quality:** EAV `EXISTS` filters are slightly verbose; mitigate with schema docs,
+  examples, and optional views. SQL errors self-correct — a better failure mode than a DSL
+  silently returning wrong numbers.
+- **Shared-DB blast radius:** read-only guard must be airtight since the notes tables share the
+  cache instance. (Alternative: isolate in a separate sql.js instance — costs the cross-table
+  JOIN upside; default to shared + strict guard.)
+- **List/object properties:** lists → one EAV row per element (enables `contains`); deeply nested
+  objects stay in `frontmatter_json` only (queried via `json_extract`).
 
 ## 12. Testing
 
-- Unit: typing/coercion module; filter→SQL compiler (each operator + and/or/not nesting);
-  formula evaluator per method-table type; upsert/prune/freshness on a fixture vault.
-- Integration: cold build → query; metadataCache change → re-query reflects update; rename/delete
-  cascade; `fullRebuild` repopulates; mobile (vault.adapter) smoke.
-- Eval: a few `queryNotes` cases in the LLM eval harness once Tier 1 lands.
+- Unit: typing/coercion module; upsert/prune/freshness on a fixture vault; read-only SQL guard
+  (accept SELECT/WITH, reject writes/PRAGMA/ATTACH/multi-statement).
+- Integration: cold build → query; `metadataCache` change → re-query reflects update;
+  rename/delete cascade; graceful-degrade cap; mobile (`vault.adapter`) smoke.
+- Eval: a few `queryNotes` cases in the LLM eval harness once Phase 1 lands.
 
 ## Sources (research)
 
-- Obsidian Bases dev API surface — `obsidianmd/obsidian-api` (`obsidian.d.ts`); forum "Provide API
-  access to the results of Bases view" (open request).
-- `.base` format + functions — kepano/obsidian-skills `obsidian-bases/SKILL.md` +
-  `references/FUNCTIONS_REFERENCE.md` (Obsidian's official agent reference); Obsidian Help
-  Bases syntax/functions.
-- Codebase — `VaultFileIndex.ts`, `CacheManager.ts`, `SkillScanner/SkillIndexService/SkillSyncWatcher`,
-  `SchemaMigrator.ts:76`, `schema.ts`, `IStorageBackend.ts:88`, `SyncCoordinator.fullRebuild`,
+- Bases dev API surface — `obsidianmd/obsidian-api` (`obsidian.d.ts`); forum "Provide API access
+  to the results of Bases view" (open).
+- `.base` format/functions — kepano/obsidian-skills `obsidian-bases` SKILL + FUNCTIONS_REFERENCE
+  (Obsidian's official agent reference); Obsidian Help.
+- Codebase — `VaultFileIndex.ts` (live freshness precedent, `CacheManager`/`ServiceDefinitions.ts:149`),
+  `SkillScanner`/`SkillIndexService`/`SkillSyncWatcher` (walk→upsert→prune→debounce),
+  `IStorageBackend.ts:88` (`query`/`queryOne`/`run`), `SyncCoordinator.fullRebuild`,
   `src/agents/searchManager/` tool patterns, `ToolCliNormalizer`.
