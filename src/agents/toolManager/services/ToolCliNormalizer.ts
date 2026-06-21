@@ -312,7 +312,7 @@ function coerceValue(raw: string, type: string): unknown {
     if (jsonItems !== null) {
       return jsonItems.map((item: unknown) => coerceArrayItem(item, itemType));
     }
-    return splitCsvRespectingQuotes(stripOuterArrayBrackets(raw)).map(item => coerceValue(item, itemType));
+    return splitArrayInput(raw).map(item => coerceValue(item, itemType));
   }
 
   if (type === 'object') {
@@ -340,7 +340,7 @@ function coerceValue(raw: string, type: string): unknown {
         // Malformed JSON → fall through to CSV split.
       }
     }
-    const items = splitCsvRespectingQuotes(stripOuterArrayBrackets(raw));
+    const items = splitArrayInput(raw);
     if (items.length >= 2) return items;
     if (items.length === 1) return items[0];
     return raw;
@@ -366,8 +366,6 @@ function coerceValue(raw: string, type: string): unknown {
  * Bare CSV like `[[A]],[[B]]` (no outer wrapper) is preserved: depth zeroes
  * out mid-string at the close of the first wikilink, so the function bails
  * and returns `raw` unchanged.
- *
- * Issue: ProfSynapse/nexus#TBD.
  */
 export function stripOuterArrayBrackets(raw: string): string {
   const trimmed = raw.trim();
@@ -459,6 +457,32 @@ export function splitCsvRespectingQuotes(input: string): string[] {
   const trimmed = current.trim();
   if (trimmed.length > 0) items.push(trimmed);
   return items;
+}
+
+/**
+ * Split a raw CLI value into array items for an `array<...>` / `oneOfArray`
+ * slot. Bracket-unwrapping (`stripOuterArrayBrackets`) is only meaningful for a
+ * MULTI-item array, and a multi-item array always carries a top-level comma.
+ * So if the raw value has no top-level comma it is a single scalar and is
+ * returned verbatim — never unwrapped.
+ *
+ * Bug this guards: a lone Obsidian wikilink `[[Note]]` is structurally
+ * indistinguishable from a one-element array literal `[ ... ]` — both open `[`,
+ * close `]`, and balance. `stripOuterArrayBrackets` would eat the outer pair and
+ * write the corrupted `[Note]` to frontmatter. Gating on comma presence keeps
+ * `[[Note]]` intact (no comma → scalar) while still unwrapping a real wrapped
+ * array like `[[[A]],[[B]],[[C]]]` (has commas → unwrap → 3 items).
+ */
+export function splitArrayInput(raw: string): string[] {
+  const direct = splitCsvRespectingQuotes(raw);
+  // Fewer than 2 top-level items ⇒ not a multi-item array, so the outer-bracket
+  // wrapper semantics don't apply. Return the UN-stripped split: a single
+  // `[[Note]]` stays intact (brackets kept), and a zero-item empty/whitespace
+  // value yields `[]` so callers fall through to their raw-scalar handling.
+  if (direct.length < 2) return direct;
+  // 2+ items ⇒ a real array; unwrap a single outer `[...]` pair (if any) and
+  // re-split so `[[[A]],[[B]],[[C]]]` recovers its three wikilinks.
+  return splitCsvRespectingQuotes(stripOuterArrayBrackets(raw));
 }
 
 /**

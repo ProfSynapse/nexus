@@ -177,7 +177,7 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
             { type: 'boolean' },
             { type: 'array', items: { type: 'string' } }
           ],
-          description: 'Value to set. Can be a string, number, boolean, or array of strings.'
+          description: 'Value to set: a string, number, boolean, or array of strings. Pass a single value (including an Obsidian wikilink) verbatim — e.g. --value "[[Note]]" — do NOT add wrapping brackets. For multiple values use a comma-separated list: --value "[[A]],[[B]]". The CLI parses these reliably; no bracket-escaping is needed.'
         },
         mode: {
           type: 'string',

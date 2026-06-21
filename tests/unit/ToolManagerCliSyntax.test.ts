@@ -779,6 +779,17 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(call.params.value).toEqual(['[[A]]', '[[B]]']);
     });
 
+    it('single Obsidian wikilink stays a scalar — both bracket pairs kept', () => {
+      // Regression: `set-property --value "[[Note]]"` is a lone wikilink, not a
+      // one-element array literal. With no top-level comma it must be treated as
+      // a scalar and returned verbatim. The old strip-then-split path ate the
+      // outer pair and wrote the corrupted `[Note]`.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'one-of set-prop "[[wikilink]]"',
+      });
+      expect(call.params.value).toBe('[[wikilink]]');
+    });
+
     it('bracket-prefix-only (no closing bracket) skips JSON and splits as CSV', () => {
       // Starts with `[` but doesn't end with `]` → the JSON branch's
       // startsWith/endsWith gate is not satisfied, so JSON.parse is never
@@ -1005,6 +1016,16 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
         tool: 'storage archive --paths "[[[A]],[[B]]]"',
       });
       expect(call.params.paths).toEqual(['[[A]]', '[[B]]']);
+    });
+
+    it('single wikilink into array<string> slot — one intact element', () => {
+      // Regression: a lone `[[A]]` in an explicit array<string> slot must yield
+      // a one-element array with the wikilink intact, not the stripped `[A]`.
+      // No top-level comma ⇒ scalar ⇒ wrapped as a single item, brackets kept.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'storage archive --paths "[[A]]"',
+      });
+      expect(call.params.paths).toEqual(['[[A]]']);
     });
   });
 });
