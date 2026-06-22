@@ -1,4 +1,4 @@
-import * as fsPromises from 'fs/promises';
+import { Platform } from 'obsidian';
 import { GoogleGeminiCliAdapter } from '../../src/services/llm/adapters/google-gemini-cli/GoogleGeminiCliAdapter';
 
 type VaultLike = {
@@ -13,45 +13,45 @@ jest.mock('../../src/utils/geminiCli', () => ({
   resolveGeminiCliRuntime: jest.fn(() => ({
     geminiPath: '/mock/bin/agy',
     nodePath: '/mock/bin/node',
-    connectorPath: '/mock/connector.js',
-    vaultPath: '/mock/vault',
-    serverKey: 'nexus-test-vault'
+    vaultPath: '/mock/vault'
   })),
-  buildGeminiCliEnv: jest.fn((settingsPath: string, nodePath: string) => ({
-    GEMINI_CLI_SYSTEM_SETTINGS_PATH: settingsPath,
+  // Slice d: buildGeminiCliEnv takes only nodePath; no system-settings path.
+  buildGeminiCliEnv: jest.fn((nodePath: string) => ({
     PATH: nodePath
-  })),
-  buildGeminiCliSystemSettings: jest.fn(() => ({
-    output: { format: 'json' }
   }))
 }));
 
-describe('GoogleGeminiCliAdapter (agy plain-text contract)', () => {
+describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
   const { runCliProcess } = jest.requireMock('../../src/utils/cliProcessRunner') as {
     runCliProcess: jest.Mock;
   };
+
+  // Platform.isMacOS is mutated by the sandbox-guard test; restore it after each.
+  const mutablePlatform = Platform as unknown as { isMacOS: boolean };
+  const originalIsMacOS = mutablePlatform.isMacOS;
 
   let adapter: GoogleGeminiCliAdapter;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mutablePlatform.isMacOS = originalIsMacOS;
     adapter = new GoogleGeminiCliAdapter({
       getName: () => 'Test Vault'
     } as VaultLike);
   });
 
-  it('moves the combined prompt to stdin and normalizes the model to its agy label', async () => {
+  afterEach(() => {
+    mutablePlatform.isMacOS = originalIsMacOS;
+  });
+
+  it('invokes agy with print/model/print-timeout/sandbox and the prompt on stdin', async () => {
+    // The obsidian test mock sets Platform.isMacOS = true, so --sandbox is passed.
     let capturedArgs: string[] = [];
     let capturedOptions: { cwd?: string; env?: NodeJS.ProcessEnv; stdinText?: string } | undefined;
-    let settingsPath = '';
 
     runCliProcess.mockImplementation((_command, args, options) => {
       capturedArgs = args;
       capturedOptions = options;
-      settingsPath = options?.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH || '';
-
-      expect(settingsPath).toBeTruthy();
-
       return {
         child: { kill: jest.fn() },
         // agy emits plain text — the response is the trimmed stdout.
@@ -67,13 +67,19 @@ describe('GoogleGeminiCliAdapter (agy plain-text contract)', () => {
       systemPrompt: 'Use the MCP tools if needed.'
     });
 
-    // Default model slug maps fail-closed to its agy human label; no --output-format flag.
+    // Default model slug maps fail-closed to its agy human label; no config write,
+    // no --output-format, no --dangerously-skip-permissions. --print-timeout is a
+    // Go-duration string (NOT ms). --sandbox is present on darwin.
     expect(capturedArgs).toEqual([
-      '--prompt',
-      '',
+      '--print',
       '--model',
-      'Gemini 3.5 Flash (Medium)'
+      'Gemini 3.5 Flash (Medium)',
+      '--print-timeout',
+      '60s',
+      '--sandbox'
     ]);
+    expect(capturedArgs).not.toContain('--dangerously-skip-permissions');
+    expect(capturedOptions?.cwd).toBe('/mock/vault');
     expect(capturedOptions?.stdinText).toBe(
       'System instructions:\nUse the MCP tools if needed.\n\nUser request:\nSummarize the regression'
     );
@@ -84,8 +90,32 @@ describe('GoogleGeminiCliAdapter (agy plain-text contract)', () => {
       completionTokens: 0,
       totalTokens: 0
     });
+  });
 
-    await expect(fsPromises.access(settingsPath)).rejects.toThrow();
+  it('omits --sandbox on non-darwin platforms (platform guard)', async () => {
+    mutablePlatform.isMacOS = false;
+    let capturedArgs: string[] = [];
+
+    runCliProcess.mockImplementation((_command, args) => {
+      capturedArgs = args;
+      return {
+        child: { kill: jest.fn() },
+        result: Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 })
+      };
+    });
+
+    await adapter.generateUncached('Anything');
+
+    expect(capturedArgs).not.toContain('--sandbox');
+    // The security floor (print/model/print-timeout, no skip-perms) still holds.
+    expect(capturedArgs).toEqual([
+      '--print',
+      '--model',
+      'Gemini 3.5 Flash (Medium)',
+      '--print-timeout',
+      '60s'
+    ]);
+    expect(capturedArgs).not.toContain('--dangerously-skip-permissions');
   });
 
   it('returns the trimmed stdout verbatim as plain text (no JSON parsing)', async () => {

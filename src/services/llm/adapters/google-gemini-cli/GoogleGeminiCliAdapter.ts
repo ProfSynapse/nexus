@@ -24,15 +24,23 @@ import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
 import { normalizeModelToAgyLabel } from './geminiCliModelNormalize';
 import {
   buildGeminiCliEnv,
-  buildGeminiCliSystemSettings,
   resolveGeminiCliRuntime
 } from '../../../../utils/geminiCli';
 
-type GeminiCliDesktopModuleMap = {
-  'fs/promises': typeof import('fs/promises');
-  os: typeof import('os');
-  path: typeof import('path');
-};
+/**
+ * agy `--print-timeout` accepts a Go-duration string (e.g. `60s`, `5m0s`), NOT
+ * milliseconds — a raw integer is rejected ("missing unit in duration").
+ *
+ * SECURITY-LOAD-BEARING: this is the bounded kill-switch for a hung headless
+ * tool-permission block. We never pass `--dangerously-skip-permissions`, so a
+ * built-in-tool call would otherwise wait for an interactive approval that can
+ * never arrive in print mode; this branch also has no inactivity watchdog, so
+ * `--print-timeout` is the ONLY upper bound on a stuck process. Do NOT raise it
+ * without restoring an idle/inactivity watchdog (e.g. after rebasing onto the
+ * PR #276 watchdog). Trade-off: 60s may cut very-long thinking-model
+ * completions on this interim branch — revisit the value once the watchdog lands.
+ */
+const AGY_PRINT_TIMEOUT = '60s';
 
 export class GoogleGeminiCliAdapter extends BaseAdapter {
   readonly name = 'google-gemini-cli';
@@ -47,51 +55,45 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const runtime = resolveGeminiCliRuntime(this.vault);
     if (!runtime.geminiPath) {
-      throw new LLMProviderError('Gemini CLI was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
+      throw new LLMProviderError('Antigravity CLI (agy) was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
     }
     if (!runtime.nodePath) {
       throw new LLMProviderError('Node.js was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
-    }
-    if (!runtime.connectorPath) {
-      throw new LLMProviderError('Nexus connector.js was not found for this vault.', this.name, 'CONFIGURATION_ERROR');
     }
     if (!runtime.vaultPath) {
       throw new LLMProviderError('Vault filesystem path is unavailable.', this.name, 'CONFIGURATION_ERROR');
     }
 
-    const fsPromises = this.loadDesktopModule('fs/promises');
-    const osMod = this.loadDesktopModule('os');
-    const pathMod = this.loadDesktopModule('path');
+    const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
+    // Fail-closed model resolution: agy --model silently defaults on an unknown
+    // value, so reject anything not in the allowlist before spawning.
+    const agyModel = normalizeModelToAgyLabel(options?.model || this.currentModel);
 
-    const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-gemini-cli-'));
-    const settingsPath = pathMod.join(tempDir, 'system-settings.json');
+    // Scenario A invocation: no config write, no --dangerously-skip-permissions.
+    // Print mode (--print) with the prompt delivered on stdin (stdinText below);
+    // --print-timeout is the bounded security kill-switch; --sandbox is additive
+    // defense-in-depth, added only where the sandbox backend is verified
+    // (see shouldUseSandbox).
+    const args = [
+      '--print',
+      '--model',
+      agyModel,
+      '--print-timeout',
+      AGY_PRINT_TIMEOUT
+    ];
+    if (this.shouldUseSandbox()) {
+      args.push('--sandbox');
+    }
+
+    const handle = runCliProcess(runtime.geminiPath, args, {
+      cwd: runtime.vaultPath,
+      env: buildGeminiCliEnv(runtime.nodePath),
+      stdinText: combinedPrompt
+    });
+    this.activeProcess = handle.child;
 
     try {
-      await fsPromises.writeFile(
-        settingsPath,
-        JSON.stringify(buildGeminiCliSystemSettings(runtime), null, 2),
-        'utf8'
-      );
-
-      const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
-      // Fail-closed model resolution: agy --model silently defaults on an unknown
-      // value, so reject anything not in the allowlist before spawning.
-      const agyModel = normalizeModelToAgyLabel(options?.model || this.currentModel);
-      const args = [
-        '--prompt',
-        '',
-        '--model',
-        agyModel
-      ];
-
-      const handle = runCliProcess(runtime.geminiPath, args, {
-        cwd: runtime.vaultPath,
-        env: buildGeminiCliEnv(settingsPath, runtime.nodePath),
-        stdinText: combinedPrompt
-      });
-      this.activeProcess = handle.child;
       const result = await handle.result;
-      this.activeProcess = null;
 
       if (result.exitCode !== 0) {
         throw this.mapCliProcessFailure(result);
@@ -120,7 +122,6 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       );
     } finally {
       this.activeProcess = null;
-      await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -170,22 +171,21 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     }
   }
 
-  private loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
-    moduleName: TModuleName
-  ): GeminiCliDesktopModuleMap[TModuleName] {
-    if (!Platform.isDesktop) {
-      throw new Error(`${moduleName} is only available on desktop.`);
-    }
-
-    const maybeRequire = (window.activeWindow as Window & {
-      require?: (moduleId: string) => unknown;
-    }).require;
-
-    if (typeof maybeRequire !== 'function') {
-      throw new Error('Desktop module loader is unavailable.');
-    }
-
-    return maybeRequire(moduleName) as GeminiCliDesktopModuleMap[TModuleName];
+  /**
+   * Decide whether to pass agy's `--sandbox` flag.
+   *
+   * --sandbox is additive defense-in-depth (NOT the security foundation — that
+   * is the no-MCP + no-skip-perms posture, which holds on every platform).
+   *
+   * On macOS it is verified to use the OS-native sandbox-exec/Seatbelt backend
+   * (Docker-free, headless-safe). On other platforms the sandbox backend is
+   * UNVERIFIED — upstream gemini-cli historically used gVisor/Docker on Linux,
+   * which could fail (no daemon) and break an otherwise-valid completion. So we
+   * pass --sandbox ONLY on darwin and fall back to the no-MCP + no-skip-perms
+   * floor elsewhere. Revisit per-platform once non-darwin backends are verified.
+   */
+  private shouldUseSandbox(): boolean {
+    return Platform.isMacOS === true;
   }
 
   private buildPrompt(prompt: string, systemPrompt?: string): string {
