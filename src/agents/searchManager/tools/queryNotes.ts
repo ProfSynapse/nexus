@@ -34,8 +34,12 @@ export interface QueryNotesParams extends CommonParameters {
 const DEFAULT_MAX_ROWS = 500;
 const HARD_MAX_ROWS = 5000;
 
-/** Statements other than a leading SELECT/WITH, or these keywords anywhere, are rejected. */
-const FORBIDDEN = /\b(insert|update|delete|drop|alter|create|attach|detach|pragma|reindex|vacuum|replace|truncate|grant|revoke|begin|commit|rollback)\b/i;
+/**
+ * Statements other than a leading SELECT/WITH, or these keywords anywhere, are
+ * rejected. `replace` is matched only as the `REPLACE INTO` statement form — a
+ * bare `replace(` is SQLite's string function and must stay allowed.
+ */
+const FORBIDDEN = /\b(insert|update|delete|drop|alter|create|attach|detach|pragma|reindex|vacuum|replace\s+into|truncate|grant|revoke|begin|commit|rollback)\b/i;
 
 export class QueryNotesTool extends BaseTool<QueryNotesParams, CommonResult> {
   constructor(private readonly sqliteResolver: SqliteResolver) {
@@ -69,8 +73,21 @@ export class QueryNotesTool extends BaseTool<QueryNotesParams, CommonResult> {
       }
 
       const maxRows = clampRows(params.maxRows);
-      const bind = Array.isArray(params.params) ? params.params : [];
-      const all = await sqlite.query<Record<string, unknown>>(sql, bind);
+      // SQLite oo1 does not bind JS booleans — coerce to 1/0 to match its
+      // truthiness convention (the rest pass through unchanged).
+      const rawBind = Array.isArray(params.params) ? params.params : [];
+      const bind = rawBind.map((v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v));
+
+      // Wrap the (validated) query in an outer LIMIT so SQLite stops pulling
+      // rows once the cap is reached instead of materializing the whole result
+      // first. This is the real guard against a runaway read — an unbounded
+      // recursive CTE or a cartesian join — freezing the synchronous,
+      // main-thread WASM engine. maxRows+1 still lets us detect truncation.
+      // Strip a trailing `;` (already validated as a single statement) so it
+      // nests as a subquery.
+      const inner = sql.replace(/;\s*$/, '');
+      const bounded = `SELECT * FROM (${inner}) LIMIT ?`;
+      const all = await sqlite.query<Record<string, unknown>>(bounded, [...bind, maxRows + 1]);
       const rows = all.slice(0, maxRows);
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
 
@@ -93,15 +110,24 @@ export class QueryNotesTool extends BaseTool<QueryNotesParams, CommonResult> {
   private async describe(sqlite: SQLiteCacheManager): Promise<Record<string, unknown>> {
     let noteCount = 0;
     let keys: string[] = [];
+    let built = true;
     try {
       noteCount = (await sqlite.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM notes', []))?.n ?? 0;
       const rows = await sqlite.query<{ key: string }>('SELECT DISTINCT key FROM note_properties ORDER BY key LIMIT 500', []);
       keys = rows.map((r) => r.key);
     } catch {
-      // tables not built yet — return the static shape with an empty key set
+      // Tables not materialized yet — distinguish "not built" from "built but
+      // empty" so callers don't read an empty index as a built one.
+      built = false;
     }
 
     return {
+      // `built:false` ⇒ the index tables do not exist yet (build still running or
+      // skipped); `built:true` with noteCount 0 ⇒ a genuinely empty vault.
+      built,
+      status: built
+        ? (noteCount > 0 ? 'ready' : 'empty')
+        : 'building (index not materialized yet — retry shortly)',
       tables: {
         notes: ['id', 'path', 'basename', 'folder', 'ext', 'title', 'ctime', 'mtime', 'size', 'tags_json', 'links_json', 'frontmatter_json', 'content_hash'],
         note_properties: ['note_id', 'key', 'key_raw', 'value_text', 'value_num', 'value_type', 'position'],
@@ -126,6 +152,7 @@ export class QueryNotesTool extends BaseTool<QueryNotesParams, CommonResult> {
         'and note_properties(note_id, key, key_raw, value_text, value_num, value_type, position). ' +
         'Filter arbitrary frontmatter via note_properties (indexed); dates/numbers use value_num (dates = epoch ms); ' +
         "project values via json_extract(frontmatter_json, '$.key'). Only a single SELECT/WITH is allowed. " +
+        'Rows are keyed by column name, so alias duplicate/computed columns (AS) to avoid collisions. ' +
         'Pass describe=true to see live columns + the distinct property keys present.',
       properties: {
         sql: {
@@ -179,7 +206,9 @@ export function assertReadOnlySelect(sql: string): { ok: true } | { ok: false; e
   if (normalized.includes(';')) {
     return { ok: false, error: 'Only a single SQL statement is allowed.' };
   }
-  if (!/^(select|with)\b/i.test(normalized)) {
+  // Allow a leading `(` so a parenthesized compound read — `(SELECT …) UNION
+  // (SELECT …)` — is not mistaken for a non-SELECT leader.
+  if (!/^\(*\s*(select|with)\b/i.test(normalized)) {
     return { ok: false, error: 'Only read-only SELECT/WITH queries are allowed.' };
   }
   if (FORBIDDEN.test(normalized)) {

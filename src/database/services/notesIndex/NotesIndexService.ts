@@ -52,7 +52,11 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder);
 CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime);
 CREATE TABLE IF NOT EXISTS note_properties (
-  note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  -- FK enforcement is OFF on the shared connection (SQLite's per-connection
+  -- default), so this relationship is documented but NOT cascaded. deleteNote()
+  -- removes property rows explicitly before the note row, so no orphans result;
+  -- enabling cascade here would be inert and misleading.
+  note_id INTEGER NOT NULL REFERENCES notes(id),
   key TEXT NOT NULL,
   key_raw TEXT NOT NULL,
   value_text TEXT,

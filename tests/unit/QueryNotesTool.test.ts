@@ -57,6 +57,16 @@ describe('assertReadOnlySelect', () => {
   it('still blocks a DML keyword outside any literal (WITH ... DELETE)', () => {
     expect(assertReadOnlySelect('WITH x AS (SELECT 1) DELETE FROM notes').ok).toBe(false);
   });
+
+  it('allows the replace() string function but blocks REPLACE INTO', () => {
+    expect(assertReadOnlySelect("SELECT replace(title, 'a', 'b') FROM notes").ok).toBe(true);
+    expect(assertReadOnlySelect('REPLACE INTO notes VALUES (1)').ok).toBe(false);
+    expect(assertReadOnlySelect("SELECT 1 WHERE 1=1; replace into notes values(1)").ok).toBe(false);
+  });
+
+  it('allows a parenthesized compound read', () => {
+    expect(assertReadOnlySelect('(SELECT 1) UNION (SELECT 2)').ok).toBe(true);
+  });
 });
 
 describe('QueryNotesTool.execute', () => {
@@ -104,16 +114,54 @@ describe('QueryNotesTool.execute', () => {
     expect(data.truncated).toBe(true);
   });
 
+  it('wraps the query in an outer LIMIT (maxRows+1) to bound runaway reads', async () => {
+    const mock: MockSqlite = { query: jest.fn().mockResolvedValue([]), queryOne: jest.fn() };
+    await run(makeTool(mock), { sql: 'SELECT * FROM notes', maxRows: 10 });
+    const [sqlArg, bindArg] = mock.query.mock.calls[0];
+    expect(sqlArg).toMatch(/^SELECT \* FROM \(/i);
+    expect(sqlArg).toMatch(/\) LIMIT \?$/);
+    expect(bindArg).toEqual([11]); // maxRows + 1
+  });
+
+  it('strips a trailing semicolon before nesting the query', async () => {
+    const mock: MockSqlite = { query: jest.fn().mockResolvedValue([]), queryOne: jest.fn() };
+    await run(makeTool(mock), { sql: 'SELECT 1;' });
+    const [sqlArg] = mock.query.mock.calls[0];
+    expect(sqlArg).toBe('SELECT * FROM (SELECT 1) LIMIT ?');
+  });
+
+  it('coerces boolean bind params to 1/0 and appends the row cap', async () => {
+    const mock: MockSqlite = { query: jest.fn().mockResolvedValue([]), queryOne: jest.fn() };
+    await run(makeTool(mock), { sql: 'SELECT * FROM notes WHERE a = ? AND b = ?', params: [true, false] });
+    const bindArg = mock.query.mock.calls[0][1];
+    expect(bindArg).toEqual([1, 0, 501]); // booleans coerced, default maxRows(500)+1
+  });
+
   it('describe returns schema, note count, and distinct keys', async () => {
     const mock: MockSqlite = {
       query: jest.fn().mockResolvedValue([{ key: 'due' }, { key: 'status' }]),
       queryOne: jest.fn().mockResolvedValue({ n: 7 }),
     };
     const res = await run(makeTool(mock), { describe: true });
-    const schema = res.data as { noteCount: number; distinctKeys: string[] };
+    const schema = res.data as { noteCount: number; distinctKeys: string[]; built: boolean; status: string };
     expect(res.success).toBe(true);
     expect(schema.noteCount).toBe(7);
     expect(schema.distinctKeys).toEqual(['due', 'status']);
+    expect(schema.built).toBe(true);
+    expect(schema.status).toBe('ready');
+  });
+
+  it('describe reports built:false when the index tables do not exist yet', async () => {
+    const mock: MockSqlite = {
+      query: jest.fn().mockRejectedValue(new Error('no such table: notes')),
+      queryOne: jest.fn().mockRejectedValue(new Error('no such table: notes')),
+    };
+    const res = await run(makeTool(mock), { describe: true });
+    const schema = res.data as { built: boolean; status: string; noteCount: number };
+    expect(res.success).toBe(true);
+    expect(schema.built).toBe(false);
+    expect(schema.status).toMatch(/building/i);
+    expect(schema.noteCount).toBe(0);
   });
 
   it('adds a hint when the table is not built yet', async () => {

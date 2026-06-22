@@ -178,6 +178,15 @@ export class ServiceRegistrar {
             await this.context.serviceManager.getService('toolCallTraceService');
             await this.context.serviceManager.getService('conversationService');
 
+            // Notes query index — fire-and-forget so it never gates boot. Nothing
+            // depends on it, and it is NOT reached by any other getService() path,
+            // so it must be explicitly kicked off here or it never instantiates
+            // (and its `notes`/`note_properties` tables never get created). The
+            // service's create() backgrounds the actual vault walk internally.
+            void this.context.serviceManager.getService('notesIndex').catch((error) => {
+                console.error('[ServiceRegistrar] notesIndex initialization failed:', error);
+            });
+
             // ChatService initialization deferred - will be called after agents are registered
         } catch (error) {
             console.error('[ServiceRegistrar] Business service initialization failed:', error);
