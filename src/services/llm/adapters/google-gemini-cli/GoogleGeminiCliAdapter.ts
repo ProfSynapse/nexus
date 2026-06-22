@@ -144,7 +144,10 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       // agy print mode emits plain text only — there is no structured JSON output mode.
       supportsJSON: false,
       supportsImages: true,
-      supportsFunctions: true,
+      // agy is text-completion only — no tool/function calling (investigation
+      // #62/#64/#66). Matches the now-honest ModelSpecs; gating is via the
+      // provider seam (isTextOnlyProvider), not this provider-level flag.
+      supportsFunctions: false,
       supportsThinking: true,
       maxContextWindow: 1048576,
       supportedFeatures: ['gemini-cli', 'mcp', 'google-login']

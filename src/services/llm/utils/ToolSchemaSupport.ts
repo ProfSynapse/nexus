@@ -51,6 +51,11 @@ export function isTextOnlyProvider(providerId?: string | null): boolean {
 
 /**
  * Perplexity is intentionally limited to text/search behavior in Nexus chat.
+ *
+ * Deliberate narrow predicate, kept intentionally: it is currently consumer-less
+ * in src/ (the text-only seam moved to isTextOnlyProvider), but is retained as a
+ * Perplexity-specific check for any future Perplexity-only branch — do NOT
+ * broaden it to other providers, and do NOT delete it.
  */
 export function isPerplexityProvider(providerId?: string | null): boolean {
   return providerId === 'perplexity';
