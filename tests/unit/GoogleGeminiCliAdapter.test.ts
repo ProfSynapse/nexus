@@ -162,6 +162,24 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
     expect(response.text).toBe('OK');
   });
 
+  it('preserves internal newlines in a multi-paragraph response (trim strips only the edges)', async () => {
+    // The common real agy response is multi-line/multi-paragraph. parseAgyOutput
+    // is stdout.trim(), so leading/trailing whitespace is stripped but INTERNAL
+    // newlines (incl. the blank line between paragraphs) must be preserved verbatim.
+    runCliProcess.mockReturnValue({
+      child: { kill: jest.fn() },
+      result: Promise.resolve({
+        stdout: '\n  Line one.\n\nLine two.\n  ',
+        stderr: '',
+        exitCode: 0
+      })
+    });
+
+    const response = await adapter.generateUncached('Write two short paragraphs.');
+
+    expect(response.text).toBe('Line one.\n\nLine two.');
+  });
+
   it('throws a PROVIDER_ERROR on empty/whitespace-only output', async () => {
     runCliProcess.mockReturnValue({
       child: { kill: jest.fn() },

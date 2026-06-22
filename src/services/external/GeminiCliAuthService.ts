@@ -32,7 +32,7 @@ export class GeminiCliAuthService {
                 loggedIn: false,
                 authMethod: 'none',
                 geminiPath: null,
-                error: 'Gemini CLI is only available on desktop.'
+                error: 'Antigravity CLI (agy) is only available on desktop.'
             };
         }
 
@@ -43,7 +43,7 @@ export class GeminiCliAuthService {
                 loggedIn: false,
                 authMethod: 'none',
                 geminiPath: null,
-                error: 'Gemini CLI was not found on PATH. Install it from https://github.com/google-gemini/gemini-cli'
+                error: 'Antigravity CLI (agy) was not found on PATH. Install the Antigravity CLI, then run `agy` once in your terminal to complete Google browser sign-in. (There is no `agy auth` command.)'
             };
         }
 
@@ -55,7 +55,7 @@ export class GeminiCliAuthService {
             geminiPath: runtime.geminiPath,
             error: probe.exitCode === 0
                 ? undefined
-                : 'Gemini CLI is not authenticated. Run `gemini` in your terminal and choose "Login with Google" to authenticate.'
+                : 'Antigravity CLI (agy) is not authenticated. Run `agy` once in your terminal to complete Google browser sign-in. (There is no `agy auth` command.)'
         };
     }
 

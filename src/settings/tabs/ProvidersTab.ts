@@ -111,7 +111,9 @@ export class ProvidersTab {
         'google-gemini-cli': {
             name: 'Antigravity CLI',
             keyFormat: 'Local Antigravity CLI Google login required',
-            signupUrl: 'https://github.com/google-gemini/gemini-cli',
+            // TODO: set to the authoritative Antigravity CLI docs/install URL once published (TBD).
+            // Dropped the deprecated google-gemini/gemini-cli link rather than guess an agy URL.
+            signupUrl: '',
             category: 'cloud'
         },
         mistral: {
@@ -667,7 +669,7 @@ export class ProvidersTab {
             secondaryOAuthProvider = {
                 providerId: 'google-gemini-cli',
                 providerLabel: 'Antigravity CLI',
-                description: 'Use Gemini models through the desktop CLI. Authenticate by running `gemini` in your terminal first.',
+                description: 'Use Gemini models through the Antigravity CLI. Install the Antigravity CLI, then run `agy` once in your terminal to complete Google browser sign-in. (There is no `agy auth` command.)',
                 config: { ...geminiCliConfig },
                 oauthConfig: {
                     providerLabel: 'Antigravity CLI',
@@ -677,7 +679,7 @@ export class ProvidersTab {
                     await this.persistSecondaryProviderConfig(settings, 'google-gemini-cli', updatedGeminiCliConfig);
                 },
                 statusOnly: true,
-                statusHint: 'run `gemini auth` in your terminal',
+                statusHint: 'run `agy` once in your terminal to sign in (no `agy auth` command)',
             };
         }
 

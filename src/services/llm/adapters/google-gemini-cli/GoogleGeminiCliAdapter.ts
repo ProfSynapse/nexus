@@ -210,14 +210,14 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   private mapCliProcessFailure(result: CliProcessResult): LLMProviderError {
     if (result.errorCode === 'ENAMETOOLONG' || result.errorCode === 'E2BIG') {
       return new LLMProviderError(
-        'Gemini CLI could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
+        'Antigravity CLI (agy) could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
         this.name,
         'REQUEST_TOO_LARGE'
       );
     }
 
     return new LLMProviderError(
-      result.stderr.trim() || result.stdout.trim() || `Gemini CLI exited with status ${result.exitCode ?? 'unknown'}`,
+      result.stderr.trim() || result.stdout.trim() || `Antigravity CLI (agy) exited with status ${result.exitCode ?? 'unknown'}`,
       this.name,
       result.exitCode === null ? 'CONFIGURATION_ERROR' : 'PROVIDER_ERROR'
     );
