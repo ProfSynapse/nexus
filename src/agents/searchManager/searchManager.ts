@@ -3,8 +3,10 @@ import { BaseAgent } from '../baseAgent';
 import {
   SearchContentTool,
   SearchDirectoryTool,
-  SearchMemoryTool
+  SearchMemoryTool,
+  QueryNotesTool
 } from './tools';
+import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import { MemorySettings, DEFAULT_MEMORY_SETTINGS } from '../../types';
 import { MemoryService } from "../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -162,6 +164,22 @@ export class SearchManagerAgent extends BaseAgent {
         this.storageAdapterResolver || undefined
       ),
     });
+
+    this.registerLazyTool({
+      slug: 'queryNotes', name: 'Query Notes',
+      description: 'Run a read-only SQL SELECT over the notes index — your vault\'s notes + frontmatter as a queryable database. Filter by arbitrary frontmatter properties, compute aggregates, and sort/group, all in SQL (SQLite does the work; there is no separate query language).\n\nTABLES:\n- notes(n): id, path, basename, folder, ext, title, ctime, mtime, size, tags_json, links_json, frontmatter_json (ctime/mtime are epoch ms).\n- note_properties(p): note_id, key, key_raw, value_text, value_num, value_type, position — one row per frontmatter property (per list element). This is the INDEXED filter path.\n\nPATTERNS:\n- Filter by a property: ... WHERE EXISTS (SELECT 1 FROM note_properties p WHERE p.note_id = n.id AND p.key = \'status\' AND p.value_text = \'active\').\n- Dates/numbers: compare p.value_num (dates stored as epoch ms).\n- Project a value: SELECT json_extract(n.frontmatter_json, \'$.status\') AS status FROM notes n.\n\nOnly a single SELECT/WITH statement is allowed. Pass describe=true to get live columns + the distinct property keys present in the vault.',
+      version: '1.0.0',
+      factory: () => new QueryNotesTool(
+        () => this.resolveSqliteCache()
+      ),
+    });
+  }
+
+  /** Resolve the shared SQLite cache from the storage adapter, for QueryNotesTool. */
+  private resolveSqliteCache(): SQLiteCacheManager | undefined {
+    const adapter = this.storageAdapterResolver?.();
+    const provider = adapter as unknown as { getSqliteCache?: () => SQLiteCacheManager } | undefined;
+    return typeof provider?.getSqliteCache === 'function' ? provider.getSqliteCache() : undefined;
   }
 
   private setStorageAdapterResolver(storageAdapter?: StorageAdapterResolver | null): void {
