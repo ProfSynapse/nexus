@@ -46,7 +46,7 @@ function loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
 }
 
 export function resolveGeminiCliRuntime(vault: Vault): GeminiCliRuntime {
-    const geminiPath = resolveDesktopBinaryPath('gemini');
+    const geminiPath = resolveDesktopBinaryPath('agy');
     const nodePath = resolveDesktopBinaryPath('node');
     const vaultPath = getVaultBasePath(vault);
 

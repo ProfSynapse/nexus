@@ -1,8 +1,10 @@
 /**
  * src/services/llm/adapters/google-gemini-cli/GoogleGeminiCliAdapter.ts
  *
- * LLM adapter for Google Gemini CLI. Runs the CLI as a child process in
- * non-streaming (JSON output) mode and parses the result.
+ * LLM adapter for the Antigravity CLI (`agy`), wired into the legacy
+ * `google-gemini-cli` provider slot. Runs the CLI as a child process in
+ * non-streaming print mode. agy emits PLAIN TEXT (not JSON), so the response is
+ * the trimmed stdout; no structured token usage is available from the CLI.
  */
 import { Platform, Vault } from 'obsidian';
 import type { DesktopChildProcess } from '../../../../utils/desktopProcess';
@@ -14,12 +16,12 @@ import {
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
-  LLMProviderError,
-  TokenUsage
+  LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
 import { CliProcessResult, runCliProcess } from '../../../../utils/cliProcessRunner';
 import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
+import { normalizeModelToAgyLabel } from './geminiCliModelNormalize';
 import {
   buildGeminiCliEnv,
   buildGeminiCliSystemSettings,
@@ -31,21 +33,6 @@ type GeminiCliDesktopModuleMap = {
   os: typeof import('os');
   path: typeof import('path');
 };
-
-interface GeminiCliJsonResponse {
-  response?: string;
-  text?: string;
-  content?: string;
-  output?: string;
-  result?: {
-    text?: string;
-  };
-  stats?: {
-    models?: Array<Record<string, unknown>>;
-    tools?: unknown;
-  };
-  error?: string | { message?: string };
-}
 
 export class GoogleGeminiCliAdapter extends BaseAdapter {
   readonly name = 'google-gemini-cli';
@@ -87,13 +74,14 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       );
 
       const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
+      // Fail-closed model resolution: agy --model silently defaults on an unknown
+      // value, so reject anything not in the allowlist before spawning.
+      const agyModel = normalizeModelToAgyLabel(options?.model || this.currentModel);
       const args = [
         '--prompt',
         '',
         '--model',
-        options?.model || this.currentModel,
-        '--output-format',
-        'json'
+        agyModel
       ];
 
       const handle = runCliProcess(runtime.geminiPath, args, {
@@ -109,33 +97,24 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
         throw this.mapCliProcessFailure(result);
       }
 
-      const parsed = this.parseOutput(result.stdout);
-      if (!parsed) {
+      // agy print mode emits plain text — the response is the trimmed stdout.
+      const text = this.parseAgyOutput(result.stdout);
+      if (!text) {
         throw new LLMProviderError(
-          'Gemini CLI returned an unreadable JSON response.',
+          'Antigravity CLI returned an empty response.',
           this.name,
           'PROVIDER_ERROR'
         );
       }
 
-      const errorMessage = typeof parsed.error === 'string'
-        ? parsed.error
-        : parsed.error?.message;
-      if (errorMessage) {
-        throw new LLMProviderError(errorMessage, this.name, 'PROVIDER_ERROR');
-      }
-
-      const text = this.extractText(parsed);
-      const usage = this.extractUsageFromStats(parsed);
-
+      // agy does not report token usage; omit it (buildLLMResponse defaults to zero).
       return this.buildLLMResponse(
         text,
-        options?.model || this.currentModel,
-        usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        agyModel,
+        undefined,
         {
           localCli: true,
-          outputFormat: 'json',
-          toolSummary: parsed.stats?.tools
+          outputFormat: 'text'
         },
         'stop'
       );
@@ -161,7 +140,8 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: false,
-      supportsJSON: true,
+      // agy print mode emits plain text only — there is no structured JSON output mode.
+      supportsJSON: false,
       supportsImages: true,
       supportsFunctions: true,
       supportsThinking: true,
@@ -216,122 +196,15 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     return `System instructions:\n${systemPrompt.trim()}\n\nUser request:\n${prompt}`;
   }
 
-  private parseOutput(stdout: string): GeminiCliJsonResponse | null {
-    const trimmed = stdout.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(trimmed) as GeminiCliJsonResponse;
-    } catch {
-      const lastJsonLine = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .reverse()
-        .find((line) => line.startsWith('{') && line.endsWith('}'));
-
-      if (!lastJsonLine) {
-        return this.parseTrailingJsonBlock(trimmed);
-      }
-
-      try {
-        return JSON.parse(lastJsonLine) as GeminiCliJsonResponse;
-      } catch {
-        return this.parseTrailingJsonBlock(trimmed);
-      }
-    }
-  }
-
-  private extractText(parsed: GeminiCliJsonResponse): string {
-    if (typeof parsed.response === 'string') return parsed.response;
-    if (typeof parsed.text === 'string') return parsed.text;
-    if (typeof parsed.content === 'string') return parsed.content;
-    if (typeof parsed.output === 'string') return parsed.output;
-    if (typeof parsed.result?.text === 'string') return parsed.result.text;
-    return '';
-  }
-
-  private extractUsageFromStats(parsed: GeminiCliJsonResponse): TokenUsage | undefined {
-    const modelStats = this.extractModelStats(parsed.stats?.models);
-    if (!modelStats || typeof modelStats !== 'object') {
-      return undefined;
-    }
-
-    const tokenStats = this.extractTokenStats(modelStats);
-    const promptTokens = this.readNumber(tokenStats, ['prompt', 'promptTokens', 'inputTokens']);
-    const completionTokens = this.readNumber(tokenStats, ['candidates', 'candidatesTokens', 'outputTokens', 'completionTokens']);
-    const totalTokens = this.readNumber(tokenStats, ['total', 'totalTokens']);
-
-    if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
-      return undefined;
-    }
-
-    return {
-      promptTokens: promptTokens || 0,
-      completionTokens: completionTokens || 0,
-      totalTokens: totalTokens || ((promptTokens || 0) + (completionTokens || 0))
-    };
-  }
-
-  private readNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
-    for (const key of keys) {
-      const value = record[key];
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-      }
-    }
-    return undefined;
-  }
-
-  private parseTrailingJsonBlock(output: string): GeminiCliJsonResponse | null {
-    const lines = output
-      .split(/\r?\n/)
-      .map((line) => line.trimEnd())
-      .filter(Boolean);
-
-    for (let index = lines.length - 1; index >= 0; index--) {
-      if (lines[index].trim() !== '{') {
-        continue;
-      }
-
-      try {
-        return JSON.parse(lines.slice(index).join('\n')) as GeminiCliJsonResponse;
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
-  private extractModelStats(
-    modelStats: Record<string, unknown>[] | Record<string, unknown> | undefined
-  ): Record<string, unknown> | undefined {
-    if (Array.isArray(modelStats)) {
-      const firstEntry = modelStats[0];
-      return firstEntry && typeof firstEntry === 'object' ? firstEntry : undefined;
-    }
-
-    if (!modelStats || typeof modelStats !== 'object') {
-      return undefined;
-    }
-
-    const firstEntry = Object.values(modelStats).find(
-      (value) => value && typeof value === 'object' && !Array.isArray(value)
-    );
-
-    return firstEntry ? firstEntry as Record<string, unknown> : undefined;
-  }
-
-  private extractTokenStats(modelStats: Record<string, unknown>): Record<string, unknown> {
-    const tokens = modelStats.tokens;
-    if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-      return tokens as Record<string, unknown>;
-    }
-
-    return modelStats;
+  /**
+   * Extract the assistant response from agy print-mode stdout.
+   *
+   * agy `--prompt` emits PLAIN TEXT (no JSON, no banner/footer noise), so the
+   * response is simply the trimmed stdout. Returns an empty string for
+   * empty/whitespace-only output; the caller treats that as a provider error.
+   */
+  private parseAgyOutput(stdout: string): string {
+    return stdout.trim();
   }
 
   private mapCliProcessFailure(result: CliProcessResult): LLMProviderError {
