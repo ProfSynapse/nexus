@@ -33,6 +33,14 @@ import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { logger } from '../../../utils/logger';
 import { formatTaskRef, taskRefToIdPrefix } from '../utils/taskRefs';
 
+/**
+ * Page size used when draining a paginated repository query to build a
+ * full-workspace snapshot. Matches BaseRepository's hard cap
+ * (Math.min(pageSize ?? 25, 200)) so each drained page is the largest the
+ * repository will actually return — minimizing the number of round-trips.
+ */
+const SNAPSHOT_PAGE_SIZE = 200;
+
 export interface TaskBoardEventPayload {
   workspaceId: string;
   entity: 'task' | 'project';
@@ -754,6 +762,38 @@ export class TaskService {
     return this.taskRepo.getByLinkedNote(notePath);
   }
 
+  /**
+   * Drain every page of a paginated repository query into a single array.
+   *
+   * The underlying repository hard-caps pageSize at SNAPSHOT_PAGE_SIZE
+   * (BaseRepository.queryPaginated), so a single large-pageSize request
+   * silently returns only the first page while totalItems still reports the
+   * true count — the root cause of issue #272's undercount. This walks
+   * pages sequentially until hasNextPage is false so callers see the whole set.
+   *
+   * @param loadPage - loads a single 0-indexed page
+   * @returns all items across pages plus the repository's reported totalItems
+   */
+  private async collectAllPages<T>(
+    loadPage: (page: number) => Promise<PaginatedResult<T>>
+  ): Promise<{ items: T[]; totalItems: number }> {
+    const items: T[] = [];
+    let page = 0;
+    let totalItems = 0;
+
+    for (;;) {
+      const result = await loadPage(page);
+      if (page === 0) {
+        totalItems = result.totalItems;
+      }
+      items.push(...result.items);
+      if (!result.hasNextPage) {
+        return { items, totalItems };
+      }
+      page += 1;
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────
   // Workspace Summary (for loadWorkspace integration)
   // ────────────────────────────────────────────────────────────────
@@ -762,16 +802,40 @@ export class TaskService {
     await this.ensureQueryReady();
 
     workspaceId = await this.resolveWorkspaceId(workspaceId);
-    const projects = await this.projectRepo.getByWorkspace(workspaceId, { pageSize: 1000 });
-    const allTasks = await this.taskRepo.getByWorkspace(workspaceId, { pageSize: 10000 });
+    // Drain all pages — a single large-pageSize request would clamp to
+    // SNAPSHOT_PAGE_SIZE and silently truncate workspaces with >200 tasks
+    // (issue #272). projectSnapshot.totalItems / taskSnapshot.totalItems
+    // remain the true repository-reported totals.
+    const [projectSnapshot, taskSnapshot] = await Promise.all([
+      this.collectAllPages(page =>
+        this.projectRepo.getByWorkspace(workspaceId, { page, pageSize: SNAPSHOT_PAGE_SIZE })
+      ),
+      this.collectAllPages(page =>
+        this.taskRepo.getByWorkspace(workspaceId, { page, pageSize: SNAPSHOT_PAGE_SIZE })
+      )
+    ]);
+
+    const projects = projectSnapshot.items;
+    const allTasks = taskSnapshot.items;
+
+    // Visible projects exclude archived ones. A task is visible iff it has no
+    // owning project (orphan) OR its owning project is not archived. Filtering
+    // at the TASK level (rather than "if any projects exist, filter; else keep
+    // all") means: when every project is archived, only genuinely orphan tasks
+    // survive — archived-project tasks are never silently counted, and
+    // legitimate projectless tasks are never wrongly hidden (issue #272 MINOR-2).
+    const archivedProjectIds = new Set(
+      projects.filter(project => project.status === 'archived').map(project => project.id)
+    );
+    const visibleTasks = allTasks.filter(task => !archivedProjectIds.has(task.projectId));
 
     // Build project summaries
     const projectItems: ProjectSummary[] = [];
     const taskCountByProject = new Map<string, number>();
-    for (const task of allTasks.items) {
+    for (const task of visibleTasks) {
       taskCountByProject.set(task.projectId, (taskCountByProject.get(task.projectId) ?? 0) + 1);
     }
-    for (const project of projects.items) {
+    for (const project of projects) {
       if (project.status !== 'archived') {
         projectItems.push({
           id: project.id,
@@ -786,7 +850,7 @@ export class TaskService {
     const byStatus: Record<TaskStatus, number> = { todo: 0, in_progress: 0, done: 0, cancelled: 0 };
     let overdue = 0;
     const now = Date.now();
-    for (const task of allTasks.items) {
+    for (const task of visibleTasks) {
       byStatus[task.status] = (byStatus[task.status] ?? 0) + 1;
       if (task.dueDate && task.dueDate < now && task.status !== 'done' && task.status !== 'cancelled') {
         overdue++;
@@ -796,14 +860,14 @@ export class TaskService {
     // Compute next actions in-memory from already-fetched workspace tasks.
     // Fetch edges per active project in parallel (avoids N+1 sequential getNextActions calls
     // that each re-fetched all tasks + edges independently).
-    const activeProjects = projects.items.filter(p => p.status === 'active');
+    const activeProjects = projects.filter(p => p.status === 'active');
     const edgeArrays = await Promise.all(
       activeProjects.map(p => this.taskRepo.getAllDependencyEdges(p.id))
     );
     const allEdges: Edge[] = edgeArrays.flat();
 
     const activeProjectIds = new Set(activeProjects.map(p => p.id));
-    const activeTasks = allTasks.items.filter(t => activeProjectIds.has(t.projectId));
+    const activeTasks = visibleTasks.filter(t => activeProjectIds.has(t.projectId));
     const nodes: TaskNode[] = activeTasks.map(t => ({ id: t.id, status: t.status }));
     const readyNodes = this.dagService.getNextActions(nodes, allEdges);
     const readyIds = new Set(readyNodes.map(n => n.id));
@@ -818,7 +882,7 @@ export class TaskService {
       .slice(0, 5);
 
     // Recently completed (last 5)
-    const completed = allTasks.items
+    const completed = visibleTasks
       .filter(t => t.status === 'done' && t.completedAt)
       .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
       .slice(0, 5);
@@ -831,14 +895,22 @@ export class TaskService {
       this.attachNoteLinks(completed)
     ]);
 
+    // INTENTIONAL ASYMMETRY (issue #272, user-confirmed):
+    //  - projects.total stays the TRUE repository count (includes archived
+    //    projects) so any "N projects" header keeps showing the real total.
+    //  - tasks.total becomes the VISIBLE-only count (excludes archived-project
+    //    tasks) so it is consistent with byStatus/nextActions/recentlyCompleted,
+    //    which are all computed from visibleTasks. #272 is specifically a
+    //    task-undercount bug; flipping projects.total to visible-only would be
+    //    an unflagged scope expansion. Documented here + in the PR description.
     return {
       projects: {
-        total: projects.totalItems,
+        total: projectSnapshot.totalItems,
         active: projectItems.filter(p => p.status === 'active').length,
         items: projectItems
       },
       tasks: {
-        total: allTasks.totalItems,
+        total: visibleTasks.length,
         byStatus,
         overdue,
         nextActions: nextActionsWithLinks,

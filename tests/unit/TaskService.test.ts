@@ -44,14 +44,25 @@ function createMockTask(overrides: Partial<TaskMetadata> = {}): TaskMetadata {
   };
 }
 
-function paginatedResult<T>(items: T[]): PaginatedResult<T> {
+function paginatedResult<T>(
+  items: T[],
+  overrides: Partial<Omit<PaginatedResult<T>, 'items'>> = {}
+): PaginatedResult<T> {
+  const page = overrides.page ?? 0;
+  const pageSize = overrides.pageSize ?? 100;
+  const totalItems = overrides.totalItems ?? items.length;
+  const totalPages = overrides.totalPages ?? Math.ceil(totalItems / pageSize);
+
   return {
     items,
-    totalItems: items.length,
-    totalPages: 1,
-    currentPage: 1,
-    pageSize: 100,
-    hasNextPage: false
+    page,
+    pageSize,
+    totalItems,
+    totalPages,
+    hasNextPage: overrides.hasNextPage ?? page < totalPages - 1,
+    hasPreviousPage: overrides.hasPreviousPage ?? page > 0,
+    nextCursor: overrides.nextCursor,
+    previousCursor: overrides.previousCursor
   };
 }
 
@@ -1255,6 +1266,99 @@ describe('TaskService', () => {
       expect(result.projects.total).toBe(3);          // all projects including archived
       expect(result.projects.active).toBe(1);          // only status === 'active'
       expect(result.projects.items).toHaveLength(2);   // active + completed visible, archived excluded
+    });
+
+    it('should drain all task pages before computing counts and summaries (>200 truncation guard)', async () => {
+      const activeProject = createMockProject({ id: 'active-project', status: 'active' });
+      const archivedProject = createMockProject({ id: 'archived-project', status: 'archived' });
+      const archivedTask = createMockTask({
+        id: 'archived-task',
+        projectId: 'archived-project',
+        status: 'done',
+        completedAt: 1000
+      });
+      const activeTask = createMockTask({
+        id: 'active-task',
+        projectId: 'active-project',
+        status: 'todo',
+        priority: 'high',
+        created: 1
+      });
+
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult([activeProject, archivedProject]));
+      // Two task pages: the archived-project task lands on page 0, the active task
+      // on page 1. A consumer that stopped after page 0 would miss the active task
+      // entirely (issue #272) and would wrongly count the archived-project task.
+      taskRepo.getByWorkspace
+        .mockResolvedValueOnce(paginatedResult([archivedTask], {
+          page: 0,
+          pageSize: 200,
+          totalItems: 2,
+          totalPages: 2,
+          hasNextPage: true
+        }))
+        .mockResolvedValueOnce(paginatedResult([activeTask], {
+          page: 1,
+          pageSize: 200,
+          totalItems: 2,
+          totalPages: 2,
+          hasNextPage: false,
+          hasPreviousPage: true
+        }));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+
+      const result = await service.getWorkspaceSummary('ws-1');
+
+      // Both pages were drained.
+      expect(taskRepo.getByWorkspace).toHaveBeenCalledTimes(2);
+      expect(taskRepo.getByWorkspace).toHaveBeenNthCalledWith(1, 'ws-1', { page: 0, pageSize: 200 });
+      expect(taskRepo.getByWorkspace).toHaveBeenNthCalledWith(2, 'ws-1', { page: 1, pageSize: 200 });
+      // Archived-project task excluded; per-project count reflects only the visible task.
+      expect(result.projects.items).toEqual([
+        expect.objectContaining({ id: 'active-project', taskCount: 1, status: 'active' })
+      ]);
+      // tasks.total is visible-only and consistent with byStatus.
+      expect(result.tasks.total).toBe(1);
+      expect(result.tasks.byStatus.todo).toBe(1);
+      expect(result.tasks.byStatus.done).toBe(0);
+      expect(result.tasks.nextActions.map(task => task.id)).toEqual(['active-task']);
+      expect(result.tasks.recentlyCompleted).toEqual([]);
+      // projects.total stays the TRUE count (includes the archived project).
+      expect(result.projects.total).toBe(2);
+    });
+
+    it('should keep projects.total as the true count while tasks.total is visible-only (intentional asymmetry)', async () => {
+      const activeProject = createMockProject({ id: 'active-project', status: 'active' });
+      const archivedProject = createMockProject({ id: 'archived-project', status: 'archived' });
+      const visibleTask = createMockTask({ id: 'visible', projectId: 'active-project', status: 'todo' });
+      const archivedProjectTask = createMockTask({ id: 'hidden', projectId: 'archived-project', status: 'todo' });
+
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult([activeProject, archivedProject]));
+      taskRepo.getByWorkspace.mockResolvedValue(paginatedResult([visibleTask, archivedProjectTask]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+
+      const result = await service.getWorkspaceSummary('ws-1');
+
+      expect(result.projects.total).toBe(2);  // includes archived project
+      expect(result.tasks.total).toBe(1);      // excludes archived-project task
+      expect(result.tasks.byStatus.todo).toBe(1);
+    });
+
+    it('should not count archived-project tasks when every project is archived (orphan-only visibility)', async () => {
+      const archivedProject = createMockProject({ id: 'archived-project', status: 'archived' });
+      const archivedProjectTask = createMockTask({ id: 'in-archived', projectId: 'archived-project', status: 'todo' });
+      const orphanTask = createMockTask({ id: 'orphan', projectId: 'no-such-project', status: 'todo' });
+
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult([archivedProject]));
+      taskRepo.getByWorkspace.mockResolvedValue(paginatedResult([archivedProjectTask, orphanTask]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+
+      const result = await service.getWorkspaceSummary('ws-1');
+
+      // Archived-project task is excluded; the genuinely projectless task stays visible.
+      expect(result.tasks.total).toBe(1);
+      expect(result.tasks.byStatus.todo).toBe(1);
+      expect(result.projects.items).toHaveLength(0);  // no visible projects
     });
 
     it('should limit next actions to 5', async () => {
