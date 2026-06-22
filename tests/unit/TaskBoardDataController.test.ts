@@ -317,6 +317,115 @@ describe('TaskBoardDataController', () => {
     expect(snapshot.tasks.map(task => task.id)).toEqual(['parent', 'child']);
   });
 
+  it('omits orphan / archived-parent tasks whose project is not visible from the board (board-vs-summary divergence)', async () => {
+    const workspaceService = {
+      getWorkspaces: jest.fn().mockResolvedValue([createWorkspace({ id: 'ws-1' })]),
+      getActiveWorkspace: jest.fn().mockResolvedValue(createWorkspace({ id: 'ws-1' }))
+    } as unknown as WorkspaceService;
+
+    // The visible project's page returns a normal task plus a task whose
+    // projectId points at a non-visible (e.g. archived/removed) project —
+    // standing in for an orphan / archived-parent task. The board must drop it:
+    // unlike getWorkspaceSummary (which keeps orphans visible), the board only
+    // surfaces tasks belonging to a visible project (projectMap guard +
+    // per-visible-project loading). This pins that intentional divergence.
+    const taskService = {
+      listProjects: jest.fn().mockResolvedValue({
+        items: [createProject({ id: 'proj-1', workspaceId: 'ws-1', name: 'Project One' })],
+        hasNextPage: false
+      }),
+      listTasks: jest.fn().mockResolvedValue({
+        items: [
+          createTask({ id: 'visible-task', projectId: 'proj-1', workspaceId: 'ws-1' }),
+          createTask({ id: 'orphan-task', projectId: 'proj-not-visible', workspaceId: 'ws-1' })
+        ],
+        hasNextPage: false
+      }),
+      listWorkspaceTasks: jest.fn(),
+      getNoteLinks: jest.fn().mockResolvedValue([])
+    } as unknown as TaskService;
+
+    const plugin = {
+      getService: jest.fn(async (name: string) => {
+        switch (name) {
+          case 'workspaceService':
+            return workspaceService;
+          case 'agentRegistrationService':
+            return { initializeAllAgents: jest.fn().mockResolvedValue(undefined) };
+          case 'agentManager':
+            return {
+              getAgent: jest.fn().mockReturnValue({
+                getTaskService: () => taskService
+              })
+            };
+          default:
+            return null;
+        }
+      })
+    } as unknown as NexusPlugin;
+
+    const controller = new TaskBoardDataController(plugin);
+
+    await controller.ensureServices();
+    const snapshot = await controller.loadBoardData({});
+
+    expect(snapshot.tasks.map(task => task.id)).toEqual(['visible-task']);
+    expect(snapshot.tasks.map(task => task.id)).not.toContain('orphan-task');
+  });
+
+  it('falls back to empty note links when getNoteLinks rejects for a visible task (.catch path)', async () => {
+    const workspaceService = {
+      getWorkspaces: jest.fn().mockResolvedValue([createWorkspace({ id: 'ws-1' })]),
+      getActiveWorkspace: jest.fn().mockResolvedValue(createWorkspace({ id: 'ws-1' }))
+    } as unknown as WorkspaceService;
+
+    // getNoteLinks rejects for the (now visible) task — the controller's .catch
+    // must swallow the rejection and leave noteLinks as []. Previously this path
+    // was exercised via an archived-project task, which is no longer fetched.
+    const taskService = {
+      listProjects: jest.fn().mockResolvedValue({
+        items: [createProject({ id: 'proj-1', workspaceId: 'ws-1', name: 'Project One' })],
+        hasNextPage: false
+      }),
+      listTasks: jest.fn().mockResolvedValue({
+        items: [createTask({ id: 'visible-task', projectId: 'proj-1', workspaceId: 'ws-1' })],
+        hasNextPage: false
+      }),
+      listWorkspaceTasks: jest.fn(),
+      getNoteLinks: jest.fn().mockRejectedValue(new Error('note link lookup failed'))
+    } as unknown as TaskService;
+
+    const plugin = {
+      getService: jest.fn(async (name: string) => {
+        switch (name) {
+          case 'workspaceService':
+            return workspaceService;
+          case 'agentRegistrationService':
+            return { initializeAllAgents: jest.fn().mockResolvedValue(undefined) };
+          case 'agentManager':
+            return {
+              getAgent: jest.fn().mockReturnValue({
+                getTaskService: () => taskService
+              })
+            };
+          default:
+            return null;
+        }
+      })
+    } as unknown as NexusPlugin;
+
+    const controller = new TaskBoardDataController(plugin);
+
+    await controller.ensureServices();
+    const snapshot = await controller.loadBoardData({});
+
+    expect(taskService.getNoteLinks).toHaveBeenCalledWith('visible-task');
+    expect(snapshot.tasks).toHaveLength(1);
+    expect(snapshot.tasks[0]).toEqual(
+      expect.objectContaining({ id: 'visible-task', noteLinks: [] })
+    );
+  });
+
   it('throws when the task manager agent is unavailable', async () => {
     const plugin = {
       getService: jest.fn(async (name: string) => {
