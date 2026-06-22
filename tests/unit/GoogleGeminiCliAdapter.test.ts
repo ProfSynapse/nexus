@@ -92,6 +92,33 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
     });
   });
 
+  it('writes no temp settings file and threads no settings-path env (Scenario A)', async () => {
+    // Scenario A = zero persistent/temp config footprint. The old gemini runtime
+    // wrote a temp system-settings.json (via mkdtemp/writeFile) and pointed agy at
+    // it with GEMINI_CLI_SYSTEM_SETTINGS_PATH. That flow must be entirely gone:
+    // no settings-path env var, and no --output-format / settings args.
+    let capturedArgs: string[] = [];
+    let capturedOptions: { cwd?: string; env?: NodeJS.ProcessEnv; stdinText?: string } | undefined;
+
+    runCliProcess.mockImplementation((_command, args, options) => {
+      capturedArgs = args;
+      capturedOptions = options;
+      return {
+        child: { kill: jest.fn() },
+        result: Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 })
+      };
+    });
+
+    await adapter.generateUncached('Anything');
+
+    // No settings-path env var is threaded to the child process.
+    expect(capturedOptions?.env?.GEMINI_CLI_SYSTEM_SETTINGS_PATH).toBeUndefined();
+    // No JSON-output / settings-injection args survive from the gemini runtime.
+    expect(capturedArgs).not.toContain('--output-format');
+    expect(capturedArgs.some((arg) => arg.includes('system-settings'))).toBe(false);
+    expect(capturedArgs.some((arg) => arg.includes('.json'))).toBe(false);
+  });
+
   it('omits --sandbox on non-darwin platforms (platform guard)', async () => {
     mutablePlatform.isMacOS = false;
     let capturedArgs: string[] = [];
