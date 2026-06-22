@@ -209,15 +209,24 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
     expect(runCliProcess).not.toHaveBeenCalled();
   });
 
-  it('lists only the validated Gemini CLI models', async () => {
+  it('lists exactly the refreshed 5-entry Gemini catalog', async () => {
     const models = await adapter.listModels();
 
+    // Mirrors GoogleGeminiCliModels.ts (catalog declaration order): three
+    // 3.5 Flash effort tiers + two 3.1 Pro tiers. Gemini-only — the non-Gemini
+    // agy models (Claude Sonnet/Opus, GPT-OSS) are intentionally excluded.
     expect(models.map((model) => model.id)).toEqual([
-      'gemini-3.1-flash-lite-preview',
-      'gemini-3-flash-preview'
+      'gemini-3.5-flash-low',
+      'gemini-3.5-flash-medium',
+      'gemini-3.5-flash-high',
+      'gemini-3.1-pro-low',
+      'gemini-3.1-pro-high'
     ]);
-    expect(models.map((model) => model.id)).not.toContain('gemini-3.1-pro-preview');
-    expect(models.map((model) => model.id)).not.toContain('gemini-3-flash');
+    // Legacy *-preview slugs are NOT catalog entries (they survive only as
+    // normalize aliases for settings-compat, not as listable models).
+    expect(models.map((model) => model.id)).not.toContain('gemini-3-flash-preview');
+    expect(models.map((model) => model.id)).not.toContain('gemini-3.1-flash-lite-preview');
+    // Stale specs that were never part of this provider's catalog.
     expect(models.map((model) => model.id)).not.toContain('gemini-2.5-pro');
   });
 
