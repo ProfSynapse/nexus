@@ -109,8 +109,8 @@ export class ProvidersTab {
             category: 'cloud'
         },
         'google-gemini-cli': {
-            name: 'Gemini CLI',
-            keyFormat: 'Local Gemini CLI Google login required',
+            name: 'Antigravity CLI',
+            keyFormat: 'Local Antigravity CLI Google login required',
             signupUrl: 'https://github.com/google-gemini/gemini-cli',
             category: 'cloud'
         },
@@ -666,11 +666,11 @@ export class ProvidersTab {
 
             secondaryOAuthProvider = {
                 providerId: 'google-gemini-cli',
-                providerLabel: 'Gemini CLI',
+                providerLabel: 'Antigravity CLI',
                 description: 'Use Gemini models through the desktop CLI. Authenticate by running `gemini` in your terminal first.',
                 config: { ...geminiCliConfig },
                 oauthConfig: {
-                    providerLabel: 'Gemini CLI',
+                    providerLabel: 'Antigravity CLI',
                     startFlow: () => this.startGeminiCliConnectFlow(),
                 },
                 onConfigChange: async (updatedGeminiCliConfig: LLMProviderConfig) => {
