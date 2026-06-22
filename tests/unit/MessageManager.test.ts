@@ -297,6 +297,141 @@ describe('MessageManager interrupt flow', () => {
     );
   });
 
+  // ==========================================================================
+  // Non-abort error wiring (issue #271, claim b)
+  // Verifies the REAL catch-branch seam in MessageManager fires
+  // finalizeErroredPlaceholder, so a non-abort error before the first token
+  // leaves the placeholder cleared (isLoading:false, state:'invalid') rather
+  // than spinning forever. finalizeErroredPlaceholder is unit-tested in
+  // isolation in AbortHandler.test.ts; these tests cover the WIRING.
+  // ==========================================================================
+
+  function createGenerationEvents() {
+    return {
+      onMessageAdded: jest.fn(),
+      onAIMessageStarted: jest.fn(),
+      onStreamingUpdate: jest.fn(),
+      onConversationUpdated: jest.fn(),
+      onLoadingStateChanged: jest.fn(),
+      onError: jest.fn(),
+      onToolCallsDetected: jest.fn(),
+      onToolExecutionStarted: jest.fn(),
+      onToolExecutionCompleted: jest.fn(),
+      onMessageIdUpdated: jest.fn(),
+      onGenerationAborted: jest.fn(),
+      onUsageAvailable: jest.fn()
+    };
+  }
+
+  it('clears the placeholder spinner on a non-abort send error before the first token', async () => {
+    const conversation = createConversation({ messages: [] });
+    const mockChatService = createMockChatService({ conversation });
+
+    mockChatService.getConversation.mockImplementation(async () => conversation);
+    mockChatService.generateResponseStreaming.mockImplementation(() => {
+      async function* stream() {
+        // Non-abort error before any chunk is yielded.
+        throw new LLMProviderError('Gemini CLI stopped responding.', 'google-gemini-cli', 'PROVIDER_TIMEOUT');
+        yield undefined;
+      }
+      return stream();
+    });
+
+    const events = createGenerationEvents();
+    const manager = new MessageManager(
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
+      events
+    );
+
+    await manager.sendMessage(conversation, 'Explain the bug');
+
+    // index 0 = user message, index 1 = assistant placeholder
+    const placeholder = conversation.messages.find(m => m.role === 'assistant');
+    expect(placeholder).toBeDefined();
+    expect(placeholder?.isLoading).toBe(false);
+    expect(placeholder?.state).toBe('invalid');
+    expect(events.onError).toHaveBeenCalledWith('Gemini CLI stopped responding.');
+    expect(manager.getIsLoading()).toBe(false);
+  });
+
+  it('preserves partial content when a non-abort send error happens mid-stream', async () => {
+    const conversation = createConversation({ messages: [] });
+    const mockChatService = createMockChatService({ conversation });
+
+    mockChatService.getConversation.mockImplementation(async () => conversation);
+    mockChatService.generateResponseStreaming.mockImplementation(
+      (_conversationId: string, _userMessage: string, options?: { messageId?: string }) => {
+        async function* stream() {
+          yield { chunk: 'Partial answer', complete: false, messageId: options?.messageId || 'msg_ai' };
+          // Error after a token streamed: the first-token path already cleared
+          // isLoading; finalizeErroredPlaceholder is then a no-op, so partial
+          // content must survive.
+          throw new LLMProviderError('Network dropped.', 'google-gemini-cli', 'PROVIDER_ERROR');
+        }
+        return stream();
+      }
+    );
+
+    const events = createGenerationEvents();
+    const manager = new MessageManager(
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
+      events
+    );
+
+    await manager.sendMessage(conversation, 'Explain the bug');
+
+    const placeholder = conversation.messages.find(m => m.role === 'assistant');
+    expect(placeholder?.content).toBe('Partial answer');
+    expect(placeholder?.isLoading).toBe(false);
+    expect(events.onError).toHaveBeenCalledWith('Network dropped.');
+    expect(manager.getIsLoading()).toBe(false);
+  });
+
+  it('clears the placeholder spinner on a non-abort error in the regenerate path', async () => {
+    // A lone user message with no following assistant message routes
+    // handleRetryMessage -> regenerateAIResponse -> generateFreshAIResponse,
+    // exercising the SECOND new call site (the regenerate-internal catch).
+    const conversation = createConversation({
+      messages: [
+        {
+          id: 'msg_user',
+          role: 'user',
+          content: 'Retry me',
+          timestamp: Date.now(),
+          conversationId: 'conv_1',
+          state: 'complete'
+        }
+      ]
+    });
+    const mockChatService = createMockChatService({ conversation });
+
+    mockChatService.getConversation.mockImplementation(async () => conversation);
+    mockChatService.generateResponseStreaming.mockImplementation(() => {
+      async function* stream() {
+        throw new LLMProviderError('Regen failed.', 'google-gemini-cli', 'PROVIDER_TIMEOUT');
+        yield undefined;
+      }
+      return stream();
+    });
+
+    const events = createGenerationEvents();
+    const manager = new MessageManager(
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
+      events
+    );
+
+    await manager.handleRetryMessage(conversation, 'msg_user');
+
+    const placeholder = conversation.messages.find(m => m.role === 'assistant');
+    expect(placeholder).toBeDefined();
+    expect(placeholder?.isLoading).toBe(false);
+    expect(placeholder?.state).toBe('invalid');
+    expect(manager.getIsLoading()).toBe(false);
+  });
+
   it('second sendMessage waits for first to complete when interrupted', async () => {
     const conversation = createConversation({ messages: [] });
     const mockChatService = createMockChatService({ conversation });
