@@ -12,6 +12,14 @@ import { ModelSpec } from '../modelTypes';
  *
  * Non-Gemini agy models (Claude Sonnet/Opus, GPT-OSS) are intentionally excluded
  * per product decision: this provider is Gemini-only.
+ *
+ * CAPABILITY NOTE — text-completion only. The Antigravity `agy --print` surface
+ * supports NEITHER tool/function calling NOR streaming (investigation #62/#64/#66
+ * proved every tool-use path NOT-FEASIBLE, and `--print` buffers one response).
+ * So `supportsFunctions` and `supportsStreaming` are BOTH false here — this is the
+ * single source of truth for the limitation; the user-facing warning surfaces
+ * (settings notice + runtime guard) and the chat tool-schema suppression all key
+ * off the text-only provider seam (see isTextOnlyProvider in ToolSchemaSupport.ts).
  */
 export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
   {
@@ -25,7 +33,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: true,
+      supportsFunctions: false,
       supportsStreaming: false,
       supportsThinking: true
     }
@@ -41,7 +49,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: true,
+      supportsFunctions: false,
       supportsStreaming: false,
       supportsThinking: true
     }
@@ -57,7 +65,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: true,
+      supportsFunctions: false,
       supportsStreaming: false,
       supportsThinking: true
     }
@@ -73,7 +81,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: true,
+      supportsFunctions: false,
       supportsStreaming: false,
       supportsThinking: true
     }
@@ -89,7 +97,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: true,
+      supportsFunctions: false,
       supportsStreaming: false,
       supportsThinking: true
     }

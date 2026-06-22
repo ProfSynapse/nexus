@@ -36,6 +36,7 @@ import {
   ThinkingEffort
 } from '../../types/llm/ProviderTypes';
 import type { AppsSettings } from '../../types/apps/AppTypes';
+import { isTextOnlyProvider } from '../../services/llm/utils/ToolSchemaSupport';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
@@ -308,7 +309,7 @@ export class ChatSettingsRenderer {
       reRender: () => this.render(),
       onAfterRender: (content) => {
         this.renderReasoningControls(content);
-        this.renderPerplexityWarning(content, 'chat');
+        this.renderTextOnlyProviderWarning(content, 'chat');
       },
     });
   }
@@ -427,31 +428,55 @@ export class ChatSettingsRenderer {
       reRender: () => this.render(),
       onAfterRender: (content) => {
         this.renderReasoningControls(content, 'agent');
-        this.renderPerplexityWarning(content, 'agent');
+        this.renderTextOnlyProviderWarning(content, 'agent');
       },
     });
   }
 
-  private renderPerplexityWarning(content: HTMLElement, variant: 'chat' | 'agent'): void {
+  private renderTextOnlyProviderWarning(content: HTMLElement, variant: 'chat' | 'agent'): void {
     const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
-    if (provider !== 'perplexity') {
+    if (!isTextOnlyProvider(provider)) {
       return;
     }
+
+    const { title, message } = this.getTextOnlyProviderWarningCopy(provider, variant);
 
     const warningEl = content.createDiv({ cls: 'csr-provider-warning' });
     warningEl.createDiv({
       cls: 'csr-provider-warning-title',
-      text: 'Perplexity cannot use Nexus tools'
+      text: title
     });
-
-    const message = variant === 'agent'
-      ? 'Prompt actions and subagents will run in text-only mode. Use another cloud model for vault edits or other tool-driven work.'
-      : 'Chat and subagents will not receive tool schemas with Perplexity. Use it for search-heavy, text-only work.'
-
     warningEl.createDiv({
       cls: 'csr-provider-warning-text',
       text: message
     });
+  }
+
+  /**
+   * Calm, factual copy for a text-completion-only provider. Antigravity mentions
+   * BOTH limitations (no tools/agents AND no streaming); Perplexity keeps its
+   * established search-focused wording.
+   */
+  private getTextOnlyProviderWarningCopy(
+    provider: string | undefined,
+    variant: 'chat' | 'agent'
+  ): { title: string; message: string } {
+    if (provider === 'google-gemini-cli') {
+      return {
+        title: 'Antigravity is text completions only',
+        message: variant === 'agent'
+          ? 'This provider can\'t call tools or agents, and replies arrive all at once (no streaming). Prompt actions and subagents run in text-only mode — use another cloud model for vault edits or other tool-driven work.'
+          : 'This provider can\'t call tools or agents, and replies arrive all at once (no streaming). Use it for plain text chat; switch providers for agentic, tool-driven work.'
+      };
+    }
+
+    // Perplexity (and any future search/text-only provider) — preserve prior copy.
+    return {
+      title: 'Perplexity cannot use Nexus tools',
+      message: variant === 'agent'
+        ? 'Prompt actions and subagents will run in text-only mode. Use another cloud model for vault edits or other tool-driven work.'
+        : 'Chat and subagents will not receive tool schemas with Perplexity. Use it for search-heavy, text-only work.'
+    };
   }
 
   // ========== TEMPERATURE SECTION ==========

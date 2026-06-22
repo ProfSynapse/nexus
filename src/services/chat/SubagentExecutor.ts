@@ -32,7 +32,7 @@ import type { BranchService } from './BranchService';
 import type { MessageQueueService } from './MessageQueueService';
 import type { DirectToolExecutor } from './DirectToolExecutor';
 import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
-import { isPerplexityProvider } from '../llm/utils/ToolSchemaSupport';
+import { isTextOnlyProvider } from '../llm/utils/ToolSchemaSupport';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -468,7 +468,7 @@ export class SubagentExecutor {
   ): string {
     // Determine if tools were pre-loaded by parent
     const hasPreloadedTools = toolSchemas && toolSchemas.length > 0;
-    const toolsUnavailable = isPerplexityProvider(params.provider);
+    const toolsUnavailable = isTextOnlyProvider(params.provider);
 
     // Start with inherited agent prompt if available
     const promptParts: string[] = [];
@@ -495,7 +495,7 @@ ${params.task}
 1. **NEVER ask questions or seek clarification** - You are autonomous. Make reasonable assumptions and proceed.
 
 2. **${toolsUnavailable ? 'Do not attempt Nexus tool calls' : 'ALWAYS use tools'}** - ${toolsUnavailable
-    ? 'The selected Perplexity model cannot execute Nexus tools in subagent mode. Work in text only and clearly report any tool-dependent step you could not perform.'
+    ? 'The selected provider is text-completion only and cannot execute Nexus tools in subagent mode. Work in text only and clearly report any tool-dependent step you could not perform.'
     : 'Your first response MUST include tool calls.'}
 
 3. **Text-only response = Task complete** - Only respond with plain text (no tool calls) when you have FINISHED the task and are reporting results.
