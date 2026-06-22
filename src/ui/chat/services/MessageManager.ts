@@ -214,6 +214,9 @@ export class MessageManager {
         );
 
         if (!wasAborted) {
+          // Clear the assistant placeholder's loading spinner; a non-abort
+          // error before the first token otherwise leaves it stuck (#271).
+          await this.abortHandler.finalizeErroredPlaceholder(conversation, aiMessageId);
           this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to send message'));
         }
       } finally {
@@ -360,13 +363,17 @@ export class MessageManager {
 
     } catch (error) {
       // Handle abort scenario
+      const erroredMessageId = this.currentStreamingMessageId;
       const wasAborted = await this.abortHandler.handleIfAbortError(
         error,
         conversation,
-        this.currentStreamingMessageId
+        erroredMessageId
       );
 
       if (!wasAborted) {
+        // Clear the assistant placeholder's loading spinner; a non-abort
+        // error before the first token otherwise leaves it stuck (#271).
+        await this.abortHandler.finalizeErroredPlaceholder(conversation, erroredMessageId);
         this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to generate AI response'));
       }
     } finally {

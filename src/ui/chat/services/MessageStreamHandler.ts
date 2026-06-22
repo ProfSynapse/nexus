@@ -254,6 +254,12 @@ export class MessageStreamHandler {
               ...conversation.messages[placeholderMessageIndex],
             content: streamedContent,
             state: 'complete',
+            // Clear the loading spinner on completion. Without this, a
+            // complete-but-empty stream (no token ever arrived) leaves the
+            // placeholder's isLoading:true and the chat spins forever, because
+            // isLoading is otherwise only cleared on the first token
+            // (issue #271, claim b).
+            isLoading: false,
             toolCalls: toolCalls?.map(toConversationToolCall),
             // Persist reasoning for re-render from storage
             reasoning: reasoningAccumulator || undefined,
@@ -286,6 +292,11 @@ export class MessageStreamHandler {
           ...finalMsg,
           content: streamedContent,
           state: 'complete',
+          // Safety-net terminal path: clear the spinner here too, so a stream
+          // that exits without a final isFinalComplete (e.g. tool-execution
+          // error yielding complete:true) never leaves isLoading:true stuck
+          // (issue #271, claim b).
+          isLoading: false,
           toolCalls: toolCalls?.map(toConversationToolCall),
           reasoning: reasoningAccumulator || undefined,
           metadata: finalMetadata,
