@@ -2,6 +2,30 @@
 
 ## June 2026
 
+**v5.12.2** — Query your notes with SQL, Antigravity provider, new image model
+
+**Notes query index (new)** (PR #274)
+- **Query your vault's notes and frontmatter like a database** — a new read-only `search query-notes` tool exposes every markdown file as queryable SQL rows (path, folder, title, tags, links, frontmatter, dates, size). Filter, aggregate, and sort across your whole vault with plain SQL — no separate query language to learn.
+- Frontmatter properties are individually indexed, so filtering on arbitrary fields (e.g. `status`, `due`, `rating`) is fast even on large vaults.
+- The index is built in the background at startup and kept fresh as you edit — your notes stay the source of truth, nothing is duplicated or re-indexed on disk. Verified on a 15,773-note vault; degrades gracefully above 250k notes (50k on mobile).
+
+**Antigravity (`agy`) replaces the Gemini CLI provider** (PR #278)
+- The provider formerly backed by the deprecated `gemini` CLI now runs on Google's **Antigravity** CLI (`agy`). It's relabeled **Antigravity CLI / Google (Antigravity)** in the model pickers; your existing settings carry over unchanged.
+- This runtime is **text-completion only** — it does not support tool/function calling. Nexus now shows a settings notice and a runtime warning if you point a tool-using flow at it, so you won't get silent no-ops. Pick a tool-capable provider for agentic chats.
+- Models are presented as two base models (Gemini 3.5 Flash, Gemini 3.1 Pro) with the existing effort slider choosing the thinking level — no more separate high/medium/low model entries.
+
+**New model**
+- **GPT-5.4 Image 2** is now available as an image model through **OpenRouter** (PR #177). Select it from the image-model picker.
+
+**Fixes**
+- **Task board / workspace counts were undercounting** on large workspaces (PR #275, #272): boards and workspace summaries computed their counts from only the first 200 tasks while the total showed the real number, so workspaces with more than 200 tasks (or lots of archived-project tasks) displayed wrong breakdowns. Both now read every page. Archived-project tasks no longer crowd out visible ones.
+- **Stuck chat spinner cleared** (PR #276): an assistant reply that finished empty, errored before the first token, or hit the safety net could leave the loading spinner spinning forever. It now always clears.
+- **Hung CLI providers now time out** (PR #276): a CLI runtime that streamed progress but never exited could hang a chat indefinitely. An idle watchdog (default 120s, re-armed on every chunk so long legitimate runs are never cut) now ends stalled runs cleanly.
+- **Single wikilink no longer corrupted on set-property** (PR #273): passing a lone `[[Note]]` to a CLI array/property slot was eating a bracket pair and writing `[Note]`. Single values (including wikilinks) are now preserved verbatim; multi-item arrays still unwrap correctly.
+
+**Under the hood**
+- The `useTools` MCP call now enforces the context contract it always documented: `memory` and `goal` are required (an empty or placeholder value returns a clear steering error instead of silently proceeding); `workspaceId`/`sessionId` still default silently and `constraints` stays optional (PR #270). Agent tool-use guidance was also refined for better discovery → read → act behavior.
+
 **v5.12.1** — New models + provider cleanup
 
 **New models**

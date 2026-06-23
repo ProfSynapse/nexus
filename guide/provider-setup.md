@@ -12,7 +12,7 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 |------|----------|----------|
 | API key | Fastest cloud setup | Anthropic, OpenAI, Google AI, Groq, Mistral, OpenRouter, Perplexity, Requesty |
 | Local desktop runtime | Local models on your machine | Ollama, LM Studio |
-| Existing subscription or local CLI | Reuse an existing login instead of managing API keys | Claude Code, Gemini CLI, GitHub Copilot, Codex via ChatGPT |
+| Existing subscription or local CLI | Reuse an existing login instead of managing API keys | Claude Code, Antigravity CLI, GitHub Copilot, Codex via ChatGPT |
 
 ---
 
@@ -76,17 +76,17 @@ Messages route through your local Claude CLI using your existing subscription. D
 
 ---
 
-## Gemini CLI
+## Antigravity CLI (Google)
 
-Use this if you already have [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed and signed in.
+Run Google's Gemini models locally through the **Antigravity CLI** (`agy`) using your existing Google account — no API key needed. (This replaces the older Gemini CLI runtime; your existing settings carry over.)
 
-1. Install Gemini CLI: `npm install -g @google/gemini-cli`
-2. Run `gemini` in your terminal and complete the Google sign-in flow
+1. Install the Antigravity CLI (`agy`)
+2. Run `agy` once in your terminal and complete the Google browser sign-in (there is no `agy auth` command)
 3. In Nexus, go to **Settings -> Providers -> Google AI**
-4. Wait for the **Gemini CLI** section to show **Connected**
-5. In chat settings, select a Gemini CLI model
+4. Wait for the **Antigravity CLI** section to show **Connected**
+5. In chat settings, select an Antigravity (Gemini) model and set the thinking level with the effort slider
 
-Messages route through the local Gemini CLI using your existing Google account. Desktop only.
+Messages route through the local Antigravity CLI using your existing Google account. This runtime is **text-completion only — it does not support tool/function calling**, so choose a tool-capable provider for agentic chats. Desktop only.
 
 ---
 
