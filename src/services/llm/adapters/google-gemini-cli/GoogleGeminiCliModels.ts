@@ -1,14 +1,17 @@
 import { ModelSpec } from '../modelTypes';
 
 /**
- * Catalog of Gemini models exposed by the Antigravity CLI (`agy`) for the
+ * Catalog of BASE Gemini models exposed by the Antigravity CLI (`agy`) for the
  * `google-gemini-cli` provider.
  *
- * The `name` fields are the verbatim human labels emitted by `agy models` and
- * accepted by `agy --model` (see geminiCliModelNormalize.ts, which maps each
- * `apiName` slug below to its exact label). Keep this catalog and that allowlist
- * in LOCKSTEP — every `apiName` here must have a mapping there, or resolving the
- * model will throw fail-closed.
+ * Effort is NOT baked into the catalog. agy exposes each base model at several
+ * effort levels (`agy models`: Gemini 3.5 Flash = Low/Medium/High; Gemini 3.1
+ * Pro = Low/High — no Medium), but that effort comes from Nexus's existing
+ * thinking/effort SLIDER, not from distinct model entries. So the catalog lists
+ * just the 2 BASE models; the adapter composes the agy `--model "Base (Effort)"`
+ * label at invocation time from base slug + slider effort (see
+ * geminiCliModelNormalize.ts `composeAgyModelLabel`). Keep this catalog and that
+ * module in LOCKSTEP — every base `apiName` here must be a known base there.
  *
  * Non-Gemini agy models (Claude Sonnet/Opus, GPT-OSS) are intentionally excluded
  * per product decision: this provider is Gemini-only.
@@ -24,8 +27,8 @@ import { ModelSpec } from '../modelTypes';
 export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
   {
     provider: 'google-gemini-cli',
-    name: 'Gemini 3.5 Flash (Low)',
-    apiName: 'gemini-3.5-flash-low',
+    name: 'Gemini 3.5 Flash',
+    apiName: 'gemini-3.5-flash',
     contextWindow: 1048576,
     maxTokens: 65536,
     inputCostPerMillion: 0,
@@ -40,56 +43,8 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
   },
   {
     provider: 'google-gemini-cli',
-    name: 'Gemini 3.5 Flash (Medium)',
-    apiName: 'gemini-3.5-flash-medium',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: false,
-      supportsStreaming: false,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'google-gemini-cli',
-    name: 'Gemini 3.5 Flash (High)',
-    apiName: 'gemini-3.5-flash-high',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: false,
-      supportsStreaming: false,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'google-gemini-cli',
-    name: 'Gemini 3.1 Pro (Low)',
-    apiName: 'gemini-3.1-pro-low',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: false,
-      supportsStreaming: false,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'google-gemini-cli',
-    name: 'Gemini 3.1 Pro (High)',
-    apiName: 'gemini-3.1-pro-high',
+    name: 'Gemini 3.1 Pro',
+    apiName: 'gemini-3.1-pro',
     contextWindow: 1048576,
     maxTokens: 65536,
     inputCostPerMillion: 0,
@@ -104,4 +59,4 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
   }
 ];
 
-export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-3.5-flash-medium';
+export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-3.5-flash';

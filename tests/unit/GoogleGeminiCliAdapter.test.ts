@@ -209,25 +209,48 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
     expect(runCliProcess).not.toHaveBeenCalled();
   });
 
-  it('lists exactly the refreshed 5-entry Gemini catalog', async () => {
+  it('lists exactly the 2 BASE Gemini models (effort comes from the slider)', async () => {
     const models = await adapter.listModels();
 
-    // Mirrors GoogleGeminiCliModels.ts (catalog declaration order): three
-    // 3.5 Flash effort tiers + two 3.1 Pro tiers. Gemini-only — the non-Gemini
-    // agy models (Claude Sonnet/Opus, GPT-OSS) are intentionally excluded.
+    // Mirrors GoogleGeminiCliModels.ts: just the 2 base models. Effort is NOT a
+    // catalog entry anymore — it comes from the thinking/effort slider and is
+    // composed into the agy label at invocation. Gemini-only.
     expect(models.map((model) => model.id)).toEqual([
-      'gemini-3.5-flash-low',
-      'gemini-3.5-flash-medium',
-      'gemini-3.5-flash-high',
-      'gemini-3.1-pro-low',
-      'gemini-3.1-pro-high'
+      'gemini-3.5-flash',
+      'gemini-3.1-pro'
     ]);
-    // Legacy *-preview slugs are NOT catalog entries (they survive only as
-    // normalize aliases for settings-compat, not as listable models).
+    // The retired effort-variant slugs are NOT catalog entries (they survive only
+    // as normalize aliases for settings-compat, not as listable models).
+    expect(models.map((model) => model.id)).not.toContain('gemini-3.5-flash-low');
+    expect(models.map((model) => model.id)).not.toContain('gemini-3.5-flash-medium');
+    expect(models.map((model) => model.id)).not.toContain('gemini-3.1-pro-high');
+    // Legacy *-preview slugs are likewise normalize-only aliases.
     expect(models.map((model) => model.id)).not.toContain('gemini-3-flash-preview');
-    expect(models.map((model) => model.id)).not.toContain('gemini-3.1-flash-lite-preview');
     // Stale specs that were never part of this provider's catalog.
     expect(models.map((model) => model.id)).not.toContain('gemini-2.5-pro');
+  });
+
+  it('composes the agy --model label from the base model + the effort slider', async () => {
+    let capturedArgs: string[] = [];
+    runCliProcess.mockImplementation((_command, args) => {
+      capturedArgs = args;
+      return {
+        child: { kill: jest.fn() },
+        result: Promise.resolve({ stdout: 'ok', stderr: '', exitCode: 0 })
+      };
+    });
+
+    // Base Flash + slider High → "Gemini 3.5 Flash (High)".
+    await adapter.generateUncached('x', { model: 'gemini-3.5-flash', thinkingEffort: 'high' });
+    expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.5 Flash (High)');
+
+    // Pro + slider Medium → clamps UP to "Gemini 3.1 Pro (High)" (Pro lacks Medium).
+    await adapter.generateUncached('x', { model: 'gemini-3.1-pro', thinkingEffort: 'medium' });
+    expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
+
+    // A saved legacy effort-variant slug still resolves (explicit effort wins).
+    await adapter.generateUncached('x', { model: 'gemini-3.5-flash-low', thinkingEffort: 'high' });
+    expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.5 Flash (Low)');
   });
 
   it('maps oversized CLI startup failures to REQUEST_TOO_LARGE', async () => {

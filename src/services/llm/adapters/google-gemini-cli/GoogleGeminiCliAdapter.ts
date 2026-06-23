@@ -21,7 +21,7 @@ import {
 import { ModelRegistry } from '../ModelRegistry';
 import { CliProcessResult, runCliProcess } from '../../../../utils/cliProcessRunner';
 import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
-import { normalizeModelToAgyLabel } from './geminiCliModelNormalize';
+import { composeAgyModelLabel } from './geminiCliModelNormalize';
 import {
   buildGeminiCliEnv,
   resolveGeminiCliRuntime
@@ -66,8 +66,11 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
 
     const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
     // Fail-closed model resolution: agy --model silently defaults on an unknown
-    // value, so reject anything not in the allowlist before spawning.
-    const agyModel = normalizeModelToAgyLabel(options?.model || this.currentModel);
+    // value, so reject anything not in the allowlist before spawning. The agy
+    // "Base (Effort)" label is composed here from the base model + the thinking/
+    // effort slider value (options.thinkingEffort); legacy effort-variant slugs
+    // carry their own explicit effort. See geminiCliModelNormalize.composeAgyModelLabel.
+    const agyModel = composeAgyModelLabel(options?.model || this.currentModel, options?.thinkingEffort);
 
     // Scenario A invocation: no config write, no --dangerously-skip-permissions.
     // Print mode (--print) with the prompt delivered on stdin (stdinText below);
@@ -172,6 +175,23 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       this.activeProcess.kill();
       this.activeProcess = null;
     }
+  }
+
+  /**
+   * Effort now lives on the slider (options.thinkingEffort), not in the model
+   * slug, so the base BaseAdapter cache key (which keys on model but not effort)
+   * would collide two different efforts on the same base model + prompt. Fold the
+   * composed agy "Base (Effort)" label into the key so each effort caches
+   * distinctly. Falls back to the base key shape on any resolution error.
+   */
+  protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
+    let effortModel: string;
+    try {
+      effortModel = composeAgyModelLabel(options?.model || this.currentModel, options?.thinkingEffort);
+    } catch {
+      effortModel = `${options?.model || this.currentModel}::${options?.thinkingEffort ?? 'default'}`;
+    }
+    return super.generateCacheKey(prompt, { ...options, model: effortModel });
   }
 
   /**

@@ -1,48 +1,83 @@
-import { normalizeModelToAgyLabel } from '../../src/services/llm/adapters/google-gemini-cli/geminiCliModelNormalize';
+import { composeAgyModelLabel } from '../../src/services/llm/adapters/google-gemini-cli/geminiCliModelNormalize';
 
 /**
- * Direct unit tests for the fail-closed model-label allowlist.
+ * Direct unit tests for the fail-closed agy `--model` label composer.
+ *
+ * The catalog now lists only the 2 BASE models; effort comes from the thinking/
+ * effort slider, and the adapter composes the "Base (Effort)" agy label at
+ * invocation. These tests pin: base+effort composition, the Pro-no-Medium clamp
+ * (Medium → High, round UP), default-effort behavior, legacy-slug explicit-effort
+ * resolution (settings-compat), idempotent pass-through, and fail-closed rejection.
  *
  * Why fail-closed matters: `agy --model` FAILS OPEN — given an unknown value it
  * silently runs a default model and returns exit 0. So Nexus must reject any
- * slug not in the allowlist BEFORE spawning, or the user silently gets a model
- * they did not select. These tests pin both the mapping fidelity and the
- * rejection behavior.
+ * unknown base / malformed composed label BEFORE spawning.
  */
-describe('normalizeModelToAgyLabel (fail-closed agy model allowlist)', () => {
-  describe('current catalog slug → agy label mapping (refreshed 5-entry catalog)', () => {
-    // Mirrors GoogleGeminiCliModels.ts + the SLUG_TO_AGY_LABEL current group;
-    // every shipped catalog slug must resolve to its verbatim agy label.
+describe('composeAgyModelLabel (fail-closed agy label composition)', () => {
+  describe('base slug + slider effort → composed agy label', () => {
+    it.each([
+      ['gemini-3.5-flash', 'low', 'Gemini 3.5 Flash (Low)'],
+      ['gemini-3.5-flash', 'medium', 'Gemini 3.5 Flash (Medium)'],
+      ['gemini-3.5-flash', 'high', 'Gemini 3.5 Flash (High)'],
+      ['gemini-3.1-pro', 'low', 'Gemini 3.1 Pro (Low)'],
+      ['gemini-3.1-pro', 'high', 'Gemini 3.1 Pro (High)']
+    ])('composes %s @ %s → %s', (slug, effort, label) => {
+      expect(composeAgyModelLabel(slug, effort)).toBe(label);
+    });
+  });
+
+  describe('Pro-no-Medium clamp rule (Medium → High, round UP, never down)', () => {
+    it('clamps Gemini 3.1 Pro + Medium up to High', () => {
+      expect(composeAgyModelLabel('gemini-3.1-pro', 'medium')).toBe('Gemini 3.1 Pro (High)');
+    });
+
+    it('does NOT clamp Flash (it natively supports Medium)', () => {
+      expect(composeAgyModelLabel('gemini-3.5-flash', 'medium')).toBe('Gemini 3.5 Flash (Medium)');
+    });
+  });
+
+  describe('default effort when slider is unset (undefined/invalid → medium, then clamp)', () => {
+    it('Flash defaults to Medium', () => {
+      expect(composeAgyModelLabel('gemini-3.5-flash')).toBe('Gemini 3.5 Flash (Medium)');
+      expect(composeAgyModelLabel('gemini-3.5-flash', undefined)).toBe('Gemini 3.5 Flash (Medium)');
+      expect(composeAgyModelLabel('gemini-3.5-flash', null)).toBe('Gemini 3.5 Flash (Medium)');
+    });
+
+    it('Pro defaults to High (deliberate: default medium clamps up on Pro)', () => {
+      expect(composeAgyModelLabel('gemini-3.1-pro')).toBe('Gemini 3.1 Pro (High)');
+      expect(composeAgyModelLabel('gemini-3.1-pro', undefined)).toBe('Gemini 3.1 Pro (High)');
+    });
+
+    it('treats an unrecognized effort string as default (medium)', () => {
+      expect(composeAgyModelLabel('gemini-3.5-flash', 'bogus')).toBe('Gemini 3.5 Flash (Medium)');
+    });
+  });
+
+  describe('legacy slug → (base, EXPLICIT effort) settings-compat (overrides slider)', () => {
     it.each([
       ['gemini-3.5-flash-low', 'Gemini 3.5 Flash (Low)'],
       ['gemini-3.5-flash-medium', 'Gemini 3.5 Flash (Medium)'],
       ['gemini-3.5-flash-high', 'Gemini 3.5 Flash (High)'],
       ['gemini-3.1-pro-low', 'Gemini 3.1 Pro (Low)'],
-      ['gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)']
-    ])('maps %s to %s', (slug, label) => {
-      expect(normalizeModelToAgyLabel(slug)).toBe(label);
+      ['gemini-3.1-pro-high', 'Gemini 3.1 Pro (High)'],
+      // Older preview slugs.
+      ['gemini-3-flash-preview', 'Gemini 3.5 Flash (Medium)'],
+      ['gemini-3.1-flash-lite-preview', 'Gemini 3.5 Flash (Low)']
+    ])('resolves legacy %s → %s regardless of slider', (slug, label) => {
+      // Pass a conflicting slider effort to prove the legacy explicit effort wins.
+      expect(composeAgyModelLabel(slug, 'low')).toBe(label);
+    });
+
+    it('trims surrounding whitespace before resolving', () => {
+      expect(composeAgyModelLabel('  gemini-3.5-flash-high  ', 'low')).toBe('Gemini 3.5 Flash (High)');
     });
   });
 
-  describe('legacy slug → agy label mapping (settings-compat aliases retained)', () => {
-    it('maps gemini-3-flash-preview to its agy label', () => {
-      expect(normalizeModelToAgyLabel('gemini-3-flash-preview')).toBe('Gemini 3.5 Flash (Medium)');
-    });
-
-    it('maps gemini-3.1-flash-lite-preview to its agy label', () => {
-      expect(normalizeModelToAgyLabel('gemini-3.1-flash-lite-preview')).toBe('Gemini 3.5 Flash (Low)');
-    });
-
-    it('trims surrounding whitespace before mapping', () => {
-      expect(normalizeModelToAgyLabel('  gemini-3-flash-preview  ')).toBe('Gemini 3.5 Flash (Medium)');
-    });
-  });
-
-  describe('idempotent pass-through of already-normalized labels', () => {
+  describe('idempotent pass-through of already-composed labels', () => {
     it('returns a known agy label unchanged', () => {
-      expect(normalizeModelToAgyLabel('Gemini 3.5 Flash (Medium)')).toBe('Gemini 3.5 Flash (Medium)');
-      expect(normalizeModelToAgyLabel('Gemini 3.5 Flash (Low)')).toBe('Gemini 3.5 Flash (Low)');
-      expect(normalizeModelToAgyLabel('Gemini 3.1 Pro (High)')).toBe('Gemini 3.1 Pro (High)');
+      expect(composeAgyModelLabel('Gemini 3.5 Flash (Medium)')).toBe('Gemini 3.5 Flash (Medium)');
+      expect(composeAgyModelLabel('Gemini 3.5 Flash (Low)', 'high')).toBe('Gemini 3.5 Flash (Low)');
+      expect(composeAgyModelLabel('Gemini 3.1 Pro (High)')).toBe('Gemini 3.1 Pro (High)');
     });
   });
 
@@ -53,9 +88,9 @@ describe('normalizeModelToAgyLabel (fail-closed agy model allowlist)', () => {
       ['empty string', ''],
       ['whitespace only', '   ']
     ])('throws when the model is %s', (_label, value) => {
-      expect(() => normalizeModelToAgyLabel(value as string | undefined | null)).toThrow();
+      expect(() => composeAgyModelLabel(value as string | undefined | null)).toThrow();
       try {
-        normalizeModelToAgyLabel(value as string | undefined | null);
+        composeAgyModelLabel(value as string | undefined | null);
       } catch (err) {
         expect(err).toMatchObject({
           name: 'LLMProviderError',
@@ -65,55 +100,48 @@ describe('normalizeModelToAgyLabel (fail-closed agy model allowlist)', () => {
       }
     });
 
-    it('throws for an unknown/unmapped slug — never silently defaults', () => {
-      expect(() => normalizeModelToAgyLabel('not-a-real-model')).toThrow();
+    it('throws for an unknown base slug — never silently defaults', () => {
+      expect(() => composeAgyModelLabel('not-a-real-model', 'high')).toThrow();
       try {
-        normalizeModelToAgyLabel('not-a-real-model');
+        composeAgyModelLabel('not-a-real-model', 'high');
       } catch (err) {
         expect(err).toMatchObject({
           name: 'LLMProviderError',
           provider: 'google-gemini-cli',
           code: 'CONFIGURATION_ERROR'
         });
-        // The error names the supported models so the user can recover.
-        expect((err as Error).message).toContain('Gemini 3.5 Flash (Medium)');
-        expect((err as Error).message).toContain('Gemini 3.5 Flash (Low)');
+        // The error names the supported BASE models so the user can recover.
+        expect((err as Error).message).toContain('gemini-3.5-flash');
+        expect((err as Error).message).toContain('gemini-3.1-pro');
       }
     });
 
-    it('rejects a legacy gemini slug that has no allowlist entry (e.g. a 2.5 spec)', () => {
-      // Guards against a future GoogleGeminiCliModels.ts spec being added without
-      // a matching allowlist entry — it must throw, not pass through.
-      expect(() => normalizeModelToAgyLabel('gemini-2.5-pro')).toThrow();
+    it('rejects a non-allowlisted gemini base (e.g. a 2.5 spec)', () => {
+      expect(() => composeAgyModelLabel('gemini-2.5-pro', 'high')).toThrow();
+    });
+
+    it('rejects a Pro composed label that does not exist (Pro Medium is not a valid pass-through)', () => {
+      // 'Gemini 3.1 Pro (Medium)' is NOT a known agy label, so passing it through
+      // must NOT silently succeed — it falls through to the unknown-model throw.
+      expect(() => composeAgyModelLabel('Gemini 3.1 Pro (Medium)')).toThrow();
     });
   });
 
-  describe('live-fidelity anchor (auditor YELLOW carry-forward)', () => {
+  describe('live-fidelity anchor (verified vs `agy models`)', () => {
     /**
-     * These five labels were live-verified against `agy models` (v1.0.10) on
-     * 2026-06-22: each appears VERBATIM in the real agy catalog. This anchor
-     * fails loudly if a future edit drifts a mapping target away from the real
-     * agy label — a mismatch would make `agy --model` fail open and silently
-     * run the wrong model.
-     *
-     * Live `agy models` output included, verbatim (Gemini lines):
-     *   Gemini 3.5 Flash (Medium)
-     *   Gemini 3.5 Flash (High)
-     *   Gemini 3.5 Flash (Low)
-     *   Gemini 3.1 Pro (Low)
-     *   Gemini 3.1 Pro (High)
+     * Composed labels verified VERBATIM against `agy models` (v1.0.10) on
+     * 2026-06-23: Flash = Low/Medium/High; Pro = Low/High (NO Medium). This anchor
+     * fails loudly if a future edit drifts a composed label away from a real agy
+     * label — a mismatch would make `agy --model` fail open.
      */
-    it('pins the current catalog slugs to their verbatim live agy catalog labels', () => {
-      expect(normalizeModelToAgyLabel('gemini-3.5-flash-low')).toBe('Gemini 3.5 Flash (Low)');
-      expect(normalizeModelToAgyLabel('gemini-3.5-flash-medium')).toBe('Gemini 3.5 Flash (Medium)');
-      expect(normalizeModelToAgyLabel('gemini-3.5-flash-high')).toBe('Gemini 3.5 Flash (High)');
-      expect(normalizeModelToAgyLabel('gemini-3.1-pro-low')).toBe('Gemini 3.1 Pro (Low)');
-      expect(normalizeModelToAgyLabel('gemini-3.1-pro-high')).toBe('Gemini 3.1 Pro (High)');
-    });
-
-    it('still resolves the retained legacy aliases (settings-compat)', () => {
-      expect(normalizeModelToAgyLabel('gemini-3-flash-preview')).toBe('Gemini 3.5 Flash (Medium)');
-      expect(normalizeModelToAgyLabel('gemini-3.1-flash-lite-preview')).toBe('Gemini 3.5 Flash (Low)');
+    it('every composed base+effort matches a live agy label', () => {
+      expect(composeAgyModelLabel('gemini-3.5-flash', 'low')).toBe('Gemini 3.5 Flash (Low)');
+      expect(composeAgyModelLabel('gemini-3.5-flash', 'medium')).toBe('Gemini 3.5 Flash (Medium)');
+      expect(composeAgyModelLabel('gemini-3.5-flash', 'high')).toBe('Gemini 3.5 Flash (High)');
+      expect(composeAgyModelLabel('gemini-3.1-pro', 'low')).toBe('Gemini 3.1 Pro (Low)');
+      expect(composeAgyModelLabel('gemini-3.1-pro', 'high')).toBe('Gemini 3.1 Pro (High)');
+      // Pro Medium is NOT a live label → must clamp to the live High label.
+      expect(composeAgyModelLabel('gemini-3.1-pro', 'medium')).toBe('Gemini 3.1 Pro (High)');
     });
   });
 });
