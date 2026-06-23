@@ -11,6 +11,14 @@ import type { TaskBoardViewState } from '../taskBoardNavigation';
 import type { TaskBoardTask } from '../taskBoardTypes';
 import { TaskBoardFilterController } from './TaskBoardFilterController';
 
+/**
+ * Page size used when draining paginated task/project queries for the board.
+ * Matches BaseRepository's hard cap so each drained page is the largest the
+ * repository will return (see issue #272 — a single large-pageSize request
+ * silently truncates to this cap).
+ */
+const BOARD_PAGE_SIZE = 200;
+
 interface TaskManagerAgentLike {
   getTaskService?: () => TaskService;
 }
@@ -84,6 +92,31 @@ export class TaskBoardDataController {
     }
   }
 
+  /**
+   * Drain every page of a paginated query into a single array. The repository
+   * caps pageSize at BOARD_PAGE_SIZE, so a single large-pageSize request would
+   * silently return only the first page (issue #272). Walk pages sequentially
+   * until hasNextPage is false.
+   *
+   * @param loadPage - loads a single 0-indexed page
+   * @returns all items across pages
+   */
+  private async loadAllPages<T>(
+    loadPage: (page: number) => Promise<{ items: T[]; hasNextPage: boolean }>
+  ): Promise<T[]> {
+    const items: T[] = [];
+    let page = 0;
+
+    for (;;) {
+      const result = await loadPage(page);
+      items.push(...result.items);
+      if (!result.hasNextPage) {
+        return items;
+      }
+      page += 1;
+    }
+  }
+
   async loadBoardData(filterState: TaskBoardViewState): Promise<TaskBoardDataSnapshot> {
     const workspaceService = this.workspaceService;
     const taskService = this.taskService;
@@ -106,15 +139,33 @@ export class TaskBoardDataController {
 
     const workspaceData = await Promise.all(
       workspaces.map(async workspace => {
-        const [projectsResult, tasksResult] = await Promise.all([
-          taskService.listProjects(workspace.id, { pageSize: 1000 }),
-          taskService.listWorkspaceTasks(workspace.id, { pageSize: 10000 })
-        ]);
+        // Drain all project pages, then filter out archived projects BEFORE
+        // loading their tasks. This both fixes the >200 truncation (issue #272)
+        // and excludes archived-project tasks from the board snapshot by never
+        // fetching them — replacing the old workspace-wide listWorkspaceTasks
+        // (which pulled archived-project tasks too) with per-visible-project
+        // listTasks. includeSubtasks:true preserves the prior default
+        // (listWorkspaceTasks only excluded subtasks when includeSubtasks===false).
+        const projects = (await this.loadAllPages(page =>
+          taskService.listProjects(workspace.id, { page, pageSize: BOARD_PAGE_SIZE })
+        )).filter(project => project.status !== 'archived');
+
+        const tasksByProject = await Promise.all(
+          projects.map(project =>
+            this.loadAllPages(page =>
+              taskService.listTasks(project.id, {
+                page,
+                pageSize: BOARD_PAGE_SIZE,
+                includeSubtasks: true
+              })
+            )
+          )
+        );
 
         return {
           workspace,
-          projects: projectsResult.items.filter(project => project.status !== 'archived'),
-          tasks: tasksResult.items
+          projects,
+          tasks: tasksByProject.flat()
         };
       })
     );
