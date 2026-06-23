@@ -1,27 +1,12 @@
 import { Platform, Vault } from 'obsidian';
-import { getPrimaryServerKey } from '../constants/branding';
 import { resolveDesktopBinaryPath } from './binaryDiscovery';
-import { getVaultBasePath, getConnectorPath } from './cliPathUtils';
+import { getVaultBasePath } from './cliPathUtils';
 
 export interface GeminiCliRuntime {
     geminiPath: string | null;
     nodePath: string | null;
-    connectorPath: string | null;
     vaultPath: string | null;
-    serverKey: string;
 }
-
-const BUILT_IN_TOOL_EXCLUSIONS = [
-    'edit',
-    'list_directory',
-    'read_file',
-    'read_many_files',
-    'run_shell_command',
-    'save_memory',
-    'web_fetch',
-    'write_file',
-    'google_web_search'
-];
 
 type GeminiCliDesktopModuleMap = {
     path: typeof import('path');
@@ -46,37 +31,34 @@ function loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
 }
 
 export function resolveGeminiCliRuntime(vault: Vault): GeminiCliRuntime {
-    const geminiPath = resolveDesktopBinaryPath('gemini');
+    const geminiPath = resolveDesktopBinaryPath('agy');
     const nodePath = resolveDesktopBinaryPath('node');
     const vaultPath = getVaultBasePath(vault);
 
     return {
         geminiPath,
         nodePath,
-        connectorPath: getConnectorPath(vaultPath),
-        vaultPath,
-        serverKey: getPrimaryServerKey(vault.getName())
+        vaultPath
     };
 }
 
-export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string | null): NodeJS.ProcessEnv {
+export function buildGeminiCliEnv(nodePath?: string | null): NodeJS.ProcessEnv {
     const env = { ...process.env };
 
+    // Strip provider credentials from the child's environment so agy uses its
+    // own file-based OAuth (~/.gemini) and never an ambient API key. agy fronts
+    // Google, Anthropic, and OpenAI models, so strip all three families.
     delete env.GEMINI_API_KEY;
     delete env.GOOGLE_API_KEY;
     delete env.GOOGLE_GENAI_USE_VERTEXAI;
     delete env.GOOGLE_CLOUD_PROJECT;
     delete env.GOOGLE_APPLICATION_CREDENTIALS;
-
-    if (systemSettingsPath) {
-        env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = systemSettingsPath;
-    } else {
-        delete env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
-    }
+    delete env.ANTHROPIC_API_KEY;
+    delete env.OPENAI_API_KEY;
 
     // Prepend the node binary's directory to PATH so that subprocess spawns
-    // (e.g. `node connector.js`) succeed when Obsidian runs with a restricted
-    // PATH that omits nvm/homebrew/system node locations.
+    // succeed when Obsidian runs with a restricted PATH that omits
+    // nvm/homebrew/system node locations.
     if (nodePath) {
         const pathMod = loadDesktopModule('path');
         const nodeDir = pathMod.dirname(nodePath);
@@ -87,46 +69,4 @@ export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string
     return env;
 }
 
-export function buildGeminiCliSystemSettings(runtime: GeminiCliRuntime): Record<string, unknown> {
-    return {
-        general: {
-            disableAutoUpdate: true,
-            disableUpdateNag: true
-        },
-        privacy: {
-            usageStatisticsEnabled: false
-        },
-        security: {
-            folderTrust: {
-                enabled: false
-            }
-        },
-        ui: {
-            hideBanner: true,
-            hideFooter: true,
-            hideTips: true
-        },
-        output: {
-            format: 'json'
-        },
-        tools: {
-            sandbox: false,
-            core: [],
-            exclude: BUILT_IN_TOOL_EXCLUSIONS
-        },
-        mcp: {
-            allowed: [runtime.serverKey]
-        },
-        mcpServers: runtime.nodePath && runtime.connectorPath ? {
-            [runtime.serverKey]: {
-                command: runtime.nodePath,
-                args: [runtime.connectorPath],
-                cwd: runtime.vaultPath || undefined,
-                timeout: 600000,
-                trust: true,
-                includeTools: ['getTools', 'useTools']
-            }
-        } : {}
-    };
-}
 

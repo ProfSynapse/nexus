@@ -88,7 +88,7 @@ export interface SecondaryOAuthProviderConfig {
   onConfigChange: (config: LLMProviderConfig) => Promise<void>;
   /** If true, render a CLI status indicator instead of OAuth connect/disconnect banner */
   statusOnly?: boolean;
-  /** Hint text shown when not authenticated (e.g., "run `gemini auth` in your terminal") */
+  /** Hint text shown when not authenticated (e.g., "run `agy` once in your terminal to sign in") */
   statusHint?: string;
 }
 

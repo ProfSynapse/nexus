@@ -12,6 +12,7 @@ import type { ConversationData, ConversationMessage } from '../../../types/chat/
 import type { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import type { ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
+import { isTextOnlyProvider } from '../../../services/llm/utils/ToolSchemaSupport';
 
 export interface MessageExecutionOptions {
   provider?: string;
@@ -155,6 +156,12 @@ export class ChatSendCoordinator {
 
       let messageOptions = await modelAgentManager.getMessageOptions();
 
+      // Runtime guard: a text-completion-only provider (e.g. Antigravity) cannot
+      // execute Nexus tools/agents. If the user invoked tools/prompt-actions for
+      // this send, the tool calls would silently no-op — surface a clear Notice
+      // instead so the limitation is never silent.
+      this.warnIfTextOnlyProviderWithTools(messageOptions.provider, enhancement);
+
       if (modelAgentManager.shouldCompactBeforeSending(
         currentConversation,
         message,
@@ -176,6 +183,32 @@ export class ChatSendCoordinator {
       modelAgentManager.clearMessageEnhancement();
       chatInput?.clearMessageEnhancer();
     }
+  }
+
+  /**
+   * Surface a non-silent Notice when the active provider is text-completion only
+   * (cannot call Nexus tools/agents) AND the user invoked tools or prompt actions
+   * for this send — those calls would otherwise silently no-op. Stays quiet on
+   * plain text chats, where the settings notice already communicates the limit.
+   */
+  private warnIfTextOnlyProviderWithTools(
+    provider: string | undefined,
+    enhancement?: MessageEnhancement
+  ): void {
+    if (!isTextOnlyProvider(provider)) {
+      return;
+    }
+
+    const requestedTools = (enhancement?.tools?.length ?? 0) > 0;
+    const requestedPrompts = (enhancement?.prompts?.length ?? 0) > 0;
+    if (!requestedTools && !requestedPrompts) {
+      return;
+    }
+
+    new Notice(
+      'This provider is text completions only — it can\'t run tools or agents, so the requested tool calls won\'t execute. Switch providers for agentic, tool-driven work.',
+      6000
+    );
   }
 
   async compactCurrentConversation(): Promise<void> {

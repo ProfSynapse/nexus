@@ -1,5 +1,22 @@
+// Notice-spy: preserve the full real obsidian mock (ContextCompactionService and
+// other transitive imports depend on it) and swap ONLY Notice for a constructor
+// spy that records {message, timeout} into a shared array. Mirrors the
+// established DataTab.test.ts pattern.
+const mockNotices: Array<{ message: string; timeout?: number }> = [];
+jest.mock('obsidian', () => {
+  const actual = jest.requireActual('obsidian');
+  return {
+    ...actual,
+    Notice: jest.fn().mockImplementation((message: string, timeout?: number) => {
+      mockNotices.push({ message, timeout });
+      return { message, timeout, hide: jest.fn() };
+    })
+  };
+});
+
 import { ChatSendCoordinator } from '../../src/ui/chat/services/ChatSendCoordinator';
 import type { ConversationData, ConversationMessage } from '../../src/types/chat/ChatTypes';
+import type { MessageEnhancement } from '../../src/ui/chat/components/suggesters/base/SuggesterInterfaces';
 
 function createMessage(
   id: string,
@@ -30,7 +47,7 @@ function createConversation(messages: ConversationMessage[]): ConversationData {
   };
 }
 
-function createHarness() {
+function createHarness(provider = 'github-copilot') {
   const conversation = createConversation([
     createMessage('u1', 'user', 'first request'),
     createMessage('a1', 'assistant', 'partial response'),
@@ -71,7 +88,7 @@ function createHarness() {
     setMessageEnhancement: jest.fn(),
     clearMessageEnhancement: jest.fn(),
     getMessageOptions: jest.fn().mockResolvedValue({
-      provider: 'github-copilot',
+      provider,
       model: 'copilot-model',
       systemPrompt: 'System prompt'
     }),
@@ -160,7 +177,31 @@ function createHarness() {
   };
 }
 
+/**
+ * Build a minimal MessageEnhancement carrying only the fields the text-only
+ * runtime guard inspects (tools / prompts lengths). Other required fields are
+ * filled with empty defaults and cast — the guard never reads them.
+ */
+function enhancementWith(
+  parts: { tools?: unknown[]; prompts?: unknown[] }
+): MessageEnhancement {
+  return {
+    originalMessage: '',
+    cleanedMessage: '',
+    tools: parts.tools ?? [],
+    prompts: parts.prompts ?? [],
+    notes: [],
+    workspaces: [],
+    totalTokens: 0
+  } as unknown as MessageEnhancement;
+}
+
 describe('ChatSendCoordinator', () => {
+  beforeEach(() => {
+    mockNotices.length = 0;
+    jest.clearAllMocks();
+  });
+
   it('compacts context before sending when the selected model requires it', async () => {
     const harness = createHarness();
     // Return true only for the first call (user's message).
@@ -204,5 +245,75 @@ describe('ChatSendCoordinator', () => {
     expect(harness.bubble.stopLoadingAnimation).toHaveBeenCalledTimes(1);
     expect(harness.streamingController.stopLoadingAnimation).toHaveBeenCalledWith(harness.contentEl);
     expect(harness.streamingController.finalizeStreaming).toHaveBeenCalledWith('a1', 'partial response');
+  });
+});
+
+describe('ChatSendCoordinator text-only provider runtime guard', () => {
+  beforeEach(() => {
+    mockNotices.length = 0;
+    jest.clearAllMocks();
+  });
+
+  const TEXT_ONLY_NOTICE =
+    "This provider is text completions only — it can't run tools or agents, so the requested tool calls won't execute. Switch providers for agentic, tool-driven work.";
+
+  it('fires a Notice when a text-only provider (Antigravity) is active AND tools were invoked', async () => {
+    const harness = createHarness('google-gemini-cli');
+
+    await harness.coordinator.handleSendMessage(
+      'edit my note',
+      enhancementWith({ tools: [{ id: 'content_read' }] })
+    );
+
+    expect(mockNotices).toHaveLength(1);
+    expect(mockNotices[0].message).toBe(TEXT_ONLY_NOTICE);
+    expect(mockNotices[0].timeout).toBe(6000);
+    // The guard is a warning only — it must NOT block the send.
+    expect(harness.messageManager.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires a Notice when a text-only provider is active AND prompt actions were invoked', async () => {
+    const harness = createHarness('perplexity');
+
+    await harness.coordinator.handleSendMessage(
+      'run my prompt',
+      enhancementWith({ prompts: [{ id: 'summarize' }] })
+    );
+
+    expect(mockNotices).toHaveLength(1);
+    expect(mockNotices[0].message).toBe(TEXT_ONLY_NOTICE);
+  });
+
+  it('stays SILENT on a plain-text send (no tools/prompts) for a text-only provider', async () => {
+    const harness = createHarness('google-gemini-cli');
+
+    // No enhancement at all — the settings notice already communicates the limit.
+    await harness.coordinator.handleSendMessage('just chatting');
+
+    expect(mockNotices).toHaveLength(0);
+    expect(harness.messageManager.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays SILENT for a text-only provider when enhancement has empty tools/prompts arrays', async () => {
+    const harness = createHarness('google-gemini-cli');
+
+    await harness.coordinator.handleSendMessage(
+      'just chatting',
+      enhancementWith({ tools: [], prompts: [] })
+    );
+
+    expect(mockNotices).toHaveLength(0);
+  });
+
+  it('stays SILENT for a normal tool-capable provider even when tools were invoked', async () => {
+    const harness = createHarness('openai');
+
+    await harness.coordinator.handleSendMessage(
+      'edit my note',
+      enhancementWith({ tools: [{ id: 'content_read' }] })
+    );
+
+    expect(mockNotices).toHaveLength(0);
+    expect(harness.messageManager.sendMessage).toHaveBeenCalledTimes(1);
   });
 });

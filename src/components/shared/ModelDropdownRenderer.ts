@@ -20,7 +20,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',
   'anthropic-claude-code': 'Claude Code',
   google: 'Google AI',
-  'google-gemini-cli': 'Gemini CLI',
+  'google-gemini-cli': 'Antigravity CLI',
   mistral: 'Mistral AI',
   groq: 'Groq',
   deepseek: 'DeepSeek',
@@ -253,7 +253,7 @@ function renderModelDropdown(
           const geminiCliModels = await config.providerManager.getModelsForProvider('google-gemini-cli');
           models = [
             ...models,
-            ...geminiCliModels.map(model => ({ ...model, name: `${model.name} (Gemini CLI)` }))
+            ...geminiCliModels.map(model => ({ ...model, name: `${model.name} (Antigravity CLI)` }))
           ];
         }
 

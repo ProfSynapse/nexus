@@ -83,11 +83,11 @@ export function renderOAuthBanner(
  * Configuration for rendering a CLI status banner
  */
 export interface CliStatusBannerConfig {
-  /** The provider label to display (e.g., "Gemini CLI") */
+  /** The provider label to display (e.g., "Antigravity CLI") */
   providerLabel: string;
   /** Whether the provider is currently authenticated */
   isAuthenticated: boolean;
-  /** Error/instruction text when not authenticated (e.g., "run `gemini auth` in your terminal") */
+  /** Error/instruction text when not authenticated (e.g., "run `agy` once in your terminal to sign in") */
   notAuthenticatedHint?: string;
   /** Called when the "Check status" button is clicked */
   onCheckStatus: () => void | Promise<void>;

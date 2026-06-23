@@ -11,7 +11,7 @@ export class ProviderUtils {
       'openai': 'OpenAI',
       'anthropic': 'Anthropic',
       'anthropic-claude-code': 'Anthropic (Claude Code)',
-      'google-gemini-cli': 'Google (Gemini CLI)',
+      'google-gemini-cli': 'Google (Antigravity)',
       'mistral': 'Mistral AI',
       'deepgram': 'Deepgram',
       'assemblyai': 'AssemblyAI',

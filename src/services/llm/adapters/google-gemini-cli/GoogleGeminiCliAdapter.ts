@@ -1,8 +1,10 @@
 /**
  * src/services/llm/adapters/google-gemini-cli/GoogleGeminiCliAdapter.ts
  *
- * LLM adapter for Google Gemini CLI. Runs the CLI as a child process in
- * non-streaming (JSON output) mode and parses the result.
+ * LLM adapter for the Antigravity CLI (`agy`), wired into the legacy
+ * `google-gemini-cli` provider slot. Runs the CLI as a child process in
+ * non-streaming print mode. agy emits PLAIN TEXT (not JSON), so the response is
+ * the trimmed stdout; no structured token usage is available from the CLI.
  */
 import { Platform, Vault } from 'obsidian';
 import type { DesktopChildProcess } from '../../../../utils/desktopProcess';
@@ -14,38 +16,31 @@ import {
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
-  LLMProviderError,
-  TokenUsage
+  LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
 import { CliProcessResult, runCliProcess } from '../../../../utils/cliProcessRunner';
 import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
+import { composeAgyModelLabel } from './geminiCliModelNormalize';
 import {
   buildGeminiCliEnv,
-  buildGeminiCliSystemSettings,
   resolveGeminiCliRuntime
 } from '../../../../utils/geminiCli';
 
-type GeminiCliDesktopModuleMap = {
-  'fs/promises': typeof import('fs/promises');
-  os: typeof import('os');
-  path: typeof import('path');
-};
-
-interface GeminiCliJsonResponse {
-  response?: string;
-  text?: string;
-  content?: string;
-  output?: string;
-  result?: {
-    text?: string;
-  };
-  stats?: {
-    models?: Array<Record<string, unknown>>;
-    tools?: unknown;
-  };
-  error?: string | { message?: string };
-}
+/**
+ * agy `--print-timeout` accepts a Go-duration string (e.g. `60s`, `5m0s`), NOT
+ * milliseconds — a raw integer is rejected ("missing unit in duration").
+ *
+ * SECURITY-LOAD-BEARING: this is the bounded kill-switch for a hung headless
+ * tool-permission block. We never pass `--dangerously-skip-permissions`, so a
+ * built-in-tool call would otherwise wait for an interactive approval that can
+ * never arrive in print mode; this branch also has no inactivity watchdog, so
+ * `--print-timeout` is the ONLY upper bound on a stuck process. Do NOT raise it
+ * without restoring an idle/inactivity watchdog (e.g. after rebasing onto the
+ * PR #276 watchdog). Trade-off: 60s may cut very-long thinking-model
+ * completions on this interim branch — revisit the value once the watchdog lands.
+ */
+const AGY_PRINT_TIMEOUT = '60s';
 
 export class GoogleGeminiCliAdapter extends BaseAdapter {
   readonly name = 'google-gemini-cli';
@@ -60,88 +55,76 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const runtime = resolveGeminiCliRuntime(this.vault);
     if (!runtime.geminiPath) {
-      throw new LLMProviderError('Gemini CLI was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
+      throw new LLMProviderError('Antigravity CLI (agy) was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
     }
     if (!runtime.nodePath) {
       throw new LLMProviderError('Node.js was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
-    }
-    if (!runtime.connectorPath) {
-      throw new LLMProviderError('Nexus connector.js was not found for this vault.', this.name, 'CONFIGURATION_ERROR');
     }
     if (!runtime.vaultPath) {
       throw new LLMProviderError('Vault filesystem path is unavailable.', this.name, 'CONFIGURATION_ERROR');
     }
 
-    const fsPromises = this.loadDesktopModule('fs/promises');
-    const osMod = this.loadDesktopModule('os');
-    const pathMod = this.loadDesktopModule('path');
+    const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
+    // Fail-closed model resolution: agy --model silently defaults on an unknown
+    // value, so reject anything not in the allowlist before spawning. The agy
+    // "Base (Effort)" label is composed here from the base model + the thinking/
+    // effort slider value (options.thinkingEffort); legacy effort-variant slugs
+    // carry their own explicit effort. See geminiCliModelNormalize.composeAgyModelLabel.
+    const agyModel = composeAgyModelLabel(options?.model || this.currentModel, options?.thinkingEffort);
 
-    const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-gemini-cli-'));
-    const settingsPath = pathMod.join(tempDir, 'system-settings.json');
+    // Scenario A invocation: no config write, no --dangerously-skip-permissions.
+    // Print mode (--print) with the prompt delivered on stdin (stdinText below);
+    // --print-timeout is the bounded security kill-switch; --sandbox is additive
+    // defense-in-depth, added only where the sandbox backend is verified
+    // (see shouldUseSandbox).
+    const args = [
+      '--print',
+      '--model',
+      agyModel,
+      '--print-timeout',
+      AGY_PRINT_TIMEOUT
+    ];
+    if (this.shouldUseSandbox()) {
+      args.push('--sandbox');
+    }
+
+    const handle = runCliProcess(runtime.geminiPath, args, {
+      cwd: runtime.vaultPath,
+      env: buildGeminiCliEnv(runtime.nodePath),
+      stdinText: combinedPrompt
+    });
+    this.activeProcess = handle.child;
 
     try {
-      await fsPromises.writeFile(
-        settingsPath,
-        JSON.stringify(buildGeminiCliSystemSettings(runtime), null, 2),
-        'utf8'
-      );
-
-      const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
-      const args = [
-        '--prompt',
-        '',
-        '--model',
-        options?.model || this.currentModel,
-        '--output-format',
-        'json'
-      ];
-
-      const handle = runCliProcess(runtime.geminiPath, args, {
-        cwd: runtime.vaultPath,
-        env: buildGeminiCliEnv(settingsPath, runtime.nodePath),
-        stdinText: combinedPrompt
-      });
-      this.activeProcess = handle.child;
       const result = await handle.result;
-      this.activeProcess = null;
 
       if (result.exitCode !== 0) {
         throw this.mapCliProcessFailure(result);
       }
 
-      const parsed = this.parseOutput(result.stdout);
-      if (!parsed) {
+      // agy print mode emits plain text — the response is the trimmed stdout.
+      const text = this.parseAgyOutput(result.stdout);
+      if (!text) {
         throw new LLMProviderError(
-          'Gemini CLI returned an unreadable JSON response.',
+          'Antigravity CLI returned an empty response.',
           this.name,
           'PROVIDER_ERROR'
         );
       }
 
-      const errorMessage = typeof parsed.error === 'string'
-        ? parsed.error
-        : parsed.error?.message;
-      if (errorMessage) {
-        throw new LLMProviderError(errorMessage, this.name, 'PROVIDER_ERROR');
-      }
-
-      const text = this.extractText(parsed);
-      const usage = this.extractUsageFromStats(parsed);
-
+      // agy does not report token usage; omit it (buildLLMResponse defaults to zero).
       return this.buildLLMResponse(
         text,
-        options?.model || this.currentModel,
-        usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        agyModel,
+        undefined,
         {
           localCli: true,
-          outputFormat: 'json',
-          toolSummary: parsed.stats?.tools
+          outputFormat: 'text'
         },
         'stop'
       );
     } finally {
       this.activeProcess = null;
-      await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -161,9 +144,13 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: false,
-      supportsJSON: true,
+      // agy print mode emits plain text only — there is no structured JSON output mode.
+      supportsJSON: false,
       supportsImages: true,
-      supportsFunctions: true,
+      // agy is text-completion only — no tool/function calling (investigation
+      // #62/#64/#66). Matches the now-honest ModelSpecs; gating is via the
+      // provider seam (isTextOnlyProvider), not this provider-level flag.
+      supportsFunctions: false,
       supportsThinking: true,
       maxContextWindow: 1048576,
       supportedFeatures: ['gemini-cli', 'mcp', 'google-login']
@@ -190,22 +177,38 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     }
   }
 
-  private loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
-    moduleName: TModuleName
-  ): GeminiCliDesktopModuleMap[TModuleName] {
-    if (!Platform.isDesktop) {
-      throw new Error(`${moduleName} is only available on desktop.`);
+  /**
+   * Effort now lives on the slider (options.thinkingEffort), not in the model
+   * slug, so the base BaseAdapter cache key (which keys on model but not effort)
+   * would collide two different efforts on the same base model + prompt. Fold the
+   * composed agy "Base (Effort)" label into the key so each effort caches
+   * distinctly. Falls back to the base key shape on any resolution error.
+   */
+  protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
+    let effortModel: string;
+    try {
+      effortModel = composeAgyModelLabel(options?.model || this.currentModel, options?.thinkingEffort);
+    } catch {
+      effortModel = `${options?.model || this.currentModel}::${options?.thinkingEffort ?? 'default'}`;
     }
+    return super.generateCacheKey(prompt, { ...options, model: effortModel });
+  }
 
-    const maybeRequire = (window.activeWindow as Window & {
-      require?: (moduleId: string) => unknown;
-    }).require;
-
-    if (typeof maybeRequire !== 'function') {
-      throw new Error('Desktop module loader is unavailable.');
-    }
-
-    return maybeRequire(moduleName) as GeminiCliDesktopModuleMap[TModuleName];
+  /**
+   * Decide whether to pass agy's `--sandbox` flag.
+   *
+   * --sandbox is additive defense-in-depth (NOT the security foundation — that
+   * is the no-MCP + no-skip-perms posture, which holds on every platform).
+   *
+   * On macOS it is verified to use the OS-native sandbox-exec/Seatbelt backend
+   * (Docker-free, headless-safe). On other platforms the sandbox backend is
+   * UNVERIFIED — upstream gemini-cli historically used gVisor/Docker on Linux,
+   * which could fail (no daemon) and break an otherwise-valid completion. So we
+   * pass --sandbox ONLY on darwin and fall back to the no-MCP + no-skip-perms
+   * floor elsewhere. Revisit per-platform once non-darwin backends are verified.
+   */
+  private shouldUseSandbox(): boolean {
+    return Platform.isMacOS === true;
   }
 
   private buildPrompt(prompt: string, systemPrompt?: string): string {
@@ -216,135 +219,28 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     return `System instructions:\n${systemPrompt.trim()}\n\nUser request:\n${prompt}`;
   }
 
-  private parseOutput(stdout: string): GeminiCliJsonResponse | null {
-    const trimmed = stdout.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(trimmed) as GeminiCliJsonResponse;
-    } catch {
-      const lastJsonLine = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .reverse()
-        .find((line) => line.startsWith('{') && line.endsWith('}'));
-
-      if (!lastJsonLine) {
-        return this.parseTrailingJsonBlock(trimmed);
-      }
-
-      try {
-        return JSON.parse(lastJsonLine) as GeminiCliJsonResponse;
-      } catch {
-        return this.parseTrailingJsonBlock(trimmed);
-      }
-    }
-  }
-
-  private extractText(parsed: GeminiCliJsonResponse): string {
-    if (typeof parsed.response === 'string') return parsed.response;
-    if (typeof parsed.text === 'string') return parsed.text;
-    if (typeof parsed.content === 'string') return parsed.content;
-    if (typeof parsed.output === 'string') return parsed.output;
-    if (typeof parsed.result?.text === 'string') return parsed.result.text;
-    return '';
-  }
-
-  private extractUsageFromStats(parsed: GeminiCliJsonResponse): TokenUsage | undefined {
-    const modelStats = this.extractModelStats(parsed.stats?.models);
-    if (!modelStats || typeof modelStats !== 'object') {
-      return undefined;
-    }
-
-    const tokenStats = this.extractTokenStats(modelStats);
-    const promptTokens = this.readNumber(tokenStats, ['prompt', 'promptTokens', 'inputTokens']);
-    const completionTokens = this.readNumber(tokenStats, ['candidates', 'candidatesTokens', 'outputTokens', 'completionTokens']);
-    const totalTokens = this.readNumber(tokenStats, ['total', 'totalTokens']);
-
-    if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
-      return undefined;
-    }
-
-    return {
-      promptTokens: promptTokens || 0,
-      completionTokens: completionTokens || 0,
-      totalTokens: totalTokens || ((promptTokens || 0) + (completionTokens || 0))
-    };
-  }
-
-  private readNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
-    for (const key of keys) {
-      const value = record[key];
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-      }
-    }
-    return undefined;
-  }
-
-  private parseTrailingJsonBlock(output: string): GeminiCliJsonResponse | null {
-    const lines = output
-      .split(/\r?\n/)
-      .map((line) => line.trimEnd())
-      .filter(Boolean);
-
-    for (let index = lines.length - 1; index >= 0; index--) {
-      if (lines[index].trim() !== '{') {
-        continue;
-      }
-
-      try {
-        return JSON.parse(lines.slice(index).join('\n')) as GeminiCliJsonResponse;
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
-  private extractModelStats(
-    modelStats: Record<string, unknown>[] | Record<string, unknown> | undefined
-  ): Record<string, unknown> | undefined {
-    if (Array.isArray(modelStats)) {
-      const firstEntry = modelStats[0];
-      return firstEntry && typeof firstEntry === 'object' ? firstEntry : undefined;
-    }
-
-    if (!modelStats || typeof modelStats !== 'object') {
-      return undefined;
-    }
-
-    const firstEntry = Object.values(modelStats).find(
-      (value) => value && typeof value === 'object' && !Array.isArray(value)
-    );
-
-    return firstEntry ? firstEntry as Record<string, unknown> : undefined;
-  }
-
-  private extractTokenStats(modelStats: Record<string, unknown>): Record<string, unknown> {
-    const tokens = modelStats.tokens;
-    if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-      return tokens as Record<string, unknown>;
-    }
-
-    return modelStats;
+  /**
+   * Extract the assistant response from agy print-mode stdout.
+   *
+   * agy `--prompt` emits PLAIN TEXT (no JSON, no banner/footer noise), so the
+   * response is simply the trimmed stdout. Returns an empty string for
+   * empty/whitespace-only output; the caller treats that as a provider error.
+   */
+  private parseAgyOutput(stdout: string): string {
+    return stdout.trim();
   }
 
   private mapCliProcessFailure(result: CliProcessResult): LLMProviderError {
     if (result.errorCode === 'ENAMETOOLONG' || result.errorCode === 'E2BIG') {
       return new LLMProviderError(
-        'Gemini CLI could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
+        'Antigravity CLI (agy) could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
         this.name,
         'REQUEST_TOO_LARGE'
       );
     }
 
     return new LLMProviderError(
-      result.stderr.trim() || result.stdout.trim() || `Gemini CLI exited with status ${result.exitCode ?? 'unknown'}`,
+      result.stderr.trim() || result.stdout.trim() || `Antigravity CLI (agy) exited with status ${result.exitCode ?? 'unknown'}`,
       this.name,
       result.exitCode === null ? 'CONFIGURATION_ERROR' : 'PROVIDER_ERROR'
     );

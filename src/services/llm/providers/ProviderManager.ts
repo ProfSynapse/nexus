@@ -324,8 +324,8 @@ export class LLMProviderManager {
       },
       {
         id: 'google-gemini-cli',
-        name: 'Gemini CLI',
-        description: 'Gemini models via your local Gemini CLI Google login — desktop only'
+        name: 'Antigravity CLI',
+        description: 'Gemini models via your local Antigravity CLI Google login — desktop only'
       },
       {
         id: 'mistral',
