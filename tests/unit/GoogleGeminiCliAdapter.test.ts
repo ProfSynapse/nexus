@@ -6,7 +6,10 @@ type VaultLike = {
 };
 
 jest.mock('../../src/utils/cliProcessRunner', () => ({
-  runCliProcess: jest.fn()
+  runCliProcess: jest.fn(),
+  // Re-export the real constants so the adapter's errorCode comparison works.
+  PROVIDER_TIMEOUT_ERROR_CODE: 'PROVIDER_TIMEOUT',
+  DEFAULT_CLI_IDLE_TIMEOUT_MS: 120_000
 }));
 
 jest.mock('../../src/utils/geminiCli', () => ({
@@ -268,6 +271,24 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
       name: 'LLMProviderError',
       provider: 'google-gemini-cli',
       code: 'REQUEST_TOO_LARGE'
+    });
+  });
+
+  it('maps an idle-watchdog timeout result to PROVIDER_TIMEOUT (issue #271)', async () => {
+    runCliProcess.mockReturnValue({
+      child: { kill: jest.fn() },
+      result: Promise.resolve({
+        stdout: '',
+        stderr: 'CLI process produced no output for 120s and was terminated.',
+        exitCode: null,
+        errorCode: 'PROVIDER_TIMEOUT'
+      })
+    });
+
+    await expect(adapter.generateUncached('hello')).rejects.toMatchObject({
+      name: 'LLMProviderError',
+      provider: 'google-gemini-cli',
+      code: 'PROVIDER_TIMEOUT'
     });
   });
 });

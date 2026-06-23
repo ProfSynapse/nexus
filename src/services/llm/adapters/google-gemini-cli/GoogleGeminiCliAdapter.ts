@@ -19,7 +19,7 @@ import {
   LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
-import { CliProcessResult, runCliProcess } from '../../../../utils/cliProcessRunner';
+import { CliProcessResult, PROVIDER_TIMEOUT_ERROR_CODE, runCliProcess } from '../../../../utils/cliProcessRunner';
 import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
 import { composeAgyModelLabel } from './geminiCliModelNormalize';
 import {
@@ -236,6 +236,14 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
         'Antigravity CLI (agy) could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
         this.name,
         'REQUEST_TOO_LARGE'
+      );
+    }
+
+    if (result.errorCode === PROVIDER_TIMEOUT_ERROR_CODE) {
+      return new LLMProviderError(
+        result.stderr.trim() || 'Gemini CLI stopped responding and was terminated. Please try again.',
+        this.name,
+        PROVIDER_TIMEOUT_ERROR_CODE
       );
     }
 

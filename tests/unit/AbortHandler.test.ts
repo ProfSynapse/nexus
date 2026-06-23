@@ -287,4 +287,84 @@ describe('AbortHandler', () => {
       expect(mockChatService.updateConversation).not.toHaveBeenCalled();
     });
   });
+
+  // ==========================================================================
+  // finalizeErroredPlaceholder (issue #271, claim b)
+  // A non-abort error before the first token must clear the stuck spinner.
+  // ==========================================================================
+
+  describe('finalizeErroredPlaceholder', () => {
+    it('clears isLoading and marks invalid when generation errors before any token', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage(),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: '',
+            isLoading: true,
+            state: 'draft'
+          })
+        ]
+      });
+
+      await handler.finalizeErroredPlaceholder(conversation, 'msg_ai');
+
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      expect(aiMessage).toBeDefined();
+      expect(aiMessage?.isLoading).toBe(false);
+      expect(aiMessage?.state).toBe('invalid');
+      // Persists so a reload cannot resurrect the stuck loading state.
+      expect(mockChatService.updateConversation).toHaveBeenCalled();
+      expect(events.onConversationUpdated).toHaveBeenCalled();
+    });
+
+    it('preserves any partial content already streamed', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage(),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: 'partial answer',
+            isLoading: true,
+            state: 'streaming'
+          })
+        ]
+      });
+
+      await handler.finalizeErroredPlaceholder(conversation, 'msg_ai');
+
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      expect(aiMessage?.content).toBe('partial answer');
+      expect(aiMessage?.isLoading).toBe(false);
+    });
+
+    it('is a no-op when the spinner was already cleared', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage(),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: 'done',
+            isLoading: false,
+            state: 'complete'
+          })
+        ]
+      });
+
+      await handler.finalizeErroredPlaceholder(conversation, 'msg_ai');
+
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      // Completed message left untouched, no redundant save.
+      expect(aiMessage?.state).toBe('complete');
+      expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when aiMessageId is null', async () => {
+      const conversation = createConversation();
+
+      await handler.finalizeErroredPlaceholder(conversation, null);
+
+      expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+    });
+  });
 });

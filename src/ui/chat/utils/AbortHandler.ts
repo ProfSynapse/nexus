@@ -107,4 +107,43 @@ export class AbortHandler {
     }
     return false;
   }
+
+  /**
+   * Finalize the assistant placeholder after a NON-abort generation error.
+   *
+   * Without this, an error (or empty completion) that happens before the first
+   * token leaves the placeholder with isLoading:true — isLoading is otherwise
+   * only cleared on the first streamed token — so the chat spinner spins
+   * forever (issue #271, claim b). This clears isLoading and marks the message
+   * invalid (filtered from future context), preserving any partial content
+   * already streamed. The genuine-abort path is handled separately by
+   * handleAbort and is intentionally left untouched.
+   *
+   * @param conversation - The conversation containing the placeholder
+   * @param aiMessageId - ID of the AI message being generated (may be null)
+   */
+  async finalizeErroredPlaceholder(
+    conversation: ConversationData,
+    aiMessageId: string | null
+  ): Promise<void> {
+    if (!aiMessageId) return;
+
+    const aiMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
+    if (aiMessageIndex < 0) return;
+
+    const aiMessage = conversation.messages[aiMessageIndex];
+
+    // Nothing to do if the spinner was already cleared (e.g. content streamed
+    // before the error). Leave a completed/aborted message as-is.
+    if (aiMessage.isLoading !== true) return;
+
+    aiMessage.isLoading = false;
+    aiMessage.state = 'invalid'; // Errored before completion - exclude from context
+
+    // Persist so a reload doesn't resurrect the stuck loading state.
+    await this.chatService.updateConversation(conversation);
+
+    // Re-render so the spinner disappears immediately.
+    this.events.onConversationUpdated(conversation);
+  }
 }
