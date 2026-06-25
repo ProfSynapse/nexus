@@ -13,12 +13,27 @@ import {
   ProviderCapabilities,
   ModelPricing,
   TokenUsage,
-  LLMProviderError
+  LLMProviderError,
+  ToolCall,
+  Tool
 } from '../types';
+import { ToolCallContentParser } from '../shared/ToolCallContentParser';
+import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
+
+/** Native Ollama tool call shape — arguments is an object/map, and there is no id */
+interface OllamaToolCall {
+  function?: {
+    name?: string;
+    arguments?: Record<string, unknown> | string;
+  };
+}
 
 interface OllamaMessage {
   role: string;
   content: string;
+  tool_calls?: OllamaToolCall[];
+  tool_name?: string;
+  tool_call_id?: string;
   [key: string]: unknown;
 }
 
@@ -34,7 +49,9 @@ interface OllamaOptions {
 
 interface OllamaChatResponse {
   message?: {
+    role?: string;
     content?: string;
+    tool_calls?: OllamaToolCall[];
   };
   prompt_eval_count?: number;
   eval_count?: number;
@@ -44,6 +61,19 @@ interface OllamaChatResponse {
   load_duration?: number;
   prompt_eval_duration?: number;
   eval_duration?: number;
+}
+
+/** GET /api/tags response shape */
+interface OllamaTagsResponse {
+  models?: Array<{
+    name?: string;
+    model?: string;
+    details?: {
+      family?: string;
+      parameter_size?: string;
+      quantization_level?: string;
+    };
+  }>;
 }
 
 export class OllamaAdapter extends BaseAdapter {
@@ -75,20 +105,24 @@ export class OllamaAdapter extends BaseAdapter {
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
-      // Build options object, removing undefined values
-      const ollamaOptions: OllamaOptions = {
-        temperature: options?.temperature,
-        num_predict: options?.maxTokens,
-        stop: options?.stopSequences,
-        top_p: options?.topP,
-        frequency_penalty: options?.frequencyPenalty,
-        presence_penalty: options?.presencePenalty
+      const requestBody: Record<string, unknown> = {
+        model: model,
+        messages: this.normalizeMessagesForOllama(messages),
+        stream: true,
+        options: this.buildOllamaOptions(options)
       };
-      Object.keys(ollamaOptions).forEach(key => {
-        if (ollamaOptions[key] === undefined) {
-          delete ollamaOptions[key];
-        }
-      });
+
+      // Native tool calling: pass tool schemas unless the model uses the
+      // content-embedded custom format (those route through ToolCallContentParser).
+      const skipToolSchemas = usesCustomToolFormat(model);
+      if (options?.tools && options.tools.length > 0 && !skipToolSchemas) {
+        requestBody.tools = this.convertTools(options.tools);
+      }
+
+      // Structured output: Ollama's `format` accepts "json" or a JSON schema.
+      if (options?.jsonMode) {
+        requestBody.format = 'json';
+      }
 
       // Use /api/chat endpoint (supports messages array and tool calling)
       // requestStream() throws on HTTP errors; no assertOk needed
@@ -97,25 +131,82 @@ export class OllamaAdapter extends BaseAdapter {
         operation: 'streaming generation',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          stream: true,
-          options: ollamaOptions
-        }),
+        body: JSON.stringify(requestBody),
         timeoutMs: 120_000
       });
 
-      yield* this.processNodeStreamJsonLines(nodeStream, {
+      let accumulatedContent = '';
+      let pendingToolCalls: ToolCall[] | undefined;
+      let pendingUsage: TokenUsage | undefined;
+      let hasContentToolFormat = false;
+
+      for await (const chunk of this.processNodeStreamJsonLines(nodeStream, {
         extractChunk: (parsed) => {
           const response = parsed as OllamaChatResponse;
-          if (response.message?.content) {
-            return { content: response.message.content, complete: false };
+          const nativeToolCalls = response.message?.tool_calls?.length
+            ? this.convertOllamaToolCalls(response.message.tool_calls)
+            : undefined;
+          const usage = response.done
+            ? {
+                promptTokens: response.prompt_eval_count || 0,
+                completionTokens: response.eval_count || 0,
+                totalTokens: (response.prompt_eval_count || 0) + (response.eval_count || 0)
+              }
+            : undefined;
+          if (response.message?.content || nativeToolCalls || usage) {
+            return {
+              content: response.message?.content || '',
+              complete: false,
+              toolCalls: nativeToolCalls,
+              toolCallsReady: !!nativeToolCalls,
+              usage
+            };
           }
           return null;
         },
         extractDone: (parsed) => !!(parsed as OllamaChatResponse).done
-      });
+      })) {
+        if (chunk.content) {
+          accumulatedContent += chunk.content;
+        }
+        if (chunk.toolCalls) {
+          pendingToolCalls = chunk.toolCalls;
+        }
+        if (chunk.usage) {
+          pendingUsage = chunk.usage;
+        }
+
+        // Detect content-embedded tool-call format (custom/fine-tuned models)
+        if (!hasContentToolFormat && !pendingToolCalls &&
+            ToolCallContentParser.hasToolCallsFormat(accumulatedContent)) {
+          hasContentToolFormat = true;
+        }
+
+        if (chunk.complete) {
+          let content = '';
+          let toolCalls = pendingToolCalls;
+          if (!toolCalls && hasContentToolFormat) {
+            const parsed = ToolCallContentParser.parse(accumulatedContent);
+            if (parsed.hasToolCalls) {
+              toolCalls = parsed.toolCalls;
+              content = parsed.cleanContent;
+            }
+          }
+          yield {
+            content,
+            complete: true,
+            toolCalls,
+            toolCallsReady: !!toolCalls,
+            usage: pendingUsage
+          };
+        } else if (pendingToolCalls || hasContentToolFormat) {
+          // Suppress raw deltas once tool calls are being assembled — native
+          // tool_calls arrive whole, and custom-format markers must not leak to the UI.
+          continue;
+        } else {
+          yield chunk;
+        }
+      }
     } catch (error) {
       if (error instanceof LLMProviderError) {
         throw error;
@@ -140,22 +231,21 @@ export class OllamaAdapter extends BaseAdapter {
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
-      // Build options object
-      const ollamaOptions: OllamaOptions = {
-        temperature: options?.temperature,
-        num_predict: options?.maxTokens,
-        stop: options?.stopSequences,
-        top_p: options?.topP,
-        frequency_penalty: options?.frequencyPenalty,
-        presence_penalty: options?.presencePenalty
+      const requestBody: Record<string, unknown> = {
+        model: model,
+        messages: this.normalizeMessagesForOllama(messages),
+        stream: false,
+        options: this.buildOllamaOptions(options)
       };
 
-      // Remove undefined values
-      Object.keys(ollamaOptions).forEach(key => {
-        if (ollamaOptions[key] === undefined) {
-          delete ollamaOptions[key];
-        }
-      });
+      const skipToolSchemas = usesCustomToolFormat(model);
+      if (options?.tools && options.tools.length > 0 && !skipToolSchemas) {
+        requestBody.tools = this.convertTools(options.tools);
+      }
+
+      if (options?.jsonMode) {
+        requestBody.format = 'json';
+      }
 
       // Use /api/chat endpoint (supports messages array and tool calling)
       const response = await this.request<OllamaChatResponse>({
@@ -165,30 +255,38 @@ export class OllamaAdapter extends BaseAdapter {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          stream: false,
-          options: ollamaOptions
-        }),
+        body: JSON.stringify(requestBody),
         timeoutMs: 60_000
       });
 
       this.assertOk(response, `Ollama API error: ${response.status} - ${response.text || 'Unknown error'}`);
 
       const data = response.json;
-      if (!data) {
+      if (!data?.message) {
         throw new LLMProviderError(
-          'Invalid response format from Ollama API: empty response',
+          'Invalid response format from Ollama API: missing message field',
           'generation',
           'INVALID_RESPONSE'
         );
       }
 
-      // /api/chat returns message.content instead of response
-      if (!data.message?.content) {
+      // Native tool calls (arguments as object), with content-embedded fallback
+      let content = data.message.content || '';
+      let toolCalls = data.message.tool_calls?.length
+        ? this.convertOllamaToolCalls(data.message.tool_calls)
+        : undefined;
+      if (!toolCalls && ToolCallContentParser.hasToolCallsFormat(content)) {
+        const parsed = ToolCallContentParser.parse(content);
+        if (parsed.hasToolCalls) {
+          toolCalls = parsed.toolCalls;
+          content = parsed.cleanContent;
+        }
+      }
+
+      // A valid response has either content or tool calls
+      if (!content && !toolCalls) {
         throw new LLMProviderError(
-          'Invalid response format from Ollama API: missing message.content field',
+          'Invalid response format from Ollama API: missing message content and tool calls',
           'generation',
           'INVALID_RESPONSE'
         );
@@ -201,7 +299,9 @@ export class OllamaAdapter extends BaseAdapter {
         totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
       };
 
-      const finishReason = data.done ? 'stop' : 'length';
+      const finishReason = toolCalls && toolCalls.length > 0
+        ? 'tool_calls'
+        : (data.done ? 'stop' : 'length');
       const metadata = {
         cached: false,
         modelDetails: data.model,
@@ -212,11 +312,12 @@ export class OllamaAdapter extends BaseAdapter {
       };
 
       return await this.buildLLMResponse(
-        data.message.content,
+        content,
         model,
         usage,
         metadata,
-        finishReason
+        finishReason,
+        toolCalls
       );
     } catch (error) {
       if (error instanceof LLMProviderError) {
@@ -286,17 +387,56 @@ export class OllamaAdapter extends BaseAdapter {
     }
   }
 
-  listModels(): Promise<ModelInfo[]> {
-    // Only return the user-configured model
-    // This ensures the UI only shows the model the user specifically configured
-    return Promise.resolve([{
-      id: this.currentModel,
-      name: this.currentModel,
-      contextWindow: 128000, // Use a reasonable default, not model-specific
+  /**
+   * List installed models by querying Ollama's /api/tags endpoint.
+   * Falls back to the user-configured model if discovery fails or returns nothing,
+   * so a manually-entered model is still selectable when the server is unreachable.
+   */
+  async listModels(): Promise<ModelInfo[]> {
+    try {
+      const response = await this.request({
+        url: `${this.ollamaUrl}/api/tags`,
+        operation: 'list models',
+        method: 'GET',
+        timeoutMs: 15_000
+      });
+
+      if (response.status !== 200) {
+        return this.fallbackModelList();
+      }
+
+      const data = response.json as OllamaTagsResponse | null;
+      const models = data?.models;
+      if (!Array.isArray(models) || models.length === 0) {
+        return this.fallbackModelList();
+      }
+
+      return models
+        .map((m) => m.name || m.model)
+        .filter((id): id is string => !!id)
+        .map((id) => this.buildModelInfo(id));
+    } catch {
+      // Server not reachable — surface the configured model so the UI isn't empty
+      return this.fallbackModelList();
+    }
+  }
+
+  private fallbackModelList(): ModelInfo[] {
+    if (!this.currentModel || !this.currentModel.trim()) {
+      return [];
+    }
+    return [this.buildModelInfo(this.currentModel)];
+  }
+
+  private buildModelInfo(modelId: string): ModelInfo {
+    return {
+      id: modelId,
+      name: modelId,
+      contextWindow: 128000, // Reasonable default; varies by model
       supportsStreaming: true,
-      supportsJSON: false, // Ollama doesn't have built-in JSON mode
-      supportsImages: this.currentModel.includes('vision') || this.currentModel.includes('llava'),
-      supportsFunctions: false,
+      supportsJSON: true, // Ollama supports `format: json` / JSON schema
+      supportsImages: this.detectVisionSupport(modelId),
+      supportsFunctions: this.detectToolSupport(modelId),
       supportsThinking: false,
       pricing: {
         inputPerMillion: 0, // Local models are free
@@ -304,19 +444,19 @@ export class OllamaAdapter extends BaseAdapter {
         currency: 'USD',
         lastUpdated: new Date().toISOString()
       }
-    }]);
+    };
   }
 
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: true,
       streamingMode: 'streaming',
-      supportsJSON: false, // Ollama doesn't have built-in JSON mode
+      supportsJSON: true, // `format` parameter accepts "json" or a JSON schema
       supportsImages: false, // Depends on specific model
-      supportsFunctions: false, // Standard Ollama doesn't support function calling
+      supportsFunctions: true, // Native tool calling via /api/chat `tools`
       supportsThinking: false,
       maxContextWindow: 128000, // Varies by model, this is a reasonable default
-      supportedFeatures: ['streaming', 'local', 'privacy']
+      supportedFeatures: ['streaming', 'function_calling', 'json_mode', 'local', 'privacy']
     };
   }
 
@@ -361,6 +501,131 @@ export class OllamaAdapter extends BaseAdapter {
     messages.push({ role: 'user', content: prompt });
 
     return messages;
+  }
+
+  /** Build the Ollama `options` object, dropping undefined values */
+  private buildOllamaOptions(options?: GenerateOptions): OllamaOptions {
+    const ollamaOptions: OllamaOptions = {
+      temperature: options?.temperature,
+      num_predict: options?.maxTokens,
+      stop: options?.stopSequences,
+      top_p: options?.topP,
+      frequency_penalty: options?.frequencyPenalty,
+      presence_penalty: options?.presencePenalty
+    };
+    Object.keys(ollamaOptions).forEach((key) => {
+      if (ollamaOptions[key] === undefined) {
+        delete ollamaOptions[key];
+      }
+    });
+    return ollamaOptions;
+  }
+
+  /**
+   * Convert tool schemas to Ollama's native format. Ollama accepts the same
+   * `{ type: 'function', function: { name, description, parameters } }` shape as
+   * OpenAI, so nested definitions pass through and flat ones are wrapped.
+   */
+  private convertTools(tools: Tool[]): Array<Record<string, unknown>> {
+    return tools.map((tool) => {
+      if (tool.function) {
+        return {
+          type: 'function',
+          function: {
+            name: tool.function.name,
+            description: tool.function.description,
+            parameters: tool.function.parameters
+          }
+        };
+      }
+      return tool as unknown as Record<string, unknown>;
+    });
+  }
+
+  /**
+   * Convert native Ollama tool calls into the shared ToolCall shape.
+   * Ollama returns `arguments` as an object and provides no call id, so we
+   * stringify the arguments and synthesize a stable id from position + name.
+   */
+  private convertOllamaToolCalls(toolCalls: OllamaToolCall[]): ToolCall[] {
+    return toolCalls.map((tc, index) => {
+      const name = tc.function?.name || '';
+      const rawArgs = tc.function?.arguments;
+      const args = typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs ?? {});
+      return {
+        id: `ollama-tool-${index}-${name}`,
+        type: 'function',
+        name,
+        function: { name, arguments: args },
+        sourceFormat: 'native'
+      };
+    });
+  }
+
+  /**
+   * Normalize OpenAI-format conversation history into Ollama's native message
+   * shape. The OpenAI context builder emits assistant `tool_calls` with
+   * `function.arguments` as a JSON string and tool results keyed by
+   * `tool_call_id`; native /api/chat expects object arguments and tool results
+   * keyed by `tool_name`.
+   */
+  private normalizeMessagesForOllama(messages: OllamaMessage[]): OllamaMessage[] {
+    const idToToolName = new Map<string, string>();
+
+    return messages.map((msg) => {
+      if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        const toolCalls: OllamaToolCall[] = (msg.tool_calls as Array<Record<string, unknown>>).map((tc) => {
+          const fn = (tc.function || {}) as { name?: string; arguments?: unknown };
+          const name = fn.name || (tc.name as string) || '';
+          if (typeof tc.id === 'string') {
+            idToToolName.set(tc.id, name);
+          }
+          let args = fn.arguments;
+          if (typeof args === 'string') {
+            try {
+              args = JSON.parse(args);
+            } catch {
+              args = {};
+            }
+          }
+          return { function: { name, arguments: (args as Record<string, unknown>) ?? {} } };
+        });
+        return { ...msg, tool_calls: toolCalls };
+      }
+
+      if (msg.role === 'tool') {
+        const toolName = msg.tool_name
+          || (typeof msg.tool_call_id === 'string' ? idToToolName.get(msg.tool_call_id) : undefined);
+        const normalized: OllamaMessage = { role: 'tool', content: msg.content ?? '' };
+        if (toolName) {
+          normalized.tool_name = toolName;
+        }
+        return normalized;
+      }
+
+      return msg;
+    });
+  }
+
+  /** Detect likely vision support from the model name */
+  private detectVisionSupport(modelId: string): boolean {
+    const visionKeywords = ['vision', 'llava', 'bakllava', 'cogvlm', 'yi-vl', 'moondream', 'minicpm-v'];
+    const lower = modelId.toLowerCase();
+    return visionKeywords.some((keyword) => lower.includes(keyword));
+  }
+
+  /** Detect likely tool/function-calling support from the model name */
+  private detectToolSupport(modelId: string): boolean {
+    const toolKeywords = [
+      'llama3.1', 'llama3.2', 'llama3.3', 'llama4',
+      'mistral', 'mixtral', 'nemo', 'firefunction', 'command-r',
+      'qwen', 'hermes', 'nous', 'deepseek', 'functionary', 'gorilla',
+      'granite', 'phi', 'smollm', 'cogito',
+      // Fine-tuned models that emit content-embedded tool calls
+      'nexus', 'tools-sft', 'tool-calling'
+    ];
+    const lower = modelId.toLowerCase();
+    return toolKeywords.some((keyword) => lower.includes(keyword));
   }
 
   protected handleError(error: unknown, operation: string): never {
