@@ -32,6 +32,7 @@ import { ContextTracker } from './services/ContextTracker';
 // Controllers
 import { UIStateController, UIStateControllerEvents } from './controllers/UIStateController';
 import { StreamingController } from './controllers/StreamingController';
+import { WorkingIndicatorController } from './controllers/WorkingIndicatorController';
 import { NexusLoadingController } from './controllers/NexusLoadingController';
 import { SubagentController } from './controllers/SubagentController';
 import { ChatLiveVoiceController } from './controllers/ChatLiveVoiceController';
@@ -91,6 +92,7 @@ export class ChatView extends ItemView {
   // Controllers and Coordinators
   private uiStateController!: UIStateController;
   private streamingController!: StreamingController;
+  private workingIndicatorController!: WorkingIndicatorController;
   private nexusLoadingController!: NexusLoadingController;
   private liveVoiceController: ChatLiveVoiceController | null = null;
   private toolCallStateManager!: ToolCallStateManager;
@@ -528,12 +530,17 @@ export class ChatView extends ItemView {
       onConversationUpdated: (conversation) => this.handleConversationUpdated(conversation),
       onLoadingStateChanged: (loading) => this.handleLoadingStateChanged(loading),
       onError: (message) => this.uiStateController.showError(message),
-      onToolCallsDetected: (messageId, toolCalls) =>
+      onToolCallsDetected: (messageId, toolCalls) => {
+        this.workingIndicatorController.noteToolActivity();
         this.toolEventCoordinator.handleToolCallsDetected(
           messageId,
           toolCalls as unknown as DetectedToolCalls
-        ),
-      onToolExecutionStarted: (messageId, toolCall) => this.toolEventCoordinator.handleToolExecutionStarted(messageId, toolCall),
+        );
+      },
+      onToolExecutionStarted: (messageId, toolCall) => {
+        this.workingIndicatorController.noteToolActivity();
+        this.toolEventCoordinator.handleToolExecutionStarted(messageId, toolCall);
+      },
       onToolExecutionCompleted: (messageId, toolId, result, success, error) =>
         this.toolEventCoordinator.handleToolExecutionCompleted(messageId, toolId, result, success, error),
       onMessageIdUpdated: (oldId, newId, updatedMessage) => this.handleMessageIdUpdated(oldId, newId, updatedMessage),
@@ -615,6 +622,13 @@ export class ChatView extends ItemView {
         void this.branchViewCoordinator.handleBranchSwitchedByIndex(messageId, alternativeIndex);
       }
     );
+
+    // Drives the "still working" gap ticker during the silent parts of a
+    // streaming turn (e.g. while tools execute, which do not stream).
+    this.workingIndicatorController = new WorkingIndicatorController({
+      show: () => this.messageDisplay.showWorkingIndicator(),
+      hide: () => this.messageDisplay.hideWorkingIndicator(),
+    });
 
     this.toolStatusBar = new ToolStatusBar(
       this.layoutElements.toolStatusBarContainer,
@@ -928,8 +942,14 @@ export class ChatView extends ItemView {
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
     if (isIncremental) {
+      // First/each streamed text token: stop the bubble's own pre-token loader
+      // (its DOM is wiped by the parser but its timers leak) and tell the gap
+      // ticker that text is flowing so it hides and re-arms its debounce.
+      this.messageDisplay.stopMessageLoader(messageId);
+      this.workingIndicatorController.noteText();
       this.streamingController.updateStreamingChunk(messageId, content);
     } else if (isComplete) {
+      this.workingIndicatorController.end();
       this.streamingController.finalizeStreaming(messageId, content);
       this.messageDisplay.updateMessageContent(messageId, content);
       this.toolEventCoordinator.clearToolNameCache();
@@ -955,6 +975,15 @@ export class ChatView extends ItemView {
   }
 
   private handleLoadingStateChanged(loading: boolean): void {
+    // Bracket the whole generation: begin() arms the gap ticker, end() tears it
+    // down. setLoading(false) fires from MessageManager's finally block, so this
+    // covers normal completion, aborts, and errors uniformly.
+    if (loading) {
+      this.workingIndicatorController.begin();
+    } else {
+      this.workingIndicatorController.end();
+    }
+
     if (this.chatInput) {
       if (loading) {
         this.chatInput.setPreSendCompacting(false);
@@ -1114,6 +1143,7 @@ export class ChatView extends ItemView {
     this.toolStatusBar?.cleanup();
     this.uiStateController?.cleanup();
     this.streamingController?.cleanup();
+    this.workingIndicatorController?.cleanup();
     this.nexusLoadingController?.unload();
     this.subagentController?.cleanup();
     this.branchViewCoordinator.cleanup();
