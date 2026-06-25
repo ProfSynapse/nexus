@@ -3,12 +3,13 @@
  *
  * Covers the gap-ticker state machine that shows a "still working" indicator
  * during the silent parts of a streaming turn (e.g. while tools execute):
- *   - begin() stays idle (the in-bubble loader covers the pre-first-token wait)
+ *   - begin() stays idle (the bubble's own loader covers the pre-first-token wait)
  *   - noteText() hides immediately, then the debounce reveals the ticker in a gap
  *   - a fresh text chunk re-arms the debounce (no flicker mid-stream)
  *   - noteToolActivity() shows immediately, but only after text has started
  *   - end() hides and disarms (no late show after the turn finishes)
  *   - show/hide events do not fire redundantly
+ *   - show/hide carry the streaming message id (so the right bubble is targeted)
  *
  * Constraints:
  *   - Node test env has no `window` — shim setTimeout/clearTimeout
@@ -25,6 +26,7 @@ if (typeof (global as any).window === 'undefined') {
 import { WorkingIndicatorController } from '../../src/ui/chat/controllers/WorkingIndicatorController';
 
 const GAP_DELAY_MS = 800;
+const MSG = 'ai-msg-1';
 
 describe('WorkingIndicatorController', () => {
   let show: jest.Mock;
@@ -47,7 +49,7 @@ describe('WorkingIndicatorController', () => {
     jest.useRealTimers();
   });
 
-  it('begin() stays idle — the in-bubble loader covers the initial wait', () => {
+  it('begin() stays idle — the bubble loader covers the initial wait', () => {
     controller.begin();
     jest.advanceTimersByTime(GAP_DELAY_MS * 2);
     expect(show).not.toHaveBeenCalled();
@@ -55,18 +57,19 @@ describe('WorkingIndicatorController', () => {
 
   it('shows the ticker after a gap once text has started', () => {
     controller.begin();
-    controller.noteText();
+    controller.noteText(MSG);
     expect(show).not.toHaveBeenCalled(); // text just arrived — not a gap yet
 
     jest.advanceTimersByTime(GAP_DELAY_MS);
     expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledWith(MSG);
   });
 
   it('re-arms the debounce on each text chunk (no mid-stream flicker)', () => {
     controller.begin();
-    controller.noteText();
+    controller.noteText(MSG);
     jest.advanceTimersByTime(GAP_DELAY_MS - 100);
-    controller.noteText(); // resets the timer before it could fire
+    controller.noteText(MSG); // resets the timer before it could fire
     jest.advanceTimersByTime(GAP_DELAY_MS - 100);
     expect(show).not.toHaveBeenCalled();
 
@@ -74,52 +77,64 @@ describe('WorkingIndicatorController', () => {
     expect(show).toHaveBeenCalledTimes(1);
   });
 
+  it('clears the bubble ticker on the first token (reconcile-safe handoff)', () => {
+    controller.begin();
+    controller.noteText(MSG); // first token forces the pre-text ticker down
+    expect(hide).toHaveBeenCalledWith(MSG);
+    expect(show).not.toHaveBeenCalled();
+  });
+
   it('hides immediately when text resumes after the ticker was shown', () => {
     controller.begin();
-    controller.noteText();
+    controller.noteText(MSG);
     jest.advanceTimersByTime(GAP_DELAY_MS);
     expect(show).toHaveBeenCalledTimes(1);
 
-    controller.noteText(); // continuation text arrived
-    expect(hide).toHaveBeenCalledTimes(1);
+    const hidesBefore = hide.mock.calls.length;
+    controller.noteText(MSG); // continuation text arrived
+    expect(hide.mock.calls.length).toBe(hidesBefore + 1);
+    expect(hide).toHaveBeenLastCalledWith(MSG);
   });
 
   it('noteToolActivity() shows immediately once text has started', () => {
     controller.begin();
-    controller.noteText();
-    controller.noteToolActivity();
+    controller.noteText(MSG);
+    controller.noteToolActivity(MSG);
     expect(show).toHaveBeenCalledTimes(1); // no need to wait out the debounce
+    expect(show).toHaveBeenCalledWith(MSG);
   });
 
   it('noteToolActivity() is ignored before any text (bubble loader covers it)', () => {
     controller.begin();
-    controller.noteToolActivity();
+    controller.noteToolActivity(MSG);
     expect(show).not.toHaveBeenCalled();
   });
 
   it('end() hides and disarms — no late show after the turn finishes', () => {
     controller.begin();
-    controller.noteText();
+    controller.noteText(MSG);
     controller.end();
     jest.advanceTimersByTime(GAP_DELAY_MS * 2);
     expect(show).not.toHaveBeenCalled();
   });
 
-  it('does not fire show/hide redundantly', () => {
+  it('does not restart the ticker when already shown, and end hides once', () => {
     controller.begin();
-    controller.noteText();
+    controller.noteText(MSG);
     jest.advanceTimersByTime(GAP_DELAY_MS);
-    controller.noteToolActivity(); // already shown
+    expect(show).toHaveBeenCalledTimes(1);
+    controller.noteToolActivity(MSG); // already shown — no second show
     expect(show).toHaveBeenCalledTimes(1);
 
+    const hidesBefore = hide.mock.calls.length;
     controller.end();
-    controller.end(); // already hidden
-    expect(hide).toHaveBeenCalledTimes(1);
+    controller.end(); // idempotent
+    expect(hide.mock.calls.length).toBe(hidesBefore + 1);
   });
 
   it('ignores stray signals when no turn is active', () => {
-    controller.noteText();
-    controller.noteToolActivity();
+    controller.noteText(MSG);
+    controller.noteToolActivity(MSG);
     jest.advanceTimersByTime(GAP_DELAY_MS * 2);
     expect(show).not.toHaveBeenCalled();
   });

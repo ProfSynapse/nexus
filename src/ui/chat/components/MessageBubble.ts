@@ -27,6 +27,12 @@ export class MessageBubble extends Component {
   private loadingInterval: number | null = null;
   private copyFeedbackTimeout: number | null = null;
   private thinkingLoader: ThinkingLoader | null = null;
+  // The in-bubble "working" ticker (pre-text wait, tool-first turns, and the
+  // silent tool-execution gaps mid-stream). `workingTickerActive` is the intent
+  // flag that survives re-renders so a mid-stream reconcile re-applies the
+  // ticker instead of dropping it; `workingTickerEl` is its DOM wrapper.
+  private workingTickerActive = false;
+  private workingTickerEl: HTMLElement | null = null;
   private branchNavigatorBinder: MessageBubbleBranchNavigatorBinder;
   private imageRenderer: MessageBubbleImageRenderer;
   private textBubbleElement: HTMLElement | null = null;
@@ -82,12 +88,12 @@ export class MessageBubble extends Component {
         }
       }
 
-      const contentElement = this.textBubbleElement.querySelector('.message-content');
-      if (this.isHTMLElement(contentElement) && this.message.isLoading && !activeContent.trim()) {
-        this.appendLoadingIndicator(contentElement);
+      this.element = wrapper;
+
+      if (this.message.isLoading && !activeContent.trim()) {
+        this.ensureWorkingTicker();
       }
 
-      this.element = wrapper;
       return wrapper;
     }
 
@@ -104,15 +110,9 @@ export class MessageBubble extends Component {
 
     const bubble = messageContainer.createDiv('message-bubble');
 
-    // Loading state for empty assistant streaming — rendered inside the bubble
-    // ahead of content so the ThinkingLoader appears in place of the eventual
-    // text. No header / role-icon in the glass redesign.
-    if (this.message.role === 'assistant' && this.message.isLoading && !this.message.content.trim()) {
-      const loadingShell = bubble.createDiv('ai-loading-header');
-      this.startThinkingLoader(loadingShell);
-    }
-
-    // Message content
+    // Message content. The "working" ticker for empty assistant streaming is
+    // attached by createElement() via ensureWorkingTicker() so it sits inside
+    // this bubble's .message-content (kept attached even when there is no text).
     const content = bubble.createDiv('message-content');
     this.renderContent(content, messageContent).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
@@ -324,17 +324,49 @@ export class MessageBubble extends Component {
       this.loadingInterval = null;
     }
 
-    if (this.element) {
-      const loadingElement = this.element.querySelector('.ai-loading-header');
-      if (loadingElement) {
-        loadingElement.remove();
-      }
-    }
+    // Terminal stop: clear the working ticker and its intent flag so it is not
+    // re-applied on subsequent re-renders.
+    this.removeWorkingTicker();
+  }
 
+  /**
+   * Show the in-bubble "working" ticker (idempotent). Lives inside the bubble's
+   * `.message-content` so it stays attached to the message — sitting after the
+   * streamed text during a tool gap, or filling an otherwise-empty bubble on a
+   * tool-first turn. Safe to call repeatedly; an already-mounted ticker keeps
+   * its word animation rather than restarting.
+   */
+  ensureWorkingTicker(): void {
+    this.workingTickerActive = true;
+    if (!this.element) return;
+    if (this.workingTickerEl && this.element.contains(this.workingTickerEl)) return;
+
+    const contentElement = this.element.querySelector('.message-content');
+    if (!this.isHTMLElement(contentElement)) return;
+
+    this.workingTickerEl = contentElement.createDiv('ai-loading-continuation');
+    this.startThinkingLoader(this.workingTickerEl);
+  }
+
+  /** Hide the in-bubble working ticker and clear its intent flag. */
+  removeWorkingTicker(): void {
+    this.workingTickerActive = false;
+    this.clearWorkingTickerEl();
+  }
+
+  /**
+   * Tear down the ticker DOM + timers WITHOUT clearing the intent flag, so a
+   * re-render can re-apply it (see updateWithNewMessage).
+   */
+  private clearWorkingTickerEl(): void {
     if (this.thinkingLoader) {
       this.thinkingLoader.stop();
       this.thinkingLoader.unload();
       this.thinkingLoader = null;
+    }
+    if (this.workingTickerEl) {
+      this.workingTickerEl.remove();
+      this.workingTickerEl = null;
     }
   }
 
@@ -365,7 +397,14 @@ export class MessageBubble extends Component {
   updateWithNewMessage(newMessage: ConversationMessage): void {
     const nextState = MessageBubbleStateResolver.resolve(newMessage);
 
-    this.stopLoadingAnimation();
+    // Clear the ticker DOM before re-render but PRESERVE the intent flag, so a
+    // mid-stream reconcile (e.g. LM Studio persisting a Responses API id during
+    // a tool gap) re-applies the ticker below instead of dropping it.
+    if (this.loadingInterval) {
+      window.clearInterval(this.loadingInterval);
+      this.loadingInterval = null;
+    }
+    this.clearWorkingTickerEl();
     this.message = newMessage;
 
     this.imageRenderer.clear();
@@ -398,8 +437,11 @@ export class MessageBubble extends Component {
       }
     }
 
-    if (newMessage.isLoading && newMessage.role === 'assistant') {
-      this.appendLoadingIndicator(contentElement);
+    // Re-apply the working ticker if the turn is still mid-flight: either the
+    // message is still loading (pre-text / tool-first) or the gap controller had
+    // it showing when this reconcile fired.
+    if (newMessage.role === 'assistant' && (newMessage.isLoading || this.workingTickerActive)) {
+      this.ensureWorkingTicker();
     }
   }
 
@@ -425,14 +467,6 @@ export class MessageBubble extends Component {
     } else {
       this.element = nextElement;
     }
-  }
-
-  /**
-   * Render the inline loading indicator used after the initial bubble is on screen.
-   */
-  private appendLoadingIndicator(contentElement: HTMLElement): void {
-    const loadingDiv = contentElement.createDiv('ai-loading-continuation');
-    this.startThinkingLoader(loadingDiv);
   }
 
   private startThinkingLoader(container: HTMLElement): void {

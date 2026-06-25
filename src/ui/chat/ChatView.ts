@@ -531,14 +531,14 @@ export class ChatView extends ItemView {
       onLoadingStateChanged: (loading) => this.handleLoadingStateChanged(loading),
       onError: (message) => this.uiStateController.showError(message),
       onToolCallsDetected: (messageId, toolCalls) => {
-        this.workingIndicatorController.noteToolActivity();
+        this.workingIndicatorController.noteToolActivity(messageId);
         this.toolEventCoordinator.handleToolCallsDetected(
           messageId,
           toolCalls as unknown as DetectedToolCalls
         );
       },
       onToolExecutionStarted: (messageId, toolCall) => {
-        this.workingIndicatorController.noteToolActivity();
+        this.workingIndicatorController.noteToolActivity(messageId);
         this.toolEventCoordinator.handleToolExecutionStarted(messageId, toolCall);
       },
       onToolExecutionCompleted: (messageId, toolId, result, success, error) =>
@@ -626,8 +626,8 @@ export class ChatView extends ItemView {
     // Drives the "still working" gap ticker during the silent parts of a
     // streaming turn (e.g. while tools execute, which do not stream).
     this.workingIndicatorController = new WorkingIndicatorController({
-      show: () => this.messageDisplay.showWorkingIndicator(),
-      hide: () => this.messageDisplay.hideWorkingIndicator(),
+      show: (messageId) => this.messageDisplay.showWorkingIndicator(messageId),
+      hide: (messageId) => this.messageDisplay.hideWorkingIndicator(messageId),
     });
 
     this.toolStatusBar = new ToolStatusBar(
@@ -942,11 +942,10 @@ export class ChatView extends ItemView {
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
     if (isIncremental) {
-      // First/each streamed text token: stop the bubble's own pre-token loader
-      // (its DOM is wiped by the parser but its timers leak) and tell the gap
-      // ticker that text is flowing so it hides and re-arms its debounce.
-      this.messageDisplay.stopMessageLoader(messageId);
-      this.workingIndicatorController.noteText();
+      // A streamed text token arrived: tell the gap ticker text is flowing so it
+      // hides and re-arms its debounce (it reappears in-bubble once the stream
+      // goes quiet for a tool round-trip).
+      this.workingIndicatorController.noteText(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
     } else if (isComplete) {
       this.workingIndicatorController.end();

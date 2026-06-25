@@ -13,33 +13,33 @@
  * turn, so the ticker visibly "stops once it starts generating" and never
  * returns while tools run.
  *
- * This controller owns a gap ticker that lives OUTSIDE the message bubble (so
- * it survives both the parser's `container.empty()` and bubble reconciliation,
- * including the mid-stream reconcile LM Studio triggers when it persists a
- * Responses API id) and shows it only when the assistant is mid-turn but text
- * is not actively flowing.
+ * This controller decides WHEN a "still working" ticker should be visible. The
+ * ticker itself is rendered in-bubble by MessageBubble (so it stays attached to
+ * the message and survives reconciliation); the controller only toggles it via
+ * the show/hide callbacks, passing the streaming message id.
  *
  * State machine (a single generation is active at a time)
  * -------------------------------------------------------
- * - begin():           a turn started. We stay idle — the in-bubble loader
+ * - begin():           a turn started. We stay idle — the bubble's own loader
  *                      already covers the pre-first-token wait (and any leading
  *                      tool calls before text), so we do nothing until text
- *                      actually starts to avoid showing two tickers at once.
- * - noteText():        a text chunk arrived. Hide the gap ticker (text is
- *                      visible) and arm a debounce; if no further text arrives
- *                      within GAP_DELAY_MS we treat the silence as a gap and
- *                      show the ticker. This is the provider-agnostic path that
- *                      works even when a provider emits no tool events (e.g.
- *                      some local models).
- * - noteToolActivity(): a tool was detected / started executing. If text has
+ *                      actually starts to avoid toggling a ticker the bubble is
+ *                      already showing.
+ * - noteText(id):      a text chunk arrived. Hide the ticker (text is visible)
+ *                      and arm a debounce; if no further text arrives within
+ *                      GAP_DELAY_MS we treat the silence as a gap and show the
+ *                      ticker. This is the provider-agnostic path that works
+ *                      even when a provider emits no tool events (some local
+ *                      models).
+ * - noteToolActivity(id): a tool was detected / started executing. If text has
  *                      already started, show the ticker immediately — more
  *                      responsive than waiting out the debounce. Ignored before
- *                      the first token (the in-bubble loader covers that).
+ *                      the first token (the bubble's loader covers that).
  * - end():             the turn finished / aborted / errored. Hide and disarm.
  */
 export interface WorkingIndicatorEvents {
-  show: () => void;
-  hide: () => void;
+  show: (messageId: string) => void;
+  hide: (messageId: string) => void;
 }
 
 export class WorkingIndicatorController {
@@ -52,6 +52,7 @@ export class WorkingIndicatorController {
   private active = false;
   private hasText = false;
   private shown = false;
+  private messageId: string | null = null;
   private gapTimer: number | null = null;
 
   constructor(private readonly events: WorkingIndicatorEvents) {}
@@ -60,21 +61,34 @@ export class WorkingIndicatorController {
   begin(): void {
     this.active = true;
     this.hasText = false;
+    this.messageId = null;
+    this.shown = false;
     this.clearGapTimer();
-    this.hideTicker();
   }
 
   /** A streamed text chunk arrived for the active turn. */
-  noteText(): void {
+  noteText(messageId: string): void {
     if (!this.active) return;
-    this.hasText = true;
-    this.hideTicker();
+    this.messageId = messageId;
+
+    if (!this.hasText) {
+      // First token: the bubble showed its own pre-text ticker (on isLoading).
+      // Force it down — even though the controller never "showed" it — so a
+      // mid-stream reconcile does not re-stamp the ticker over streaming text.
+      this.hasText = true;
+      this.shown = false;
+      this.events.hide(messageId);
+    } else {
+      this.hideTicker();
+    }
+
     this.armGapTimer();
   }
 
   /** A tool was detected or started executing for the active turn. */
-  noteToolActivity(): void {
+  noteToolActivity(messageId: string): void {
     if (!this.active || !this.hasText) return;
+    this.messageId = messageId;
     this.clearGapTimer();
     this.showTicker();
   }
@@ -85,6 +99,7 @@ export class WorkingIndicatorController {
     this.hasText = false;
     this.clearGapTimer();
     this.hideTicker();
+    this.messageId = null;
   }
 
   cleanup(): void {
@@ -109,14 +124,14 @@ export class WorkingIndicatorController {
   }
 
   private showTicker(): void {
-    if (this.shown) return;
+    if (this.shown || !this.messageId) return;
     this.shown = true;
-    this.events.show();
+    this.events.show(this.messageId);
   }
 
   private hideTicker(): void {
-    if (!this.shown) return;
+    if (!this.shown || !this.messageId) return;
     this.shown = false;
-    this.events.hide();
+    this.events.hide(this.messageId);
   }
 }
