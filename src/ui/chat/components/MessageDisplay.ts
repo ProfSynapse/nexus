@@ -6,7 +6,6 @@
 
 import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
 import { MessageBubble } from './MessageBubble';
-import { ThinkingLoader } from './ThinkingLoader';
 import { BranchManager } from '../services/BranchManager';
 import { App, setIcon, ButtonComponent } from 'obsidian';
 
@@ -15,11 +14,6 @@ export class MessageDisplay {
   private currentConversationId: string | null = null;
   private messageBubbles: Map<string, MessageBubble> = new Map();
   private transientEventRow: HTMLElement | null = null;
-  // Gap ticker shown during the silent parts of a streaming turn (e.g. while
-  // tools execute). Lives outside the message bubbles so it survives both the
-  // streaming parser's container.empty() and incremental reconciliation.
-  private workingIndicatorRow: HTMLElement | null = null;
-  private workingIndicatorLoader: ThinkingLoader | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -123,7 +117,6 @@ export class MessageDisplay {
     }
 
     this.ensureTransientEventRowPosition(messagesContainer as HTMLElement);
-    this.ensureWorkingIndicatorPosition(messagesContainer as HTMLElement);
   }
 
   /**
@@ -156,7 +149,6 @@ export class MessageDisplay {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
-    this.ensureWorkingIndicatorPosition(this.container.querySelector('.messages-container'));
     this.scrollToBottom();
   }
 
@@ -167,7 +159,6 @@ export class MessageDisplay {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
-    this.ensureWorkingIndicatorPosition(this.container.querySelector('.messages-container'));
     this.scrollToBottom();
   }
 
@@ -233,11 +224,6 @@ export class MessageDisplay {
     }
     this.messageBubbles.clear();
 
-    // Stop the gap ticker before container.empty() orphans its timers. A full
-    // render is a conversation switch / reload, so any prior turn's ticker is
-    // no longer relevant.
-    this.hideWorkingIndicator();
-
     this.container.empty();
     this.container.addClass('message-display');
 
@@ -301,63 +287,23 @@ export class MessageDisplay {
   }
 
   /**
-   * Show the "still working" gap ticker beneath the message list. Rendered as a
-   * non-bubble row so it survives incremental reconciliation (reconcile only
-   * touches messageBubbles) and the streaming parser's container.empty().
-   * Idempotent: re-showing keeps the existing ticker so its word animation does
-   * not restart on every gap.
+   * Show the "still working" ticker inside the given message's bubble. Rendered
+   * in-bubble (not a detached row) so it stays visually attached to the message
+   * — after the streamed text during a tool gap, or filling an otherwise-empty
+   * bubble on a tool-first turn. The bubble re-applies it across reconciliation.
    */
-  showWorkingIndicator(): void {
-    const messagesContainer = this.container.querySelector('.messages-container');
-    if (!messagesContainer) {
+  showWorkingIndicator(messageId: string): void {
+    const bubble = this.messageBubbles.get(messageId);
+    if (!bubble) {
       return;
     }
-
-    if (!this.workingIndicatorRow) {
-      const row = window.activeDocument.createElement('div');
-      row.className = 'message-working-row';
-      row.setAttribute('role', 'status');
-      row.setAttribute('aria-live', 'polite');
-      this.workingIndicatorRow = row;
-
-      this.workingIndicatorLoader = new ThinkingLoader();
-      this.workingIndicatorLoader.start(row);
-    }
-
-    this.ensureWorkingIndicatorPosition(messagesContainer as HTMLElement);
+    bubble.ensureWorkingTicker();
     this.scrollToBottom();
   }
 
-  /** Remove the gap ticker and stop its animation. */
-  hideWorkingIndicator(): void {
-    if (this.workingIndicatorLoader) {
-      this.workingIndicatorLoader.stop();
-      this.workingIndicatorLoader.unload();
-      this.workingIndicatorLoader = null;
-    }
-    if (this.workingIndicatorRow) {
-      this.workingIndicatorRow.remove();
-      this.workingIndicatorRow = null;
-    }
-  }
-
-  /**
-   * Stop a message bubble's own pre-first-token loader. Called when the first
-   * streamed text token arrives so the leaked ThinkingLoader intervals behind
-   * the bubble's loading indicator are cleared (the parser's container.empty()
-   * removes its DOM but not its timers).
-   */
-  stopMessageLoader(messageId: string): void {
-    this.messageBubbles.get(messageId)?.stopLoadingAnimation();
-  }
-
-  private ensureWorkingIndicatorPosition(messagesContainer: HTMLElement | null): void {
-    if (!messagesContainer || !this.workingIndicatorRow) {
-      return;
-    }
-    // Always re-append so the ticker stays at the very bottom, below any
-    // bubbles or tool-message bubbles created mid-turn.
-    messagesContainer.appendChild(this.workingIndicatorRow);
+  /** Remove the in-bubble working ticker for the given message. */
+  hideWorkingIndicator(messageId: string): void {
+    this.messageBubbles.get(messageId)?.removeWorkingTicker();
   }
 
   /**
@@ -603,7 +549,6 @@ export class MessageDisplay {
     }
     this.messageBubbles.clear();
     this.clearTransientEventRow();
-    this.hideWorkingIndicator();
     this.currentConversationId = null;
   }
 }
