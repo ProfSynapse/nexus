@@ -778,6 +778,16 @@ body.theme-light .message-content {
     font-weight: 600;
 }
 
+/* "Still working" gap ticker — shown beneath the message list during the
+   silent parts of a streaming turn (e.g. while tools execute, which do not
+   stream). Left-aligned to sit under the assistant's reply. Hosts a
+   ThinkingLoader (.thinking-loader). */
+.message-working-row {
+    display: flex;
+    justify-content: flex-start;
+    padding: 0.35rem 0.75rem 0.6rem;
+}
+
 /* Compaction divider — subtle centered rule with label, inserted
    after context compaction completes. Transparent background so the
    glass gradient shows through. */
