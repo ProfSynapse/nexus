@@ -115,9 +115,9 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    // M3 — plan §6 verbatim message including re-read coaching suffix.
+    // M3 — start-not-found message coaches a narrow re-read (not the whole file).
     expect(result.error).toBe(
-      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+      'start anchor not found in file. The content may have shifted since your last read — re-read just the expected line range (contentManager.read with a narrow startLine/endLine), not the whole file, then retry.'
     );
     expect(app.vault.modify).not.toHaveBeenCalled();
   });
@@ -136,7 +136,7 @@ describe('ReplaceTool (pattern anchors)', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe(
-      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+      'start anchor not found in file. The content may have shifted since your last read — re-read just the expected line range (contentManager.read with a narrow startLine/endLine), not the whole file, then retry.'
     );
     expect(mockFileContent).toBe('');
     expect(app.vault.modify).not.toHaveBeenCalled();
@@ -288,6 +288,138 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'head\nCHANGED\ntail');
   });
 
+  it('§8.10b: tolerates curly→straight apostrophe drift (NFKC does not fold this)', async () => {
+    // File stores a typographic apostrophe (U+2019); LLM copies a straight one.
+    mockFileContent = 'head\n## Poirot’s clue\ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: "## Poirot's clue",
+      end: "## Poirot's clue",
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10c: tolerates straight→curly apostrophe drift (reverse direction)', async () => {
+    // File stores a straight apostrophe; LLM copies a typographic one.
+    mockFileContent = "head\n## Poirot's clue\ntail";
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '## Poirot’s clue',
+      end: '## Poirot’s clue',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10d: tolerates curly double-quote drift', async () => {
+    mockFileContent = 'head\nsaid “hello” to her\ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'said "hello" to her',
+      end: 'said "hello" to her',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10e: tolerates dash drift (em/en dash vs ASCII hyphen)', async () => {
+    // File stores an em dash; LLM copies an ASCII hyphen.
+    mockFileContent = 'head\n## Wrap-up — final notes\ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '## Wrap-up - final notes',
+      end: '## Wrap-up - final notes',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10f: tolerates invisible zero-width / soft-hyphen drift', async () => {
+    // File line carries a zero-width space (U+200B) and a soft hyphen (U+00AD)
+    // that the LLM cannot see and so omits.
+    mockFileContent = 'head\nThe​quick brown­fox\ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'Thequick brownfox',
+      end: 'Thequick brownfox',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10g: tolerates trailing-whitespace drift (markdown hard break)', async () => {
+    // File line ends with two trailing spaces (markdown hard break); LLM drops them.
+    mockFileContent = 'head\nA line with a hard break  \ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'A line with a hard break',
+      end: 'A line with a hard break',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    // Untouched lines keep their original bytes; only the matched line is replaced.
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+  });
+
+  it('§8.10h: leading indentation stays significant (does NOT fold)', async () => {
+    // Two lines that differ only by leading indentation must remain distinct —
+    // an unindented anchor must not match the indented line.
+    mockFileContent = 'foo\n    foo\nbar';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'foo',
+      end: 'bar',
+      content: 'X',
+    });
+
+    // 'foo' (no indent) is unique on line 1 — the indented '    foo' must not
+    // also match, so this resolves to exactly one start anchor and succeeds.
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('X');
+  });
+
+  it('surfaces the nearest line as a recommendation when an anchor narrowly misses', async () => {
+    // A genuinely unmatchable anchor (differs by more than a quote) still
+    // points the caller at the line they most likely meant — routed through
+    // the shared nudge/recommender channel, not jammed into the error string.
+    mockFileContent = 'alpha\nThe quick brown fox jumps\nomega';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'The quick brown fox jumped',
+      end: 'omega',
+      content: 'X',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('start anchor not found');
+    const recs = (result as { recommendations?: Array<{ type: string; message: string }> }).recommendations;
+    expect(recs).toBeDefined();
+    const nearMiss = recs!.find(r => r.type === 'anchor_near_miss');
+    expect(nearMiss).toBeDefined();
+    expect(nearMiss!.message).toContain('Closest line in file is line 2');
+    expect(nearMiss!.message).toContain('The quick brown fox jumps');
+  });
+
   it('preserves CRLF-free output and returns positive linesDelta on growth', async () => {
     mockFileContent = 'a\nb\nc\nd';
     const result = await tool.execute({
@@ -353,7 +485,7 @@ describe('ReplaceTool (pattern anchors)', () => {
     // sole guard that the start-anchor message variant is NOT emitted when
     // start resolved but end did not (avoids LLM-confusing message mix).
     expect(result.error).toBe(
-      'end anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+      'end anchor not found in file. The content may have shifted since your last read — re-read just the expected line range (contentManager.read with a narrow startLine/endLine), not the whole file, then retry.'
     );
     expect(app.vault.modify).not.toHaveBeenCalled();
   });
