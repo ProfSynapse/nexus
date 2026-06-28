@@ -2,6 +2,10 @@
 
 ## June 2026
 
+**v5.13.1** — Lint/store-compliance fixes
+
+- Removed inline `eslint-disable` comments for `obsidianmd/ui/sentence-case` (rejected by the Obsidian community-store scanner) from the LM Studio / Ollama provider modals, handling the casing via the project acronym allowlist instead. No user-visible behavior change beyond one reworded Ollama help string.
+
 **v5.13.0** — Local models that think, call tools, and stream reliably
 
 **Local models can now drive tools (Ollama)** (PR #281)
