@@ -1100,6 +1100,33 @@ body.theme-light .message-content {
 /* Message content typography — ported from .mock-device--glass
    .minimal-message-content (mockup line 2242) and .minimal-message-content
    p (line 2249). 18px base, 1.52 line-height, 0.38rem paragraph gap. */
+.message-reasoning {
+    margin: 0 0 0.5rem 0;
+    border-left: 2px solid var(--background-modifier-border);
+    padding-left: 0.5rem;
+}
+
+.message-reasoning-summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+    list-style: none;
+    user-select: none;
+}
+
+.message-reasoning-summary::-webkit-details-marker {
+    display: none;
+}
+
+.message-reasoning-content {
+    margin-top: 0.25rem;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    white-space: pre-wrap;
+    opacity: 0.85;
+}
+
 .message-content {
     color: var(--text-normal);
     font-size: 18px;

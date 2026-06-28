@@ -19,6 +19,7 @@ import {
 } from '../types';
 import { ToolCallContentParser } from '../shared/ToolCallContentParser';
 import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
+import { isThinkingModelName } from '../shared/thinkingModels';
 
 /** Native Ollama tool call shape — arguments is an object/map, and there is no id */
 interface OllamaToolCall {
@@ -40,6 +41,8 @@ interface OllamaMessage {
 interface OllamaOptions {
   temperature?: number;
   num_predict?: number;
+  num_ctx?: number;
+  draft_num_predict?: number;
   stop?: string[];
   top_p?: number;
   frequency_penalty?: number;
@@ -51,6 +54,9 @@ interface OllamaChatResponse {
   message?: {
     role?: string;
     content?: string;
+    // Native reasoning field, populated when the request sets `think: true`.
+    // Streamed incrementally (one fragment per chunk), like content.
+    thinking?: string;
     tool_calls?: OllamaToolCall[];
   };
   prompt_eval_count?: number;
@@ -81,14 +87,32 @@ export class OllamaAdapter extends BaseAdapter {
   readonly baseUrl: string;
   
   private ollamaUrl: string;
+  /** Optional num_ctx override sent per request; undefined = use Ollama's server default */
+  private contextLength?: number;
+  /**
+   * Speculative-decoding state. When undefined, draft_num_predict is left untouched
+   * (Ollama's own default applies). When true, draft_num_predict is sent (draftNumPredict ?? 4)
+   * to enable/tune drafting on MTP-capable models; when false, 0 is sent to disable it.
+   */
+  private speculativeDecoding?: boolean;
+  private draftNumPredict?: number;
 
-  constructor(ollamaUrl: string, userModel: string) {
+  constructor(
+    ollamaUrl: string,
+    userModel: string,
+    contextLength?: number,
+    speculativeDecoding?: boolean,
+    draftNumPredict?: number
+  ) {
     // Ollama doesn't need an API key - set requiresApiKey to false
     // Use user-configured model instead of hardcoded default
     super('', userModel, ollamaUrl, false);
 
     this.ollamaUrl = ollamaUrl;
     this.baseUrl = ollamaUrl;
+    this.contextLength = contextLength && contextLength > 0 ? contextLength : undefined;
+    this.speculativeDecoding = speculativeDecoding;
+    this.draftNumPredict = draftNumPredict && draftNumPredict > 0 ? draftNumPredict : undefined;
 
     this.initializeCache();
   }
@@ -109,6 +133,9 @@ export class OllamaAdapter extends BaseAdapter {
         model: model,
         messages: this.normalizeMessagesForOllama(messages),
         stream: true,
+        // Native reasoning separation: thinking arrives in message.thinking instead of
+        // leaking as inline <think> tags in content.
+        think: this.shouldEnableThinking(model, options),
         options: this.buildOllamaOptions(options)
       };
 
@@ -146,6 +173,7 @@ export class OllamaAdapter extends BaseAdapter {
           const nativeToolCalls = response.message?.tool_calls?.length
             ? this.convertOllamaToolCalls(response.message.tool_calls)
             : undefined;
+          const reasoning = response.message?.thinking;
           const usage = response.done
             ? {
                 promptTokens: response.prompt_eval_count || 0,
@@ -153,10 +181,13 @@ export class OllamaAdapter extends BaseAdapter {
                 totalTokens: (response.prompt_eval_count || 0) + (response.eval_count || 0)
               }
             : undefined;
-          if (response.message?.content || nativeToolCalls || usage) {
+          if (response.message?.content || reasoning || nativeToolCalls || usage) {
             return {
               content: response.message?.content || '',
               complete: false,
+              // Reasoning fragments stream before content; route to the thinking channel.
+              reasoning: reasoning || undefined,
+              reasoningComplete: reasoning ? false : undefined,
               toolCalls: nativeToolCalls,
               toolCallsReady: !!nativeToolCalls,
               usage
@@ -235,6 +266,8 @@ export class OllamaAdapter extends BaseAdapter {
         model: model,
         messages: this.normalizeMessagesForOllama(messages),
         stream: false,
+        // Native reasoning separation (see streaming path) — keeps <think> out of content.
+        think: this.shouldEnableThinking(model, options),
         options: this.buildOllamaOptions(options)
       };
 
@@ -302,13 +335,15 @@ export class OllamaAdapter extends BaseAdapter {
       const finishReason = toolCalls && toolCalls.length > 0
         ? 'tool_calls'
         : (data.done ? 'stop' : 'length');
+      const reasoning = data.message.thinking;
       const metadata = {
         cached: false,
         modelDetails: data.model,
         totalDuration: data.total_duration,
         loadDuration: data.load_duration,
         promptEvalDuration: data.prompt_eval_duration,
-        evalDuration: data.eval_duration
+        evalDuration: data.eval_duration,
+        ...(typeof reasoning === 'string' && reasoning.length > 0 ? { reasoning } : {})
       };
 
       return await this.buildLLMResponse(
@@ -432,12 +467,15 @@ export class OllamaAdapter extends BaseAdapter {
     return {
       id: modelId,
       name: modelId,
-      contextWindow: 128000, // Reasonable default; varies by model
+      // Report the user-configured num_ctx when set so token budgeting matches what
+      // Ollama actually allocates; otherwise a generous default (the true per-model
+      // max isn't known here, and the server default depends on VRAM).
+      contextWindow: this.contextLength ?? 128000,
       supportsStreaming: true,
       supportsJSON: true, // Ollama supports `format: json` / JSON schema
       supportsImages: this.detectVisionSupport(modelId),
       supportsFunctions: this.detectToolSupport(modelId),
-      supportsThinking: false,
+      supportsThinking: isThinkingModelName(modelId),
       pricing: {
         inputPerMillion: 0, // Local models are free
         outputPerMillion: 0,
@@ -454,7 +492,7 @@ export class OllamaAdapter extends BaseAdapter {
       supportsJSON: true, // `format` parameter accepts "json" or a JSON schema
       supportsImages: false, // Depends on specific model
       supportsFunctions: true, // Native tool calling via /api/chat `tools`
-      supportsThinking: false,
+      supportsThinking: true, // Reasoning models stream native message.thinking (think: true)
       maxContextWindow: 128000, // Varies by model, this is a reasonable default
       supportedFeatures: ['streaming', 'function_calling', 'json_mode', 'local', 'privacy']
     };
@@ -503,11 +541,31 @@ export class OllamaAdapter extends BaseAdapter {
     return messages;
   }
 
+  /**
+   * Resolve the top-level `think` request flag. Ollama separates reasoning into
+   * `message.thinking` only when this is true; otherwise a thinking model leaks its
+   * reasoning as inline <think> tags in content. Explicit user choice wins; otherwise
+   * we default thinking-capable models on (so their reasoning renders) and leave others
+   * off. Sending the flag to a non-thinking model is a safe no-op (Ollama ignores it).
+   */
+  private shouldEnableThinking(model: string, options?: GenerateOptions): boolean {
+    return options?.enableThinking ?? isThinkingModelName(model);
+  }
+
   /** Build the Ollama `options` object, dropping undefined values */
   private buildOllamaOptions(options?: GenerateOptions): OllamaOptions {
     const ollamaOptions: OllamaOptions = {
       temperature: options?.temperature,
       num_predict: options?.maxTokens,
+      // num_ctx: provider-configured context length. When undefined the key is
+      // stripped below and Ollama falls back to its own server default.
+      num_ctx: this.contextLength,
+      // draft_num_predict: speculative decoding. On => draftNumPredict ?? 4 (only speeds up
+      // models with built-in MTP tensors; no-op otherwise). Off => 0 (explicitly disable).
+      // Undefined toggle => key stripped below, Ollama's own default applies.
+      draft_num_predict: this.speculativeDecoding === undefined
+        ? undefined
+        : (this.speculativeDecoding ? (this.draftNumPredict ?? 4) : 0),
       stop: options?.stopSequences,
       top_p: options?.topP,
       frequency_penalty: options?.frequencyPenalty,

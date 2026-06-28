@@ -33,9 +33,13 @@ export interface CliToolSchema {
   tool: string;
   description: string;
   command: string;
-  usage: string;
-  arguments: CliArgumentSchema[];
-  examples: string[];
+  // usage/arguments/examples are present only for FULL schemas (a specific "agent tool"
+  // request). Broad discovery (`--help` or an agent-level selector) returns COMPACT
+  // entries with just the command + description — the model drills into a named tool to
+  // get its full signature. This keeps a `--help` listing from dumping every tool's args.
+  usage?: string;
+  arguments?: CliArgumentSchema[];
+  examples?: string[];
 }
 
 export interface GetToolsParams {
@@ -64,6 +68,9 @@ export interface GetToolsResult extends CommonResult {
   error?: string;
   data?: {
     tools: CliToolSchema[];
+    // Present when `tools` are compact (broad discovery) — tells the model how to get
+    // full arguments for a specific tool before calling it.
+    note?: string;
   };
 }
 

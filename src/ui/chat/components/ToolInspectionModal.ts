@@ -185,9 +185,11 @@ export class ToolInspectionModal extends Modal {
   private renderMessages(): void {
     this.listEl.empty();
 
-    const toolMessages = this.loadedMessages.filter((message) => Array.isArray(message.toolCalls) && message.toolCalls.length > 0);
+    // Surface any message that carries tool calls OR reasoning, so think-only
+    // responses (reasoning but no tool calls) remain inspectable.
+    const inspectableMessages = this.loadedMessages.filter((message) => this.hasInspectableContent(message));
 
-    if (toolMessages.length === 0) {
+    if (inspectableMessages.length === 0) {
       this.emptyEl.setText(this.hasMorePages
         ? 'No tool calls are loaded yet. Scroll up to inspect earlier activity.'
         : 'No tool calls were recorded for this conversation.');
@@ -196,12 +198,18 @@ export class ToolInspectionModal extends Modal {
       this.emptyEl.empty();
       this.emptyEl.addClass('tool-inspection-empty-hidden');
 
-      for (const message of toolMessages) {
+      for (const message of inspectableMessages) {
         this.renderMessageSection(message);
       }
     }
 
-    this.updateSummary(toolMessages);
+    this.updateSummary(inspectableMessages);
+  }
+
+  private hasInspectableContent(message: ToolInspectionMessage): boolean {
+    const hasToolCalls = Array.isArray(message.toolCalls) && message.toolCalls.length > 0;
+    const hasReasoning = typeof message.reasoning === 'string' && message.reasoning.trim().length > 0;
+    return hasToolCalls || hasReasoning;
   }
 
   private renderMessageSection(message: ToolInspectionMessage): void {
@@ -225,6 +233,12 @@ export class ToolInspectionModal extends Modal {
         cls: 'tool-inspection-message-preview',
         text: preview,
       });
+    }
+
+    const reasoning = typeof message.reasoning === 'string' ? message.reasoning : '';
+    if (reasoning.trim()) {
+      const reasoningEl = sectionEl.createDiv({ cls: 'tool-inspection-reasoning' });
+      this.renderDataBlock(reasoningEl, 'Reasoning', this.truncateSerialized(reasoning), true);
     }
 
     const callsEl = sectionEl.createDiv({ cls: 'tool-inspection-calls' });
@@ -315,19 +329,32 @@ export class ToolInspectionModal extends Modal {
     });
   }
 
-  private updateSummary(toolMessages: ToolInspectionMessage[]): void {
-    const toolCallCount = toolMessages.reduce((total, message) => total + (message.toolCalls?.length ?? 0), 0);
-    if (toolCallCount === 0) {
+  private updateSummary(messages: ToolInspectionMessage[]): void {
+    const toolCallCount = messages.reduce((total, message) => total + (message.toolCalls?.length ?? 0), 0);
+    const reasoningCount = messages.reduce(
+      (total, message) => total + (typeof message.reasoning === 'string' && message.reasoning.trim() ? 1 : 0),
+      0
+    );
+
+    if (toolCallCount === 0 && reasoningCount === 0) {
       this.summaryEl.setText(this.hasMorePages
         ? 'No tool activity is visible yet. Scroll up to load earlier pages.'
         : 'No tool activity was recorded for this conversation.');
       return;
     }
 
-    const callLabel = toolCallCount === 1 ? 'tool call' : 'tool calls';
+    const parts: string[] = [];
+    if (toolCallCount > 0) {
+      parts.push(`${toolCallCount} ${toolCallCount === 1 ? 'tool call' : 'tool calls'}`);
+    }
+    if (reasoningCount > 0) {
+      parts.push(`${reasoningCount} reasoning ${reasoningCount === 1 ? 'entry' : 'entries'}`);
+    }
+
+    const summary = parts.join(' · ');
     this.summaryEl.setText(this.hasMorePages
-      ? `${toolCallCount} ${callLabel} loaded. Scroll up for earlier activity.`
-      : `${toolCallCount} ${callLabel} in this conversation.`);
+      ? `${summary} loaded. Scroll up for earlier activity.`
+      : `${summary} in this conversation.`);
   }
 
   private setLoadingState(isLoading: boolean, message = 'Loading...'): void {

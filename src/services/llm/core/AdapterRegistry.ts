@@ -265,14 +265,18 @@ export class AdapterRegistry implements IAdapterRegistry {
       await this.initializeGeminiCliAdapter(providers['google-gemini-cli']);
       await this.initializeGithubCopilotAdapter(providers['github-copilot']);
 
-      // Ollama - apiKey is actually the server URL
+      // Ollama - apiKey is actually the server URL. Models are discovered from
+      // the server, so the adapter is created whenever a server URL is set.
       if (providers.ollama?.enabled && providers.ollama.apiKey) {
         try {
-          const ollamaModel = providers.ollama.ollamaModel;
-          if (ollamaModel && ollamaModel.trim()) {
-            const { OllamaAdapter } = await import('../adapters/ollama/OllamaAdapter');
-            this.adapters.set('ollama', new OllamaAdapter(providers.ollama.apiKey, ollamaModel));
-          }
+          const { OllamaAdapter } = await import('../adapters/ollama/OllamaAdapter');
+          this.adapters.set('ollama', new OllamaAdapter(
+            providers.ollama.apiKey,
+            providers.ollama.ollamaModel || '',
+            providers.ollama.ollamaContextLength,
+            providers.ollama.ollamaSpeculativeDecoding,
+            providers.ollama.ollamaDraftNumPredict
+          ));
         } catch (error) {
           console.error('AdapterRegistry: Failed to initialize Ollama adapter:', error);
           this.logError('ollama', error);
@@ -283,7 +287,11 @@ export class AdapterRegistry implements IAdapterRegistry {
       if (providers.lmstudio?.enabled && providers.lmstudio.apiKey) {
         try {
           const { LMStudioAdapter } = await import('../adapters/lmstudio/LMStudioAdapter');
-          this.adapters.set('lmstudio', new LMStudioAdapter(providers.lmstudio.apiKey));
+          this.adapters.set('lmstudio', new LMStudioAdapter(providers.lmstudio.apiKey, {
+            contextLength: providers.lmstudio.lmstudioContextLength,
+            flashAttention: providers.lmstudio.lmstudioFlashAttention,
+            draftModel: providers.lmstudio.lmstudioDraftModel,
+          }));
         } catch (error) {
           console.error('AdapterRegistry: Failed to initialize LM Studio adapter:', error);
           this.logError('lmstudio', error);

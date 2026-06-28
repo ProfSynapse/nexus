@@ -173,6 +173,16 @@ export class MessageDisplay {
   }
 
   /**
+   * Live-update a message's reasoning ("Thinking") block during streaming.
+   */
+  updateMessageReasoning(messageId: string, reasoningText: string, isComplete: boolean): void {
+    const messageBubble = this.messageBubbles.get(messageId);
+    if (messageBubble) {
+      messageBubble.updateReasoning(reasoningText, isComplete);
+    }
+  }
+
+  /**
    * Update a specific message with new data (including tool calls) without full re-render
    */
   updateMessage(messageId: string, updatedMessage: ConversationMessage): void {

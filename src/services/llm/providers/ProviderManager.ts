@@ -90,30 +90,44 @@ export class LLMProviderManager {
     // For each enabled provider, get their models
     for (const provider of enabledProviders) {
       if (provider.id === 'ollama') {
-        // Special handling for Ollama - only return the user-configured model
-        const ollamaModel = this.settings.providers.ollama?.ollamaModel;
+        // Special handling for Ollama - dynamically discover installed models from server
+        try {
+          // Wait for async adapter initialization to complete
+          await this.llmService.waitForInit();
 
-        if (ollamaModel && ollamaModel.trim()) {
-          allModels.push({
-            provider: 'ollama',
-            id: ollamaModel,
-            name: ollamaModel,
-            contextWindow: 128000, // Fixed reasonable default
-            maxOutputTokens: 4096,
-            supportsJSON: false,
-            supportsImages: ollamaModel.includes('vision') || ollamaModel.includes('llava'),
-            supportsFunctions: false,
-            supportsStreaming: true,
-            supportsThinking: false,
-            pricing: {
-              inputPerMillion: 0,
-              outputPerMillion: 0,
-              currency: 'USD',
-              lastUpdated: new Date().toISOString()
-            },
-            isDefault: defaultModel.provider === 'ollama' && defaultModel.model === ollamaModel,
-            userDescription: this.settings.providers.ollama?.userDescription
-          });
+          const adapter = this.llmService.getAdapter('ollama');
+
+          if (!adapter) {
+            // Expected when Ollama server URL isn't configured - silently skip
+            continue;
+          }
+
+          const ollamaModels = await adapter.listModels();
+
+          for (const model of ollamaModels) {
+            allModels.push({
+              provider: 'ollama',
+              id: model.id,
+              name: model.name,
+              contextWindow: model.contextWindow,
+              maxOutputTokens: model.maxOutputTokens || 4096,
+              supportsJSON: model.supportsJSON,
+              supportsImages: model.supportsImages,
+              supportsFunctions: model.supportsFunctions,
+              supportsStreaming: model.supportsStreaming,
+              supportsThinking: model.supportsThinking,
+              pricing: {
+                inputPerMillion: 0, // Local models are free
+                outputPerMillion: 0,
+                currency: 'USD',
+                lastUpdated: new Date().toISOString()
+              },
+              isDefault: defaultModel.provider === 'ollama' && defaultModel.model === model.id,
+              userDescription: this.settings.providers.ollama?.userDescription
+            });
+          }
+        } catch {
+          // Ollama server not reachable - silently skip (app probably not running)
         }
       } else if (provider.id === 'lmstudio') {
         // Special handling for LM Studio - dynamically discover models from server

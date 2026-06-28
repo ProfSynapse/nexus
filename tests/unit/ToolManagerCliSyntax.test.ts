@@ -519,6 +519,32 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Compact vs full schemas (broad discovery cap)
+  // -------------------------------------------------------------------------
+
+  describe('buildCliSchema compact mode', () => {
+    it('compact omits usage/arguments/examples but keeps command + description', () => {
+      const normalizer = makeNormalizer();
+      const tool = buildStubRegistry().get('contentManager')!.getTools()[0];
+
+      const compact = normalizer.buildCliSchema('contentManager', tool, { compact: true });
+      expect(compact.command).toBeTruthy();
+      expect(compact.description).toBe(tool.description);
+      expect(compact.usage).toBeUndefined();
+      expect(compact.arguments).toBeUndefined();
+      expect(compact.examples).toBeUndefined();
+
+      const full = normalizer.buildCliSchema('contentManager', tool);
+      expect(full.usage).toBeTruthy();
+      expect(Array.isArray(full.arguments)).toBe(true);
+      expect(Array.isArray(full.examples)).toBe(true);
+
+      // The cap is real: compact serializes much smaller than full.
+      expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Value coercion — coerceValue branches
   // -------------------------------------------------------------------------
 
