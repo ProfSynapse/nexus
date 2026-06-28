@@ -2,6 +2,24 @@
 
 ## June 2026
 
+**v5.13.0** — Local models that think, call tools, and stream reliably
+
+**Local models can now drive tools (Ollama)** (PR #281)
+- The Ollama provider previously assumed the local API couldn't do function calling — so local models couldn't be used for agentic chats. It now sends tool schemas, parses native `tool_calls`, and supports JSON/structured output, matching the LM Studio adapter. A capable local model can now actually use Nexus's tools.
+- **Model discovery**: Nexus now lists every model you have installed in Ollama (via `/api/tags`) instead of only the single model you'd configured.
+
+**Local models show their thinking** (PR #283)
+- Reasoning-capable local models (LM Studio + Ollama) now stream their thinking live into a collapsible **Thinking** block in chat, persisted with the message and visible in the tool-inspection view — the same way cloud reasoning models already worked.
+
+**Local streaming no longer goes blank** (PR #283)
+- Fixed the blank-output / "stuck in reasoning" / reload-every-turn failures on LM Studio. Fatal errors that LM Studio delivers as an in-stream frame over HTTP 200 (e.g. a speculative-decoding rejection on batched-MLX models) were silently swallowed, leaving an empty bubble. Nexus now surfaces those errors and, when a draft/speculative model is rejected, automatically retries without it so the chat still produces output. The model-load path also stops needlessly reloading the model on every turn.
+
+**Content edits tolerate punctuation drift** (PR #282)
+- `content replace` (and the `replace` prompt action) matched anchors with limited normalization, so an anchor copied verbatim from a note could still fail to match over curly vs. straight quotes, dash variants, invisible/zero-width characters, or trailing whitespace. Matching now folds all of these (comparison only — your file bytes and replacement text are written verbatim). On a near miss, the closest line and a narrow re-read range are suggested instead of a generic "not found".
+
+**Chat keeps you posted while tools run** (PRs #279, #280)
+- A "still working" ticker now appears during the silent gaps of a streaming turn (e.g. while tools execute or when a local model goes straight to a tool call with no text), rendered inside the assistant bubble so it stays attached to the message and survives mid-stream re-renders.
+
 **v5.12.2** — Query your notes with SQL, Antigravity provider, new image model
 
 **Notes query index (new)** (PR #274)
