@@ -185,6 +185,7 @@ export abstract class BaseAdapter {
     const pumpState = { isCompleted: false };
     let usage: SSEParsedUsage | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
+    let streamError: string | undefined = undefined;
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
     const parser = createParser((event) => {
@@ -206,6 +207,18 @@ export abstract class BaseAdapter {
 
       try {
         const parsed = JSON.parse(event.data) as SSEParsedEvent;
+
+        // A fatal error delivered mid-stream (HTTP 200, then an {"error": {...}} frame).
+        // Record it and stop; we throw after the pump drains so the caller can react
+        // (e.g. LM Studio's draft-model rejection → retry without speculative decoding).
+        if (options.extractError) {
+          const errMsg = options.extractError(parsed);
+          if (errMsg) {
+            streamError = errMsg;
+            pumpState.isCompleted = true;
+            return;
+          }
+        }
 
         if (options.extractMetadata) {
           metadata = { ...(metadata || {}), ...(options.extractMetadata(parsed) || {}) };
@@ -311,13 +324,17 @@ export abstract class BaseAdapter {
 
     // Read from the Node.js stream and feed to the SSE parser
     yield* pumpSseEventQueue(nodeStream, (text) => parser.feed(text), eventQueue, pumpState, {
-      buildFinalChunk: () => ({
-        content: '',
-        complete: true,
-        usage: this.formatStreamUsage(usage)
-      }),
-      buildErrorChunk: () => ({ content: '', complete: true })
+      buildFinalChunk: () => (streamError
+        // Don't emit a "successful" final chunk when the stream carried a fatal error —
+        // the throw below is the real outcome.
+        ? { content: '', complete: false }
+        : { content: '', complete: true, usage: this.formatStreamUsage(usage) }),
+      buildErrorChunk: () => ({ content: '', complete: false })
     });
+
+    if (streamError) {
+      throw new LLMProviderError(streamError, this.name, 'PROVIDER_STREAM_ERROR');
+    }
   }
 
   /**

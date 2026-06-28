@@ -82,6 +82,10 @@ export interface SSEStreamOptions {
   extractMetadata?: (parsed: SSEParsedEvent) => Record<string, unknown> | null;
   // Reasoning/thinking extraction for models that support it
   extractReasoning?: (parsed: SSEParsedEvent) => { text: string; complete: boolean } | null;
+  // Some providers deliver a fatal error as an in-stream event (HTTP 200, then an
+  // {"error": {...}} data frame) rather than an HTTP error. Return the message to make
+  // processNodeStream throw it instead of silently ending the stream with no output.
+  extractError?: (parsed: SSEParsedEvent) => string | null;
   onParseError?: (error: Error, rawData: string) => void;
   debugLabel?: string;
   // Tool call accumulation settings

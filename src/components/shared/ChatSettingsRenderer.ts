@@ -297,8 +297,6 @@ export class ChatSettingsRenderer {
         }
       },
       noProvidersText: 'No providers enabled',
-      showOllamaTextInput: true,
-      getOllamaModel: () => this.settings.model || '',
       modelOptionMap: this.modelOptionMap,
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
@@ -417,7 +415,6 @@ export class ChatSettingsRenderer {
         }
       },
       noProvidersText: 'No cloud providers enabled',
-      showOllamaTextInput: false,
       modelOptionMap: this.agentModelOptionMap,
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
@@ -1232,10 +1229,6 @@ export class ChatSettingsRenderer {
   // ========== HELPERS ==========
 
   private async getDefaultModelForProvider(providerId: string): Promise<string> {
-    if (providerId === 'ollama') {
-      return this.config.llmProviderSettings.providers.ollama?.ollamaModel || '';
-    }
-
     try {
       const models = await this.providerManager.getModelsForProvider(providerId);
       return models[0]?.id || '';

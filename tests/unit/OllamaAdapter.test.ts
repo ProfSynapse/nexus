@@ -247,6 +247,78 @@ describe('OllamaAdapter', () => {
       expect(final.toolCalls).toHaveLength(1);
       expect(final.toolCalls![0].function).toEqual({ name: 'get_weather', arguments: '{"city":"Tokyo"}' });
     });
+
+    it('routes native message.thinking to the reasoning channel and enables think for reasoning models', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return ndjsonResponse(
+          { message: { role: 'assistant', content: '', thinking: 'Let me think' }, done: false },
+          { message: { role: 'assistant', content: '', thinking: ' about it' }, done: false },
+          { message: { role: 'assistant', content: 'Answer' }, done: false },
+          { message: { role: 'assistant', content: '' }, done: true, prompt_eval_count: 5, eval_count: 3 }
+        );
+      });
+
+      const adapter = new OllamaAdapter(URL, 'qwen3.5:4b');
+      const chunks = await collect(adapter.generateStreamAsync('hi'));
+
+      // think:true is sent for a reasoning-capable model (qwen3 family)
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.think).toBe(true);
+
+      // thinking fragments surface as reasoning, content stays clean
+      const reasoning = chunks.filter(c => c.reasoning).map(c => c.reasoning).join('');
+      expect(reasoning).toBe('Let me think about it');
+      expect(concatContent(chunks)).toBe('Answer');
+    });
+
+    it('defaults think:false for non-reasoning models so plain chat is unaffected', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return ndjsonResponse(
+          { message: { role: 'assistant', content: 'Hi' }, done: false },
+          { message: { role: 'assistant', content: '' }, done: true, prompt_eval_count: 2, eval_count: 1 }
+        );
+      });
+
+      const adapter = new OllamaAdapter(URL, 'llama3.1');
+      await collect(adapter.generateStreamAsync('hi'));
+
+      expect(JSON.parse(requests[0].body ?? '{}').think).toBe(false);
+    });
+
+    it('honors an explicit enableThinking:false override on a reasoning model', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return ndjsonResponse({ message: { role: 'assistant', content: 'Hi' }, done: true, prompt_eval_count: 1, eval_count: 1 });
+      });
+
+      const adapter = new OllamaAdapter(URL, 'qwen3.5:4b');
+      await collect(adapter.generateStreamAsync('hi', { enableThinking: false }));
+
+      expect(JSON.parse(requests[0].body ?? '{}').think).toBe(false);
+    });
+  });
+
+  describe('thinking (non-streaming)', () => {
+    it('surfaces message.thinking as metadata.reasoning', async () => {
+      __setRequestUrlMock(async () => jsonResponse(200, {
+        model: 'qwen3.5:4b',
+        message: { role: 'assistant', content: 'Four', thinking: '2+2 is 4' },
+        done: true,
+        prompt_eval_count: 6,
+        eval_count: 2
+      }));
+
+      const adapter = new OllamaAdapter(URL, 'qwen3.5:4b');
+      const result = await adapter.generateUncached('what is 2+2');
+
+      expect(result.text).toBe('Four');
+      expect(result.metadata?.reasoning).toBe('2+2 is 4');
+    });
   });
 
   describe('model discovery', () => {

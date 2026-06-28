@@ -110,6 +110,10 @@ export class MessageBubble extends Component {
 
     const bubble = messageContainer.createDiv('message-bubble');
 
+    // Render the collapsible "Thinking" block (if the message carries reasoning)
+    // before the content so it sits at the top of the bubble.
+    this.syncReasoningBlock(bubble);
+
     // Message content. The "working" ticker for empty assistant streaming is
     // attached by createElement() via ensureWorkingTicker() so it sits inside
     // this bubble's .message-content (kept attached even when there is no text).
@@ -370,6 +374,52 @@ export class MessageBubble extends Component {
     }
   }
 
+  /** Create/update a collapsible "Thinking" block from the message's reasoning text. */
+  private syncReasoningBlock(bubble: HTMLElement): void {
+    const reasoning = MessageBubbleStateResolver.getActiveReasoning(this.message);
+    const existing = bubble.querySelector(':scope > .message-reasoning');
+    if (!reasoning || !reasoning.trim()) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    let details: HTMLDetailsElement;
+    // Avoid `instanceof HTMLDetailsElement` (unreliable across Obsidian popout
+    // windows, like the file's isHTMLElement helper) — match on tagName instead.
+    if (this.isHTMLElement(existing) && existing.tagName === 'DETAILS') {
+      details = existing as HTMLDetailsElement;
+    } else {
+      if (existing) existing.remove();
+      details = window.activeDocument.createElement('details');
+      details.addClass('message-reasoning');
+      details.createEl('summary', { cls: 'message-reasoning-summary', text: 'Thinking' });
+      details.createDiv('message-reasoning-content');
+      bubble.insertBefore(details, bubble.firstChild);
+    }
+
+    const body = details.querySelector('.message-reasoning-content');
+    if (this.isHTMLElement(body)) {
+      body.textContent = reasoning;
+    }
+    // Auto-expand while the model is still thinking; collapse once the turn completes.
+    const stillThinking = this.message.state === 'streaming' || !!this.message.isLoading;
+    details.open = stillThinking;
+  }
+
+  /** Live update during streaming: write reasoning text into the block, creating it if needed. */
+  updateReasoning(reasoningText: string, isComplete: boolean): void {
+    if (!this.element) return;
+    const bubble = this.element.querySelector('.message-bubble');
+    if (!this.isHTMLElement(bubble)) return;
+    // Temporarily reflect the incoming text on the in-memory message so syncReasoningBlock renders it.
+    this.message = { ...this.message, reasoning: reasoningText };
+    this.syncReasoningBlock(bubble);
+    const details = bubble.querySelector(':scope > .message-reasoning');
+    if (this.isHTMLElement(details) && details.tagName === 'DETAILS') {
+      (details as HTMLDetailsElement).open = !isComplete;
+    }
+  }
+
   /**
    * Update static message content
    */
@@ -429,6 +479,14 @@ export class MessageBubble extends Component {
     this.renderContent(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
+
+    // Re-sync the "Thinking" block from the new message's reasoning. The bubble
+    // is the parent of .message-content; contentElement.empty() above does not
+    // touch the reasoning block (it is a sibling, not a child of content).
+    const bubbleEl = contentElement.parentElement;
+    if (this.isHTMLElement(bubbleEl)) {
+      this.syncReasoningBlock(bubbleEl);
+    }
 
     if (this.message.role === 'assistant' && this.isHTMLElement(this.element)) {
       this.imageRenderer.renderLoadedToolResults(nextState.activeToolCalls, this.element);

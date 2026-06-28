@@ -63,12 +63,6 @@ export interface ModelDropdownConfig {
   /** Empty-state text for provider dropdown when none available */
   noProvidersText: string;
 
-  /** Whether to show Ollama as a text input instead of dropdown */
-  showOllamaTextInput: boolean;
-
-  /** Get Ollama model name for text input display */
-  getOllamaModel?: () => string;
-
   /** The model option map to populate (maps option key -> { provider, modelId }) */
   modelOptionMap: Map<string, { provider: string; modelId: string }>;
 
@@ -208,17 +202,6 @@ function renderModelDropdown(
       : currentProvider === 'google-gemini-cli'
         ? 'google'
       : currentProvider;
-
-  // Ollama special case: show text input instead of dropdown
-  if (config.showOllamaTextInput && modelProviderId === 'ollama') {
-    new Setting(content)
-      .setName('Model')
-      .addText(text => text
-        .setValue(config.getOllamaModel?.() || '')
-        .setDisabled(true)
-        .setPlaceholder('Configure in settings'));
-    return;
-  }
 
   new Setting(content)
     .setName('Model')

@@ -537,6 +537,10 @@ export class ChatView extends ItemView {
           toolCalls as unknown as DetectedToolCalls
         );
       },
+      onReasoningUpdate: (messageId, reasoningText, isComplete) => {
+        this.workingIndicatorController.noteToolActivity(messageId);
+        this.messageDisplay.updateMessageReasoning(messageId, reasoningText, isComplete);
+      },
       onToolExecutionStarted: (messageId, toolCall) => {
         this.workingIndicatorController.noteToolActivity(messageId);
         this.toolEventCoordinator.handleToolExecutionStarted(messageId, toolCall);

@@ -766,8 +766,20 @@ export class ToolCliNormalizer {
     return splitTopLevelSegments(command).map(segment => this.parseCommandSegment(segment));
   }
 
-  buildCliSchema(agentName: string, tool: ToolLike): CliToolSchema {
+  buildCliSchema(agentName: string, tool: ToolLike, options?: { compact?: boolean }): CliToolSchema {
     const baseCommand = `${this.getAgentAlias(agentName)} ${toKebabCase(tool.slug)}`;
+
+    // Compact mode (broad/agent-level discovery): just enough to pick a tool and drill in.
+    // Skips the heavy per-argument descriptions + examples that bloat a full `--help` dump.
+    if (options?.compact) {
+      return {
+        agent: agentName,
+        tool: tool.slug,
+        description: tool.description,
+        command: baseCommand
+      };
+    }
+
     const inputSchema = this.stripCommonParams(tool.getParameterSchema() as Record<string, unknown>);
     const properties = isRecord(inputSchema.properties) ? inputSchema.properties : {};
     const required = new Set(Array.isArray(inputSchema.required) ? inputSchema.required.filter((value): value is string => typeof value === 'string') : []);
@@ -880,7 +892,7 @@ export class ToolCliNormalizer {
     });
 
     const params: Record<string, unknown> = {};
-    const positionalArgs = cliSchema.arguments.filter(arg => arg.positional);
+    const positionalArgs = (cliSchema.arguments ?? []).filter(arg => arg.positional);
     let positionalIndex = 0;
 
     for (let index = 2; index < tokens.length; index += 1) {
@@ -907,7 +919,7 @@ export class ToolCliNormalizer {
           if (inlineValue !== undefined) {
             throw new Error(`Negation flag "--${normalizedFlag}" cannot be combined with =value.`);
           }
-          const boolArg = cliSchema.arguments.find(arg => arg.flag === `--${normalizedFlag.slice(3)}` && arg.type === 'boolean');
+          const boolArg = (cliSchema.arguments ?? []).find(arg => arg.flag === `--${normalizedFlag.slice(3)}` && arg.type === 'boolean');
           if (!boolArg) {
             throw new Error(`Unknown flag "${token.value}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
           }
@@ -916,7 +928,7 @@ export class ToolCliNormalizer {
         }
 
         const flagSpec = `--${normalizedFlag}`;
-        const arg = cliSchema.arguments.find(item => item.flag === flagSpec);
+        const arg = (cliSchema.arguments ?? []).find(item => item.flag === flagSpec);
         if (!arg) {
           throw new Error(`Unknown flag "${token.value}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
         }
@@ -998,7 +1010,7 @@ export class ToolCliNormalizer {
       positionalIndex += 1;
     }
 
-    for (const arg of cliSchema.arguments) {
+    for (const arg of (cliSchema.arguments ?? [])) {
       if (arg.required && params[arg.name] === undefined) {
         throw new Error(`Missing required argument "${arg.name}" for ${resolved.agentName}.${resolved.toolSlug}.`);
       }

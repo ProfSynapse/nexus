@@ -41,6 +41,16 @@ export interface LLMProviderConfig {
   enabled: boolean;
   models?: { [modelId: string]: ModelConfig }; // Model-specific configurations
   ollamaModel?: string; // For Ollama: user-configured model name
+  ollamaContextLength?: number; // For Ollama: num_ctx sent per request (overrides server default); undefined = use server default
+  // Ollama speculative decoding: per-request draft_num_predict. Ollama has no arbitrary draft-model
+  // picker — drafting only speeds up models with built-in MTP tensors; this toggle no-ops otherwise.
+  ollamaSpeculativeDecoding?: boolean; // when true, send draft_num_predict; when false, send 0 (disable)
+  ollamaDraftNumPredict?: number; // draft tokens per step when speculative decoding on; undefined = 4
+  // LM Studio: load-time + per-request tuning applied automatically when chatting
+  lmstudioContextLength?: number; // context_length to load the model with; undefined = LM Studio default
+  lmstudioFlashAttention?: boolean; // flash_attention at load time; undefined = LM Studio default
+  lmstudioSpeculativeDecoding?: boolean; // UI toggle state for speculative decoding (independent of draft selection)
+  lmstudioDraftModel?: string; // draft model key for speculative decoding (per-request); empty/undefined = no draft chosen yet
   lastValidated?: number; // Unix timestamp (ms) of last successful validation
   validationHash?: string; // First 16 chars of SHA256 hash of validated API key
   // OpenRouter-specific headers (optional, but recommended for production)
