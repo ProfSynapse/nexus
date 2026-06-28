@@ -248,7 +248,7 @@ describe('executePrompts action alignment (pattern anchors)', () => {
     it('propagates an underlying replace-tool anchor-not-found error through executeContentAction', async () => {
       const executeAgentTool = jest.fn().mockResolvedValue({
         success: false,
-        error: 'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.',
+        error: 'start anchor not found in file. The content may have shifted since your last read — re-read just the expected line range (contentManager.read with a narrow startLine/endLine), not the whole file, then retry.',
       });
       const agentManager = { executeAgentTool } as unknown as AgentManager;
       const executor = new ActionExecutor(agentManager);
@@ -267,7 +267,7 @@ describe('executePrompts action alignment (pattern anchors)', () => {
       // M3 — plan §6 verbatim start-anchor-not-found message (including the
       // re-read coaching suffix) must propagate through executor unchanged.
       expect(result.error).toBe(
-        'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+        'start anchor not found in file. The content may have shifted since your last read — re-read just the expected line range (contentManager.read with a narrow startLine/endLine), not the whole file, then retry.'
       );
       expect(executeAgentTool).toHaveBeenCalledWith(
         'contentManager',

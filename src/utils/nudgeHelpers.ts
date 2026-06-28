@@ -349,4 +349,27 @@ export class NudgeHelpers {
       message: `${count} line(s) ${direction} after line ${affectedAfterLine}. Re-read target lines with contentManager.read before further updates to ensure correct positioning.`
     };
   }
+
+  /**
+   * Surface the nearest file line when a replace anchor failed to match.
+   *
+   * `contentManager.replace` matches anchors as whole, normalized lines, so a
+   * near-but-not-exact anchor (typically one invisible character — a curly vs
+   * straight quote, a stray space) fails with no clue as to why. When the tool
+   * locates the closest candidate line, this turns it into a recommendation so
+   * the offending character is visible without a re-read.
+   *
+   * @param nearest The closest line the tool found (or null if nothing was close)
+   */
+  static checkAnchorNearMiss(
+    nearest: { lineNumber: number; text: string } | null
+  ): Recommendation | null {
+    if (!nearest) return null;
+    const from = Math.max(1, nearest.lineNumber - 3);
+    const to = nearest.lineNumber + 3;
+    return {
+      type: "anchor_near_miss",
+      message: `Closest line in file is line ${nearest.lineNumber}: "${nearest.text}". Copy that line exactly if it is the one you meant — matching tolerates quote/whitespace differences, so a real miss means different words. To confirm cheaply, re-read just that area: contentManager.read startLine ${from} endLine ${to} (no need to re-read the whole file).`
+    };
+  }
 }
