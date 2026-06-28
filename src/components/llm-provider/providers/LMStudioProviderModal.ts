@@ -428,8 +428,7 @@ export class LMStudioProviderModal implements IProviderModal {
     ul.addClass('llm-provider-help-list');
 
     const li = ul.createEl('li');
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- K/V are technical cache names
-    li.createEl('strong', { text: 'K and V cache quantization' });
+    li.createEl('strong', { text: 'KV cache quantization' });
     li.appendText(' — in LM Studio’s model load settings, set both to Q8 (near-lossless) or Q4 (max savings) to roughly halve context memory and fit an even larger window.');
   }
 

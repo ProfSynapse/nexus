@@ -107,11 +107,12 @@ export default defineConfig([
 
             // Extend sentence-case with project-specific acronyms and brands
             "obsidianmd/ui/sentence-case": ["error", {
-                acronyms: [...DEFAULT_ACRONYMS, "MCP", "LLM"],
+                acronyms: [...DEFAULT_ACRONYMS, "MCP", "LLM", "KV", "MTP", "GLM"],
                 brands: [...DEFAULT_BRANDS, "Claude Desktop", "Claude", "Nexus", "LM Studio", "Ollama", "WebLLM"],
                 ignoreRegex: [
                     "^e\\.g\\.",
                     "^ollama\\s",
+                    "^OLLAMA_",
                     "^https?://",
                     "^Enter your .* URL \\(default: https?://",
                     "^Please enter a valid URL \\(e\\.g\\., https?://",

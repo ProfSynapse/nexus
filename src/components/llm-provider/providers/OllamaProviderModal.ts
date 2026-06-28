@@ -286,7 +286,6 @@ export class OllamaProviderModal implements IProviderModal {
 
     new Setting(container)
       .setName('Enable speculative decoding')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains model-name acronyms (MTP, GLM)
       .setDesc('Drafts several tokens per step to speed up generation. Only helps models with built-in MTP/draft tensors (e.g. Qwen3-Next, GLM-4.6); it is harmless on other models. Ollama has no separate draft-model picker.')
       .addToggle(toggle => {
         toggle
@@ -350,7 +349,6 @@ export class OllamaProviderModal implements IProviderModal {
     intro.appendText('These are set on the Ollama server (not here). Launch the server with:');
 
     const pre = contentDiv.createEl('pre');
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- literal shell command
     pre.createEl('code', { text: 'OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve' });
 
     const ul = contentDiv.createEl('ul');
@@ -369,8 +367,7 @@ export class OllamaProviderModal implements IProviderModal {
     li3.appendText(' — check the status above (or "ollama ps"). If layers spill to CPU, lower the context length.');
 
     const note = contentDiv.createEl('p');
-    // eslint-disable-next-line obsidianmd/ui/sentence-case -- contains literal commands
-    note.createEl('em', { text: 'On macOS, set these with launchctl setenv (then restart Ollama); on Linux use systemctl edit ollama.' });
+    note.createEl('em', { text: 'On macOS, set these with launchctl setenv (then restart Ollama); on Linux, set them in the Ollama systemd service (systemctl edit).' });
   }
 
   /**

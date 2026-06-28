@@ -69,10 +69,7 @@ function foldDashes(text: string): string {
  * routinely ride along in web-pasted content and silently break exact matches.
  */
 function stripInvisibles(text: string): string {
-  // The class lists U+200C/U+200D (ZWNJ/ZWJ) as independent format characters to
-  // strip, not a grapheme cluster \u2014 so the joined-sequence heuristic is a false
-  // positive here. Suppress it rather than reorder around the heuristic.
-  // eslint-disable-next-line no-misleading-character-class
+  // eslint-disable-next-line no-misleading-character-class -- U+200C/U+200D (ZWNJ/ZWJ) are stripped here as independent format chars, not as a grapheme cluster, so the joined-sequence heuristic is a false positive.
   return text.replace(/[\u00ad\u200b\u200c\u200d\u2060\ufeff]/gu, '');
 }
 
