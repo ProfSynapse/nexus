@@ -2,6 +2,10 @@
 
 ## June 2026
 
+**v5.13.2** — Claude Sonnet 5
+
+- Added **Claude Sonnet 5** (`claude-sonnet-5`) to the Anthropic, OpenRouter, and Requesty providers — 1M context, 128K max output, vision + tools + streaming + adaptive thinking. Pick it from the model dropdown for any of those three providers.
+
 **v5.13.1** — Lint/store-compliance fixes
 
 - Removed inline `eslint-disable` comments for `obsidianmd/ui/sentence-case` (rejected by the Obsidian community-store scanner) from the LM Studio / Ollama provider modals, handling the casing via the project acronym allowlist instead. No user-visible behavior change beyond one reworded Ollama help string.

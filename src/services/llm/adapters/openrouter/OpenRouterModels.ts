@@ -156,6 +156,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'Claude Sonnet 5',
+    apiName: 'anthropic/claude-sonnet-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'GLM 5.1',
     apiName: 'z-ai/glm-5.1',
     contextWindow: 202752,

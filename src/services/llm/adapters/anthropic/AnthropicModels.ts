@@ -134,6 +134,24 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     }
   },
 
+  // Claude Sonnet 5 (native 1M context, no beta header required)
+  {
+    provider: 'anthropic',
+    name: 'Claude Sonnet 5',
+    apiName: 'claude-sonnet-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Claude Sonnet 4.6
   {
     provider: 'anthropic',
