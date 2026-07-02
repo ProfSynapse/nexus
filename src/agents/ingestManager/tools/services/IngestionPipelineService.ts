@@ -15,6 +15,7 @@ import {
   IngestToolResult,
   IngestProgressCallback,
   PdfPageContent,
+  OcrExtractedImage,
   TranscriptionSegment,
 } from '../../types';
 import { detectFileType } from './FileTypeDetector';
@@ -158,6 +159,7 @@ async function processPdf(
   const warnings: string[] = [];
 
   let pages: PdfPageContent[];
+  let images: OcrExtractedImage[] = [];
 
   if (mode === 'vision') {
     onProgress?.({ filePath, stage: 'extracting', progress: 0 });
@@ -168,7 +170,7 @@ async function processPdf(
       throw new Error('Vision mode requires ocrProvider and ocrModel parameters');
     }
 
-    pages = await ocrPdf(
+    const ocrResult = await ocrPdf(
       fileData,
       provider,
       model,
@@ -178,6 +180,8 @@ async function processPdf(
         onProgress?.({ filePath, stage: 'extracting', progress });
       }
     );
+    pages = ocrResult.pages;
+    images = ocrResult.images;
   } else {
     onProgress?.({ filePath, stage: 'extracting', progress: 0 });
     pages = await extractPdfText(fileData);
@@ -193,8 +197,148 @@ async function processPdf(
     );
   }
 
+  // Save any embedded OCR images into a per-note asset folder and rewrite the
+  // markdown refs to Obsidian embeds. The folder is namespaced by the source
+  // file, so images from different PDFs (both named "img-0.jpeg") never collide.
+  if (images.length > 0) {
+    const saved = await saveOcrImages(images, filePath, deps.vault);
+    if (saved.length > 0) {
+      pages = pages.map(page => ({
+        ...page,
+        // Match refs against only this page's images — native Mistral reuses
+        // ids like "img-0.jpeg" across pages.
+        text: rewriteImageRefs(page.text, saved.filter(s => s.pageNumber === page.pageNumber)),
+      }));
+    }
+    if (saved.length < images.length) {
+      warnings.push(
+        `${images.length - saved.length} OCR image(s) could not be saved.`
+      );
+    }
+  }
+
   const content = buildPdfNote(fileName, pages);
   return { content, pageCount: pages.length, warnings };
+}
+
+interface SavedOcrImage {
+  pageNumber: number;
+  refId: string;
+  vaultPath: string;
+}
+
+/**
+ * Decode and write OCR images into a per-note asset folder next to the output
+ * note. For "notes/report.pdf" the folder is "notes/report/", so re-ingesting
+ * overwrites deterministically and cross-document names never collide.
+ */
+async function saveOcrImages(
+  images: OcrExtractedImage[],
+  sourceFilePath: string,
+  vault: Vault
+): Promise<SavedOcrImage[]> {
+  const assetFolder = buildAssetFolderPath(sourceFilePath);
+  await ensureFolder(vault, assetFolder);
+
+  const saved: SavedOcrImage[] = [];
+  for (let i = 0; i < images.length; i++) {
+    const decoded = decodeDataUrl(images[i].dataUrl);
+    if (!decoded) continue;
+
+    const fileName = `img-${i}.${decoded.extension}`;
+    const vaultPath = normalizePath(`${assetFolder}/${fileName}`);
+
+    const existing = vault.getFileByPath(vaultPath);
+    if (existing instanceof TFile) {
+      await vault.modifyBinary(existing, decoded.bytes);
+    } else {
+      await vault.createBinary(vaultPath, decoded.bytes);
+    }
+
+    saved.push({ pageNumber: images[i].pageNumber, refId: images[i].refId, vaultPath });
+  }
+
+  return saved;
+}
+
+/** Rewrite markdown `![alt](refId)` image links into Obsidian `![[vaultPath]]` embeds. */
+function rewriteImageRefs(text: string, saved: SavedOcrImage[]): string {
+  let result = text;
+  for (const img of saved) {
+    const escaped = img.refId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`!\\[[^\\]]*\\]\\(\\s*${escaped}\\s*(?:\\s+"[^"]*")?\\)`, 'g');
+    result = result.replace(re, `![[${img.vaultPath}]]`);
+  }
+  return result;
+}
+
+/** "notes/report.pdf" -> "notes/report" (per-note asset folder). */
+function buildAssetFolderPath(sourceFilePath: string): string {
+  const normalized = normalizePath(sourceFilePath);
+  const dotIndex = normalized.lastIndexOf('.');
+  const base = dotIndex === -1 ? normalized : normalized.slice(0, dotIndex);
+  return base;
+}
+
+/** Ensure a folder (and its ancestors) exists in the vault. */
+async function ensureFolder(vault: Vault, folderPath: string): Promise<void> {
+  const normalized = normalizePath(folderPath);
+  if (!normalized || normalized === '/' || normalized === '.') return;
+  if (vault.getFolderByPath(normalized)) return;
+
+  const segments = normalized.split('/').filter(Boolean);
+  let current = '';
+  for (const segment of segments) {
+    current = current ? `${current}/${segment}` : segment;
+    if (vault.getFolderByPath(current)) continue;
+    try {
+      await vault.createFolder(current);
+    } catch {
+      // Race or already-exists — safe to ignore; verified on next iteration.
+    }
+  }
+}
+
+/** Decode a base64 data URL into bytes plus a file extension derived from its MIME. */
+function decodeDataUrl(
+  dataUrl: string
+): { bytes: ArrayBuffer; extension: string } | null {
+  const match = /^data:([^;,]+)?(?:;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+
+  const mime = (match[1] || 'image/png').toLowerCase();
+  const base64 = match[2];
+  if (!base64) return null;
+
+  let binary: string;
+  try {
+    binary = atob(base64);
+  } catch {
+    return null;
+  }
+
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return { bytes: bytes.buffer, extension: mimeToExtension(mime) };
+}
+
+function mimeToExtension(mime: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpeg',
+    'image/jpg': 'jpeg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/bmp': 'bmp',
+    'image/tiff': 'tiff',
+    'image/svg+xml': 'svg',
+  };
+  if (map[mime]) return map[mime];
+  const subtype = mime.split('/')[1] || 'png';
+  return subtype.replace(/[^a-z0-9]/g, '') || 'png';
 }
 
 /** Process a DOCX file */

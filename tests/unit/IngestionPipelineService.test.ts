@@ -208,7 +208,7 @@ describe('IngestionPipelineService', () => {
 
   describe('PDF vision mode', () => {
     it('should route to ocrPdf in vision mode', async () => {
-      ocrPdfMock.mockResolvedValue([{ pageNumber: 1, text: 'OCR text' }]);
+      ocrPdfMock.mockResolvedValue({ pages: [{ pageNumber: 1, text: 'OCR text' }], images: [] });
       const deps = createMockDeps();
       const request: IngestFileRequest = {
         filePath: 'notes/report.pdf',
@@ -222,6 +222,50 @@ describe('IngestionPipelineService', () => {
       expect(ocrPdfMock).toHaveBeenCalled();
       expect(extractPdfTextMock).not.toHaveBeenCalled();
       expect(result.success).toBe(true);
+    });
+
+    it('should save OCR images to a per-note folder and rewrite refs to embeds', async () => {
+      // 1x1 transparent PNG
+      const pngDataUrl =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+      ocrPdfMock.mockResolvedValue({
+        pages: [{ pageNumber: 1, text: 'Intro text\n\n![img-0.png](img-0.png)\n\nMore text' }],
+        images: [{ pageNumber: 1, refId: 'img-0.png', dataUrl: pngDataUrl }],
+      });
+
+      let createdNote = '';
+      const createBinary = jest.fn().mockResolvedValue(undefined);
+      const createFolder = jest.fn().mockResolvedValue(undefined);
+      const vault = {
+        getFileByPath: jest.fn((path: string) =>
+          path === 'notes/report.pdf' ? new TFile('report.pdf', 'notes/report.pdf') : null
+        ),
+        getFolderByPath: jest.fn().mockReturnValue(null),
+        createFolder,
+        createBinary,
+        readBinary: jest.fn().mockResolvedValue(new ArrayBuffer(1024)),
+        create: jest.fn((_path: string, content: string) => {
+          createdNote = content;
+          return Promise.resolve(undefined);
+        }),
+        modify: jest.fn().mockResolvedValue(undefined),
+      } as unknown as Vault;
+      const deps = createMockDeps(vault);
+      const request: IngestFileRequest = {
+        filePath: 'notes/report.pdf',
+        mode: 'vision',
+        ocrProvider: 'mistral',
+        ocrModel: 'mistral-ocr',
+      };
+
+      const result = await processFile(request, deps);
+
+      expect(result.success).toBe(true);
+      // Image written into the per-note asset folder.
+      expect(createBinary).toHaveBeenCalledWith('notes/report/img-0.png', expect.anything());
+      // Markdown ref rewritten to an Obsidian embed; no dangling markdown-image link.
+      expect(createdNote).toContain('![[notes/report/img-0.png]]');
+      expect(createdNote).not.toContain('![img-0.png](img-0.png)');
     });
 
     it('should throw when vision mode is missing provider/model', async () => {

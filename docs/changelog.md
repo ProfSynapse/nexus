@@ -1,5 +1,18 @@
 # Nexus Changelog
 
+## July 2026
+
+**v5.14.0** — Mistral OCR (native) + PDF image extraction
+
+**PDF OCR now returns the full document** (fixes silent truncation)
+- The "Mistral OCR" ingestion option (via OpenRouter) was reading the carrier model's chat completion instead of the OCR result, so PDFs came back paraphrased and truncated — as if a model had been handed the file and asked to rewrite it. OCR text is now read from the file-parser annotations, so you get the complete, faithful document.
+
+**Native Mistral OCR**
+- New OCR option that calls Mistral's OCR API (`api.mistral.ai/v1/ocr`) directly — no carrier model in the loop, per-page markdown, and exact image correlation. Enable the **Mistral** provider with an API key and pick **Mistral OCR (native)** as the OCR model. The OpenRouter route remains available as **Mistral OCR (via OpenRouter)**.
+
+**Embedded images are extracted**
+- OCR now saves images embedded in PDFs into a per-note asset folder (e.g. `report.pdf` → `report/img-0.jpeg`) and rewrites the OCR's image references into inline Obsidian `![[embed]]` links. The folder is namespaced per source file, so images from different PDFs never collide, and re-ingesting overwrites cleanly.
+
 ## June 2026
 
 **v5.13.2** — Claude Sonnet 5

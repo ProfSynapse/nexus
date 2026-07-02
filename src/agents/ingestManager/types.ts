@@ -92,6 +92,24 @@ export interface PdfPageImage {
   height: number;
 }
 
+/**
+ * An image extracted from OCR output (e.g. Mistral OCR via OpenRouter).
+ * `refId` is the exact link target used in the OCR markdown (e.g. "img-0.jpeg"),
+ * used to rewrite `![alt](refId)` into an Obsidian embed once the image is saved.
+ */
+export interface OcrExtractedImage {
+  /** 1-based page the image belongs to (refIds like "img-0.jpeg" repeat across pages). */
+  pageNumber: number;
+  refId: string;
+  dataUrl: string;
+}
+
+/** Result of an OCR pass: page text plus any embedded images. */
+export interface OcrResult {
+  pages: PdfPageContent[];
+  images: OcrExtractedImage[];
+}
+
 // ─── DOCX Services ───────────────────────────────────────────────────────────
 
 export interface DocxExtractionResult {

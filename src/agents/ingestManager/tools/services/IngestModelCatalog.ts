@@ -19,9 +19,15 @@ export interface IngestionModelDeclaration {
 
 const INGESTION_MODELS: IngestionModelDeclaration[] = [
   {
+    provider: 'mistral',
+    id: 'mistral-ocr',
+    name: 'Mistral OCR (native)',
+    kind: 'ocr'
+  },
+  {
     provider: 'openrouter',
     id: 'mistral-ocr',
-    name: 'Mistral OCR (PDF OCR)',
+    name: 'Mistral OCR (via OpenRouter)',
     kind: 'ocr'
   }
 ];
