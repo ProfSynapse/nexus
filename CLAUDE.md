@@ -5,11 +5,11 @@
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 15258ced-21e9-4979-981a-c7ba49fed92c`
-- Team: `session-15258ced`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/15258ced-21e9-4979-981a-c7ba49fed92c`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.4.36`
-- Started: 2026-06-23 11:44:30 UTC
+- Resume: `claude --resume b3cecaa5-b21c-4ff1-8986-75b0d0d92091`
+- Team: `session-b3cecaa5`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/b3cecaa5-b21c-4ff1-8986-75b0d0d92091`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.4.49`
+- Started: 2026-07-01 14:48:23 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -62,12 +62,6 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
 
-### 2026-06-22 14:44
-**Context**: Read-only verification of issue #272 (task-board undercount) against current-main code in claudesidian-mcp/Nexus, by taskboard-investigator (task #5, session pact-15258ced, 2026-06-22). The issue reported that workspace task counts/byStatus are undercounted when a workspace exceeds 200 tasks, with the summary's tasks.total still showing the true number — an internal inconsistency. The investigator confirmed the reporter's diagnosis is ACCURATE against current main and recommended GO on their fix approach (drain-all-pages + filter-archived-before-snapshot), with 2 minor review notes. Also pulled gcp007-ops's proposed fix commit 4f4643f5 to confirm it addresses the root cause. No application code modified.
-**Goal**: Capture the truncate-before-filter pagination gotcha as reusable institutional knowledge: a hard 200-row repository cap silently clamps any large pageSize, and two snapshot consumers compute derived counts from the truncated 200-row page while totals read the true totalItems — producing an undercount inconsistency that worsens when archived-project filtering happens AFTER the fetch. Record the correct fix shape (drain-all-pages + filter-archived-before-snapshot) and the semantic caveat it introduces.
-**Decisions**: GO on the reporter's fix approach: drain-all-pages + filter-archived-before-snapshot, consumer-side (do NOT raise/remove the BaseRepository 200 cap)
-**Lessons**: HARD 200-ROW PAGINATION CAP (current main): BaseRepository.ts:179 does `const pageSize = Math.min(options.pageSize ?? 25, 200)` — UNCONDITIONAL. Any caller passing pageSize:10000 (a 'give me everything' idiom) is silently clamped to 200 rows; the query at :188-189 is plain LIMIT ? OFFSET ?. Crucially `totalItems` (BaseRepository:184) still reflects the TRUE count, so callers that mix items.length-derived values with totalItems get a self-inconsistent snapshot. Both getByWorkspace (TaskRepository:361) and getByProject (TaskRepository:342) route through queryPaginated, so the clamp applies to every paginated read., TRUNCATE-BEFORE-FILTER bug on TWO snapshot consumers: (1) TaskService.getWorkspaceSummary (TaskService.ts:761) calls getByWorkspace({pageSize:10000}) at :766 -> clamped to 200, then computes taskCountByProject (:771-773), byStatus/overdue (:789-794), nextActions (:806-818), recentlyCompleted (:821-824) ALL from the single 200-row allTasks.items, while returned totals at :836/:841 use totalItems. Archived-project tasks are filtered AFTER the fetch (:774-783), so they consume slots in the first 200 rows and active tasks beyond row 200 never enter the counts. (2) TaskBoardDataController.loadBoardData (TaskBoardDataController.ts:87) calls listWorkspaceTasks({pageSize:10000}) at :111 -> clamped to 200, archived filtered at :116 and re-filtered at :125-127 — same bug on the board UI. The archived filter is purely in-memory (no SQL JOIN on project.status), which is WHY fetch-then-filter ordering matters., CORRECT FIX SHAPE (confirmed via gcp007-ops commit 4f4643f5): add a drain-all-pages helper (collectAllPages/loadAllPages) that loops {page, pageSize:200} until exhausted, and filter archived projects BEFORE loading their tasks — the board loads tasks per-visible-project so it never queries archived-project tasks at all; the summary uses a visibleTasks set for all derived fields. The 200 cap in BaseRepository stays intact (correct — the fix is consumer-side, not cap-side). Touches exactly the 2 source files + their 2 test files (tests/unit/TaskService.test.ts, tests/unit/TaskBoardDataController.test.ts)., SEMANTIC CAVEAT (MINOR-1, flag for any reviewer): the fix changes getWorkspaceSummary's tasks.total from allTasks.totalItems (TRUE all-task workspace count) to visibleTasks.length (non-archived-project tasks only). This is arguably MORE correct (now consistent with byStatus also being visible-only) but IS a behavior change — tasks.total will DROP for workspaces with archived-project tasks. Should be an intentional, documented decision, not a silent side effect. Edge case (MINOR-2): the visibleTasks guard falls back to counting ALL tasks if a workspace has tasks but zero project rows (orphan/data-integrity edge) — benign but slightly inconsistent with visible-only intent., SECONDARY >200-PROJECTS truncation: projectRepo.getByWorkspace({pageSize:1000}) (TaskService:765) and listProjects({pageSize:1000}) (TaskBoardDataController:110) ALSO clamp to 200, so PROJECTS truncate if a workspace has >200 projects (less likely but real). gcp007-ops's drain helper already covers projects, but the issue's listed regression tests cover the >200-TASK case, not the >200-PROJECT case — worth confirming test coverage there., PERF nuance: draining is bounded by real data (ceil(totalItems/200) sequential queries against the LOCAL SQLite cache, fast), but OFFSET pagination re-scans skipped rows (~O(N^2/200) row-touches) — a 5000-task workspace = 25 queries. Acceptable for a local DB board/summary load; a cursor (WHERE id > last) would scale better only if workspaces ever reach tens-of-thousands of tasks. Ship OFFSET-draining now; treat cursor pagination as a separate perf task only if large-workspace reports appear. NOTE: PR #267 waitForQueryReady (TaskBoardDataController:80-94) is ORTHOGONAL (cold-cache gate, not pagination) and does NOT mitigate #272.
-**Memory ID**: 6e2b76d75f27c01bc615ec9a3ebaaf0e
 <!-- PACT_MEMORY_END -->
 
 <!-- PACT_MANAGED_END -->
@@ -77,7 +71,7 @@ Last Updated: 2026-05-26
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.13.2
+- **Version**: 5.14.0
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
