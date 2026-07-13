@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated June 2026 — added GLM 5.2 + Kimi K2.7 Code; pruned superseded
+ * Updated July 2026 — added the GPT-5.6 family; pruned superseded
  * Claude 4.5 Opus/Sonnet, Gemini 2.5 / 3.0 Preview, and GPT-5 / GPT-5.1 entries
  */
 
@@ -428,6 +428,102 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'GPT-5.6 Luna',
+    apiName: 'openai/gpt-5.6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.00,
+    outputCostPerMillion: 6.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.6 Luna Pro',
+    apiName: 'openai/gpt-5.6-luna-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.00,
+    outputCostPerMillion: 6.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.6 Sol',
+    apiName: 'openai/gpt-5.6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 30.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.6 Sol Pro',
+    apiName: 'openai/gpt-5.6-sol-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 30.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.6 Terra',
+    apiName: 'openai/gpt-5.6-terra',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.6 Terra Pro',
+    apiName: 'openai/gpt-5.6-terra-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Kimi K2.7 Code',
     apiName: 'moonshotai/kimi-k2.7-code',
     contextWindow: 262144,
@@ -508,4 +604,4 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
 ];
 
-export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.5';
+export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.6-sol';

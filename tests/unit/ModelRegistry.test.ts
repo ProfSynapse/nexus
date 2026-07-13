@@ -79,10 +79,63 @@ describe('ModelRegistry GPT-5.5 models', () => {
     expect(ModelRegistry.findModel('openai-codex', 'gpt-5.5-pro')).toBeUndefined();
   });
 
-  it('uses GPT-5.5 as the default for the updated OpenAI providers', () => {
-    expect(DEFAULT_MODELS.openai).toBe('gpt-5.5');
-    expect(DEFAULT_MODELS.openrouter).toBe('openai/gpt-5.5');
-    expect(DEFAULT_MODELS['openai-codex']).toBe('gpt-5.5');
+});
+
+describe('ModelRegistry GPT-5.6 models', () => {
+  const tiers = [
+    { suffix: 'sol', name: 'GPT-5.6 Sol', input: 5, output: 30 },
+    { suffix: 'terra', name: 'GPT-5.6 Terra', input: 2.5, output: 15 },
+    { suffix: 'luna', name: 'GPT-5.6 Luna', input: 1, output: 6 }
+  ];
+
+  it.each(tiers)('registers $name for OpenAI', ({ suffix, name, input, output }) => {
+    expect(ModelRegistry.findModel('openai', `gpt-5.6-${suffix}`)).toEqual(expect.objectContaining({
+      name,
+      contextWindow: 1050000,
+      maxTokens: 128000,
+      inputCostPerMillion: input,
+      outputCostPerMillion: output,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it.each(tiers)('registers $name for Codex', ({ suffix, name }) => {
+    expect(ModelRegistry.findModel('openai-codex', `gpt-5.6-${suffix}`)).toEqual(expect.objectContaining({
+      name,
+      contextWindow: 1050000,
+      maxTokens: 128000,
+      inputCostPerMillion: 0,
+      outputCostPerMillion: 0
+    }));
+  });
+
+  it.each(tiers)('registers $name and its Pro mode for OpenRouter', ({ suffix, name, input, output }) => {
+    expect(ModelRegistry.findModel('openrouter', `openai/gpt-5.6-${suffix}`)).toEqual(expect.objectContaining({
+      name,
+      contextWindow: 1050000,
+      maxTokens: 128000,
+      inputCostPerMillion: input,
+      outputCostPerMillion: output
+    }));
+    expect(ModelRegistry.findModel('openrouter', `openai/gpt-5.6-${suffix}-pro`)).toEqual(expect.objectContaining({
+      name: `${name} Pro`,
+      contextWindow: 1050000,
+      maxTokens: 128000,
+      inputCostPerMillion: input,
+      outputCostPerMillion: output
+    }));
+  });
+
+  it('uses GPT-5.6 Sol as the default for the updated OpenAI providers', () => {
+    expect(DEFAULT_MODELS.openai).toBe('gpt-5.6-sol');
+    expect(DEFAULT_MODELS.openrouter).toBe('openai/gpt-5.6-sol');
+    expect(DEFAULT_MODELS['openai-codex']).toBe('gpt-5.6-sol');
   });
 });
 

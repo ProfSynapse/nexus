@@ -7,14 +7,14 @@
  *   RUN_MODEL_SMOKE=1 npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
  *
  * Run one provider/model:
- *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openai MODEL_SMOKE_MODEL=gpt-5.5 npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
- *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openrouter MODEL_SMOKE_MODEL=gpt-5.5 npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
- *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openai-codex MODEL_SMOKE_MODEL=gpt-5.5 npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
+ *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openai MODEL_SMOKE_MODEL=gpt-5.6-sol npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
+ *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openrouter MODEL_SMOKE_MODEL=gpt-5.6-sol npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
+ *   RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=openai-codex MODEL_SMOKE_MODEL=gpt-5.6-sol npx jest tests/debug/provider-model-live-smoke.test.ts --runInBand --no-coverage --verbose
  *
  * Provider-specific overrides when running all:
- *   OPENAI_SMOKE_MODEL=gpt-5.5
- *   OPENROUTER_SMOKE_MODEL=openai/gpt-5.5
- *   CODEX_SMOKE_MODEL=gpt-5.5
+ *   OPENAI_SMOKE_MODEL=gpt-5.6-sol
+ *   OPENROUTER_SMOKE_MODEL=openai/gpt-5.6-sol
+ *   CODEX_SMOKE_MODEL=gpt-5.6-sol
  */
 
 import * as fs from 'node:fs';

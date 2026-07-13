@@ -59,7 +59,7 @@ describe('OpenAIAdapter', () => {
       const result = await adapter.generateUncached('hi', { systemPrompt: 'Be brief' });
 
       expect(result.text).toBe('Hello world');
-      expect(result.model).toBe('gpt-5.5');
+      expect(result.model).toBe('gpt-5.6-sol');
       expect(result.provider).toBe('openai');
       expect(result.finishReason).toBe('stop');
       expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });

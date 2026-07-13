@@ -52,7 +52,7 @@ describe('OpenRouterAdapter', () => {
       const result = await adapter.generateUncached('hi', { systemPrompt: 'Be brief' });
 
       expect(result.text).toBe('Routed');
-      expect(result.model).toBe('openai/gpt-5.5');
+      expect(result.model).toBe('openai/gpt-5.6-sol');
       expect(result.provider).toBe('openrouter');
       expect(result.finishReason).toBe('stop');
       expect(result.usage).toEqual({ promptTokens: 6, completionTokens: 2, totalTokens: 8 });
