@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated June 2026 — pruned the GPT-5 / GPT-5.1 generation (superseded by GPT-5.2+ and the 5.4/5.5 families)
+ * Updated July 2026 — added the GPT-5.6 Sol, Terra, and Luna family
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -13,7 +13,57 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
-  // GPT-5.5 family (latest models)
+  // GPT-5.6 family (latest models)
+  {
+    provider: 'openai',
+    name: 'GPT-5.6 Sol',
+    apiName: 'gpt-5.6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 30.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
+    name: 'GPT-5.6 Terra',
+    apiName: 'gpt-5.6-terra',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
+    name: 'GPT-5.6 Luna',
+    apiName: 'gpt-5.6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.00,
+    outputCostPerMillion: 6.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // GPT-5.5 family
   {
     provider: 'openai',
     name: 'GPT-5.5',
@@ -185,4 +235,4 @@ export const OPENAI_MODELS: ModelSpec[] = [
   // These models use a different parameter structure and would need special handling
 ];
 
-export const OPENAI_DEFAULT_MODEL = 'gpt-5.5';
+export const OPENAI_DEFAULT_MODEL = 'gpt-5.6-sol';
