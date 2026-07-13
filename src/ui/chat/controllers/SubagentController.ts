@@ -131,7 +131,7 @@ export class SubagentController {
         return null;
       }
 
-      return parsed as SubagentResultPayload;
+      return parsed;
     } catch {
       return null;
     }

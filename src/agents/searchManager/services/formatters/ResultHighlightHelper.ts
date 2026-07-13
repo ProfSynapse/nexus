@@ -50,7 +50,7 @@ export class ResultHighlightHelper {
       return {
         ...result,
         highlights
-      } as MemorySearchResult & { highlights: SearchHighlight[] };
+      };
     });
   }
 

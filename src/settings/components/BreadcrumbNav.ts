@@ -28,14 +28,14 @@ export class BreadcrumbNav {
           button.addEventListener('click', () => item.onClick?.());
         }
       } else {
-        this.element.createEl('span', {
+        this.element.createSpan({
           cls: 'nexus-breadcrumb-current',
           text: item.label
         });
       }
 
       if (index < items.length - 1) {
-        const sep = this.element.createEl('span', {
+        const sep = this.element.createSpan({
           cls: 'nexus-breadcrumb-separator'
         });
         setIcon(sep, 'chevron-right');

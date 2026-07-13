@@ -50,7 +50,7 @@ export class MarkdownRenderer {
     container.empty();
     
     // Create dedicated content container for streaming-markdown
-    const contentDiv = window.activeDocument.createElement('div');
+    const contentDiv = createDiv();
     contentDiv.className = 'streaming-content';
     container.appendChild(contentDiv);
     
@@ -107,7 +107,7 @@ export class MarkdownRenderer {
       }
       
       // Render final content with full Obsidian renderer
-      const finalDiv = window.activeDocument.createElement('div');
+      const finalDiv = createDiv();
       finalDiv.className = 'final-content';
       container.appendChild(finalDiv);
       
@@ -149,7 +149,7 @@ export class MarkdownRenderer {
    * Fallback plain text rendering
    */
   private static renderPlainText(content: string, container: HTMLElement): void {
-    const pre = window.activeDocument.createElement('pre');
+    const pre = createEl('pre');
     pre.className = 'markdown-renderer-plaintext';
     pre.textContent = content;
     container.appendChild(pre);
@@ -159,7 +159,7 @@ export class MarkdownRenderer {
    * Escape HTML for safe display
    */
   private static escapeHtml(text: string): string {
-    const div = window.activeDocument.createElement('div');
+    const div = createDiv();
     div.textContent = text;
     return div.innerHTML;
   }

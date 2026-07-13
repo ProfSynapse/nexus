@@ -47,9 +47,9 @@ export class StreamingController {
       const contentElement = messageElement.querySelector('.message-bubble .message-content');
       if (contentElement) {
         contentElement.empty();
-        const loadingSpan = contentElement.createEl('span', { cls: 'ai-loading' });
+        const loadingSpan = contentElement.createSpan({ cls: 'ai-loading' });
         loadingSpan.appendText('Thinking');
-        loadingSpan.createEl('span', { cls: 'dots', text: '...' });
+        loadingSpan.createSpan({ cls: 'dots', text: '...' });
         this.startLoadingAnimation(contentElement);
       }
     }

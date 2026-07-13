@@ -57,7 +57,7 @@ export class ToolStatusLine {
       this.timeouts.schedule(() => oldSlot.remove(), 200);
     }
 
-    const nextSlot = this.slot.createEl('div', {
+    const nextSlot = this.slot.createDiv({
       cls: `tool-status-text-${entry.state} entering`,
       text: entry.text,
     });

@@ -23,18 +23,18 @@ export class Accordion extends Component {
         this.isOpen = defaultOpen;
         
         // Create main accordion container
-        const accordionEl = this.containerEl.createEl('div', {
+        const accordionEl = this.containerEl.createDiv({
             cls: 'mcp-accordion'
         });
         this.rootEl = accordionEl;
 
         // Create container to scope selectors
-        const accordionContainer = accordionEl.createEl('div', {
+        const accordionContainer = accordionEl.createDiv({
             cls: 'mcp-accordion-container'
         });
 
         // Create header with toggle button
-        const headerEl = accordionContainer.createEl('div', {
+        const headerEl = accordionContainer.createDiv({
             cls: 'mcp-accordion-header'
         });
 
@@ -43,18 +43,18 @@ export class Accordion extends Component {
         });
 
         // Add title
-        toggleButton.createEl('span', {
+        toggleButton.createSpan({
             text: title,
             cls: 'mcp-accordion-title'
         });
 
         // Add expand/collapse icon
-        toggleButton.createEl('span', {
+        toggleButton.createSpan({
             cls: `mcp-accordion-icon ${this.isOpen ? 'is-open' : ''}`
         });
 
         // Create content container
-        this.contentEl = accordionContainer.createEl('div', {
+        this.contentEl = accordionContainer.createDiv({
             cls: `mcp-accordion-content ${this.isOpen ? 'is-open' : ''}`
         });
 
@@ -88,7 +88,7 @@ export class Accordion extends Component {
      * Get the content element to add children to
      */
     getContentEl(): HTMLElement {
-        const innerContent = this.contentEl.createEl('div');
+        const innerContent = this.contentEl.createDiv();
         return innerContent;
     }
 }

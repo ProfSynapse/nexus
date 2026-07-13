@@ -14,7 +14,6 @@ import type {
   ConversationBranch,
   BranchState,
   SubagentBranchMetadata,
-  HumanBranchMetadata,
 } from '../../types/branch/BranchTypes';
 import type { ConversationService, IndividualConversation } from '../ConversationService';
 
@@ -240,7 +239,7 @@ export class BranchService {
       messages,
       metadata: branchType === 'subagent'
         ? conversation.metadata?.subagent as SubagentBranchMetadata
-        : { description: conversation.title } as HumanBranchMetadata,
+        : { description: conversation.title },
       created: conversation.created,
       updated: conversation.updated,
     };

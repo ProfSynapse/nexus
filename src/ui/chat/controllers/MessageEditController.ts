@@ -51,7 +51,7 @@ export class MessageEditController {
     if (confirmBtn) setIcon(confirmBtn, 'check');
 
     // Create textarea for editing
-    const textarea = window.activeDocument.createElement('textarea');
+    const textarea = createEl('textarea');
     textarea.className = 'message-edit-textarea';
     textarea.value = message.content;
 

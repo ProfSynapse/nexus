@@ -98,7 +98,7 @@ export class ContentEditableHelper {
     const range = selection.getRangeAt(0);
 
     // Create reference span
-    const refSpan = window.activeDocument.createElement('span');
+    const refSpan = createSpan();
     refSpan.className = `chat-reference chat-reference-${type}`;
     refSpan.contentEditable = 'false';
     refSpan.setAttribute('data-type', type);

@@ -103,7 +103,7 @@ export class DataTab {
             const jsonl = await this.storageAdapter.exportConversationsForFineTuning();
             const blob = new Blob([jsonl], { type: 'application/jsonl' });
             const url = URL.createObjectURL(blob);
-            const a = window.activeDocument.createElement('a');
+            const a = createEl('a');
             a.href = url;
             a.download = `assistant-data-export-${new Date().toISOString().slice(0, 10)}.jsonl`;
             window.activeDocument.body.appendChild(a);

@@ -21,7 +21,7 @@ import { dirname, basename } from 'path';
  * @param vaultName - The original vault name to sanitize
  * @returns A sanitized version of the vault name suitable for use in identifiers
  */
-const sanitizeVaultName = (vaultName) => {
+const sanitizeVaultName = (vaultName: string) => {
     if (!vaultName) return '';
     
     return vaultName

@@ -382,7 +382,7 @@ export class ContextCompactionService {
     messages: ConversationMessage[],
     metadata: ConversationData['metadata']
   ): ConversationMessage[] {
-    const metadataRecord = metadata as Record<string, unknown> | undefined;
+    const metadataRecord = metadata;
     const compaction = metadataRecord?.compaction as CompactionMetadata | undefined;
     const frontier = compaction?.frontier;
     if (!frontier || frontier.length === 0) {

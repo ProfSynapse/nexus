@@ -27,7 +27,7 @@ export class NexusLoadingController extends Component {
    */
   private findOverlayElement(): void {
     // The overlay is created with class 'nexus-loading-overlay' in ChatLayoutBuilder
-    this.overlayEl = this.containerEl.querySelector('.nexus-loading-overlay') as HTMLElement;
+    this.overlayEl = this.containerEl.querySelector('.nexus-loading-overlay');
   }
 
   /**

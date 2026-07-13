@@ -248,7 +248,7 @@ export class GetStartedTab {
         const nodePath = this.resolveNodePath();
         if (!nodePath) {
             const nodeWarning = this.container.createDiv('nexus-mcp-row nexus-mcp-node-warning');
-            nodeWarning.createEl('span', {
+            nodeWarning.createSpan({
                 text: 'Node.js not found',
                 cls: 'nexus-mcp-status nexus-mcp-warning'
             });
@@ -285,7 +285,7 @@ export class GetStartedTab {
         if (configStatus === 'no-claude-folder') {
             // Claude not installed - show inline warning with action
             const row = this.container.createDiv('nexus-mcp-row');
-            row.createEl('span', {
+            row.createSpan({
                 text: '⚠️ Claude Desktop not found',
                 cls: 'nexus-mcp-status nexus-mcp-warning'
             });
@@ -312,7 +312,7 @@ export class GetStartedTab {
         } else if (configStatus === 'nexus-configured') {
             // Already configured - success state
             const row = this.container.createDiv('nexus-mcp-row');
-            row.createEl('span', {
+            row.createSpan({
                 text: '✓ connected',
                 cls: 'nexus-mcp-status nexus-mcp-success'
             });
@@ -338,7 +338,7 @@ export class GetStartedTab {
         } else if (configStatus === 'invalid-config') {
             // Config file exists but is invalid/empty
             const row = this.container.createDiv('nexus-mcp-row');
-            row.createEl('span', {
+            row.createSpan({
                 text: '⚠️ config file is invalid or empty',
                 cls: 'nexus-mcp-status nexus-mcp-warning'
             });
@@ -364,7 +364,7 @@ export class GetStartedTab {
         } else {
             // Ready to configure
             const row = this.container.createDiv('nexus-mcp-row');
-            row.createEl('span', {
+            row.createSpan({
                 text: configStatus === 'no-config-file' ? 'Ready to configure' : 'Claude Desktop found',
                 cls: 'nexus-mcp-status'
             });
@@ -398,7 +398,7 @@ export class GetStartedTab {
 
         const row = section.createDiv('nexus-mcp-row');
         const statusText = this.getCodexStatusText(configStatus);
-        row.createEl('span', {
+        row.createSpan({
             text: statusText,
             cls: configStatus === 'nexus-configured'
                 ? 'nexus-mcp-status nexus-mcp-success'
@@ -476,7 +476,7 @@ export class GetStartedTab {
         }
 
         const pathInfo = manualSection.createDiv('nexus-config-path');
-        pathInfo.createEl('span', { text: 'Config file location: ', cls: 'setting-item-description' });
+        pathInfo.createSpan({ text: 'Config file location: ', cls: 'setting-item-description' });
         const pathLink = pathInfo.createEl('a', { text: configPath, href: '#' });
         const pathHandler = () => this.revealInFolder(configPath);
         if (component) {
@@ -530,7 +530,7 @@ export class GetStartedTab {
 
         // Config file path info
         const pathInfo = manualSection.createDiv('nexus-config-path');
-        pathInfo.createEl('span', { text: 'Config file location: ', cls: 'setting-item-description' });
+        pathInfo.createSpan({ text: 'Config file location: ', cls: 'setting-item-description' });
         const pathLink = pathInfo.createEl('a', { text: configPath, href: '#' });
         const pathHandler = () => this.revealInFolder(configPath);
         if (component) {

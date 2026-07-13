@@ -60,7 +60,7 @@ export class UIStateController {
       // Normal welcome - ready to create conversation
       setIcon(welcomeIcon, 'sparkles');
 
-      welcomeContent.createEl('div', {
+      welcomeContent.createDiv({
         text: 'Welcome to chat',
         cls: 'chat-welcome-title'
       });

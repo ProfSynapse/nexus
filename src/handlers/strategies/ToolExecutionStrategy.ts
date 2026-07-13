@@ -205,7 +205,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             agentName = this.extractAgentName(fullToolName);
             const { tool: toolFromArgs, ...restParams } = parsedArgs as { tool: string; [key: string]: unknown };
             tool = toolFromArgs;
-            params = restParams as typeof params;
+            params = restParams;
 
             if (!tool) {
                 throw new McpError(

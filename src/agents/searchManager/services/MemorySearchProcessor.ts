@@ -19,7 +19,6 @@ import {
   RawMemoryResult,
   MemorySearchContext,
   MemorySearchExecutionOptions,
-  MemorySearchTraceLike,
   ValidationResult,
   MemoryProcessorConfiguration,
   MemoryResultMetadata,
@@ -412,9 +411,9 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
             if (match) {
               const normalizedScore = Math.max(0, Math.min(1, 1 + (match.score / 100)));
               results.push({
-                trace: { ...trace, workspaceId, sessionId } as unknown as RawMemoryResult['trace'],
+                trace: { ...trace, workspaceId, sessionId },
                 similarity: normalizedScore
-              } as RawMemoryResult);
+              });
             }
           }
         }
@@ -457,7 +456,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         .map(expandedTrace => ({
           trace: expandedTrace as unknown as RawMemoryResult['trace'],
           similarity: 1.0
-        } as RawMemoryResult));
+        }));
     });
   }
 
@@ -662,7 +661,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         if ((session.name || '').toLowerCase().includes(queryLower)) score += 0.9;
         if (session.description?.toLowerCase().includes(queryLower)) score += 0.8;
         if (score > 0) {
-          results.push({ trace: session as unknown as RawMemoryResult['trace'], similarity: score } as RawMemoryResult);
+          results.push({ trace: session as unknown as RawMemoryResult['trace'], similarity: score });
         }
       }
       return results;
@@ -685,7 +684,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         let score = 0;
         if (state.name.toLowerCase().includes(queryLower)) score += 0.9;
         if (score > 0) {
-          results.push({ trace: state as unknown as RawMemoryResult['trace'], similarity: score } as RawMemoryResult);
+          results.push({ trace: state, similarity: score });
         }
       }
       return results;
@@ -709,7 +708,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         if (workspace.name.toLowerCase().includes(queryLower)) score += 0.9;
         if (workspace.description?.toLowerCase().includes(queryLower)) score += 0.8;
         if (score > 0) {
-          results.push({ trace: workspace as unknown as RawMemoryResult['trace'], similarity: score } as RawMemoryResult);
+          results.push({ trace: workspace as unknown as RawMemoryResult['trace'], similarity: score });
         }
       }
       return results;
@@ -724,7 +723,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   // ---------------------------------------------------------------------------
 
   private enrichSingleResult(result: RawMemoryResult, context: MemorySearchContext): EnrichedMemorySearchResult | null {
-    const trace = result.trace as unknown as MemorySearchTraceLike;
+    const trace = result.trace;
     const query = context.params.query;
 
     try {
@@ -740,7 +739,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         metadata,
         context: searchContext,
         score: result.similarity || 0,
-        _rawTrace: trace as unknown as RawMemoryResult['trace']
+        _rawTrace: trace
       };
     } catch (error) {
       console.error('[MemorySearchProcessor] Failed to enrich result:', { error, traceId: trace?.id });

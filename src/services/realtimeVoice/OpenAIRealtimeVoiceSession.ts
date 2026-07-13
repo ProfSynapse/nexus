@@ -189,7 +189,7 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
   }
 
   private attachRemoteAudio(peerConnection: RTCPeerConnection): void {
-    const outputAudio = window.activeDocument.createElement('audio');
+    const outputAudio = createEl('audio');
     outputAudio.autoplay = true;
     outputAudio.addClass('chat-live-voice-output');
     window.activeDocument.body.appendChild(outputAudio);

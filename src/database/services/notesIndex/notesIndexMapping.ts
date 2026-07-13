@@ -135,7 +135,7 @@ function sortKeysDeep(value: unknown): unknown {
   }
   if (value && typeof value === 'object' && !(value instanceof Date)) {
     const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    for (const key of Object.keys(value).sort()) {
       out[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
     }
     return out;

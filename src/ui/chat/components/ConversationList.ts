@@ -192,7 +192,7 @@ export class ConversationList {
       const newTitle = input.value.trim();
 
       // Restore title element
-      const newTitleEl = createEl('div', {
+      const newTitleEl = createDiv({
         cls: 'conversation-title',
         text: save && newTitle ? newTitle : currentTitle,
       });

@@ -50,7 +50,7 @@ export class TaskBoardRenderer {
       const groups = this.deps.groupTasksByParent(columnTasks);
       const cardCount = groups.reduce((sum, group) => sum + group.children.length, 0);
 
-      header.createEl('span', {
+      header.createSpan({
         cls: 'nexus-task-board-column-count',
         text: String(cardCount)
       });

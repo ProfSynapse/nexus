@@ -98,7 +98,8 @@ export class WorkspacePromptResolver {
 
       // DEPRECATED: Fall back to legacy agents array for backward compatibility
       // TODO(v5.0.0): Remove this fallback - very old data structure from pre-v4
-      const legacyContext = workspace.context as LegacyWorkspaceContext | undefined;
+      const rawContext: unknown = workspace.context;
+      const legacyContext = rawContext as LegacyWorkspaceContext | undefined;
       const legacyAgents = legacyContext?.agents;
       if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
         const legacyPromptRef = legacyAgents[0];

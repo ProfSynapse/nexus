@@ -81,11 +81,14 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result).toEqual([
-        { pageNumber: 1, text: 'Page 1 text' },
-        { pageNumber: 2, text: 'Page 2 text' },
-        { pageNumber: 3, text: 'Page 3 text' },
-      ]);
+      expect(result).toEqual({
+        pages: [
+          { pageNumber: 1, text: 'Page 1 text' },
+          { pageNumber: 2, text: 'Page 2 text' },
+          { pageNumber: 3, text: 'Page 3 text' },
+        ],
+        images: [],
+      });
     });
 
     it('returns empty array for PDF with no pages', async () => {
@@ -94,7 +97,7 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result).toEqual([]);
+      expect(result).toEqual({ pages: [], images: [] });
       expect(deps.generateWithVision).not.toHaveBeenCalled();
     });
 
@@ -104,7 +107,10 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result).toEqual([{ pageNumber: 1, text: 'Single page' }]);
+      expect(result).toEqual({
+        pages: [{ pageNumber: 1, text: 'Single page' }],
+        images: [],
+      });
       expect(deps.generateWithVision).toHaveBeenCalledTimes(1);
     });
   });
@@ -175,7 +181,7 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result[0].text).toBe('Some text with spaces');
+      expect(result.pages[0].text).toBe('Some text with spaces');
     });
 
     it('handles empty string from LLM', async () => {
@@ -184,7 +190,7 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result[0].text).toBe('');
+      expect(result.pages[0].text).toBe('');
     });
   });
 
@@ -207,7 +213,8 @@ describe('OcrService', () => {
 
       const result = await ocrPdf(new ArrayBuffer(100), 'openai', 'gpt-4o', deps);
 
-      expect(result).toHaveLength(1);
+      expect(result.pages).toHaveLength(1);
+      expect(result.images).toEqual([]);
       expect(renderPdfPagesMock).toHaveBeenCalledWith(expect.any(ArrayBuffer), undefined);
     });
   });

@@ -208,7 +208,7 @@ export class TaskRepository
           {
             type: 'task_updated',
             taskId: id,
-            data: eventData as TaskUpdatedEvent['data']
+            data: eventData
           }
         );
 

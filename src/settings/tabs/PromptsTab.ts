@@ -235,7 +235,7 @@ export class PromptsTab {
         // Description field
         const descField = form.createDiv('nexus-form-field');
         descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
-        descField.createEl('span', {
+        descField.createSpan({
             text: 'A brief description of what this prompt does',
             cls: 'nexus-form-hint'
         });
@@ -250,7 +250,7 @@ export class PromptsTab {
         // System Prompt field
         const promptField = form.createDiv('nexus-form-field');
         promptField.createEl('label', { text: 'System prompt', cls: 'nexus-form-label' });
-        promptField.createEl('span', {
+        promptField.createSpan({
             text: 'Instructions that define this prompt\'s behavior and expertise',
             cls: 'nexus-form-hint'
         });

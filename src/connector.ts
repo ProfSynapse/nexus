@@ -392,7 +392,7 @@ export class MCPConnector {
                     toolSchemas.push({
                         name: toolName,
                         description: toolInstance.description || `Execute ${toolSlug} on ${agentName}`,
-                        inputSchema: cleanSchema as Record<string, unknown>
+                        inputSchema: cleanSchema
                     });
                 } catch {
                     // Skip tools with invalid schemas
@@ -547,7 +547,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
             if (workspaceContext) {
                 // Inject workspace context from session
                 typedParams.workspaceContext = workspaceContext;
-                typedParams.workspaceId = (typedParams.workspaceId as string | undefined) || workspaceContext.workspaceId;
+                typedParams.workspaceId = (typedParams.workspaceId) || workspaceContext.workspaceId;
                 if (!toolManagerMetaTool && typedParams.context) {
                     typedParams.context.workspaceId = workspaceContext.workspaceId;
                 }
@@ -559,7 +559,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
                     typedParams.workspaceContext.workspaceId = 'default';
                 }
 
-                typedParams.workspaceId = (typedParams.workspaceId as string | undefined) || typedParams.workspaceContext.workspaceId;
+                typedParams.workspaceId = (typedParams.workspaceId) || typedParams.workspaceContext.workspaceId;
                 if (!toolManagerMetaTool && typedParams.context && !typedParams.context.workspaceId) {
                     typedParams.context.workspaceId = typedParams.workspaceContext.workspaceId;
                 }

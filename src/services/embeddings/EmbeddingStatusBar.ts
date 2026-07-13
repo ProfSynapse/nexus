@@ -58,13 +58,13 @@ export class EmbeddingStatusBar {
     this.statusBarItem.addClass('nexus-embedding-status');
 
     // Text display
-    this.textEl = this.statusBarItem.createEl('span', {
+    this.textEl = this.statusBarItem.createSpan({
       text: '',
       cls: 'nexus-embedding-text'
     });
 
     // Clickable control (pause/resume)
-    this.controlEl = this.statusBarItem.createEl('span', {
+    this.controlEl = this.statusBarItem.createSpan({
       text: '',
       cls: 'nexus-embedding-control'
     });

@@ -95,7 +95,7 @@ export class AgentStatusMenu {
     this.container.empty();
 
     // Create the button element
-    const button = window.activeDocument.createElement('button');
+    const button = createEl('button');
     button.addClass('clickable-icon', 'nexus-agent-status-button');
     button.setAttribute('aria-label', 'Running agents');
     button.setAttribute('title', 'Running agents');

@@ -132,13 +132,13 @@ export class ChatLayoutBuilder {
   private static createWarningBanner(container: HTMLElement, component: Component): void {
     const warningBanner = container.createDiv('chat-experimental-warning');
 
-    warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'This chat is in beta.' });
+    warningBanner.createSpan({ cls: 'warning-icon', text: '⚠️' });
+    warningBanner.createSpan({ cls: 'warning-text', text: 'This chat is in beta.' });
     const link = warningBanner.createEl('a', { cls: 'warning-link', text: 'Report issues' });
     link.href = 'https://github.com/ProfSynapse/nexus/issues';
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
+    warningBanner.createSpan({ cls: 'warning-text', text: 'Use at your own risk.' });
 
     // Auto-hide warning after 5 seconds — guard against detached DOM
     let fadeoutTimer: number | null = null;

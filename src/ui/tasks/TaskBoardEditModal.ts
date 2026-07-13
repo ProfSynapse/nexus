@@ -252,7 +252,7 @@ export class TaskBoardEditModal extends Modal {
       listContainer.empty();
 
       if (this.draft.noteLinks.length === 0) {
-        listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+        listContainer.createSpan({ text: 'None', cls: 'nexus-form-hint' });
       } else {
         this.draft.noteLinks.forEach((link, index) => {
           const item = listContainer.createDiv('nexus-item-row');

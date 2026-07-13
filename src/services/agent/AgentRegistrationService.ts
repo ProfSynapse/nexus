@@ -278,7 +278,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    */
   private getMemorySettings(): MemorySettings {
     const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { memory?: MemorySettings } } };
-    return (pluginWithSettings?.settings?.settings?.memory ?? {}) as unknown as MemorySettings;
+    return pluginWithSettings?.settings?.settings?.memory ?? {};
   }
 
   /**

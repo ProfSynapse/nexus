@@ -150,7 +150,7 @@ export class RequestHandlerFactory {
                 ...request.params,
                 arguments: parsedArgs
             }
-        } as Record<string, unknown>) as MCPResult;
+        }) as MCPResult;
     }
 
     /**
@@ -163,7 +163,7 @@ export class RequestHandlerFactory {
                 ...request.params,
                 arguments: parsedArgs
             }
-        } as Record<string, unknown>) as MCPResult;
+        }) as MCPResult;
     }
 
     /**

@@ -299,7 +299,7 @@ export class GroqAdapter extends BaseAdapter {
         ...(usage.queue_time !== undefined && { queueTime: usage.queue_time }),
         ...(usage.prompt_time !== undefined && { promptTime: usage.prompt_time }),
         ...(usage.completion_time !== undefined && { completionTime: usage.completion_time })
-      } as TokenUsage & { queueTime?: number; promptTime?: number; completionTime?: number };
+      };
     }
     return undefined;
   }

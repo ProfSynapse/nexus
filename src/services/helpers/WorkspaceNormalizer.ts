@@ -55,7 +55,7 @@ export function normalizeWorkspaceContext(context: HybridTypes.WorkspaceContext)
       changed = true;
     }
 
-    return nextWorkflow as WorkspaceWorkflow;
+    return nextWorkflow;
   });
 
   return {

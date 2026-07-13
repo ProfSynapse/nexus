@@ -401,7 +401,7 @@ export class ChatView extends ItemView {
 
       // Set up tool event callback for live UI updates
       this.chatService.setToolEventCallback((messageId, event, data) => {
-        this.handleToolEvent(messageId, event, data as unknown as ChatToolEventData);
+        this.handleToolEvent(messageId, event, data);
       });
     } catch {
       // ChatService initialization failed - continue with UI setup anyway
@@ -1057,7 +1057,7 @@ export class ChatView extends ItemView {
                 const name = typeof call.name === 'string' ? call.name : '';
                 return { ...call, name: name.includes('_') ? name : `memoryManager_${name}` };
               });
-              return executor.executeToolCalls(mapped as never, context as never);
+              return executor.executeToolCalls(mapped as never, context);
             },
           });
         }

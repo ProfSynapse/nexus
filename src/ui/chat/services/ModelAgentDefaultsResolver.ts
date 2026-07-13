@@ -173,6 +173,6 @@ export class ModelAgentDefaultsResolver {
       return this.deps.getPlugin();
     }
 
-    return getNexusPlugin<NexusPlugin>(this.deps.app) as unknown as PluginWithSettings | null;
+    return getNexusPlugin<NexusPlugin>(this.deps.app);
   }
 }

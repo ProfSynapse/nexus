@@ -65,7 +65,7 @@ export function parseWorkspaceContext(
     try {
       const parsed: unknown = JSON.parse(workspaceContext);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        parsedContext = parsed as Partial<WorkspaceContext>;
+        parsedContext = parsed;
       }
     } catch {
       return {

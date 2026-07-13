@@ -166,7 +166,7 @@ export class ProjectRepository
           {
             type: 'project_updated',
             projectId: id,
-            data: eventData as ProjectUpdatedEvent['data']
+            data: eventData
           }
         );
 

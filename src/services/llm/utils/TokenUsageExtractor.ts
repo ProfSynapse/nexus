@@ -43,7 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function asProviderUsage(value: unknown): ProviderUsage | undefined {
-  return isRecord(value) ? value as ProviderUsage : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 function getNumber(value: unknown): number | undefined {

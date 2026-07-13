@@ -259,7 +259,7 @@ export class DirectToolExecutor {
                 function: {
                     name: tool.name,
                     description: tool.description,
-                    parameters: tool.inputSchema as JSONSchema | undefined
+                    parameters: tool.inputSchema
                 }
             }));
 
@@ -473,7 +473,7 @@ export class DirectToolExecutor {
                                         name: toolCallId,
                                         arguments: JSON.stringify(event.call.params || {})
                                     },
-                                    parameters: event.call.params as Record<string, unknown> | undefined
+                                    parameters: event.call.params
                                 }
                             });
                         },
@@ -500,7 +500,7 @@ export class DirectToolExecutor {
                                         name: toolCallId,
                                         arguments: JSON.stringify(event.call.params || {})
                                     },
-                                    parameters: event.call.params as Record<string, unknown> | undefined
+                                    parameters: event.call.params
                                 }
                             });
                         }
@@ -655,28 +655,28 @@ export class DirectToolExecutor {
     ): Record<string, unknown> {
         return {
             ...params,
-            workspaceId: (params.workspaceId as string | undefined)
+            workspaceId: (params.workspaceId)
                 || context?.workspaceId
                 || 'default',
-            sessionId: (params.sessionId as string | undefined)
+            sessionId: (params.sessionId)
                 || context?.sessionId
                 || `session_${Date.now()}`,
-            memory: (params.memory as string | undefined)
+            memory: (params.memory)
                 || '',
-            goal: (params.goal as string | undefined)
+            goal: (params.goal)
                 || '',
-            constraints: (params.constraints as string | undefined)
+            constraints: (params.constraints)
                 || undefined,
-            imageProvider: (params.imageProvider as DirectToolExecutionContext['imageProvider'] | undefined)
+            imageProvider: (params.imageProvider)
                 || context?.imageProvider
                 || undefined,
-            imageModel: (params.imageModel as string | undefined)
+            imageModel: (params.imageModel)
                 || context?.imageModel
                 || undefined,
-            transcriptionProvider: (params.transcriptionProvider as string | undefined)
+            transcriptionProvider: (params.transcriptionProvider)
                 || context?.transcriptionProvider
                 || undefined,
-            transcriptionModel: (params.transcriptionModel as string | undefined)
+            transcriptionModel: (params.transcriptionModel)
                 || context?.transcriptionModel
                 || undefined
         };

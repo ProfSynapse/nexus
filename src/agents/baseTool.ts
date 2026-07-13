@@ -14,8 +14,7 @@ import { JSONSchema } from '../types/schema/JSONSchemaTypes';
 import {
   ValidationResultHelper,
   ValidationError,
-  ValidationResult,
-  ToolInterface
+  ValidationResult
 } from '../utils/validation/ValidationResultHelper';
 import {
   CommonValidators,
@@ -249,7 +248,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
     params?: T,
     context?: unknown
   ): R {
-    return ValidationResultHelper.createErrorResult(this as ToolInterface, error, params, this.toRecord(context));
+    return ValidationResultHelper.createErrorResult(this, error, params, this.toRecord(context));
   }
 
   /**
@@ -268,7 +267,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
     params?: T,
     additionalData?: unknown
   ): R {
-    return ValidationResultHelper.createSuccessResult(this as ToolInterface, data, params, this.toRecord(additionalData));
+    return ValidationResultHelper.createSuccessResult(this, data, params, this.toRecord(additionalData));
   }
 
   /**
@@ -307,7 +306,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
       minContextLength?: number;
     }
   ): ValidationError[] {
-    return CommonValidators.validateSessionContext(params, this as ToolInterface, options);
+    return CommonValidators.validateSessionContext(params, this, options);
   }
 
   /**

@@ -87,7 +87,7 @@ export class EmbeddingIframe {
     this.blobUrl = URL.createObjectURL(blob);
 
     // Create and configure iframe
-    this.iframe = window.activeDocument.createElement('iframe');
+    this.iframe = createEl('iframe');
     this.iframe.className = 'nexus-embedding-iframe-hidden';
     this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
 

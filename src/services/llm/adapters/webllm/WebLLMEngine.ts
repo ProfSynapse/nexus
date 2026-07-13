@@ -86,13 +86,6 @@ interface WebLLMInitProgressReport {
   text?: string;
 }
 
-interface WebLLMChatCompletionMessageParam {
-  role: string;
-  content: string;
-  name?: string;
-  tool_call_id?: string;
-}
-
 interface WebLLMChoice {
   message?: {
     content?: string;
@@ -591,7 +584,7 @@ export class WebLLMEngine {
       await this.resetChat();
 
       const response = await this.engine.chat.completions.create({
-        messages: messages as WebLLMChatCompletionMessageParam[],
+        messages: messages,
         temperature: options?.temperature ?? 0.5,
         max_tokens: options?.maxTokens ?? 2048,
         top_p: options?.topP ?? 0.95,
@@ -696,7 +689,7 @@ export class WebLLMEngine {
       // Wrap stream creation in try-catch to capture WebGPU errors
       try {
         const stream = (await this.engine.chat.completions.create({
-          messages: messages as WebLLMChatCompletionMessageParam[],
+          messages: messages,
           temperature: options?.temperature ?? 0.5,
           max_tokens: options?.maxTokens ?? 2048,
           top_p: options?.topP ?? 0.95,

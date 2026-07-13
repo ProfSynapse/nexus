@@ -678,7 +678,7 @@ export class ConversationService {
             metadata: params.metadata
           });
 
-          return { success: true, messageId } as { success: boolean; messageId?: string; error?: string };
+          return { success: true, messageId };
         },
         async () => {
           const conversation = await this.fileSystem.readConversation(params.conversationId);
@@ -749,7 +749,7 @@ export class ConversationService {
         this.storageAdapterOrGetter,
         async (adapter) => {
           await adapter.updateMessage(conversationId, messageId, updates);
-          return { success: true } as { success: boolean; error?: string };
+          return { success: true };
         },
         async () => {
           const conversation = await this.fileSystem.readConversation(conversationId);
