@@ -1,7 +1,7 @@
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../../baseTool';
 import { OpenTasksParameters, OpenTasksResult } from '../../types';
-import { openTaskBoardView, type TaskBoardOpenMode } from '../../../../ui/tasks/taskBoardNavigation';
+import { openTaskBoardView } from '../../../../ui/tasks/taskBoardNavigation';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import type { App } from 'obsidian';
 import { ToolStatusTense } from '../../../interfaces/ITool';
@@ -19,7 +19,7 @@ export class OpenTasksTool extends BaseTool<OpenTasksParameters, OpenTasksResult
 
   async execute(params: OpenTasksParameters): Promise<OpenTasksResult> {
     try {
-      const mode = (params.mode || 'tab') as TaskBoardOpenMode;
+      const mode = (params.mode || 'tab');
       const leaf = await openTaskBoardView(this.app, {
         workspaceId: params.workspaceId,
         projectId: params.projectId,

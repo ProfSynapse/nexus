@@ -151,7 +151,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
       // Add tools if provided
       if (options?.tools && options.tools.length > 0) {
-        tools.push(...this.convertTools(options.tools as AnthropicToolInput[]));
+        tools.push(...this.convertTools(options.tools));
       }
 
       // Add web search tool if requested
@@ -338,7 +338,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
     // Add tools if provided
     if (options?.tools && options.tools.length > 0) {
-      tools.push(...this.convertTools(options.tools as AnthropicToolInput[]));
+      tools.push(...this.convertTools(options.tools));
     }
 
     // Special tools

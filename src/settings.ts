@@ -1,7 +1,7 @@
 import { Plugin } from 'obsidian';
 import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
-import { SecretStore, type SecretStorageHost } from './services/secrets/SecretStore';
+import { SecretStore } from './services/secrets/SecretStore';
 import {
     clearStoredSecrets,
     hydrateSecrets,
@@ -24,7 +24,7 @@ export class Settings {
      */
     constructor(plugin: Plugin) {
         this.plugin = plugin;
-        this.secretStore = new SecretStore((plugin.app ?? {}) as unknown as SecretStorageHost);
+        this.secretStore = new SecretStore(plugin.app ?? {});
         this.settings = DEFAULT_SETTINGS;
     }
 

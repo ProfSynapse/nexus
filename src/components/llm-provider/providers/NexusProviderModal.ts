@@ -228,7 +228,7 @@ export class NexusProviderModal implements IProviderModal {
       });
 
     // Action area
-    this.actionArea = this.modelSection.createDiv('nexus-action-area') as ActionAreaWithProgress;
+    this.actionArea = this.modelSection.createDiv('nexus-action-area');
     this.renderActionArea();
   }
 

@@ -15,6 +15,10 @@ jest.mock('../../src/ui/tasks/TaskBoardEditModal', () => ({
   })
 }));
 
+jest.mock('../../src/settings/components/ConfirmModal', () => ({
+  ConfirmModal: { confirm: jest.fn().mockResolvedValue(false) }
+}));
+
 import { Notice } from 'obsidian';
 import type { NoteLink, TaskMetadata } from '../../src/database/repositories/interfaces/ITaskRepository';
 import type { ProjectMetadata } from '../../src/database/repositories/interfaces/IProjectRepository';

@@ -22,7 +22,6 @@ import { ConversationEmbeddingWatcher } from './ConversationEmbeddingWatcher';
 import { IndexingQueue } from './IndexingQueue';
 import { EmbeddingStatusBar } from './EmbeddingStatusBar';
 import { createRetrievalDreamService, RetrievalDream } from './adapter/createRetrievalDreamService';
-import type { MemoryTraceQuery } from './adapter/RetrievalFeedbackSources';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import type { MessageRepository } from '../../database/repositories/MessageRepository';
 
@@ -237,7 +236,7 @@ export class EmbeddingManager {
 
       this.retrievalDream = createRetrievalDreamService({
         service: this.service,
-        db: this.db as unknown as MemoryTraceQuery,
+        db: this.db,
         fs: this.app.vault.adapter,
         getSettings: () => (pluginSettings as never),
         configDir: this.app.vault.configDir

@@ -46,7 +46,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function toLegacyTraceMetadata(value: unknown): LegacyTraceMetadataLike | undefined {
-  return isRecord(value) ? (value as LegacyTraceMetadataLike) : undefined;
+  return isRecord(value) ? (value) : undefined;
 }
 
 function isTraceMetadata(value: unknown): value is TraceMetadata {

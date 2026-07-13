@@ -5,7 +5,7 @@
 
 import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage } from '../../types/storage/StorageTypes';
 import { ConversationMetadata, MessageData } from '../../types/storage/HybridStorageTypes';
-import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../../types/branch/BranchTypes';
+import type { ConversationBranch, SubagentBranchMetadata } from '../../types/branch/BranchTypes';
 import type { ToolCall as ChatToolCall } from '../../types/chat/ChatTypes';
 
 type LegacyToolCallParameters = import('../../types/storage/StorageTypes').ToolCall['parameters'];
@@ -53,7 +53,7 @@ export function convertToConversationBranch(branchConversation: IndividualConver
     updated: branchConversation.updated,
     metadata: branchType === 'subagent' && subagentMeta
       ? subagentMeta
-      : { description: branchConversation.title } as HumanBranchMetadata,
+      : { description: branchConversation.title },
   };
 }
 
@@ -129,7 +129,7 @@ export function convertToLegacyConversation(
         ...meta.chatSettings,
         workspaceId: metadata.workspaceId,
         sessionId: metadata.sessionId,
-        promptId: (meta.chatSettings as { promptId?: string } | undefined)?.promptId ?? (meta.promptId)
+        promptId: (meta.chatSettings)?.promptId ?? (meta.promptId)
       },
       workflowId: metadata.workflowId ?? (meta.workflowId),
       runTrigger: metadata.runTrigger ?? (meta.runTrigger),

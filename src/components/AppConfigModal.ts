@@ -172,7 +172,7 @@ export class AppConfigModal extends Modal {
             const result = await onValidate();
             if (result.success) {
               const missing = (result.data != null && typeof result.data === 'object' && 'missingPermissions' in result.data)
-                ? (result.data as { missingPermissions: unknown }).missingPermissions
+                ? (result.data).missingPermissions
                 : undefined;
               if (Array.isArray(missing) && missing.length > 0) {
                 const msg = `Valid, but missing permissions: ${missing.join(', ')}`;

@@ -173,7 +173,7 @@ export class MessageStreamHandler {
 
       // Extract tool calls when available
       if (chunk.toolCalls) {
-        toolCalls = chunk.toolCalls as StreamToolCall[];
+        toolCalls = chunk.toolCalls;
 
         // Emit tool calls event for final chunk
         if (chunk.complete) {

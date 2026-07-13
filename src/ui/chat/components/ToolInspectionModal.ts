@@ -112,7 +112,7 @@ export class ToolInspectionModal extends Modal {
         return;
       }
 
-      this.loadedMessages = this.mergeMessages(firstPage.items as ToolInspectionMessage[], []);
+      this.loadedMessages = this.mergeMessages(firstPage.items, []);
       this.hasMorePages = firstPage.hasNextPage;
       this.nextCursor = firstPage.nextCursor;
       this.renderMessages();
@@ -157,7 +157,7 @@ export class ToolInspectionModal extends Modal {
         return;
       }
 
-      this.loadedMessages = this.mergeMessages(pageResult.items as ToolInspectionMessage[], this.loadedMessages);
+      this.loadedMessages = this.mergeMessages(pageResult.items, this.loadedMessages);
       this.hasMorePages = pageResult.hasNextPage;
       this.nextCursor = pageResult.nextCursor;
       this.renderMessages();

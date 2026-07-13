@@ -56,7 +56,7 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
             const tools = toolManagerTools.map((tool: ITool<unknown, unknown>) => ({
                 name: `toolManager_${tool.slug}`,
                 description: tool.description,
-                inputSchema: tool.getParameterSchema() as Record<string, unknown>
+                inputSchema: tool.getParameterSchema()
             }));
 
             return Promise.resolve({ tools });

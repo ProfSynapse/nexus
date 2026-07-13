@@ -46,7 +46,7 @@ export function renderStateIcon(element: HTMLElement, state: BranchState): void 
  * @returns The created icon element
  */
 export function createStateIcon(state: BranchState, parent?: HTMLElement): HTMLElement {
-  const iconEl = window.activeDocument.createElement('span');
+  const iconEl = createSpan();
   iconEl.addClass('nexus-state-icon');
   renderStateIcon(iconEl, state);
 

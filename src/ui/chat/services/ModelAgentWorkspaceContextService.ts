@@ -35,7 +35,7 @@ export class ModelAgentWorkspaceContextService {
       const selectedWorkspaceId = (fullWorkspaceData.id as string) || workspaceId;
       const workspaceContext = (
         fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null
-      ) as WorkspaceContext | null;
+      );
 
       await this.workspaceIntegration.bindSessionToWorkspace(sessionId, selectedWorkspaceId);
 

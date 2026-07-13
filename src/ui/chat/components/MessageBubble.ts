@@ -72,7 +72,7 @@ export class MessageBubble extends Component {
     const activeContent = state.activeContent;
 
     if (this.message.role === 'assistant') {
-      const wrapper = window.activeDocument.createElement('div');
+      const wrapper = createDiv();
       wrapper.addClass('message-group');
       wrapper.setAttribute('data-message-id', this.message.id);
 
@@ -103,7 +103,7 @@ export class MessageBubble extends Component {
   }
 
   private createStandardMessageContainer(messageContent: string): HTMLElement {
-    const messageContainer = window.activeDocument.createElement('div');
+    const messageContainer = createDiv();
     messageContainer.addClass('message-container');
     messageContainer.addClass(this.message.role === 'tool' ? 'message-assistant' : `message-${this.message.role}`);
     messageContainer.setAttribute('data-message-id', this.message.id);
@@ -390,7 +390,7 @@ export class MessageBubble extends Component {
       details = existing as HTMLDetailsElement;
     } else {
       if (existing) existing.remove();
-      details = window.activeDocument.createElement('details');
+      details = createEl('details');
       details.addClass('message-reasoning');
       details.createEl('summary', { cls: 'message-reasoning-summary', text: 'Thinking' });
       details.createDiv('message-reasoning-content');
@@ -435,7 +435,7 @@ export class MessageBubble extends Component {
 
     this.renderContent(contentElement as HTMLElement, content).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
-      const fallbackDiv = window.activeDocument.createElement('div');
+      const fallbackDiv = createDiv();
       fallbackDiv.textContent = content;
       contentElement.appendChild(fallbackDiv);
     });

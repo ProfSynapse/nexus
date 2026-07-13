@@ -113,7 +113,7 @@ export class ModelAgentCompactionState {
     compactionRecord: CompactedContext
   ): Record<string, unknown> {
     const frontier = this.compactionFrontierService.appendRecord(
-      this.getFrontierFromMetadata((metadata ?? {}) as ConversationMetadataWithCompaction),
+      this.getFrontierFromMetadata((metadata ?? {})),
       compactionRecord
     );
     return this.buildMetadataWithCompactionFrontier(metadata, frontier);

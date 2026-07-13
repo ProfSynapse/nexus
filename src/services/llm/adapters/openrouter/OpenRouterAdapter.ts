@@ -429,7 +429,7 @@ export class OpenRouterAdapter extends BaseAdapter {
                   }
                 ) as unknown as OpenRouterToolCall[];
               }
-              return toolCalls as unknown as SSEToolCall[];
+              return toolCalls;
             }
           }
           return null;
@@ -863,7 +863,7 @@ function toOpenRouterResponse(value: unknown): OpenRouterResponse {
     return {};
   }
 
-  return value as OpenRouterResponse;
+  return value;
 }
 
 function parseToolArguments(value: unknown): Record<string, unknown> {

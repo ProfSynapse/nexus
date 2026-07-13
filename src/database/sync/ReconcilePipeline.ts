@@ -425,7 +425,7 @@ export function parseShardVaultPath(
   if (!shardFileName.endsWith('.jsonl')) {
     return null;
   }
-  const cat = category as EventStreamCategory;
+  const cat = category;
   const businessIdPrefix = BUSINESS_ID_PREFIX[cat];
   const businessId = streamId.startsWith(businessIdPrefix)
     ? streamId.slice(businessIdPrefix.length)

@@ -373,7 +373,10 @@ module.exports = {
         allowSyntheticDefaultImports: true,
         strict: true,
         skipLibCheck: true,
-        moduleResolution: 'node'
+        moduleResolution: 'bundler',
+        // TS 6.0: tests live outside src/**, so the inferred rootDir is ./tests.
+        // Pin it to the project root to preserve the existing test layout.
+        rootDir: '.'
       }
     }]
   },

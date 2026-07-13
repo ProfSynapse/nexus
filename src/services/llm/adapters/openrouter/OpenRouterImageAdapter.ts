@@ -74,13 +74,13 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   readonly name = 'openrouter-image';
   readonly baseUrl = 'https://openrouter.ai/api/v1';
   readonly supportedModels: ImageModel[] = [
-    'gemini-2.5-flash-image' as ImageModel,
-    'gemini-3-pro-image-preview' as ImageModel,
-    'gemini-3.1-flash-image-preview' as ImageModel,
-    'gpt-5-image' as ImageModel,
-    'gpt-5.4-image-2' as ImageModel,
-    'flux-2-pro' as ImageModel,
-    'flux-2-flex' as ImageModel
+    'gemini-2.5-flash-image',
+    'gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image-preview',
+    'gpt-5-image',
+    'gpt-5.4-image-2',
+    'flux-2-pro',
+    'flux-2-flex'
   ];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];

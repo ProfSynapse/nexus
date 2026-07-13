@@ -213,7 +213,7 @@ export class DataTransformer {
         const legacyDoc = this.getLegacyDoc(trace);
         const content = this.getStringValue(legacyDoc?.content) ||
           this.getStringValue(trace.content) ||
-          this.getStringValue((trace.metadata as Record<string, unknown> | undefined)?.content) ||
+          this.getStringValue((trace.metadata)?.content) ||
           '';
         const legacyParams = this.parseJSONString(trace.metadata?.params);
         const legacyResult = this.parseJSONString(trace.metadata?.result);
@@ -328,7 +328,7 @@ export class DataTransformer {
         }
 
         if (category && typeof category === 'object' && 'files' in category) {
-          const categoryRecord = category as { files?: Record<string, unknown> };
+          const categoryRecord = category;
           if (categoryRecord.files && typeof categoryRecord.files === 'object') {
             Object.values(categoryRecord.files).forEach((filePath: unknown) => {
               if (typeof filePath === 'string') {
@@ -373,6 +373,6 @@ export class DataTransformer {
   }
 
   private getLegacyDoc(record: LegacyRecord): LegacyDocument | undefined {
-    return this.toRecord(record['doc' + 'ument']) as LegacyDocument | undefined;
+    return this.toRecord(record['doc' + 'ument']);
   }
 }

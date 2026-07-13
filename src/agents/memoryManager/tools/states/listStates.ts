@@ -99,14 +99,14 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       );
 
       // Extract items from PaginatedResult
-      let processedStates: StateLike[] = statesResult.items as unknown as StateLike[];
+      let processedStates: StateLike[] = statesResult.items;
 
       // Filter out archived states by default (unless includeArchived is true)
       if (!params.includeArchived) {
         processedStates = processedStates.filter(state => {
-          const stateData = state.state as unknown as Record<string, unknown> | undefined;
-          const nestedState = stateData?.state as Record<string, unknown> | undefined;
-          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
+          const stateData = state.state;
+          const nestedState = stateData?.state;
+          const metadata = nestedState?.metadata;
           return !metadata?.isArchived;
         });
       }
@@ -116,10 +116,10 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       const tags = params.tags ?? [];
       if (tags.length > 0) {
         processedStates = processedStates.filter(state => {
-          const stateData = state.state as unknown as Record<string, unknown> | undefined;
-          const nestedState = stateData?.state as Record<string, unknown> | undefined;
-          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
-          const stateTags = state.tags || (metadata?.tags as string[]) || [];
+          const stateData = state.state;
+          const nestedState = stateData?.state;
+          const metadata = nestedState?.metadata;
+          const stateTags = state.tags || (metadata?.tags) || [];
           return tags.some(tag => stateTags.includes(tag));
         });
       }

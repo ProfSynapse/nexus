@@ -37,19 +37,19 @@ export class ToolStatusBar {
     callbacks: ToolStatusBarCallbacks,
     private readonly component: Component
   ) {
-    this.statusBarEl = container.createEl('div', {
+    this.statusBarEl = container.createDiv({
       cls: 'tool-status-bar tool-status-bar-hidden'
     });
 
     // Setup row 1 (primary)
-    this.row1El = this.statusBarEl.createEl('div', { cls: 'tool-status-row--primary' });
-    this.slotEl = this.row1El.createEl('div', { cls: 'tool-status-slot' });
+    this.row1El = this.statusBarEl.createDiv({ cls: 'tool-status-row--primary' });
+    this.slotEl = this.row1El.createDiv({ cls: 'tool-status-slot' });
     this.slotEl.setAttribute('role', 'status');
     this.slotEl.setAttribute('aria-live', 'polite');
     this.statusLine = new ToolStatusLine(this.slotEl, this.component);
     
     // Setup row 2 (meta)
-    this.row2El = this.statusBarEl.createEl('div', { cls: 'tool-status-row--meta' });
+    this.row2El = this.statusBarEl.createDiv({ cls: 'tool-status-row--meta' });
     
     // Action icons
     this.inspectBtn = this.row2El.createEl('button', { cls: 'tool-status-inspect-icon' });
@@ -70,7 +70,7 @@ export class ToolStatusBar {
     
     // Agent status slot. SubagentController replaces the fallback button with
     // AgentStatusMenu once the subagent executor is ready.
-    this.agentSlotEl = this.row2El.createEl('div', { cls: 'tool-status-agent-slot' });
+    this.agentSlotEl = this.row2El.createDiv({ cls: 'tool-status-agent-slot' });
     this.agentFallbackBtn = this.agentSlotEl.createEl('button', { cls: 'tool-status-agent-icon' });
     this.agentFallbackBtn.setAttribute('aria-label', 'Subagents');
     this.agentFallbackBtn.setAttribute('title', 'Subagents');
@@ -88,7 +88,7 @@ export class ToolStatusBar {
     }
     
     // Right group
-    this.costEl = this.row2El.createEl('div', { cls: 'tool-status-cost' });
+    this.costEl = this.row2El.createDiv({ cls: 'tool-status-cost' });
     this.contextBadge = new ContextBadge(this.row2El);
   }
 

@@ -198,17 +198,17 @@ export class WorkspaceFormRenderer {
         const listContainer = body.createDiv('nexus-item-list');
 
         if (workflows.length === 0) {
-          listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+          listContainer.createSpan({ text: 'None', cls: 'nexus-form-hint' });
         } else {
           workflows.forEach((workflow, index) => {
             const item = listContainer.createDiv('nexus-item-row');
 
             const info = item.createDiv('nexus-item-info');
             const workflowName = workflow.name || `Workflow ${index + 1}`;
-            info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
+            info.createSpan({ text: workflowName, cls: 'nexus-item-title' });
             const summary = this.buildWorkflowSummary(workflow);
             if (summary) {
-              info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+              info.createSpan({ text: summary, cls: 'nexus-item-subtitle' });
             }
 
             const actions = item.createDiv('nexus-item-actions');
@@ -267,7 +267,7 @@ export class WorkspaceFormRenderer {
       listContainer.empty();
 
       if (keyFiles.length === 0) {
-        listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+        listContainer.createSpan({ text: 'None', cls: 'nexus-form-hint' });
       } else {
         keyFiles.forEach((filePath, index) => {
           const item = listContainer.createDiv('nexus-item-row');

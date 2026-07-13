@@ -565,7 +565,7 @@ export class GoogleAdapter extends BaseAdapter {
    * Delegates to SchemaValidator utility
    */
   private sanitizeSchemaForGoogle(schema: JsonObject): JsonObject {
-    return (SchemaValidator.sanitizeSchemaForGoogle(schema) ?? {}) as JsonObject;
+    return (SchemaValidator.sanitizeSchemaForGoogle(schema) ?? {});
   }
 
   private buildGoogleHeaders(): Record<string, string> {

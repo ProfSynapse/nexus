@@ -532,7 +532,7 @@ export class GithubCopilotAdapter extends BaseAdapter {
       return options.conversationHistory as unknown as CopilotRequestMessage[];
     }
 
-    return this.buildMessages(prompt, options?.systemPrompt) as unknown as CopilotRequestMessage[];
+    return this.buildMessages(prompt, options?.systemPrompt);
   }
 
   private convertTools(tools: Tool[]): CopilotChatTool[] {

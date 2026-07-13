@@ -21,9 +21,9 @@ type QueryAwareStorageAdapter = IStorageAdapter & {
 
 function getRawAdapter(adapterOrGetter: StorageAdapterOrGetter): QueryAwareStorageAdapter | undefined {
   if (typeof adapterOrGetter === 'function') {
-    return adapterOrGetter() as QueryAwareStorageAdapter | undefined;
+    return adapterOrGetter();
   }
-  return adapterOrGetter as QueryAwareStorageAdapter | undefined;
+  return adapterOrGetter;
 }
 
 /**
@@ -57,9 +57,9 @@ export function resolveReadableAdapter(adapterOrGetter: StorageAdapterOrGetter):
   let adapter: QueryAwareStorageAdapter | undefined;
 
   if (typeof adapterOrGetter === 'function') {
-    adapter = adapterOrGetter() as QueryAwareStorageAdapter | undefined;
+    adapter = adapterOrGetter();
   } else {
-    adapter = adapterOrGetter as QueryAwareStorageAdapter | undefined;
+    adapter = adapterOrGetter;
   }
 
   if (!adapter || !adapter.isReady()) {

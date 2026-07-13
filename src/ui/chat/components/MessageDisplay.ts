@@ -345,21 +345,21 @@ export class MessageDisplay {
    * Reused by showCompactionDivider (live) and render (persisted from metadata).
    */
   private createCompactionDividerElement(messagesRemoved: number): HTMLElement {
-    const divider = window.activeDocument.createElement('div');
+    const divider = createDiv();
     divider.className = 'compaction-divider';
     divider.setAttribute('role', 'separator');
     divider.setAttribute('aria-label', `${messagesRemoved} messages compacted`);
 
-    const rule1 = window.activeDocument.createElement('span');
+    const rule1 = createSpan();
     rule1.className = 'compaction-divider-rule';
     divider.appendChild(rule1);
 
-    const label = window.activeDocument.createElement('span');
+    const label = createSpan();
     label.className = 'compaction-divider-label';
     label.textContent = 'Compacted';
     divider.appendChild(label);
 
-    const rule2 = window.activeDocument.createElement('span');
+    const rule2 = createSpan();
     rule2.className = 'compaction-divider-rule';
     divider.appendChild(rule2);
 

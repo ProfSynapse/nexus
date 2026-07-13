@@ -231,7 +231,7 @@ export class OpenAIAdapter extends BaseAdapter {
               };
             }
             // Already in Responses API format
-            return tool as OpenAIResponsesTool;
+            return tool;
           });
         }
 

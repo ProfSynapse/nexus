@@ -183,11 +183,11 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
           // Conversation results have a different structure than trace/state results
           if (trace.type === 'conversation') {
-          return this.formatConversationResult(trace as unknown as MemorySearchTraceLike);
+          return this.formatConversationResult(trace);
           }
 
           // Standard trace/state result formatting
-          return this.formatTraceResult(trace as unknown as MemorySearchTraceLike);
+          return this.formatTraceResult(trace);
         } catch {
           return null;
         }

@@ -134,7 +134,7 @@ export class LiveVoiceContextBuilder {
   }
 
   private getCompactionFrontier(conversation: ConversationData): CompactedContext[] {
-    const metadataRecord = conversation.metadata as Record<string, unknown> | undefined;
+    const metadataRecord = conversation.metadata;
     const compaction = metadataRecord?.compaction as { frontier?: CompactedContext[] } | undefined;
     return Array.isArray(compaction?.frontier) ? compaction.frontier : [];
   }

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "outDir": ".",
+    "esModuleInterop": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2021",
+    "lib": ["ES2021"],
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "files": ["connector.ts"]
+}

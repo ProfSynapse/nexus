@@ -5,7 +5,7 @@ export class ContextBadge {
   private percentage = 0;
 
   constructor(container: HTMLElement) {
-    this.badgeEl = container.createEl('div', {
+    this.badgeEl = container.createDiv({
       cls: 'context-badge context-badge-safe',
     });
     this.badgeEl.setAttribute('role', 'status');

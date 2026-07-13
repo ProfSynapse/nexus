@@ -7,7 +7,6 @@ import type { MessageEnhancement } from '../components/suggesters/base/Suggester
 import type { ModelOption } from '../types/SelectionTypes';
 import type {
   ContextStatusInfo,
-  LoadedWorkspaceData,
   SystemPromptBuilder,
   ToolCatalogEntry,
 } from './SystemPromptBuilder';
@@ -75,7 +74,7 @@ export class ModelAgentPromptContextAssembler {
       messageEnhancement: snapshot.messageEnhancement,
       customPrompt: snapshot.currentSystemPrompt,
       workspaceContext: snapshot.workspaceContext,
-      loadedWorkspaceData: snapshot.loadedWorkspaceData as LoadedWorkspaceData | null,
+      loadedWorkspaceData: snapshot.loadedWorkspaceData,
       skipToolsSection: !shouldPassToolSchemasToProvider(snapshot.selectedModel?.providerId),
       contextStatus: this.buildContextStatus(snapshot.contextTokenTracker),
       compactionFrontier: snapshot.compactionFrontier,

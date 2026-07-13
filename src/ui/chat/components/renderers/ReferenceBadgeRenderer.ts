@@ -51,7 +51,7 @@ export class ReferenceBadgeRenderer {
           displayText: ref.displayText,
           technicalName: ref.technicalName,
           position: Math.max(0, position)
-        } as ExtractedReference;
+        };
       })
       .filter((ref): ref is ExtractedReference => ref !== null);
 
@@ -149,7 +149,7 @@ export class ReferenceBadgeRenderer {
 
     nodesToProcess.forEach(node => {
       const originalText = node.nodeValue ?? '';
-      const fragment = window.activeDocument.createDocumentFragment();
+      const fragment = createFragment();
       let lastIndex = 0;
       const tokenPattern = new RegExp(pattern, 'g');
       let match: RegExpExecArray | null;
@@ -184,7 +184,7 @@ export class ReferenceBadgeRenderer {
    * Create badge element for a reference
    */
   private static createReferenceBadge(reference: ExtractedReference): HTMLElement {
-    const badge = window.activeDocument.createElement('span');
+    const badge = createSpan();
     badge.className = `chat-reference chat-reference-${reference.type}`;
     badge.setAttribute('data-type', reference.type);
     badge.setAttribute('data-name', reference.technicalName);

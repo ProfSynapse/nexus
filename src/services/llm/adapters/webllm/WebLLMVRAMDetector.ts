@@ -21,68 +21,10 @@
 
 import { VRAMInfo } from './types';
 
-// ============================================================================
-// WebGPU Type Definitions
-// ============================================================================
-
-/**
- * WebGPU adapter info interface
- * Provides GPU hardware information
- */
-interface GPUAdapterInfo {
-  vendor?: string;
-  architecture?: string;
-  device?: string;
-  description?: string;
-}
-
-/**
- * WebGPU adapter interface
- * Represents a physical GPU available to the system
- */
-interface GPUAdapter {
-  readonly info?: GPUAdapterInfo;
-  readonly limits: GPUSupportedLimits;
-  requestAdapterInfo?(): Promise<GPUAdapterInfo>;
-  requestDevice(): Promise<GPUDevice>;
-}
-
-/**
- * WebGPU supported limits interface
- */
-interface GPUSupportedLimits {
-  readonly maxBufferSize: number;
-  // Additional limits exist but maxBufferSize is what we need for VRAM estimation
-}
-
-/**
- * WebGPU device interface
- */
-interface GPUDevice {
-  readonly limits: GPUSupportedLimits;
-  destroy(): void;
-}
-
-/**
- * WebGPU API interface
- */
-interface GPU {
-  requestAdapter(options?: { powerPreference?: 'low-power' | 'high-performance' }): Promise<GPUAdapter | null>;
-}
-
-/**
- * Extended Navigator interface with WebGPU support
- */
-interface NavigatorGPU extends Navigator {
-  readonly gpu: GPU;
-}
-
-/**
- * Type guard to check if navigator has WebGPU support
- */
-function hasGPU(navigator: Navigator): navigator is NavigatorGPU {
-  return 'gpu' in navigator;
-}
+// WebGPU types (GPU, GPUAdapter, GPUAdapterInfo, GPUDevice, Navigator.gpu) are
+// provided by the built-in lib.dom typings. `navigator.gpu` is typed as always
+// present, but at runtime it is absent on older Electron / mobile, so call sites
+// read it as `GPU | undefined` before use.
 
 export class WebLLMVRAMDetector {
   private static cachedInfo: VRAMInfo | null = null;
@@ -95,13 +37,12 @@ export class WebLLMVRAMDetector {
       return false;
     }
 
-    if (!hasGPU(navigator)) {
+    const gpu = navigator.gpu as GPU | undefined;
+    if (!gpu) {
       return false;
     }
 
     try {
-      const gpu = navigator.gpu;
-
       // Try different adapter options for better compatibility
       // Windows/NVIDIA may need explicit high-performance preference
       let adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
@@ -135,14 +76,13 @@ export class WebLLMVRAMDetector {
     };
 
     // Check WebGPU support
-    if (typeof navigator === 'undefined' || !hasGPU(navigator)) {
+    const gpu = typeof navigator === 'undefined' ? undefined : (navigator.gpu as GPU | undefined);
+    if (!gpu) {
       this.cachedInfo = info;
       return info;
     }
 
     try {
-      const gpu = navigator.gpu;
-
       // Request high-performance adapter first (important for Windows/NVIDIA)
       let adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
 
@@ -166,10 +106,14 @@ export class WebLLMVRAMDetector {
         // New API: adapter.info is a synchronous property
         if (adapter.info) {
           gpuDescription = adapter.info.description || adapter.info.device || adapter.info.vendor || 'Unknown GPU';
-        } else if (typeof adapter.requestAdapterInfo === 'function') {
-          // Fallback to old API for older implementations
-          const adapterInfo = await adapter.requestAdapterInfo();
-          gpuDescription = adapterInfo.description || adapterInfo.device || 'Unknown GPU';
+        } else {
+          // Fallback to the old requestAdapterInfo() API for older implementations.
+          // lib.dom no longer declares it on GPUAdapter, so probe/call via a cast.
+          const legacyAdapter = adapter as unknown as { requestAdapterInfo?(): Promise<GPUAdapterInfo> };
+          if (typeof legacyAdapter.requestAdapterInfo === 'function') {
+            const adapterInfo = await legacyAdapter.requestAdapterInfo();
+            gpuDescription = adapterInfo.description || adapterInfo.device || 'Unknown GPU';
+          }
         }
       } catch {
         // Ignore error getting adapter info

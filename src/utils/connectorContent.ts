@@ -5,13 +5,13 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2026-07-02T18:48:47.856Z
+ * Generated: 2026-07-13T11:59:02.427Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-var net_1 = require("net");
-var path_1 = require("path");
+const net_1 = require("net");
+const path_1 = require("path");
 /**
  * Creates a connection to the MCP server
  * This connector is used by Claude Desktop to communicate with our Obsidian plugin
@@ -31,7 +31,7 @@ var path_1 = require("path");
  * @param vaultName - The original vault name to sanitize
  * @returns A sanitized version of the vault name suitable for use in identifiers
  */
-var sanitizeVaultName = function (vaultName) {
+const sanitizeVaultName = (vaultName) => {
     if (!vaultName)
         return '';
     return vaultName
@@ -55,24 +55,24 @@ var sanitizeVaultName = function (vaultName) {
  *
  * @returns The extracted vault name or empty string if not found
  */
-var extractVaultName = function () {
+const extractVaultName = () => {
     try {
         // Get the script path from process.argv
-        var scriptPath = process.argv[1];
+        const scriptPath = process.argv[1];
         if (!scriptPath) {
             return '';
         }
         // Go up 4 levels in the directory hierarchy to reach the vault name
         // 1. nexus plugin directory
-        var pluginDir = (0, path_1.dirname)(scriptPath);
+        const pluginDir = (0, path_1.dirname)(scriptPath);
         // 2. plugins directory
-        var pluginsDir = (0, path_1.dirname)(pluginDir);
+        const pluginsDir = (0, path_1.dirname)(pluginDir);
         // 3. .obsidian directory
-        var obsidianDir = (0, path_1.dirname)(pluginsDir);
+        const obsidianDir = (0, path_1.dirname)(pluginsDir);
         // 4. vault directory (parent of .obsidian)
-        var vaultDir = (0, path_1.dirname)(obsidianDir);
+        const vaultDir = (0, path_1.dirname)(obsidianDir);
         // The vault name is the basename of the vault directory
-        var vaultName = (0, path_1.basename)(vaultDir);
+        const vaultName = (0, path_1.basename)(vaultDir);
         return vaultName || '';
     }
     catch (error) {
@@ -88,18 +88,18 @@ var extractVaultName = function () {
  *
  * @returns The IPC path string with vault name included
  */
-var getIPCPath = function () {
+const getIPCPath = () => {
     // Extract and sanitize the vault name
-    var vaultName = extractVaultName();
-    var sanitizedVaultName = sanitizeVaultName(vaultName);
+    const vaultName = extractVaultName();
+    const sanitizedVaultName = sanitizeVaultName(vaultName);
     // Add the sanitized vault name to the IPC path
     return process.platform === 'win32'
-        ? "\\\\\\\\.\\\\pipe\\\\nexus_mcp_".concat(sanitizedVaultName)
-        : "/tmp/nexus_mcp_".concat(sanitizedVaultName, ".sock");
+        ? \`\\\\\\\\.\\\\pipe\\\\nexus_mcp_\${sanitizedVaultName}\`
+        : \`/tmp/nexus_mcp_\${sanitizedVaultName}.sock\`;
 };
 // Retry configuration
-var MAX_BACKOFF_MS = 30000; // Cap backoff at 30 seconds
-var retryCount = 0;
+const MAX_BACKOFF_MS = 30000; // Cap backoff at 30 seconds
+let retryCount = 0;
 /**
  * Calculates the backoff delay using exponential backoff with a cap
  *
@@ -108,7 +108,7 @@ var retryCount = 0;
  */
 function calculateBackoff(attempt) {
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
-    var exponentialDelay = 1000 * Math.pow(2, attempt);
+    const exponentialDelay = 1000 * Math.pow(2, attempt);
     return Math.min(MAX_BACKOFF_MS, exponentialDelay);
 }
 /**
@@ -125,32 +125,32 @@ function calculateBackoff(attempt) {
  * error notifications by Claude Desktop.
  */
 function connectWithRetry() {
-    var ipcPath = getIPCPath();
+    const ipcPath = getIPCPath();
     // Track whether this socket ever successfully connected
-    var hasConnected = false;
+    let hasConnected = false;
     try {
-        var socket_1 = (0, net_1.createConnection)(ipcPath);
+        const socket = (0, net_1.createConnection)(ipcPath);
         // Pipe stdin/stdout ONLY after connection is confirmed
-        socket_1.on('connect', function () {
+        socket.on('connect', () => {
             hasConnected = true;
             retryCount = 0;
-            process.stdin.pipe(socket_1);
-            socket_1.pipe(process.stdout);
+            process.stdin.pipe(socket);
+            socket.pipe(process.stdout);
         });
         // Error handling - completely silent for expected connection errors
-        socket_1.on('error', function (err) {
-            var nodeErr = err;
-            var isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
+        socket.on('error', (err) => {
+            const nodeErr = err;
+            const isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
             if (!isWaitingError) {
                 // Non-expected errors - still silent to avoid Claude Desktop notifications
             }
             retryCount++;
-            var retryDelay = calculateBackoff(retryCount);
+            const retryDelay = calculateBackoff(retryCount);
             global.setTimeout(connectWithRetry, retryDelay);
         });
-        socket_1.on('close', function () {
+        socket.on('close', () => {
             // Unpipe to prevent stdin consumption by dead socket
-            process.stdin.unpipe(socket_1);
+            process.stdin.unpipe(socket);
             if (hasConnected) {
                 retryCount = 0;
                 global.setTimeout(connectWithRetry, 1000);

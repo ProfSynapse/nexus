@@ -96,7 +96,7 @@ export class OpenRouterOAuthProvider implements IOAuthProvider {
       );
     }
 
-    const data = response.json as { key: string } | null;
+    const data = response.json;
 
     if (!data?.key) {
       throw new Error('OpenRouter token exchange returned no key');

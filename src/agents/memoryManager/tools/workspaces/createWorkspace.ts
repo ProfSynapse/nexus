@@ -15,7 +15,7 @@ import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import type { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
-import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
+import { addRecommendations } from '../../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
 
 // Import types from existing workspace mode
@@ -25,10 +25,6 @@ import {
 } from '../../../../database/types/workspace/ParameterTypes';
 import { WorkspaceContext } from '../../../../database/types/workspace/WorkspaceTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
-
-type CreateWorkspaceResultWithRecommendations = CreateWorkspaceResult & {
-    recommendations: Recommendation[];
-};
 
 interface WorkspaceServiceLike {
     getWorkspaceByNameOrId(identifier: string): Promise<IndividualWorkspace | null>;
@@ -148,7 +144,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
             const result = this.prepareResult(true);
             return addRecommendations(result, [
                 NudgeHelpers.suggestWorkspaceNameFollowup(workspace.name)
-            ]) as CreateWorkspaceResultWithRecommendations;
+            ]);
 
         } catch (error) {
             return this.prepareResult(false, undefined, createErrorMessage('Error creating workspace: ', error));

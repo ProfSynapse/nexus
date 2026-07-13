@@ -208,7 +208,7 @@ export class PluginScopedStorageCoordinator {
       return {} as StoredPluginData;
     }
 
-    return data as StoredPluginData;
+    return data;
   }
 
   private async collectExistingLegacySources(basePaths: string[]): Promise<string[]> {
