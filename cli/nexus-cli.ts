@@ -103,7 +103,11 @@ function printToolResult(result: McpToolResult, asJson: boolean): number {
 const USAGE = `nexus — local CLI bridge to a running Nexus vault (no MCP config)
 
 USAGE
-  nexus tools [selector]              Discover tools (getTools). selector e.g. "storage", "storage move", "--help"
+  nexus tools [selector...]           Discover tools (getTools). Drill down as far as you want:
+                                        nexus tools                     all agents (catalog)
+                                        nexus tools storage             one agent's tools (compact)
+                                        nexus tools storage list        one tool, full arg schema
+                                        nexus tools "storage list, content read"   several tools at once
   nexus use "<command>" [context]    Execute a CLI-style tool command (useTools)
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
@@ -168,7 +172,11 @@ async function main(): Promise<number> {
     }
 
     if (cmd === 'tools') {
-        const selector = positionals[1] ?? '--help';
+        // Join all positionals so unquoted drill-down works:
+        //   nexus tools storage           -> "storage"        (whole agent, compact)
+        //   nexus tools storage list      -> "storage list"   (one tool, full arg schema)
+        //   nexus tools storage move, content read -> multiple tools, full schemas each
+        const selector = positionals.slice(1).join(' ') || '--help';
         return withClient(vaultFlag, async (client) => {
             // getTools validates memory/goal too — auto-fill for discovery so callers need not pass them.
             const result = await client.callTool('toolManager_getTools', {
