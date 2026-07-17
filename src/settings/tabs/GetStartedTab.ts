@@ -15,6 +15,7 @@ import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 import { CONNECTOR_JS_CONTENT } from '../../utils/connectorContent';
+import { LocalCliInstaller } from '../../services/cli/LocalCliInstaller';
 import {
     appendCodexMcpTomlSnippet,
     buildCodexMcpTomlSnippet,
@@ -294,6 +295,9 @@ export class GetStartedTab {
 
         this.container.createEl('hr', { cls: 'nexus-divider' });
         this.renderGenericAgentsSection();
+
+        this.container.createEl('hr', { cls: 'nexus-divider' });
+        this.renderLocalCliSection();
     }
 
     /**
@@ -603,6 +607,109 @@ export class GetStartedTab {
             return this.getConnectorPath(pathMod);
         } catch {
             return 'connector.js';
+        }
+    }
+
+    /**
+     * Local CLI bridge: installs a machine-global `nexus` command + agent skill
+     * so external coding agents (Claude Code, Codex) can drive the vault with no
+     * MCP configuration. Everything lives outside the vault and is reversible.
+     */
+    private renderLocalCliSection(): void {
+        const block = this.container.createDiv('nexus-agent-block');
+        const heading = block.createEl('h4');
+        heading.createSpan({ text: '⚡ ', cls: 'nx-agent-logo' });
+        heading.createSpan({ text: 'Local CLI (no MCP required)' });
+
+        block.createEl('p', {
+            text: 'Installs a machine-global command-line tool so external coding agents can discover and run your vault’s tools directly — no MCP server entry to configure. Everything is installed outside your vault and is reversible.',
+            cls: 'setting-item-description'
+        });
+
+        const installer = new LocalCliInstaller();
+        if (!installer.isSupported()) {
+            block.createEl('p', {
+                text: 'The local CLI is available on desktop only.',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
+
+        // Keep an already-installed copy in sync with this plugin build.
+        installer.reconcile();
+
+        const status = installer.status();
+        const component = this.services.component;
+
+        const row = block.createDiv('nexus-mcp-row');
+        const statusText = status.installed
+            ? (status.onPath ? 'Installed and on your PATH' : 'Installed (not yet on your PATH)')
+            : 'Not installed';
+        row.createSpan({ text: statusText, cls: 'nexus-mcp-status' });
+
+        const actions = row.createDiv('nexus-mcp-actions');
+        if (!status.installed) {
+            const enableBtn = actions.createEl('button', { text: 'Install CLI', cls: 'mod-cta' });
+            if (component) {
+                component.registerDomEvent(enableBtn, 'click', () => this.enableLocalCli(installer));
+            }
+        } else {
+            const revealBtn = actions.createEl('button', { text: this.getRevealButtonText() });
+            if (component) {
+                component.registerDomEvent(revealBtn, 'click', () => this.revealInFolder(status.paths.cliJsPath));
+            }
+            const uninstallBtn = actions.createEl('button', { text: 'Uninstall' });
+            if (component) {
+                component.registerDomEvent(uninstallBtn, 'click', () => this.uninstallLocalCli(installer));
+            }
+        }
+
+        const detected = status.detected;
+        const detectedNames: string[] = [];
+        if (detected.claudeCode) detectedNames.push('Claude Code');
+        if (detected.codex) detectedNames.push('Codex');
+        block.createEl('p', {
+            text: detectedNames.length
+                ? `Detected on this machine: ${detectedNames.join(', ')}. The skill and pointer are wired up automatically.`
+                : 'No Claude Code (~/.claude) or Codex (~/.codex) detected — only the nexus command will be installed.',
+            cls: 'setting-item-description'
+        });
+
+        const details = block.createEl('details', { cls: 'nexus-manual-details' });
+        details.createEl('summary', { text: status.installed ? 'What’s installed' : 'What this installs' });
+        const disclosureBody = details.createDiv('nexus-manual-body');
+        for (const line of installer.describePlan()) {
+            disclosureBody.createDiv('nx-pathrow').createSpan({ text: line, cls: 'nx-inline-path' });
+        }
+        disclosureBody.createEl('p', {
+            text: 'All paths are outside your vault (nothing is synced), and everything here is reversible with uninstall.',
+            cls: 'setting-item-description'
+        });
+    }
+
+    private enableLocalCli(installer: LocalCliInstaller): void {
+        try {
+            const result = installer.enable();
+            const warn = result.warnings.length
+                ? ` (${result.warnings.length} note${result.warnings.length === 1 ? '' : 's'})`
+                : '';
+            new Notice(`Nexus CLI installed${warn}. Try running \`nexus vaults\` in your terminal.`);
+            for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
+            this.render();
+        } catch (error) {
+            console.error('[GetStartedTab] Error installing local CLI:', error);
+            new Notice(`Failed to install local CLI: ${(error as Error).message}`);
+        }
+    }
+
+    private uninstallLocalCli(installer: LocalCliInstaller): void {
+        try {
+            installer.uninstall();
+            new Notice('Nexus CLI uninstalled.');
+            this.render();
+        } catch (error) {
+            console.error('[GetStartedTab] Error uninstalling local CLI:', error);
+            new Notice(`Failed to uninstall local CLI: ${(error as Error).message}`);
         }
     }
 
