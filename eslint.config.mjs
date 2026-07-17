@@ -120,7 +120,7 @@ export default defineConfig([
             // Extend sentence-case with project-specific acronyms and brands
             "obsidianmd/ui/sentence-case": ["error", {
                 acronyms: [...DEFAULT_ACRONYMS, "MCP", "LLM", "KV", "MTP", "GLM"],
-                brands: [...DEFAULT_BRANDS, "Claude Desktop", "Claude", "Nexus", "LM Studio", "Ollama", "WebLLM"],
+                brands: [...DEFAULT_BRANDS, "Claude Desktop", "Claude", "Codex", "Nexus", "LM Studio", "Ollama", "WebLLM"],
                 ignoreRegex: [
                     "^e\\.g\\.",
                     "^ollama\\s",

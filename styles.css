@@ -4842,6 +4842,218 @@ body.is-mobile .message-action-btn.message-branch-next {
     text-decoration: underline;
 }
 
+/* MCP setup — connector.js explainer */
+.nexus-connector-explainer {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    margin: 12px 0 20px;
+}
+
+.nexus-connector-explainer .nx-icon {
+    font-size: 1.3em;
+    line-height: 1.2;
+    flex-shrink: 0;
+}
+
+.nexus-connector-explainer p {
+    margin: 0;
+    font-size: 0.88em;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.nexus-connector-explainer code {
+    font-family: var(--font-monospace);
+    background: var(--background-primary-alt);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
+
+/* MCP setup — per-agent block */
+.nexus-agent-block {
+    margin-bottom: 20px;
+}
+
+.nexus-agent-block > h4 {
+    display: flex;
+    align-items: center;
+    margin: 0 0 4px;
+}
+
+.nx-agent-logo {
+    font-size: 1.1em;
+}
+
+/* MCP setup — "just connected" confirmation card */
+.nexus-connect-result {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-success);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 8px;
+    background: var(--background-secondary);
+}
+
+.nexus-connect-result .nx-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.nexus-connect-result .nx-result-title {
+    font-weight: 600;
+    color: var(--text-success);
+}
+
+.nx-result-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.nx-checklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.nx-checklist li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 0.88em;
+    line-height: 1.45;
+}
+
+.nx-checklist .nx-check {
+    color: var(--text-success);
+    flex-shrink: 0;
+}
+
+.nx-checklist .nx-next {
+    color: var(--text-accent);
+    flex-shrink: 0;
+}
+
+.nx-checklist .nx-label {
+    color: var(--text-muted);
+}
+
+.nx-checklist code {
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    background: var(--background-primary-alt);
+    padding: 1px 5px;
+    border-radius: 3px;
+    word-break: break-all;
+    color: var(--text-normal);
+}
+
+/* MCP setup — manual disclosure with numbered steps */
+.nexus-manual-details {
+    margin-top: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.nexus-manual-details > summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 14px;
+    font-size: 0.9em;
+    color: var(--text-muted);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nexus-manual-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.nexus-manual-details > summary::before {
+    content: "\25B8";
+    transition: transform 0.15s ease;
+}
+
+.nexus-manual-details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.nexus-manual-details > summary:hover {
+    color: var(--text-normal);
+}
+
+.nexus-manual-body {
+    padding: 4px 16px 16px;
+}
+
+.nx-step {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+.nx-step + .nx-step {
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.nx-step-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78em;
+    font-weight: 600;
+    margin-top: 1px;
+}
+
+.nx-step-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.nx-step-body h5 {
+    margin: 0 0 4px;
+    font-size: 0.92em;
+}
+
+.nx-step-body p {
+    margin: 0 0 8px;
+    font-size: 0.85em;
+}
+
+.nx-pathrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.nx-inline-path {
+    font-family: var(--font-monospace);
+    font-size: 0.82em;
+    color: var(--text-accent);
+    word-break: break-all;
+}
+
 /* Reasoning - Compact Inline */
 .nexus-thinking-section {
     margin-top: 12px;

@@ -2,6 +2,12 @@
 
 ## July 2026
 
+**v5.14.2** — Clearer MCP integration setup
+
+- Reworked **Settings → Get started → MCP integration** so the `connector.js` bridge file is explained up front and the one-click buttons ("Connect Claude Desktop" / "Connect Codex") clearly generate it and wire it into the agent config for you.
+- After connecting, a confirmation card now shows what was created (the connector file + config entry) and the restart step; revisits collapse to a compact connected state.
+- Manual setup is now a collapsible with numbered steps — create the connector first, then add the config, then restart — so the connector file can't be skipped. Added an "Other agents" section (Cursor, Cline, Gemini CLI, Copilot…) linking to the full setup guide.
+
 **v5.14.0** — Mistral OCR (native) + PDF image extraction
 
 **PDF OCR now returns the full document** (fixes silent truncation)

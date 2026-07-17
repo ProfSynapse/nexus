@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexus — MCP Integration Setup (redesign mockup)</title>
+<style>
+  /* ---- Obsidian-ish tokens (dark default, light override) ---- */
+  :root {
+    --background-primary: #1e1e1e;
+    --background-primary-alt: #262626;
+    --background-secondary: #2a2a2a;
+    --background-modifier-border: #3a3a3a;
+    --background-modifier-hover: #333;
+    --background-modifier-error: #5a2a2a;
+    --background-modifier-success-rgb: 76, 175, 80;
+    --text-normal: #dcddde;
+    --text-muted: #999;
+    --text-faint: #666;
+    --text-error: #e06c6c;
+    --text-success: #6bd06b;
+    --text-accent: #a882ff;
+    --interactive-accent: #7c5cff;
+    --interactive-accent-hover: #8f74ff;
+    --interactive-normal: #363636;
+    --interactive-hover: #404040;
+    --radius-s: 4px;
+    --font-monospace: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --background-primary: #ffffff;
+      --background-primary-alt: #f5f5f5;
+      --background-secondary: #f0f0f0;
+      --background-modifier-border: #e0e0e0;
+      --background-modifier-hover: #eaeaea;
+      --background-modifier-error: #f5d0d0;
+      --text-normal: #1e1e1e;
+      --text-muted: #6b6b6b;
+      --text-faint: #999;
+      --text-error: #c0392b;
+      --text-success: #2e9e4f;
+      --text-accent: #7c5cff;
+      --interactive-normal: #e6e6e6;
+      --interactive-hover: #dcdcdc;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    line-height: 1.5;
+    padding: 32px 16px 80px;
+  }
+
+  /* mock chrome */
+  .mock-bar {
+    max-width: 720px;
+    margin: 0 auto 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px dashed var(--interactive-accent);
+    border-radius: 8px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+  }
+  .mock-bar strong { color: var(--text-normal); }
+  .mock-bar button {
+    font-size: 0.85em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    cursor: pointer;
+  }
+  .mock-bar button.active {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: #fff;
+  }
+
+  .settings-shell {
+    max-width: 720px;
+    margin: 0 auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 24px 28px 28px;
+  }
+
+  h3 { margin: 0 0 4px; font-size: 1.15em; }
+  h4 { margin: 0 0 8px; font-size: 1em; }
+  p  { margin: 8px 0; }
+  .setting-item-description { color: var(--text-muted); font-size: 0.9em; }
+
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 0.9em; padding: 0; margin-bottom: 16px;
+  }
+  .back-btn:hover { color: var(--text-normal); }
+
+  .nexus-divider {
+    border: none;
+    border-top: 1px solid var(--background-modifier-border);
+    margin: 24px 0;
+  }
+
+  /* --- NEW: connector explainer callout --- */
+  .nexus-connector-explainer {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    margin: 12px 0 20px;
+  }
+  .nexus-connector-explainer .nx-icon { font-size: 1.3em; line-height: 1.2; }
+  .nexus-connector-explainer p { margin: 0; font-size: 0.88em; color: var(--text-muted); }
+  .nexus-connector-explainer code {
+    font-family: var(--font-monospace);
+    background: var(--background-primary-alt);
+    padding: 1px 5px; border-radius: 3px; font-size: 0.9em;
+    color: var(--text-normal);
+  }
+
+  /* agent block */
+  .nexus-agent-block { margin-bottom: 20px; }
+  .nexus-agent-block > h4 {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nx-agent-logo { font-size: 1.1em; }
+
+  /* status row (existing look) */
+  .nexus-mcp-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; gap: 12px;
+    background: var(--background-secondary);
+    border-radius: 8px; margin-top: 8px;
+  }
+  .nexus-mcp-status { font-weight: 500; color: var(--text-muted); }
+  .nexus-mcp-status.nexus-mcp-warning { color: var(--text-error); }
+  .nexus-mcp-status.nexus-mcp-success { color: var(--text-success); }
+  .nexus-mcp-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  button.mod-cta {
+    background: var(--interactive-accent); color: #fff; border: none;
+  }
+  button.mod-cta:hover { background: var(--interactive-accent-hover); }
+  .nexus-mcp-actions button, .btn {
+    padding: 6px 12px; border-radius: 4px; font-size: 0.85em; cursor: pointer;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal); color: var(--text-normal);
+    font-family: inherit;
+  }
+  .nexus-mcp-actions button:hover, .btn:hover { background: var(--interactive-hover); }
+  .nexus-mcp-help { color: var(--text-muted); font-size: 0.85em; margin: 8px 0 0; }
+
+  /* --- NEW: confirmation card after one-click --- */
+  .nexus-connect-result {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-success);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 8px;
+    background: var(--background-secondary);
+  }
+  .nexus-connect-result .nx-result-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .nexus-connect-result .nx-result-title {
+    font-weight: 600; color: var(--text-success);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nx-checklist { list-style: none; margin: 0; padding: 0; }
+  .nx-checklist li {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 5px 0; font-size: 0.88em;
+  }
+  .nx-checklist .nx-check { color: var(--text-success); flex-shrink: 0; }
+  .nx-checklist .nx-next  { color: var(--text-accent); flex-shrink: 0; }
+  .nx-checklist code {
+    font-family: var(--font-monospace); font-size: 0.85em;
+    background: var(--background-primary-alt); padding: 1px 5px; border-radius: 3px;
+    word-break: break-all; color: var(--text-normal);
+  }
+  .nx-checklist .nx-label { color: var(--text-muted); }
+  .nx-result-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  /* --- NEW: manual disclosure w/ numbered steps --- */
+  .nexus-manual-details {
+    margin-top: 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .nexus-manual-details > summary {
+    cursor: pointer; list-style: none;
+    padding: 10px 14px; font-size: 0.9em; color: var(--text-muted);
+    user-select: none; display: flex; align-items: center; gap: 8px;
+  }
+  .nexus-manual-details > summary::-webkit-details-marker { display: none; }
+  .nexus-manual-details > summary::before { content: "▸"; transition: transform .15s; }
+  .nexus-manual-details[open] > summary::before { transform: rotate(90deg); }
+  .nexus-manual-details > summary:hover { color: var(--text-normal); }
+  .nexus-manual-body { padding: 4px 16px 16px; }
+
+  .nx-step { display: flex; gap: 12px; padding: 12px 0; }
+  .nx-step + .nx-step { border-top: 1px solid var(--background-modifier-border); }
+  .nx-step-num {
+    flex-shrink: 0;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--interactive-accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.78em; font-weight: 600; margin-top: 1px;
+  }
+  .nx-step-body { flex: 1; min-width: 0; }
+  .nx-step-body h5 { margin: 0 0 4px; font-size: 0.92em; }
+  .nx-step-body p { margin: 0 0 8px; font-size: 0.85em; color: var(--text-muted); }
+
+  .nexus-config-code {
+    background: var(--background-primary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 12px; margin: 8px 0; overflow-x: auto; font-size: 0.85em;
+  }
+  .nexus-config-code code { font-family: var(--font-monospace); white-space: pre; color: var(--text-normal); }
+  .nx-inline-path {
+    font-family: var(--font-monospace); font-size: 0.82em;
+    color: var(--text-accent); word-break: break-all;
+  }
+  .nx-pathrow { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .nx-created-badge {
+    font-size: 0.78em; color: var(--text-success);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--background-secondary); color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    padding: 10px 18px; border-radius: 8px; font-size: 0.85em;
+    box-shadow: 0 6px 24px rgba(0,0,0,.35); opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .hidden { display: none !important; }
+  .mock-note {
+    font-size: 0.78em; color: var(--text-faint); font-style: italic; margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <strong>Mock controls:</strong>
+  <span>Claude state →</span>
+  <button data-state="ready" class="active" onclick="setClaude('ready')">Not connected</button>
+  <button data-state="connected" onclick="setClaude('connected')">Just connected</button>
+  <button data-state="returning" onclick="setClaude('returning')">Already connected (revisit)</button>
+  <button data-state="noclaude" onclick="setClaude('noclaude')">Claude not installed</button>
+  <span class="mock-note">Simulated — no files are written in this mock.</span>
+</div>
+
+<div class="settings-shell">
+  <button class="back-btn">← Back to get started</button>
+  <h3>MCP integration setup</h3>
+  <p class="setting-item-description">Connect Nexus to external AI agents (Claude Desktop, Codex, Cursor, and more) so they can read and write your vault.</p>
+
+  <!-- NEW: connector.js explainer -->
+  <div class="nexus-connector-explainer">
+    <span class="nx-icon">🔌</span>
+    <p>
+      External agents talk to your vault through a small bridge file, <code>connector.js</code>, that Nexus generates inside this plugin's folder.
+      The <strong>one-click buttons below create it and wire it into each agent's config for you</strong> — you don't need to make it yourself.
+      Prefer to do it by hand? Every agent has a <em>“Set up manually”</em> section with numbered steps.
+    </p>
+  </div>
+
+  <!-- ============ CLAUDE DESKTOP ============ -->
+  <div class="nexus-agent-block">
+    <h4><span class="nx-agent-logo">🟣</span> Claude Desktop</h4>
+
+    <!-- STATE: ready to connect -->
+    <div id="claude-ready">
+      <div class="nexus-mcp-row">
+        <span class="nexus-mcp-status">Ready to connect</span>
+        <div class="nexus-mcp-actions">
+          <button class="mod-cta" onclick="setClaude('connected'); toast('Generated connector.js and updated claude_desktop_config.json')">Connect Claude Desktop</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATE: connected (confirmation card) -->
+    <div id="claude-connected" class="hidden">
+      <div class="nexus-connect-result">
+        <div class="nx-result-head">
+          <span class="nx-result-title">✓ Connected</span>
+          <div class="nx-result-actions" style="margin:0">
+            <button class="btn" onclick="toast('Revealed connector.js in Finder')">Reveal connector.js</button>
+            <button class="btn" onclick="toast('Opened claude_desktop_config.json')">Open config</button>
+          </div>
+        </div>
+        <ul class="nx-checklist">
+          <li><span class="nx-check">✓</span><span><span class="nx-label">Created bridge file</span><br><code>…/plugins/nexus/connector.js</code></span></li>
+          <li><span class="nx-check">✓</span><span><span class="nx-label">Added Nexus to</span> <code>claude_desktop_config.json</code></span></li>
+          <li><span class="nx-next">→</span><span><strong>Fully quit and relaunch Claude Desktop</strong> to load it (a window reload isn't enough).</span></li>
+        </ul>
+      </div>
+      <details class="nexus-manual-details">
+        <summary>Set up manually instead</summary>
+        <div class="nexus-manual-body" id="claude-manual-connected"></div>
+      </details>
+    </div>
+
+    <!-- STATE: already connected (compact, on revisit) -->
+    <div id="claude-returning" class="hidden">
+      <div class="nexus-mcp-row">
+        <span class="nexus-mcp-status nexus-mcp-success">✓ Connected</span>
+        <div class="nexus-mcp-actions">
+          <button onclick="toast('Opened claude_desktop_config.json')">Open config</button>
+          <button onclick="toast('Revealed connector.js in Finder')">Reveal connector.js</button>
+        </div>
+      </div>
+      <p class="nexus-mcp-help">Restart Claude Desktop if you haven't already.</p>
+    </div>
+
+    <!-- STATE: Claude not installed -->
+    <div id="claude-noclaude" class="hidden">
+      <div class="nexus-mcp-row">
+        <span class="nexus-mcp-status nexus-mcp-warning">⚠️ Claude Desktop not found</span>
+        <div class="nexus-mcp-actions">
+          <button class="mod-cta" onclick="toast('Opening claude.ai/download')">Download</button>
+          <button onclick="toast('Re-checking…')">Refresh</button>
+        </div>
+      </div>
+      <p class="nexus-mcp-help">Install Claude Desktop and open it once, then enable Settings → Developer → MCP servers and click Refresh.</p>
+    </div>
+
+    <!-- Manual disclosure for the not-connected state -->
+    <details class="nexus-manual-details" id="claude-manual-wrap">
+      <summary>Set up manually instead</summary>
+      <div class="nexus-manual-body" id="claude-manual"></div>
+    </details>
+  </div>
+
+  <hr class="nexus-divider">
+
+  <!-- ============ CODEX ============ -->
+  <div class="nexus-agent-block">
+    <h4><span class="nx-agent-logo">⬛</span> Codex</h4>
+    <div class="nexus-mcp-row">
+      <span class="nexus-mcp-status">Ready to connect</span>
+      <div class="nexus-mcp-actions">
+        <button class="mod-cta" onclick="toast('Generated connector.js and updated ~/.codex/config.toml')">Connect Codex</button>
+      </div>
+    </div>
+
+    <details class="nexus-manual-details">
+      <summary>Set up manually instead</summary>
+      <div class="nexus-manual-body" id="codex-manual"></div>
+    </details>
+  </div>
+
+  <hr class="nexus-divider">
+
+  <!-- ============ Other agents ============ -->
+  <div class="nexus-agent-block">
+    <h4><span class="nx-agent-logo">🧩</span> Other agents (Cursor, Cline, Gemini CLI, Copilot…)</h4>
+    <p class="setting-item-description" style="margin-bottom:10px">Nexus works with any MCP client. Create the bridge file once, then paste the same server entry into that tool's config.</p>
+    <details class="nexus-manual-details" open>
+      <summary>Show manual steps</summary>
+      <div class="nexus-manual-body" id="generic-manual"></div>
+    </details>
+    <p class="nexus-mcp-help">Full per-tool config formats: <a href="#" class="nx-inline-path" onclick="return false">guide/mcp-setup.md</a></p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const CONNECTOR_PATH = "/Users/you/Vault/.obsidian/plugins/nexus/connector.js";
+
+  // Numbered manual steps. `created` = show the "already created" badge (post-connect variant).
+  // known = Nexus knows this agent's config path (can write + reveal it).
+  // When false (generic "other agents"), Step 2 is copy-only — no reveal, no restart-specifics.
+  function manualSteps({ configLabel, code, lang, created, known = true }) {
+    const badge = created
+      ? `<span class="nx-created-badge">✓ already created by one-click</span>`
+      : "";
+    const revealBtn = known
+      ? `<button class="btn" onclick="toast('Revealed config file')">Reveal config file</button>`
+      : "";
+    const step2Hint = known
+      ? `Paste inside the existing config (merge into <code>mcpServers</code> if you already have servers).`
+      : `Paste this into your agent's MCP config — each tool keeps it in a different place. See the setup guide below for exact locations per tool.`;
+    const step3 = known
+      ? `<div class="nx-step">
+          <div class="nx-step-num">3</div>
+          <div class="nx-step-body">
+            <h5>Restart the agent</h5>
+            <p>${lang === "toml" ? "Start a new Codex session (config is picked up on launch)." : "Fully quit and relaunch so it loads the new server."}</p>
+          </div>
+        </div>`
+      : `<div class="nx-step">
+          <div class="nx-step-num">3</div>
+          <div class="nx-step-body">
+            <h5>Restart your agent</h5>
+            <p>Most tools auto-reload MCP config; some need a restart. Check the setup guide if the server doesn't appear.</p>
+          </div>
+        </div>`;
+    return `
+      <div class="nx-step">
+        <div class="nx-step-num">1</div>
+        <div class="nx-step-body">
+          <h5>Create the connector file</h5>
+          <p>Generates <code>connector.js</code> in the plugin folder. Do this first — the config below points at it, and the agent fails silently if it's missing.</p>
+          <div class="nx-pathrow">
+            <button class="btn" onclick="toast('Created connector.js')">${created ? "Re-create connector.js" : "Create connector.js"}</button>
+            ${badge}
+          </div>
+          <div class="nx-pathrow"><span class="nx-inline-path">${CONNECTOR_PATH}</span></div>
+        </div>
+      </div>
+      <div class="nx-step">
+        <div class="nx-step-num">2</div>
+        <div class="nx-step-body">
+          <h5>Add this to ${configLabel}</h5>
+          <p>${step2Hint}</p>
+          <div class="nexus-config-code"><code>${code}</code></div>
+          <div class="nx-pathrow">
+            <button class="btn" onclick="copyCode(this)">Copy config</button>
+            ${revealBtn}
+          </div>
+        </div>
+      </div>
+      ${step3}`;
+  }
+
+  const CLAUDE_JSON =
+`{
+  "mcpServers": {
+    "nexus": {
+      "command": "node",
+      "args": ["${CONNECTOR_PATH}"]
+    }
+  }
+}`;
+  const CODEX_TOML =
+`[mcp_servers.nexus]
+command = "node"
+args = ["${CONNECTOR_PATH}"]`;
+
+  document.getElementById("claude-manual").innerHTML =
+    manualSteps({ configLabel: "<code>claude_desktop_config.json</code>", code: CLAUDE_JSON, lang: "json", created: false });
+  document.getElementById("claude-manual-connected").innerHTML =
+    manualSteps({ configLabel: "<code>claude_desktop_config.json</code>", code: CLAUDE_JSON, lang: "json", created: true });
+  document.getElementById("codex-manual").innerHTML =
+    manualSteps({ configLabel: "<code>~/.codex/config.toml</code>", code: CODEX_TOML, lang: "toml", created: false });
+  document.getElementById("generic-manual").innerHTML =
+    manualSteps({ configLabel: "your agent's MCP config", code: CLAUDE_JSON, lang: "json", created: false, known: false });
+
+  function setClaude(state) {
+    for (const s of ["ready", "connected", "returning", "noclaude"]) {
+      document.getElementById("claude-" + s).classList.toggle("hidden", s !== state);
+    }
+    // manual disclosure for not-connected lives outside the state divs; hidden once connected
+    const isConnected = state === "connected" || state === "returning";
+    document.getElementById("claude-manual-wrap").classList.toggle("hidden", isConnected);
+    document.querySelectorAll(".mock-bar [data-state]").forEach(b =>
+      b.classList.toggle("active", b.dataset.state === state));
+  }
+
+  function copyCode(btn) {
+    const code = btn.closest(".nx-step-body").querySelector("code").textContent;
+    navigator.clipboard && navigator.clipboard.writeText(code);
+    const orig = btn.textContent; btn.textContent = "Copied!";
+    setTimeout(() => btn.textContent = orig, 1500);
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg + "  (mock)";
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+</script>
+</body>
+</html>
