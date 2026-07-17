@@ -14,11 +14,16 @@
 import { readdirSync } from 'node:fs';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
 
-const SOCK_DIR = '/tmp';
-const SOCK_PREFIX = 'nexus_mcp_';
-const SOCK_SUFFIX = '.sock';
+// Transport endpoints mirror connector.ts exactly:
+//   macOS/Linux: unix domain socket  /tmp/nexus_mcp_<vault>.sock
+//   Windows:     named pipe          \\.\pipe\nexus_mcp_<vault>
+const IS_WIN = process.platform === 'win32';
+const NAME_PREFIX = 'nexus_mcp_';
+const UNIX_SOCK_DIR = '/tmp';
+const UNIX_SUFFIX = '.sock';
+const WIN_PIPE_DIR = '\\\\.\\pipe\\';
 
-/** Mirror of connector.ts sanitizeVaultName — MUST stay identical (shared module when productionized). */
+/** Mirror of connector.ts sanitizeVaultName — MUST stay identical. */
 function sanitizeVaultName(name: string): string {
     if (!name) return '';
     return name
@@ -28,33 +33,44 @@ function sanitizeVaultName(name: string): string {
         .replace(/-+/g, '-');
 }
 
+/** Build the transport path for an already-sanitized vault name. */
+function vaultSocketPath(sanitized: string): string {
+    return IS_WIN
+        ? `${WIN_PIPE_DIR}${NAME_PREFIX}${sanitized}`
+        : `${UNIX_SOCK_DIR}/${NAME_PREFIX}${sanitized}${UNIX_SUFFIX}`;
+}
+
 interface VaultSocket { name: string; path: string; }
 
+/** Enumerate live vault endpoints (unix: glob /tmp; windows: list the named-pipe namespace). */
 function listVaultSockets(): VaultSocket[] {
     try {
-        return readdirSync(SOCK_DIR)
-            .filter((f) => f.startsWith(SOCK_PREFIX) && f.endsWith(SOCK_SUFFIX))
-            .map((f) => ({ name: f.slice(SOCK_PREFIX.length, -SOCK_SUFFIX.length), path: `${SOCK_DIR}/${f}` }));
+        if (IS_WIN) {
+            return readdirSync(WIN_PIPE_DIR)
+                .filter((f) => f.startsWith(NAME_PREFIX))
+                .map((f) => ({ name: f.slice(NAME_PREFIX.length), path: `${WIN_PIPE_DIR}${f}` }));
+        }
+        return readdirSync(UNIX_SOCK_DIR)
+            .filter((f) => f.startsWith(NAME_PREFIX) && f.endsWith(UNIX_SUFFIX))
+            .map((f) => ({ name: f.slice(NAME_PREFIX.length, -UNIX_SUFFIX.length), path: `${UNIX_SOCK_DIR}/${f}` }));
     } catch {
         return [];
     }
 }
 
 function resolveVault(requested?: string): VaultSocket {
-    const sockets = listVaultSockets();
     const want = requested ?? process.env.NEXUS_VAULT ?? undefined;
     if (want) {
+        // Explicit selection: build the path directly and attempt to connect. This works
+        // even where enumeration is unreliable (e.g. the Windows pipe namespace); a dead
+        // endpoint surfaces a clear connect error from the client.
         const s = sanitizeVaultName(want);
-        const match = sockets.find((x) => x.name === s);
-        if (!match) {
-            const live = sockets.map((x) => x.name).join(', ') || '(none open)';
-            throw new Error(`Vault "${want}" (→ "${s}") is not open. Live vaults: ${live}`);
-        }
-        return match;
+        return { name: s, path: vaultSocketPath(s) };
     }
+    const sockets = listVaultSockets();
     if (sockets.length === 1) return sockets[0];
     if (sockets.length === 0) {
-        throw new Error('No Nexus vault sockets found in /tmp. Is Obsidian open with Nexus running?');
+        throw new Error('No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.');
     }
     throw new Error(`Multiple vaults open: ${sockets.map((x) => x.name).join(', ')}. Pass --vault <name>.`);
 }

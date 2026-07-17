@@ -5,7 +5,8 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "npm run lint:obsidian && tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc -p tsconfig.connector.json && node scripts/generate-connector-content.mjs",
+		"build": "npm run lint:obsidian && node scripts/build-cli.mjs && node scripts/generate-cli-content.mjs && tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc -p tsconfig.connector.json && node scripts/generate-connector-content.mjs",
+		"build:cli": "node scripts/build-cli.mjs && node scripts/generate-cli-content.mjs",
 		"sync:agent-context": "node scripts/sync-agent-context.mjs",
 		"sync:skills": "node scripts/sync-agent-context.mjs --skills-only",
 		"schemas:tools": "node scripts/generate-tool-schemas.mjs",
