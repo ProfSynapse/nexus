@@ -57,6 +57,29 @@ describe('SQLiteSyncStateStore', () => {
     );
   });
 
+  it('deduplicates repeated complete event ids and looks them up without truncation', async () => {
+    const { store, queryOne, run } = createStore();
+    const eventId = 'evt/device-A/2026-07-18T12:34:56.789Z/sha256-' + 'a'.repeat(64);
+    run
+      .mockResolvedValueOnce({ changes: 1, lastInsertRowid: 1 })
+      .mockResolvedValueOnce({ changes: 0, lastInsertRowid: 1 });
+    queryOne.mockResolvedValue({ eventId });
+
+    await store.markEventApplied(eventId);
+    await store.markEventApplied(eventId);
+    await expect(store.isEventApplied(eventId)).resolves.toBe(true);
+
+    expect(run).toHaveBeenCalledTimes(2);
+    for (const [sql, params] of run.mock.calls) {
+      expect(sql).toContain('INSERT OR IGNORE INTO applied_events');
+      expect(params?.[0]).toBe(eventId);
+    }
+    expect(queryOne).toHaveBeenCalledWith(
+      'SELECT eventId FROM applied_events WHERE eventId = ?',
+      [eventId]
+    );
+  });
+
   it('persists sync state as JSON', async () => {
     const { store, run } = createStore();
     run.mockResolvedValue({ changes: 1, lastInsertRowid: 0 });

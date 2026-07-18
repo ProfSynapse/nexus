@@ -12,6 +12,8 @@
 		"schemas:tools": "node scripts/generate-tool-schemas.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"test": "jest",
+		"test:delta-shadow-contract": "jest --runInBand tests/unit/ShardedJsonlStreamStore.test.ts tests/unit/conflictCopyMatching.test.ts tests/unit/SQLiteSyncStateStore.test.ts tests/integration/reconcilePipelineSilentOverwrite.test.ts tests/unit/SyncCoordinator.test.ts",
+		"verify:installed-delta-shadow-contract": "node scripts/verify-installed-delta-shadow-contract.mjs",
 		"test:coverage": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":80,\"functions\":80,\"lines\":80,\"statements\":80}}'",
 		"smoke:google-live": "node scripts/smoke-google-live.mjs",
 		"lint": "npm run lint:obsidian",
