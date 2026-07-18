@@ -150,8 +150,12 @@ export class ReconcilePipeline {
         try {
           const result = await this.reconcileStreamInternal(category, streamId);
           this.accumulate(totals, result);
+          if (!result.success) {
+            return this.finalize(totals, start);
+          }
         } catch (error) {
           totals.errors.push(`Failed to reconcile ${category}/${streamId}: ${String(error)}`);
+          return this.finalize(totals, start);
         }
       }
     }
@@ -228,6 +232,9 @@ export class ReconcilePipeline {
         shardFileName: shard.fileName
       });
       this.accumulate(totals, result);
+      if (!result.success) {
+        break;
+      }
     }
 
     return this.finalize(totals, start);

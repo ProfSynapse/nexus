@@ -773,6 +773,55 @@ describe('ReconcilePipeline nominal shard coverage receipt', () => {
 });
 
 describe('ReconcilePipeline incomplete shard application', () => {
+  it('stops the full sweep before later shards and streams after the first failure', async () => {
+    const { pipeline, store, cursors, applied, appliers } = makeHarness('desktop-A');
+    const laterStream = 'conv_zeta';
+    const laterStreamShardPath = `${ROOT_PATH}/conversations/${laterStream}/${SHARD}`;
+    store.setShardContent('conversations', STREAM, SHARD, [
+      { id: 'e1', timestamp: 1, deviceId: 'A' },
+      { id: 'e2', timestamp: 2, deviceId: 'A' }
+    ]);
+    store.setShardContent('conversations', STREAM, DELTA_SHARD, [
+      { id: 'e3', timestamp: 3, deviceId: 'A' }
+    ]);
+    store.setShardContent('conversations', laterStream, SHARD, [
+      { id: 'e4', timestamp: 4, deviceId: 'A' }
+    ]);
+    const originalApply = appliers.conversation.apply.bind(appliers.conversation);
+    let failE2Once = true;
+    jest.spyOn(appliers.conversation, 'apply').mockImplementation(async (event) => {
+      if (event.id === 'e2' && failE2Once) {
+        failE2Once = false;
+        throw new Error('Fake applier: apply failed for e2');
+      }
+      await originalApply(event);
+    });
+
+    const failed = await pipeline.reconcileAll();
+
+    expect(failed.success).toBe(false);
+    expect(failed.filesProcessed).toEqual([SHARD_VAULT_PATH]);
+    expect(applied.has('e1')).toBe(true);
+    expect(applied.has('e2')).toBe(false);
+    expect(applied.has('e3')).toBe(false);
+    expect(applied.has('e4')).toBe(false);
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual(['e1']);
+    expect(await cursors.getCursor('desktop-A', DELTA_SHARD_VAULT_PATH)).toBeNull();
+    expect(await cursors.getCursor('desktop-A', laterStreamShardPath)).toBeNull();
+
+    const retried = await pipeline.reconcileAll();
+
+    expect(retried.success).toBe(true);
+    expect(retried.eventsApplied).toBe(3);
+    expect(retried.eventsSkipped).toBe(1);
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual([
+      'e1',
+      'e2',
+      'e3',
+      'e4'
+    ]);
+  });
+
   it('stops at the first failed apply and retries the committed prefix in event order', async () => {
     const { pipeline, store, cursors, applied, appliers } = makeHarness('desktop-A');
     store.setShardContent('conversations', STREAM, SHARD, [
