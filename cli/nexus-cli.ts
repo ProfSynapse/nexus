@@ -118,40 +118,86 @@ function printToolResult(result: McpToolResult, asJson: boolean): number {
     return 0;
 }
 
-const USAGE = `nexus — local CLI bridge to a running Nexus vault (no MCP config)
+// `nexus --help` is the AUTHORITATIVE, always-current operating manual: it ships
+// with the binary, works offline (no socket), and is regenerated on every rebuild —
+// so SKILL.md can stay thin and defer here instead of duplicating volatile reference.
+// The live per-vault tool catalog lives in `nexus tools`; task recipes in `nexus playbook`.
+function buildUsage(): string {
+    // Playbook list is generated from what's installed, so it never goes stale.
+    let playbookLines: string;
+    try {
+        const books = listPlaybooks(playbooksDir());
+        playbookLines = books.length
+            ? books.map((b) => `    ${b.name.padEnd(11)}${b.intent}`).join('\n')
+            : '    (none installed — re-run the Nexus CLI installer)';
+    } catch {
+        playbookLines = '    (run `nexus playbook` to list)';
+    }
 
-USAGE
-  nexus tools [selector...]           Discover tools (getTools). Drill down as far as you want:
-                                        nexus tools                     all agents (catalog)
-                                        nexus tools storage             one agent's tools (compact)
-                                        nexus tools storage list        one tool, full arg schema
-                                        nexus tools "storage list, content read"   several tools at once
-  nexus use "<command>" [context]    Execute a CLI-style tool command (useTools)
-  nexus playbook [name]              Task primer: list playbooks, or emit one with its
-                                      workspaces + preloaded tool schemas (one call):
-                                        nexus playbook                 list playbooks
-                                        nexus playbook vault-work      search → read → edit
-                                        nexus playbook organize        move / archive / tidy
-                                        nexus playbook tasks           projects & task DAG
-                                        nexus playbook prompt          run a prompt over notes
+    return `nexus — drive a running Nexus (Obsidian) vault from the shell (no MCP config)
+
+Two verbs: DISCOVER what you can do, then EXECUTE. Discovery returns schemas, never
+vault content — don't loop it hunting for data. Search/list return LOCATIONS; read
+before you act. You cannot escape the vault (no ../~/absolute paths).
+
+COMMANDS
+  nexus tools [selector...]          DISCOVER — tool schemas (getTools). Drill down:
+                                       nexus tools                   all agents (catalog)
+                                       nexus tools storage           one agent's tools
+                                       nexus tools storage list      one tool, full arg schema
+                                       nexus tools "storage list, content read"   several
+  nexus use "<command>" [context]    EXECUTE a tool (useTools). See CONTEXT below.
+  nexus playbook [name]              Task primer: recipe + your workspaces + preloaded
+                                     tools, in one call. \`nexus playbook\` lists them.
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
-  nexus --help                       This help
+  nexus --help                       This manual
 
-CONTEXT FLAGS (for \`use\`)
-  --memory "<text>"      REQUIRED — running summary of what you're doing
-  --goal "<text>"        REQUIRED — the objective of this call
-  --workspace <id>       default: "default"
-  --session <name>       default: "nexus-cli" (reuse one stable name per conversation)
-  --constraints "<text>" optional
-  --vault <name>         target a specific vault (else: single open vault, or NEXUS_VAULT)
-  --json                 print raw JSON-RPC result
+CONTEXT (flags on \`use\`; also accepted on \`playbook\`/\`tools\`)
+  --memory "<text>"       REQUIRED — rolling summary of what you've done/learned
+  --goal "<text>"         REQUIRED — this call's objective, one sentence
+                          (empty or placeholder like "N/A" is REJECTED with a steer)
+  --workspace <id>        scope for traces/memory (default: "default")
+  --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
+  --constraints "<text>"  optional guardrails
+  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
+  --json                  print the raw JSON result
+
+CLI SYNTAX
+  • One tool per \`use\`: "<agent> <command> --flag value --flag2 value2". Commands are
+    kebab-case (content set-property, memory load-workspace). Quote the whole command.
+  • Paths are vault-relative. "..", "~", absolute paths are rejected; a leading "/" is
+    stripped. You cannot read or write outside the vault.
+  • Arrays: --tags "[work, urgent]". Wikilinks keep brackets: --links "[[[A]], [[B]]]".
+  • content replace is pattern-anchored {path, start, end, content} — start/end are
+    exact ANCHOR TEXT from the note, not line numbers. Read the note first. (insert
+    handles append/prepend.)
+
+GOTCHAS
+  • \`nexus tools\` returns schemas, not data — never loop it for content.
+  • Search/list return locations (path + score) — follow every hit with \`content read\`.
+  • --memory/--goal are enforced — send real values or the call is rejected.
+  • Media generation is async — \`prompt generate-*\` returns a job; poll
+    \`prompt check-generated-artifact\`.
+  • States: the AI gets archive (reversible), not delete.
+  • No open vault → the socket is absent; open Obsidian with Nexus. Multiple open →
+    pass --vault <name>.
+
+TOOL CATALOG
+  Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
+  Apps (opt-in, per vault): composer, data, elevenlabs, skills, web — appear only when
+  enabled. The live, authoritative catalog for THIS vault is always: nexus tools
+
+PLAYBOOKS  (nexus playbook <name>)
+${playbookLines}
 
 EXAMPLES
-  nexus tools search
+  nexus tools "content read, search content"
   nexus use "content read --path Daily/2026-07-17.md" --memory "auditing notes" --goal "read today's daily"
   nexus use "storage list" --vault "My Notes" --memory "smoke test" --goal "list vault root"
+  nexus playbook vault-work
 `;
+}
 
 async function withClient<T>(vaultName: string | undefined, fn: (c: McpLineClient) => Promise<T>): Promise<T> {
     const vault = resolveVault(vaultName);
@@ -173,7 +219,7 @@ async function main(): Promise<number> {
     const vaultFlag = typeof flags.vault === 'string' ? flags.vault : undefined;
 
     if (!cmd || cmd === 'help' || flags.help === true) {
-        process.stdout.write(USAGE);
+        process.stdout.write(buildUsage());
         return 0;
     }
 

@@ -49,11 +49,34 @@ Two moves fix that:
 
 ## 3. Design
 
-### Layer A — `SKILL.md` as a compact, round-trip-free manual
+### Layer A — `nexus --help` is the authoritative manual; `SKILL.md` is a thin router
 
-Keep it thin by keeping the **catalog terse**: names + one-liners + "when to reach for it" (the *map*),
-never full schemas. The agent thus knows *what exists and what not to do* without a read; exact schemas
-arrive from `nexus tools <tool>` or a playbook at the moment of use. Target sections:
+**Revised (2026-07-18):** the operating reference does **not** live in `SKILL.md`. It lives in
+`nexus --help`, which ships with the binary, runs **offline and instantly** (no socket), and is
+**regenerated on every rebuild** — so it can never drift from the code the way machine-global prose does.
+Crucially, `nexus --help` is *free*: it is not one of the socket-backed `nexus tools` round-trips the
+earlier design was avoiding, so moving reference there costs nothing and is the agent's natural first step.
+
+- **`nexus --help`** (in `buildUsage()`, `cli/nexus-cli.ts`) is the full manual: the two verbs, the
+  context-contract flag table, CLI syntax/quoting/arrays, the gotchas, a static core/app catalog line
+  that points at `nexus tools` for the live per-vault set, and a **generated** PLAYBOOKS list (built from
+  the installed `skill/playbooks/*.md` via `listPlaybooks`, with a graceful "(none installed)" fallback).
+- **`SKILL.md`** shrinks to **frontmatter trigger + orientation + the stable mindset**: what Nexus is and
+  when to use it vs normal file tools, the explore→inspect→exploit loop, and the 4–5 behavioral gotchas
+  that prevent the worst failures (act-on-a-hit-without-reading, loop-discovery-for-data, placeholder
+  context, path-escape, archive-not-delete). It then routes loudly: **"run `nexus --help` first, then
+  `nexus playbook <name>`."** No catalog/flag/syntax tables — those would duplicate `--help` and drift.
+- **`cli/agents-snippet.md`** (Codex `AGENTS.md` block) mirrors the same: lead with `nexus --help`, add
+  the `nexus playbook` router.
+
+Rationale: single source of truth for volatile reference (kills SKILL.md/`--help` drift); `--help`
+self-updates on rebuild and rides the existing `reconcile()` refresh; SKILL.md keeps only what an agent
+needs *before* it runs `--help` (trigger + mindset), which is stable and rarely edited.
+
+> **Superseded** — the original Layer A below aimed to make `SKILL.md` itself the compact self-contained
+> manual (contract + syntax + terse catalog inline). That created exactly the machine-global-prose
+> staleness problem the app-catalog work surfaced; the `--help`-authoritative split resolves it. The
+> section list is retained for history:
 
 1. What Nexus is + the `nexus use "…" --memory --goal` shape (one example).
 2. Two-tool protocol — `nexus tools` = discovery (schemas), `nexus use` = execution. *Don't loop
@@ -225,8 +248,9 @@ the file set from A. D last.
 - `nexus playbook` lists 4 playbooks with intents; exits 0 with no vault open (listing needs no socket).
 - `nexus playbook vault-work` (vault open) prints: preamble → the real workspace list → recipe → tool
   schemas for the declared selector, in one invocation.
-- `SKILL.md` contains the contract + syntax + terse catalog + gotchas — an agent can issue a correct
-  first `nexus use` (real `memory`/`goal`, vault-relative path, `content read` after a search) using
-  only SKILL.md, no `nexus tools` round-trip.
+- `nexus --help` contains the contract + syntax + gotchas + catalog + a generated playbook list, runs
+  offline, and lets an agent issue a correct first `nexus use` (real `memory`/`goal`, vault-relative
+  path, `content read` after a search) with no socket round-trip. `SKILL.md` is a thin router (trigger +
+  mindset) that sends the agent to `nexus --help` and `nexus playbook <name>`.
 - Editing a playbook `.md` and rebuilding refreshes the installed copy via the content hash (no CLI
   code change needed to add/edit a playbook).
