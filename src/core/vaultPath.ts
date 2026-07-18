@@ -55,13 +55,19 @@ export class VaultPathError extends Error {
 const brand = (path: string): VaultPath => path as VaultPath;
 
 /**
- * True when the raw path is filesystem-absolute (and therefore not vault-relative):
- * POSIX absolute (`/x`), Windows drive (`C:\x` / `C:/x`), or UNC / leading
- * backslash (`\\server` / `\x`). Checked on the RAW input before `normalizePath`
- * runs, because normalization strips the leading separator.
+ * True when the raw path is filesystem-absolute in a way that is NOT vault-root
+ * relative: a Windows drive (`C:\x` / `C:/x`) or a UNC / leading backslash
+ * (`\\server` / `\x`). These are genuinely off-vault and rejected.
+ *
+ * A POSIX leading slash (`/notes/x.md`) is deliberately NOT treated as absolute:
+ * it is stripped and interpreted as vault-root-relative (the leading empty
+ * segment is dropped during the segment scan below), matching the long-standing
+ * lenient behavior and the File-Picker "strip leading slash" convention. This is
+ * safe because the real escape vector is `..`, which the segment scan still
+ * rejects (`/../x` → `..` segment → rejected).
  */
 function isAbsolute(raw: string): boolean {
-  return raw.startsWith('/') || /^[A-Za-z]:/.test(raw) || raw.startsWith('\\');
+  return /^[A-Za-z]:/.test(raw) || raw.startsWith('\\');
 }
 
 /**
@@ -70,7 +76,8 @@ function isAbsolute(raw: string): boolean {
  *
  * Rejection rules (in order):
  *   1. Non-string or empty/whitespace-only input.
- *   2. Absolute paths (POSIX, Windows drive, UNC / backslash).
+ *   2. Windows-drive / UNC / backslash-absolute paths. (A POSIX leading `/` is
+ *      NOT rejected — it is stripped to vault-root-relative; see {@link isAbsolute}.)
  *   3. A leading `~` (home directory expansion).
  *   4. Any `..` path segment (directory traversal) — segment-based, so a name
  *      like `a..b.md` is NOT affected.

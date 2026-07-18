@@ -25,7 +25,8 @@ jest.mock('@/agents/memoryManager/services/ValidationService', () => ({
 import { CreateWorkspaceTool } from '@/agents/memoryManager/tools/workspaces/createWorkspace';
 import { UpdateWorkspaceTool } from '@/agents/memoryManager/tools/workspaces/updateWorkspace';
 
-const ESCAPING = ['../../../../tmp/ESCAPE', '/tmp/ESCAPE', '~/ESCAPE'];
+// A POSIX leading slash (/tmp/ESCAPE) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE', '~/ESCAPE'];
 
 function makeAgent(): { agent: any; createFolder: jest.Mock } {
   const createFolder = jest.fn().mockResolvedValue(undefined);

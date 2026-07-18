@@ -7,7 +7,8 @@
 
 import { resolveUniqueFilePath, resolveUniqueMarkdownPath } from '@/agents/apps/webTools/utils/webViewer';
 
-const ESCAPING = ['../../../../tmp/ESCAPE', '/tmp/ESCAPE', '~/ESCAPE'];
+// A POSIX leading slash (/tmp/ESCAPE) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE', '~/ESCAPE'];
 
 function makeVault(): any {
   return { getAbstractFileByPath: jest.fn().mockReturnValue(null) };

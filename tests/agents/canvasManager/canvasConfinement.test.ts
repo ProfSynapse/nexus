@@ -9,7 +9,9 @@ import { CanvasOperations } from '@/agents/canvasManager/utils/CanvasOperations'
 import { WriteCanvasTool } from '@/agents/canvasManager/tools/write';
 import { UpdateCanvasTool } from '@/agents/canvasManager/tools/update';
 
-const ESCAPING = ['../../../../tmp/ESCAPE', '/tmp/ESCAPE', '~/ESCAPE'];
+// Note: a POSIX leading slash (/tmp/ESCAPE) is intentionally NOT an escape — it
+// is stripped to a vault-relative path (backward-compat). The real vectors are ".." and "~".
+const ESCAPING = ['../../../../tmp/ESCAPE', '~/ESCAPE'];
 const emptyCanvas = { nodes: [], edges: [] };
 
 interface MockVault {

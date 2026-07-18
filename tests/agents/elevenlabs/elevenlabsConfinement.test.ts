@@ -8,7 +8,8 @@
 import { __setRequestUrlMock } from 'obsidian';
 import { TextToSpeechTool } from '@/agents/apps/elevenlabs/tools/textToSpeech';
 
-const ESCAPING = ['../../../../tmp/ESCAPE.mp3', '/tmp/ESCAPE.mp3', '~/ESCAPE.mp3'];
+// A POSIX leading slash (/tmp/ESCAPE.mp3) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE.mp3', '~/ESCAPE.mp3'];
 
 function makeAgent(): { agent: any; createBinary: jest.Mock } {
   const createBinary = jest.fn().mockResolvedValue(undefined);

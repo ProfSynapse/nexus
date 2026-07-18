@@ -8,7 +8,8 @@
 
 import { processFile } from '@/agents/ingestManager/tools/services/IngestionPipelineService';
 
-const ESCAPING = ['../../../../tmp/ESCAPE.pdf', '/tmp/ESCAPE.pdf', '~/ESCAPE.pdf'];
+// A POSIX leading slash (/tmp/ESCAPE.pdf) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE.pdf', '~/ESCAPE.pdf'];
 
 function makeDeps(): { deps: any; vault: any } {
   const vault = {

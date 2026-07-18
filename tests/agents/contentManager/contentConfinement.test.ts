@@ -12,7 +12,8 @@ import { ReplaceTool } from '@/agents/contentManager/tools/replace';
 import { SetPropertyTool } from '@/agents/contentManager/tools/setProperty';
 import { ContentOperations } from '@/agents/contentManager/utils/ContentOperations';
 
-const ESCAPING = ['../../../../tmp/ESCAPE.md', '/tmp/ESCAPE.md', '~/ESCAPE.md', '..\\..\\ESCAPE.md'];
+// A POSIX leading slash (/tmp/ESCAPE.md) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE.md', '~/ESCAPE.md', '..\\..\\ESCAPE.md'];
 
 interface MockVault {
   create: jest.Mock;

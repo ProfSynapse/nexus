@@ -21,8 +21,6 @@ describe('vaultPath resolver — rejects escaping paths', () => {
     ['leading ~', '~/escape.md'],
     ['bare ~', '~'],
     ['~user home', '~alice/notes.md'],
-    ['POSIX absolute', '/tmp/ESCAPE.md'],
-    ['POSIX absolute to home', '/Users/someone/ESCAPE.md'],
     ['Windows drive backslash', 'C:\\Windows\\x.md'],
     ['Windows drive forward slash', 'C:/Windows/x.md'],
     ['UNC path', '\\\\server\\share\\x.md'],
@@ -49,13 +47,23 @@ describe('vaultPath resolver — rejects escaping paths', () => {
     expect(tryResolveVaultPath('   ').ok).toBe(false);
   });
 
-  it('gives a traversal-specific error for ".." and an absolute error for "/x"', () => {
+  it('gives a traversal-specific error for ".." but a Windows-drive error for "C:\\x"', () => {
     const trav = tryResolveVaultPath('../x.md');
-    const abs = tryResolveVaultPath('/x.md');
+    const drive = tryResolveVaultPath('C:\\x.md');
     expect(trav.ok).toBe(false);
-    expect(abs.ok).toBe(false);
+    expect(drive.ok).toBe(false);
     if (!trav.ok) expect(trav.error).toMatch(/\.\./);
-    if (!abs.ok) expect(abs.error).toMatch(/absolute/i);
+    if (!drive.ok) expect(drive.error).toMatch(/absolute/i);
+  });
+
+  it('strips a POSIX leading slash to a vault-relative path (backward-compat, still confined)', () => {
+    // Leading "/" never escaped the vault (it resolves inside it); preserve the
+    // long-standing lenient behavior. The real escape vector ".." stays rejected.
+    expect(tryResolveVaultPath('/notes/x.md')).toEqual({ ok: true, path: 'notes/x.md' });
+    expect(tryResolveVaultPath('/tmp/ESCAPE.md')).toEqual({ ok: true, path: 'tmp/ESCAPE.md' });
+    expect(tryResolveVaultPath('/Users/someone/x.md')).toEqual({ ok: true, path: 'Users/someone/x.md' });
+    // ...but a leading slash followed by traversal is still rejected.
+    expect(tryResolveVaultPath('/../escape.md').ok).toBe(false);
   });
 });
 

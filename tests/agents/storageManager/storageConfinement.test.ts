@@ -11,7 +11,8 @@ import { FileOperations } from '@/agents/storageManager/utils/FileOperations';
 import { CreateFolderTool } from '@/agents/storageManager/tools/createFolder';
 import { MoveTool } from '@/agents/storageManager/tools/move';
 
-const ESCAPING = ['../../../../tmp/ESCAPE', '/tmp/ESCAPE', '~/ESCAPE', '..\\..\\ESCAPE'];
+// A POSIX leading slash (/tmp/ESCAPE) is stripped to vault-relative (backward-compat), not an escape.
+const ESCAPING = ['../../../../tmp/ESCAPE', '~/ESCAPE', '..\\..\\ESCAPE'];
 
 interface MockVault {
   create: jest.Mock;
@@ -74,7 +75,7 @@ describe('FileOperations.duplicateNote confinement (source AND target)', () => {
     const source = new TFile('a.md', 'notes/a.md');
     const { app, vault } = makeApp({ 'notes/a.md': source });
     await expect(
-      FileOperations.duplicateNote(app, 'notes/a.md', '/tmp/ESCAPE.md', false, false)
+      FileOperations.duplicateNote(app, 'notes/a.md', '../../../../tmp/ESCAPE.md', false, false)
     ).rejects.toThrow();
     expect(vault.create).not.toHaveBeenCalled();
   });

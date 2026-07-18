@@ -823,12 +823,12 @@ describe('ReplaceTool (pattern anchors)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Adversarial: leading-slash (absolute) path is now REJECTED
-  //   Vault-path confinement (docs/plans/vault-path-confinement-plan.md) rejects
-  //   absolute paths at the untrusted tool boundary instead of silently stripping
-  //   the leading '/'. The tool must return a rejection and never touch the vault.
+  // Adversarial: leading-slash path is normalized
+  //   replace.ts strips a leading '/' before resolving the path; confirm this
+  //   doesn't accidentally produce a "File not found" when callers send
+  //   absolute-style paths.
   // ---------------------------------------------------------------------------
-  it('adversarial: leading-slash (absolute) path is rejected without a write', async () => {
+  it('adversarial: leading-slash path is normalized and resolves to the file', async () => {
     mockFileContent = 'alpha\nbeta\ngamma';
     const result = await tool.execute({
       ...baseParams,
@@ -838,9 +838,11 @@ describe('ReplaceTool (pattern anchors)', () => {
       content: 'B',
     });
 
-    expect(result.success).toBe(false);
-    expect(mockFileContent).toBe('alpha\nbeta\ngamma'); // unchanged
-    expect(app.vault.modify).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith('test/note.md');
+    expect(mockFileContent).toBe('alpha\nB\ngamma');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nB\ngamma');
   });
 
   // ---------------------------------------------------------------------------
