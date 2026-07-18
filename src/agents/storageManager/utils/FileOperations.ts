@@ -1,10 +1,28 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { smartNormalizePath, normalizePath } from '../../../utils/pathUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 
 /**
  * Utility class for file operations
  */
 export class FileOperations {
+  /**
+   * Resolve a caller-supplied path for a WRITE operation, confining it to the
+   * vault. Throws on traversal/absolute/home-expansion paths so a `..` can never
+   * reach `vault.create`/`createFolder`/`renameFile` and escape the vault base
+   * directory. Trusted internal recursion (ensureFolder) builds paths from
+   * already-confined segments, so it is unaffected.
+   * @param path Caller-supplied path
+   * @returns Vault-relative normalized path
+   */
+  private static resolveWritePath(path: string): string {
+    const result = tryResolveVaultPath(path);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    return result.path;
+  }
+
   /**
    * Create a note
    * @param app Obsidian app instance
@@ -20,8 +38,10 @@ export class FileOperations {
     content: string,
     overwrite = false
   ): Promise<{ file: TFile; existed: boolean }> {
+    // Confine to the vault before any normalization.
+    const safePath = FileOperations.resolveWritePath(path);
     // Apply smart normalization for note operations (includes .md extension handling)
-    const normalizedPath = smartNormalizePath(path, false, 'NOTE');
+    const normalizedPath = smartNormalizePath(safePath, false, 'NOTE');
     
     // Check if the file already exists
     const existingFile = app.vault.getAbstractFileByPath(normalizedPath);
@@ -58,8 +78,8 @@ export class FileOperations {
    * @throws Error if creation fails
    */
   static async createFolder(app: App, path: string): Promise<boolean> {
-    // Normalize path to remove any leading slash
-    const normalizedPath = normalizePath(path);
+    // Confine to the vault: reject traversal/absolute/home-expansion paths.
+    const normalizedPath = FileOperations.resolveWritePath(path);
     
     // Check if the folder already exists
     const existingFolder = app.vault.getAbstractFileByPath(normalizedPath);
@@ -110,8 +130,8 @@ export class FileOperations {
    * @throws Error if deletion fails
    */
   static async deleteNote(app: App, path: string): Promise<void> {
-    // Normalize path to remove any leading slash
-    const normalizedPath = normalizePath(path);
+    // Confine to the vault: reject traversal/absolute/home-expansion paths.
+    const normalizedPath = FileOperations.resolveWritePath(path);
     
     const file = app.vault.getAbstractFileByPath(normalizedPath);
     if (!file) {
@@ -134,8 +154,8 @@ export class FileOperations {
    * @throws Error if deletion fails
    */
   static async deleteFolder(app: App, path: string, recursive = false): Promise<void> {
-    // Normalize path to remove any leading slash
-    const normalizedPath = normalizePath(path);
+    // Confine to the vault: reject traversal/absolute/home-expansion paths.
+    const normalizedPath = FileOperations.resolveWritePath(path);
     
     const folder = app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder) {
@@ -168,15 +188,15 @@ export class FileOperations {
     newPath: string,
     overwrite = false
   ): Promise<void> {
-    // Normalize paths to remove any leading slashes
-    const normalizedPath = normalizePath(path);
-    const normalizedNewPath = normalizePath(newPath);
-    
+    // Confine BOTH source and destination to the vault.
+    const normalizedPath = FileOperations.resolveWritePath(path);
+    const normalizedNewPath = FileOperations.resolveWritePath(newPath);
+
     const file = app.vault.getAbstractFileByPath(normalizedPath);
     if (!file) {
       throw new Error(`File not found: ${path}`);
     }
-    
+
     if (!(file instanceof TFile)) {
       throw new Error(`Path is not a file: ${path}`);
     }
@@ -215,10 +235,10 @@ export class FileOperations {
     newPath: string,
     overwrite = false
   ): Promise<void> {
-    // Normalize paths to remove any leading slashes
-    const normalizedPath = normalizePath(path);
-    const normalizedNewPath = normalizePath(newPath);
-    
+    // Confine BOTH source and destination to the vault.
+    const normalizedPath = FileOperations.resolveWritePath(path);
+    const normalizedNewPath = FileOperations.resolveWritePath(newPath);
+
     const folder = app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder) {
       throw new Error(`Folder not found: ${path}`);
@@ -269,9 +289,9 @@ export class FileOperations {
     wasAutoIncremented: boolean;
     wasOverwritten: boolean;
   }> {
-    // Normalize paths to remove any leading slashes
-    const normalizedSourcePath = normalizePath(sourcePath);
-    const normalizedTargetPath = normalizePath(targetPath);
+    // Confine BOTH source and target to the vault.
+    const normalizedSourcePath = FileOperations.resolveWritePath(sourcePath);
+    const normalizedTargetPath = FileOperations.resolveWritePath(targetPath);
 
     // Check if source file exists
     const sourceFile = app.vault.getAbstractFileByPath(normalizedSourcePath);

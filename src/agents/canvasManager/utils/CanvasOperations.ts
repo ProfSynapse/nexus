@@ -1,5 +1,6 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { CanvasData } from '../types';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 
 /**
  * Utility class for canvas file operations
@@ -20,6 +21,20 @@ export class CanvasOperations {
   }
 
   /**
+   * Resolve a caller-supplied canvas path for a WRITE operation, confining it to
+   * the vault (rejects traversal/absolute/home-expansion paths) and appending the
+   * `.canvas` extension. Throws on an out-of-vault path so a `..` can never reach
+   * `vault.create`/`vault.modify`.
+   */
+  private static resolveWritePath(path: string): string {
+    const result = tryResolveVaultPath(path);
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    return this.normalizePath(result.path);
+  }
+
+  /**
    * Read canvas data from a file
    */
   static async readCanvas(app: App, path: string): Promise<CanvasData> {
@@ -36,7 +51,8 @@ export class CanvasOperations {
    * Write canvas data to a NEW file (fails if exists)
    */
   static async writeCanvas(app: App, path: string, data: CanvasData): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
+    // Confine to the vault: reject traversal/absolute/home-expansion paths.
+    const normalizedPath = this.resolveWritePath(path);
     const existingFile = app.vault.getAbstractFileByPath(normalizedPath);
 
     if (existingFile instanceof TFile) {
@@ -60,7 +76,8 @@ export class CanvasOperations {
    * Update an EXISTING canvas (fails if doesn't exist)
    */
   static async updateCanvas(app: App, path: string, data: CanvasData): Promise<void> {
-    const normalizedPath = this.normalizePath(path);
+    // Confine to the vault: reject traversal/absolute/home-expansion paths.
+    const normalizedPath = this.resolveWritePath(path);
     const file = app.vault.getAbstractFileByPath(normalizedPath);
 
     if (!file || !(file instanceof TFile)) {

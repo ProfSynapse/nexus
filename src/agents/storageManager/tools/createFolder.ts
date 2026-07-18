@@ -3,6 +3,7 @@ import { BaseTool } from '../../baseTool';
 import { CreateFolderParams, CreateFolderResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -46,12 +47,19 @@ export class CreateFolderTool extends BaseTool<CreateFolderParams, CreateFolderR
         return this.prepareResult(false, undefined, 'Path is required');
       }
 
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolved = tryResolveVaultPath(params.path);
+      if (!resolved.ok) {
+        return this.prepareResult(false, undefined, resolved.error);
+      }
+      const folderPath = resolved.path;
+
       if (typeof FileOperations?.createFolder === 'function') {
-        await FileOperations.createFolder(this.app, params.path);
+        await FileOperations.createFolder(this.app, folderPath);
       } else {
-        const existingFolder = this.app.vault.getAbstractFileByPath(params.path);
+        const existingFolder = this.app.vault.getAbstractFileByPath(folderPath);
         if (!existingFolder) {
-          await this.app.vault.createFolder(params.path);
+          await this.app.vault.createFolder(folderPath);
         }
       }
 

@@ -14,6 +14,7 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { InsertParams, InsertResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 import { generateUnifiedDiff } from '../utils/unifiedDiff';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
@@ -57,9 +58,12 @@ export class InsertTool extends BaseTool<InsertParams, InsertResult> {
     try {
       const { path, content, startLine } = params;
 
-      // Normalize path (remove leading slash)
-      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-      const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolved = tryResolveVaultPath(path);
+      if (!resolved.ok) {
+        return this.prepareResult(false, undefined, resolved.error);
+      }
+      const file = this.app.vault.getAbstractFileByPath(resolved.path);
 
       if (!file) {
         return this.prepareResult(false, undefined,

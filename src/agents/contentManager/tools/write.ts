@@ -3,6 +3,7 @@ import { BaseTool } from '../../baseTool';
 import { WriteParams, WriteResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -135,8 +136,12 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         return this.prepareResult(false, undefined, frontmatterError);
       }
 
-      // Normalize path (remove leading slash)
-      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolved = tryResolveVaultPath(path);
+      if (!resolved.ok) {
+        return this.prepareResult(false, undefined, resolved.error);
+      }
+      const normalizedPath = resolved.path;
       const existingFile = this.app.vault.getAbstractFileByPath(normalizedPath);
 
       if (existingFile) {

@@ -15,6 +15,7 @@ import { labelWithId, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes';
 import type { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
 import type { WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
@@ -121,6 +122,17 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 workspaceCopy.description = params.description;
             }
             if (params.rootFolder !== undefined) {
+                // Confine the workspace root to the vault (reject traversal/absolute
+                // paths). The root sentinels "/", "." and "" legitimately mean the
+                // vault root, so they are preserved as-is; everything else is confined.
+                const rootTrimmed = params.rootFolder.trim();
+                if (rootTrimmed !== '' && rootTrimmed !== '/' && rootTrimmed !== '.') {
+                    const resolvedRoot = tryResolveVaultPath(params.rootFolder);
+                    if (!resolvedRoot.ok) {
+                        return this.prepareResult(false, undefined, resolvedRoot.error);
+                    }
+                    params.rootFolder = resolvedRoot.path;
+                }
                 // Ensure folder exists
                 try {
                     const folder = this.app.vault.getAbstractFileByPath(params.rootFolder);

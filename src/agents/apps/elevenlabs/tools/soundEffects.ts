@@ -9,7 +9,8 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { requestUrl, normalizePath, TFolder } from 'obsidian';
+import { requestUrl, TFolder } from 'obsidian';
+import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 
@@ -104,7 +105,12 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
           'Vault not available — cannot save audio file.');
       }
 
-      const outputPath = normalizePath(params.outputPath || `audio/sfx-${Date.now()}.mp3`);
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolvedOutput = tryResolveVaultPath(params.outputPath || `audio/sfx-${Date.now()}.mp3`);
+      if (!resolvedOutput.ok) {
+        return this.prepareResult(false, undefined, resolvedOutput.error);
+      }
+      const outputPath = resolvedOutput.path;
 
       // Ensure parent directory exists
       const dir = outputPath.substring(0, outputPath.lastIndexOf('/'));

@@ -1,5 +1,6 @@
 import { App, normalizePath, TFile, TFolder, Vault, View, WorkspaceLeaf } from 'obsidian';
 import { sanitizeName } from '../../../../utils/pathUtils';
+import { resolveVaultPath } from '../../../../core/vaultPath';
 
 export type WebViewerOpenMode = 'tab' | 'split' | 'window' | 'current';
 
@@ -188,7 +189,9 @@ export function resolveUniqueMarkdownPath(vault: Vault, outputPath: string): str
 }
 
 export function resolveUniqueFilePath(vault: Vault, outputPath: string, extension: string): string {
-  const normalized = normalizePath(outputPath);
+  // Confine to the vault: reject traversal/absolute/home-expansion paths. Throws
+  // VaultPathError, which each capture tool's try/catch surfaces as a failure.
+  const normalized = resolveVaultPath(outputPath);
   const suffix = `.${extension}`;
   const withoutExtension = normalized.endsWith(suffix)
     ? normalized.slice(0, -suffix.length)

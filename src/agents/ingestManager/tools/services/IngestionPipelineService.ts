@@ -10,6 +10,7 @@
  */
 
 import { Vault, TFile, normalizePath } from 'obsidian';
+import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import {
   IngestFileRequest,
   IngestToolResult,
@@ -52,7 +53,14 @@ export async function processFile(
   onProgress?: IngestProgressCallback
 ): Promise<IngestToolResult> {
   const startTime = Date.now();
-  const filePath = normalizePath(request.filePath);
+  // Confine the caller-supplied input path to the vault. The output note and any
+  // OCR asset folder are both derived from this path, so confining it here keeps
+  // every downstream write inside the vault.
+  const resolvedInput = tryResolveVaultPath(request.filePath);
+  if (!resolvedInput.ok) {
+    return { success: false, error: resolvedInput.error };
+  }
+  const filePath = resolvedInput.path;
   const warnings: string[] = [];
 
   // Validate file exists
@@ -121,7 +129,12 @@ export async function processFile(
 
   const outputPaths: string[] = [];
   for (const noteWrite of noteWrites) {
-    const normalizedOutput = normalizePath(noteWrite.outputPath);
+    // Defence in depth: confine the derived output note path to the vault.
+    const resolvedOutput = tryResolveVaultPath(noteWrite.outputPath);
+    if (!resolvedOutput.ok) {
+      return { success: false, error: resolvedOutput.error };
+    }
+    const normalizedOutput = resolvedOutput.path;
     const existingFile = deps.vault.getFileByPath(normalizedOutput);
 
     if (existingFile) {
@@ -237,7 +250,12 @@ async function saveOcrImages(
   sourceFilePath: string,
   vault: Vault
 ): Promise<SavedOcrImage[]> {
-  const assetFolder = buildAssetFolderPath(sourceFilePath);
+  // Defence in depth: confine the per-note OCR asset folder to the vault.
+  const assetFolderResult = tryResolveVaultPath(buildAssetFolderPath(sourceFilePath));
+  if (!assetFolderResult.ok) {
+    return [];
+  }
+  const assetFolder = assetFolderResult.path;
   await ensureFolder(vault, assetFolder);
 
   const saved: SavedOcrImage[] = [];
