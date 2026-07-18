@@ -66,6 +66,20 @@ export function formatShardFileName(index: number, width = DEFAULT_SHARD_FILE_WI
   return `shard-${String(index).padStart(width, '0')}.jsonl`;
 }
 
+function compareFileNameBytes(left: string, right: string): number {
+  const leftBytes = TEXT_ENCODER.encode(left);
+  const rightBytes = TEXT_ENCODER.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+
+  for (let index = 0; index < sharedLength; index += 1) {
+    if (leftBytes[index] !== rightBytes[index]) {
+      return leftBytes[index] - rightBytes[index];
+    }
+  }
+
+  return leftBytes.length - rightBytes.length;
+}
+
 /**
  * Parse a shard filename into its base index and optional conflict marker.
  *
@@ -195,7 +209,9 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
       });
     }
 
-    return descriptors.sort((left, right) => left.index - right.index);
+    return descriptors.sort((left, right) => (
+      left.index - right.index || compareFileNameBytes(left.fileName, right.fileName)
+    ));
   }
 
   async appendEvent(relativeStreamPath: string, event: TEvent): Promise<AppendEventResult<TEvent>> {

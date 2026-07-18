@@ -63,6 +63,17 @@ class FakeAppliedEventsStore {
   getAll(): AppliedEvent[] {
     return Array.from(this.applied.values());
   }
+
+  snapshot(): Map<string, AppliedEvent> {
+    return new Map(this.applied);
+  }
+
+  restore(snapshot: ReadonlyMap<string, AppliedEvent>): void {
+    this.applied.clear();
+    for (const [id, event] of snapshot) {
+      this.applied.set(id, event);
+    }
+  }
 }
 
 class FakeSyncStateStore {
@@ -96,6 +107,14 @@ class FakeApplier {
   // eslint-disable-next-line @typescript-eslint/require-await
   async apply(event: { id: string }): Promise<void> {
     this.applied.push({ id: event.id, payload: event });
+  }
+
+  snapshot(): { id: string; payload: unknown }[] {
+    return [...this.applied];
+  }
+
+  restore(snapshot: readonly { id: string; payload: unknown }[]): void {
+    this.applied.splice(0, this.applied.length, ...snapshot);
   }
 }
 
@@ -145,6 +164,19 @@ class FakeVaultEventStore {
     }
     const lines = events.map((e) => JSON.stringify(e)).join('\n');
     this.shards.get(key)!.set(fileName, lines);
+  }
+
+  setShardRawContent(
+    category: string,
+    streamId: string,
+    fileName: string,
+    content: string
+  ): void {
+    const key = `${category}/${streamId}`;
+    if (!this.shards.has(key)) {
+      this.shards.set(key, new Map());
+    }
+    this.shards.get(key)!.set(fileName, content);
   }
 
   /** Simulates GDrive last-writer-wins overwrite of an existing shard file. */
@@ -249,8 +281,12 @@ class FakeVaultEventStore {
 
 class FakeSqliteCache {
   private readonly failMarkOnceFor = new Set<string>();
+  transactionCalls = 0;
 
-  constructor(private readonly applied: FakeAppliedEventsStore) {}
+  constructor(
+    private readonly applied: FakeAppliedEventsStore,
+    private readonly transactionParticipants: readonly FakeApplier[]
+  ) {}
 
   failNextMark(eventId: string): void {
     this.failMarkOnceFor.add(eventId);
@@ -268,6 +304,24 @@ class FakeSqliteCache {
     }
     this.applied.mark({ id: eventId, category: '<unknown>', timestamp: 0 });
   }
+
+  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    this.transactionCalls += 1;
+    const appliedSnapshot = this.applied.snapshot();
+    const participantSnapshots = this.transactionParticipants.map(participant => (
+      participant.snapshot()
+    ));
+
+    try {
+      return await fn();
+    } catch (error) {
+      this.applied.restore(appliedSnapshot);
+      this.transactionParticipants.forEach((participant, index) => {
+        participant.restore(participantSnapshots[index]);
+      });
+      throw error;
+    }
+  }
 }
 
 interface PipelineHarness {
@@ -283,12 +337,12 @@ function makeHarness(deviceId = 'desktop-A'): PipelineHarness {
   const store = new FakeVaultEventStore();
   const cursors = new FakeSyncStateStore();
   const applied = new FakeAppliedEventsStore();
-  const sqliteCache = new FakeSqliteCache(applied);
   const appliers = {
     workspace: new FakeApplier(),
     conversation: new FakeApplier(),
     task: new FakeApplier()
   };
+  const sqliteCache = new FakeSqliteCache(applied, Object.values(appliers));
 
   const pipeline = new ReconcilePipeline({
     // The pipeline only uses the slice we satisfy here.
@@ -310,6 +364,45 @@ const SHARD_VAULT_PATH = `${ROOT_PATH}/conversations/${STREAM}/${SHARD}`;
 const DELTA_SHARD =
   'shard-000003 (Syncthing Delta sha256-' + 'b'.repeat(64) + ').jsonl';
 const DELTA_SHARD_VAULT_PATH = `${ROOT_PATH}/conversations/${STREAM}/${DELTA_SHARD}`;
+
+describe('ReconcilePipeline transaction boundary', () => {
+  it('rejects a cache without transactional capability at construction', () => {
+    const store = new FakeVaultEventStore();
+    const cursors = new FakeSyncStateStore();
+    const applier = new FakeApplier();
+
+    expect(() => new ReconcilePipeline({
+      vaultEventStore: store as unknown as ConstructorParameters<typeof ReconcilePipeline>[0]['vaultEventStore'],
+      syncStateStore: cursors as unknown as ConstructorParameters<typeof ReconcilePipeline>[0]['syncStateStore'],
+      sqliteCache: {
+        isEventApplied: async () => false,
+        markEventApplied: async () => undefined
+      } as never,
+      workspaceApplier: applier as unknown as ConstructorParameters<typeof ReconcilePipeline>[0]['workspaceApplier'],
+      conversationApplier: applier as unknown as ConstructorParameters<typeof ReconcilePipeline>[0]['conversationApplier'],
+      taskApplier: applier as unknown as ConstructorParameters<typeof ReconcilePipeline>[0]['taskApplier'],
+      deviceId: 'desktop-A'
+    })).toThrow('transaction');
+  });
+
+  it('serializes concurrent duplicate checks with apply and mark in the same transaction', async () => {
+    const { pipeline, store, applied, sqliteCache, appliers } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, SHARD, [
+      { id: 'e1', timestamp: 1, deviceId: 'A' }
+    ]);
+
+    const results = await Promise.all([
+      pipeline.reconcileShard(SHARD_VAULT_PATH),
+      pipeline.reconcileShard(SHARD_VAULT_PATH)
+    ]);
+
+    expect(results.reduce((total, result) => total + result.eventsApplied, 0)).toBe(1);
+    expect(results.reduce((total, result) => total + result.eventsSkipped, 0)).toBe(1);
+    expect(sqliteCache.transactionCalls).toBe(2);
+    expect(applied.has('e1')).toBe(true);
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual(['e1']);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // P1.7.a — Silent-overwrite GREEN-BAR (architect §6)
@@ -650,10 +743,37 @@ describe('ReconcilePipeline nominal shard coverage receipt', () => {
     expect(result.filesProcessed).toEqual([]);
     expect(cursors.upsertCalls).toBe(0);
   });
+
+  it.each([
+    ['malformed JSON', '{"id":'],
+    ['null event', 'null'],
+    ['array event', '[]'],
+    ['numeric id', '{"id":42,"timestamp":2}'],
+    ['blank id', '{"id":"   ","timestamp":2}'],
+    ['non-numeric timestamp', '{"id":"e2","timestamp":"2"}'],
+    ['non-finite timestamp', '{"id":"e2","timestamp":1e309}']
+  ])('fails closed on a non-empty %s line', async (_label, invalidLine) => {
+    const { pipeline, store, cursors, applied, appliers } = makeHarness('desktop-A');
+    store.setShardRawContent(
+      'conversations',
+      STREAM,
+      SHARD,
+      `${JSON.stringify({ id: 'e1', timestamp: 1, deviceId: 'A' })}\n${invalidLine}\n`
+    );
+
+    const result = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+
+    expect(result.success).toBe(false);
+    expect(result.filesProcessed).toEqual([]);
+    expect(await cursors.getCursor('desktop-A', SHARD_VAULT_PATH)).toBeNull();
+    expect(cursors.upsertCalls).toBe(0);
+    expect(applied.count()).toBe(0);
+    expect(appliers.conversation.applied).toEqual([]);
+  });
 });
 
 describe('ReconcilePipeline incomplete shard application', () => {
-  it('retries a failed apply without advancing the cursor or duplicating applied event ids', async () => {
+  it('stops at the first failed apply and retries the committed prefix in event order', async () => {
     const { pipeline, store, cursors, applied, appliers } = makeHarness('desktop-A');
     store.setShardContent('conversations', STREAM, SHARD, [
       { id: 'e1', timestamp: 1, deviceId: 'A' },
@@ -678,13 +798,14 @@ describe('ReconcilePipeline incomplete shard application', () => {
     expect(cursors.upsertCalls).toBe(0);
     expect(applied.has('e1')).toBe(true);
     expect(applied.has('e2')).toBe(false);
-    expect(applied.has('e3')).toBe(true);
+    expect(applied.has('e3')).toBe(false);
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual(['e1']);
 
     const retried = await pipeline.reconcileShard(SHARD_VAULT_PATH);
 
     expect(retried.success).toBe(true);
-    expect(retried.eventsApplied).toBe(1);
-    expect(retried.eventsSkipped).toBe(2);
+    expect(retried.eventsApplied).toBe(2);
+    expect(retried.eventsSkipped).toBe(1);
     expect((await cursors.getCursor('desktop-A', SHARD_VAULT_PATH))?.lastEventId).toBe('e3');
     expect(cursors.upsertCalls).toBe(1);
     const appliedIds = appliers.conversation.applied.map((event) => event.id);
@@ -696,11 +817,12 @@ describe('ReconcilePipeline incomplete shard application', () => {
     expect(fastPathed.shardsFastPathed).toBe(1);
   });
 
-  it('does not advance the cursor when applied_events marking fails', async () => {
-    const { pipeline, store, cursors, sqliteCache } = makeHarness('desktop-A');
+  it('rolls back event effects and marker when applied_events marking fails', async () => {
+    const { pipeline, store, cursors, applied, sqliteCache, appliers } = makeHarness('desktop-A');
     store.setShardContent('conversations', STREAM, SHARD, [
       { id: 'e1', timestamp: 1, deviceId: 'A' },
-      { id: 'e2', timestamp: 2, deviceId: 'A' }
+      { id: 'e2', timestamp: 2, deviceId: 'A' },
+      { id: 'e3', timestamp: 3, deviceId: 'A' }
     ]);
     sqliteCache.failNextMark('e2');
 
@@ -710,10 +832,17 @@ describe('ReconcilePipeline incomplete shard application', () => {
     expect(failed.filesProcessed).toEqual([SHARD_VAULT_PATH]);
     expect(await cursors.getCursor('desktop-A', SHARD_VAULT_PATH)).toBeNull();
     expect(cursors.upsertCalls).toBe(0);
+    expect(applied.has('e1')).toBe(true);
+    expect(applied.has('e2')).toBe(false);
+    expect(applied.has('e3')).toBe(false);
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual(['e1']);
 
     const retried = await pipeline.reconcileShard(SHARD_VAULT_PATH);
     expect(retried.success).toBe(true);
-    expect((await cursors.getCursor('desktop-A', SHARD_VAULT_PATH))?.lastEventId).toBe('e2');
+    expect(retried.eventsApplied).toBe(2);
+    expect(retried.eventsSkipped).toBe(1);
+    expect((await cursors.getCursor('desktop-A', SHARD_VAULT_PATH))?.lastEventId).toBe('e3');
+    expect(appliers.conversation.applied.map(event => event.id)).toEqual(['e1', 'e2', 'e3']);
 
     const fastPathed = await pipeline.reconcileShard(SHARD_VAULT_PATH);
     expect(fastPathed.shardsFastPathed).toBe(1);

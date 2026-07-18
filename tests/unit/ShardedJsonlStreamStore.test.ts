@@ -93,8 +93,8 @@ describe('ShardedJsonlStreamStore', () => {
 
     const shards = await store.listShards('tasks/tasks_default');
     expect(shards.map(shard => shard.fileName)).toEqual([
-      'shard-000003.jsonl',
-      deltaName
+      deltaName,
+      'shard-000003.jsonl'
     ]);
   });
 
@@ -201,6 +201,36 @@ describe('ShardedJsonlStreamStore', () => {
       'shard-000002.jsonl',
       'shard-000003.jsonl'
     ]);
+  });
+
+  it('uses a UTF-8 filename byte tie-break independent of adapter listing order', async () => {
+    const base = 'Assistant data/tasks/tasks_default';
+    const deltaA = `shard-000003 (Syncthing Delta sha256-${'a'.repeat(64)}).jsonl`;
+    const deltaB = `shard-000003 (Syncthing Delta sha256-${'b'.repeat(64)}).jsonl`;
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/shard-000003.jsonl`]: `${JSON.stringify(makeEvent('evt-canonical'))}\n`,
+      [`${base}/${deltaB}`]: `${JSON.stringify(makeEvent('evt-b'))}\n`,
+      [`${base}/${deltaA}`]: `${JSON.stringify(makeEvent('evt-a'))}\n`
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data'
+    });
+    const list = adapter.list.getMockImplementation();
+    if (!list) {
+      throw new Error('Mock adapter list implementation is unavailable');
+    }
+
+    const first = await store.listShards('tasks/tasks_default');
+    adapter.list.mockImplementation(async path => {
+      const listing = await list(path);
+      return { ...listing, files: [...listing.files].reverse() };
+    });
+    const reversed = await store.listShards('tasks/tasks_default');
+
+    const expected = [deltaA, deltaB, 'shard-000003.jsonl'];
+    expect(first.map(shard => shard.fileName)).toEqual(expected);
+    expect(reversed.map(shard => shard.fileName)).toEqual(expected);
   });
 
   describe('error paths', () => {

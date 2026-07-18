@@ -51,10 +51,10 @@ import type {
   ConversationEvent,
   TaskEvent
 } from '../interfaces/StorageEvents';
-import type { ISQLiteCacheManager } from './SyncCoordinator';
 import type { WorkspaceEventApplier } from './WorkspaceEventApplier';
 import type { ConversationEventApplier } from './ConversationEventApplier';
 import type { TaskEventApplier } from './TaskEventApplier';
+import { AsyncLock } from '../../utils/AsyncLock';
 
 export interface ReconcileResult {
   success: boolean;
@@ -78,12 +78,18 @@ export interface ReconcileResult {
 export interface ReconcilePipelineOptions {
   vaultEventStore: VaultEventStore;
   syncStateStore: SQLiteSyncStateStore;
-  sqliteCache: ISQLiteCacheManager;
+  sqliteCache: TransactionalEventCache;
   workspaceApplier: WorkspaceEventApplier;
   conversationApplier: ConversationEventApplier;
   taskApplier: TaskEventApplier;
   /** Owning device id. Used as the cursor partition key. */
   deviceId: string;
+}
+
+export interface TransactionalEventCache {
+  isEventApplied(eventId: string): Promise<boolean>;
+  markEventApplied(eventId: string): Promise<void>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /** Minimum event shape consumed by the pipeline. All storage events satisfy this. */
@@ -104,15 +110,19 @@ export interface ParsedShardPath {
 }
 
 export class ReconcilePipeline {
+  private readonly eventTransactionLock = new AsyncLock();
   private readonly vaultEventStore: VaultEventStore;
   private readonly syncStateStore: SQLiteSyncStateStore;
-  private readonly sqliteCache: ISQLiteCacheManager;
+  private readonly sqliteCache: TransactionalEventCache;
   private readonly workspaceApplier: WorkspaceEventApplier;
   private readonly conversationApplier: ConversationEventApplier;
   private readonly taskApplier: TaskEventApplier;
   private readonly deviceId: string;
 
   constructor(options: ReconcilePipelineOptions) {
+    if (typeof options.sqliteCache.transaction !== 'function') {
+      throw new Error('ReconcilePipeline requires transactional SQLite cache capability');
+    }
     this.vaultEventStore = options.vaultEventStore;
     this.syncStateStore = options.syncStateStore;
     this.sqliteCache = options.sqliteCache;
@@ -265,15 +275,25 @@ export class ReconcilePipeline {
 
     for (const event of sorted) {
       try {
-        if (await this.sqliteCache.isEventApplied(event.id)) {
+        const outcome = await this.eventTransactionLock.acquire(() => (
+          this.sqliteCache.transaction(async () => {
+            if (await this.sqliteCache.isEventApplied(event.id)) {
+              return 'skipped' as const;
+            }
+            await this.applyEvent(parsed.category, event);
+            await this.sqliteCache.markEventApplied(event.id);
+            return 'applied' as const;
+          })
+        ));
+
+        if (outcome === 'skipped') {
           totals.eventsSkipped += 1;
           continue;
         }
-        await this.applyEvent(parsed.category, event);
-        await this.sqliteCache.markEventApplied(event.id);
         totals.eventsApplied += 1;
       } catch (error) {
         totals.errors.push(`apply ${parsed.category}/${event.id}: ${String(error)}`);
+        break;
       }
     }
 
@@ -474,15 +494,38 @@ async function readEventsFromShardFile(
   }
 
   const events: AnyStorageEvent[] = [];
-  for (const line of content.split(/\r?\n/)) {
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    let value: unknown;
     try {
-      events.push(JSON.parse(trimmed) as AnyStorageEvent);
+      value = JSON.parse(trimmed) as unknown;
     } catch {
-      // Match the existing ShardedJsonlStreamStore behavior — skip malformed.
-      console.warn(`[ReconcilePipeline] Skipping malformed line in ${shardFullPath}`);
+      throw new Error(`Malformed JSONL at ${shardFullPath}:${index + 1}`);
     }
+
+    if (
+      typeof value !== 'object'
+      || value === null
+      || Array.isArray(value)
+    ) {
+      throw new Error(`Invalid storage event at ${shardFullPath}:${index + 1}`);
+    }
+
+    const candidate = value as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string'
+      || candidate.id.trim().length === 0
+      || typeof candidate.timestamp !== 'number'
+      || !Number.isFinite(candidate.timestamp)
+    ) {
+      throw new Error(`Invalid storage event at ${shardFullPath}:${index + 1}`);
+    }
+
+    events.push(value as AnyStorageEvent);
   }
   return events;
 }

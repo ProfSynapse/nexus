@@ -203,16 +203,32 @@ export class SyncCoordinator {
       // recovery still goes through `fullRebuild` above.
       if (this.reconcilePipeline) {
         const reconcile = await this.reconcilePipeline.reconcileAll();
+        eventsApplied = reconcile.eventsApplied;
+        eventsSkipped = reconcile.eventsSkipped;
+        errors.push(...reconcile.errors);
+        filesProcessed.push(...reconcile.filesProcessed);
+
+        if (!reconcile.success) {
+          return this.createResult(
+            false,
+            eventsApplied,
+            eventsSkipped,
+            errors,
+            startTime,
+            filesProcessed
+          );
+        }
+
         await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
         await this.sqliteCache.save();
         options.onProgress?.('Complete', 1, 1);
         return this.createResult(
-          reconcile.success,
-          reconcile.eventsApplied,
-          reconcile.eventsSkipped,
-          reconcile.errors,
+          true,
+          eventsApplied,
+          eventsSkipped,
+          errors,
           startTime,
-          reconcile.filesProcessed
+          filesProcessed
         );
       }
 
