@@ -2,6 +2,7 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { SetPropertyParams, SetPropertyResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -118,8 +119,12 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
     try {
       const { path, property, value, mode = 'replace' } = params;
 
-      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-      const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolved = tryResolveVaultPath(path);
+      if (!resolved.ok) {
+        return this.prepareResult(false, undefined, resolved.error);
+      }
+      const file = this.app.vault.getAbstractFileByPath(resolved.path);
 
       if (!file) {
         return this.prepareResult(false, undefined,

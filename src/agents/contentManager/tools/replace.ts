@@ -18,6 +18,7 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { ReplaceParams, ReplaceResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { tryResolveVaultPath } from '../../../core/vaultPath';
 import { addRecommendations } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { generateUnifiedDiff } from '../utils/unifiedDiff';
@@ -232,8 +233,12 @@ export class ReplaceTool extends BaseTool<ReplaceParams, ReplaceResult> {
         );
       }
 
-      const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
-      const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+      // Confine to the vault: reject traversal/absolute/home-expansion paths.
+      const resolved = tryResolveVaultPath(path);
+      if (!resolved.ok) {
+        return this.prepareResult(false, undefined, resolved.error);
+      }
+      const file = this.app.vault.getAbstractFileByPath(resolved.path);
 
       if (!file) {
         return this.prepareResult(false, undefined,
