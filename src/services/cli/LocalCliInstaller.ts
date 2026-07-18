@@ -17,7 +17,7 @@
  */
 import { Platform } from 'obsidian';
 import { desktopRequire } from '../../utils/desktopRequire';
-import { NEXUS_CLI_JS, NEXUS_SKILL_MD, NEXUS_AGENTS_MD } from '../../utils/cliAssets';
+import { NEXUS_CLI_JS, NEXUS_SKILL_MD, NEXUS_AGENTS_MD, NEXUS_PLAYBOOKS } from '../../utils/cliAssets';
 
 type FsModule = typeof import('node:fs');
 type OsModule = typeof import('node:os');
@@ -36,6 +36,7 @@ export interface CliInstallPaths {
     cliJsPath: string;
     skillDir: string;
     skillMdPath: string;
+    playbooksDir: string;
     binDir: string;
     binPath: string;
     claudeSkillLink: string;
@@ -82,6 +83,7 @@ export class LocalCliInstaller {
             cliJsPath: path.join(dataDir, 'nexus-cli.js'),
             skillDir,
             skillMdPath: path.join(skillDir, 'SKILL.md'),
+            playbooksDir: path.join(skillDir, 'playbooks'),
             binDir,
             binPath: path.join(binDir, Platform.isWin ? 'nexus.cmd' : 'nexus'),
             claudeSkillLink: path.join(home, '.claude', 'skills', 'nexus'),
@@ -114,7 +116,9 @@ export class LocalCliInstaller {
         let stale = false;
         if (installed) {
             try {
-                stale = fs.readFileSync(paths.cliJsPath, 'utf-8') !== NEXUS_CLI_JS;
+                stale = fs.readFileSync(paths.cliJsPath, 'utf-8') !== NEXUS_CLI_JS
+                    || (!fs.existsSync(paths.skillMdPath) || fs.readFileSync(paths.skillMdPath, 'utf-8') !== NEXUS_SKILL_MD)
+                    || this.playbooksStale(paths);
             } catch { stale = true; }
         }
         return {
@@ -160,10 +164,11 @@ export class LocalCliInstaller {
         try { fs.chmodSync(paths.cliJsPath, 0o755); } catch { /* best effort */ }
         created.push(paths.cliJsPath);
 
-        // 2. Skill body
+        // 2. Skill body + playbooks
         fs.mkdirSync(paths.skillDir, { recursive: true });
         fs.writeFileSync(paths.skillMdPath, NEXUS_SKILL_MD, 'utf-8');
         created.push(paths.skillMdPath);
+        if (this.writePlaybooks(paths)) created.push(paths.playbooksDir);
 
         // 3. PATH entry
         if (Platform.isWin) {
@@ -251,8 +256,36 @@ export class LocalCliInstaller {
                 fs.writeFileSync(paths.skillMdPath, NEXUS_SKILL_MD, 'utf-8');
                 changed = true;
             }
+            if (this.playbooksStale(paths)) {
+                this.writePlaybooks(paths);
+                changed = true;
+            }
         } catch { /* refresh is best-effort */ }
         return changed;
+    }
+
+    /** Write every embedded playbook to <skillDir>/playbooks/. Returns true if any were written. */
+    private writePlaybooks(paths: CliInstallPaths): boolean {
+        const fs = this.fs();
+        const entries = Object.entries(NEXUS_PLAYBOOKS);
+        if (entries.length === 0) return false;
+        fs.mkdirSync(paths.playbooksDir, { recursive: true });
+        for (const [file, content] of entries) {
+            fs.writeFileSync(this.path().join(paths.playbooksDir, file), content, 'utf-8');
+        }
+        return true;
+    }
+
+    /** True if any embedded playbook is missing on disk or differs from the embedded copy. */
+    private playbooksStale(paths: CliInstallPaths): boolean {
+        const fs = this.fs();
+        for (const [file, content] of Object.entries(NEXUS_PLAYBOOKS)) {
+            const p = this.path().join(paths.playbooksDir, file);
+            try {
+                if (!fs.existsSync(p) || fs.readFileSync(p, 'utf-8') !== content) return true;
+            } catch { return true; }
+        }
+        return false;
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

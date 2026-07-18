@@ -32,15 +32,29 @@ const cliJs = read('nexus-cli.js');
 const skillMd = read('skill/SKILL.md');
 const agentsMd = read('cli/agents-snippet.md');
 
+// Every skill/playbooks/*.md (including the shared _preamble.md) → { filename: content }.
+// The installer writes these to <dataDir>/skill/playbooks/ so `nexus playbook` can read them.
+const playbooksDir = path.join(root, 'skill', 'playbooks');
+const playbooks = fs.existsSync(playbooksDir)
+    ? fs.readdirSync(playbooksDir)
+          .filter((f) => f.endsWith('.md'))
+          .sort()
+          .map((f) => ({ file: f, content: read(path.join('skill', 'playbooks', f)) }))
+    : [];
+
 // Content hash lets the installer detect a stale on-disk copy and refresh it
 // (machine-global + unsynced, so this is a simple content compare — no version skew).
-const hash = crypto
+const hasher = crypto
     .createHash('sha256')
     .update(cliJs)
     .update(skillMd)
-    .update(agentsMd)
-    .digest('hex')
-    .slice(0, 16);
+    .update(agentsMd);
+for (const p of playbooks) hasher.update(p.file).update(p.content);
+const hash = hasher.digest('hex').slice(0, 16);
+
+const playbooksLiteral = playbooks.length
+    ? '{\n' + playbooks.map((p) => `    ${JSON.stringify(p.file)}: \`${escapeForTemplate(p.content)}\`,`).join('\n') + '\n}'
+    : '{}';
 
 const output = `/**
  * Auto-generated. Embedded assets for the Nexus local CLI bridge:
@@ -62,6 +76,9 @@ export const NEXUS_SKILL_MD = \`${escapeForTemplate(skillMd)}\`;
 
 /** AGENTS.md pointer block for Codex / skill-less agents. */
 export const NEXUS_AGENTS_MD = \`${escapeForTemplate(agentsMd)}\`;
+
+/** Playbook markdown by filename (written to <dataDir>/skill/playbooks/). */
+export const NEXUS_PLAYBOOKS: Record<string, string> = ${playbooksLiteral};
 `;
 
 fs.writeFileSync(path.join(root, 'src', 'utils', 'cliAssets.ts'), output, 'utf-8');

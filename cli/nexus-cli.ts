@@ -11,8 +11,10 @@
  * result, and exits. Spike scope per docs/plans/local-cli-agent-bridge-plan.md §9 step 1:
  * self-contained (node builtins only), macOS/Linux sockets only.
  */
-import { readdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
+import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
 
 // Transport endpoints mirror connector.ts exactly:
 //   macOS/Linux: unix domain socket  /tmp/nexus_mcp_<vault>.sock
@@ -125,6 +127,13 @@ USAGE
                                         nexus tools storage list        one tool, full arg schema
                                         nexus tools "storage list, content read"   several tools at once
   nexus use "<command>" [context]    Execute a CLI-style tool command (useTools)
+  nexus playbook [name]              Task primer: list playbooks, or emit one with its
+                                      workspaces + preloaded tool schemas (one call):
+                                        nexus playbook                 list playbooks
+                                        nexus playbook vault-work      search → read → edit
+                                        nexus playbook organize        move / archive / tidy
+                                        nexus playbook tasks           projects & task DAG
+                                        nexus playbook prompt          run a prompt over notes
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This help
@@ -204,6 +213,73 @@ async function main(): Promise<number> {
             });
             return printToolResult(result, asJson);
         });
+    }
+
+    if (cmd === 'playbook') {
+        const dir = playbooksDir();
+        const name = positionals[1];
+
+        // No name → list installed playbooks (no socket needed).
+        if (!name) {
+            const books = listPlaybooks(dir);
+            if (books.length === 0) {
+                process.stderr.write(`No playbooks installed (looked in ${dir}). Re-run the Nexus CLI installer, or set NEXUS_PLAYBOOKS_DIR.\n`);
+                return 1;
+            }
+            process.stdout.write('Nexus playbooks — task primers. Run `nexus playbook <name>`:\n\n');
+            const pad = Math.max(...books.map((b) => b.name.length));
+            for (const b of books) process.stdout.write(`  ${b.name.padEnd(pad)}  ${b.intent}\n`);
+            process.stdout.write('\nEach emits: the shared spine, your workspaces, the recipe, and the tools it needs (preloaded).\n');
+            return 0;
+        }
+
+        // Named → compose the primer. Static parts need no socket; workspaces + tool
+        // schemas do. Print the static spine first, then try the live parts.
+        const file = join(dir, `${name}.md`);
+        if (!existsSync(file)) {
+            const books = listPlaybooks(dir);
+            const names = books.map((b) => b.name).join(', ') || '(none installed)';
+            process.stderr.write(`Unknown playbook "${name}". Available: ${names}. Run \`nexus playbook\` to list.\n`);
+            return 2;
+        }
+        const { meta, body } = parseFrontmatter(readFileSync(file, 'utf8'));
+        const preamblePath = join(dir, '_preamble.md');
+        const preamble = existsSync(preamblePath) ? readFileSync(preamblePath, 'utf8').trim() : '';
+        if (preamble) process.stdout.write(preamble + '\n\n');
+
+        const ctx = {
+            workspaceId: typeof flags.workspace === 'string' ? flags.workspace : 'default',
+            sessionId: typeof flags.session === 'string' ? flags.session : 'nexus-cli',
+            memory: `Loading the "${name}" playbook.`,
+            goal: `Prepare to run the ${name} task.`,
+        };
+        try {
+            // Fetch live parts BEFORE printing them, so a mid-stream failure falls back
+            // cleanly instead of duplicating half-printed sections.
+            const { workspaces, tools } = await withClient(vaultFlag, async (client) => {
+                const ws = await client.callTool('toolManager_useTools', { ...ctx, tool: 'memory list-workspaces' });
+                let tl: McpToolResult | null = null;
+                if (meta.tools.length) {
+                    tl = await client.callTool('toolManager_getTools', { ...ctx, tool: meta.tools.join(', ') });
+                }
+                return { workspaces: ws, tools: tl };
+            });
+            process.stdout.write('## Your workspaces\n\nPick one to load as step 1 (or create a new one):\n\n');
+            printToolResult(workspaces, false);
+            process.stdout.write('\n---\n\n' + body.trim() + '\n');
+            if (tools) {
+                process.stdout.write('\n## Preloaded tool schemas\n\n');
+                printToolResult(tools, false);
+            }
+        } catch (err) {
+            // No reachable vault → still give the recipe; point at the live commands.
+            process.stdout.write(`## Your workspaces\n\n_(no reachable vault: ${(err as Error).message} — run \`nexus vaults\`, then load one as step 1.)_\n\n`);
+            process.stdout.write('---\n\n' + body.trim() + '\n');
+            if (meta.tools.length) {
+                process.stdout.write(`\n## Tools for this task\n\nOnce a vault is open, preload them with:\n  nexus tools "${meta.tools.join(', ')}"\n`);
+            }
+        }
+        return 0;
     }
 
     if (cmd === 'use') {

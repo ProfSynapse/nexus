@@ -70,8 +70,11 @@ not the note — you must `content read` it before you can act on or quote it.
 ## Tool catalog
 
 Commands are `<agent> <command>`, kebab-cased — e.g. `content read`, `content
-set-property`, `memory load-workspace`. Run `nexus tools <agent> <command>` for
-the full arg schema of any one; `nexus tools` for the complete live list.
+set-property`, `memory load-workspace`. **`nexus tools` is always the source of
+truth** for what's live in *this* vault; the table below is the always-on core.
+Run `nexus tools <agent> <command>` for the full arg schema of any one.
+
+**Core agents** (always available):
 
 | Agent | Commands |
 |-------|----------|
@@ -82,12 +85,14 @@ the full arg schema of any one; `nexus tools` for the complete live list.
 | **task** | `create-project` `list-projects` `update-project` `archive-project` · `create` `list` `open` `update` `move` `query` `link-note` |
 | **memory** | `create-workspace` `list-workspaces` `load-workspace` `update-workspace` `archive-workspace` · `create-state` `list-states` `load-state` `update-state` `archive-state` |
 | **prompt** | `execute` (run a text or image prompt — inline or a saved prompt — with notes as context, optionally writing the result back) · `list` `get` `create` `update` `archive` (saved-prompt library) · `list-models` · `generate-image` `generate-audio` `generate-video` `check-generated-artifact` (async media — poll `check-generated-artifact`) |
+| **ingest** | `run` (import a PDF/audio file into the vault) · `capabilities` |
 
-**App agents** (some **desktop-only**; absent on a mobile vault): `web`
-(`capture-markdown`/`capture-pdf`/`capture-png`/`links`/`open`), `composer`
+**App agents** — **opt-in, off by default, enabled per vault** in Nexus settings
+(some are desktop-only). They appear in `nexus tools` **only when enabled**, so
+run `nexus tools` to see which are live here before using one: `composer`
 (`compose`/`list-formats`), `data` (`run-python`/`list-capabilities`),
-`elevenlabs` (`generate-music`/`sound-effects`/`list-voices`), `ingest`
-(`run`/`capabilities`), `skills` (`list-skills`/`load-skill`/`create-skill`/…).
+`elevenlabs` (`generate-music`/`sound-effects`/`list-voices`), `skills`
+(`list-skills`/`load-skill`/…), `web` (`capture-markdown`/`capture-pdf`/`links`/…).
 
 ## CLI syntax
 

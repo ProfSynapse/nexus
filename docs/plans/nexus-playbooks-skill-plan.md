@@ -1,6 +1,7 @@
 # Nexus usage skill + `nexus playbook` — plan
 
-**Status:** proposed (design approved in conversation; not yet implemented)
+**Status:** implemented (Tracks A–D landed; verified against the live `code` vault). Manual
+in-Obsidian install/reconcile smoke still pending.
 **Branch:** `feat/nexus-playbooks-skill`
 **Builds on:** the local CLI agent bridge (PR #287 / `docs/plans/local-cli-agent-bridge-plan.md`).
 
@@ -63,12 +64,39 @@ arrive from `nexus tools <tool>` or a playbook at the moment of use. Target sect
 5. CLI syntax — `agent action --flags`, quoting, arrays (`"[a, b]"`), escaping, the rejected legacy
    nested shapes.
 6. Memory model (short) — workspace / session / state; archive-not-delete for the AI.
-7. Tool catalog (terse index) — 8 agents (`content`, `storage`, `search`, `canvas`, `task`, `memory`,
-   `prompt`) + apps, one line of tool names each; desktop-only apps flagged.
+7. Tool catalog (terse index) — the **8 always-on core agents** (`content`, `storage`, `search`,
+   `canvas`, `task`, `memory`, `prompt`, `ingest`), one line of tool names each. **Apps are listed
+   separately as opt-in and deferred to live `nexus tools`** (see §3.3).
 8. Gotchas — symptom → why → fix (see §5).
 9. Playbooks — the list + `nexus playbook <name>`, and when to reach for one.
 
 Everything above "Playbooks" is reference the agent should never have to re-fetch.
+
+### Layer A.3 — dynamic availability & keeping the skill current (verified against `AppManager`)
+
+The skill is **machine-global** (`~/.local/share/nexus/skill/`, symlinked to `~/.claude/skills/nexus`)
+but tool availability has **two independent axes of drift**. Handling each keeps `SKILL.md` correct
+without turning it into a thing that constantly needs hand-editing:
+
+1. **Per-vault app enablement (changes anytime).** `AppManager.getBuiltInAppRegistry()` registers
+   `elevenlabs`, `composer`, `web-tools`, `skills`, `data`; each is gated on `config.enabled` (**off by
+   default**, toggled per vault via `setAppEnabled`). Core agents (`content`/`storage`/`search`/`canvas`/
+   `task`/`memory`/`prompt`/`ingest`) are always registered. A machine-global file *cannot* track a
+   per-vault, runtime-mutable toggle — so **the catalog lists only core statically and defers apps to
+   live `nexus tools`**, which is the genuine per-vault source of truth. Payoff: **adding a new app needs
+   zero skill change** — it appears in `nexus tools` when enabled, and `nexus playbook`'s live `getTools`
+   picks up its tools automatically. *(Rejected: baking a live catalog into `SKILL.md` at install time —
+   it would be wrong for the machine's other vaults and stale the instant the user toggles an app.)*
+2. **Plugin-version drift (new core tools shipped in a release).** Handled by the existing embedded-asset
+   + content-hash model: `reconcile()` rewrites `<dataDir>/skill/*` whenever the embedded content differs
+   (on plugin load / settings action). New **core** tools ride this path — bump the catalog in `SKILL.md`
+   in the same PR that adds the tool, and users get it on next reconcile. Track C extends the same hash
+   compare to the playbook set. *(No per-tool skill wiring: the catalog is a hand-maintained map of core
+   agents, deliberately terse, and only core changes with a release.)*
+
+Net: `SKILL.md` core catalog changes only on a core-tool release (rare, rides reconcile); apps and any
+newly-added app never touch the skill (deferred to live discovery). The "update the skill when we add
+apps/tools" worry resolves to **nothing to do for apps, and a one-line catalog edit for core**.
 
 ### Layer B — `nexus playbook <name>`
 
