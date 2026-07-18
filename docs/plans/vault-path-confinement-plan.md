@@ -137,15 +137,40 @@ Phase 1 closes the hole and is shippable on its own. Phases 2–3 make regressio
    re-export of the resolver). Now a raw `string` literally cannot reach `vault.create` — picking the cheap
    path is a type error.
 
-### Phase 3 — Arch guard (stop regression across the 35 call sites)
+### Phase 3 — Arch guard (stop regression across the call sites) — SHIPPED
 
-1. **eslint `no-restricted-syntax`** (or a CI grep gate) forbidding direct
-   `vault.create` / `vault.modify` / `vault.createBinary` / `vault.createFolder` / `adapter.write` /
-   `adapter.writeBinary` outside `src/core/VaultOperations.ts`. ~35 files call these directly today
-   (inventory produced in Phase 0 recon); each must either route through `VaultOperations` or land on a
-   documented allowlist (event store / cache / migration internals).
-2. Config-level rule (matching the existing `no-nodejs-modules` / `no-deprecated` override style in
-   `eslint.config.mjs`) so the obsidian-releases bot's inline-disable rejection doesn't bite.
+**Delivered** as a config-level `no-restricted-syntax` block in `eslint.config.mjs` (matching the existing
+`no-nodejs-modules` / `no-deprecated` override style, so the obsidian-releases bot's inline-disable rejection
+doesn't bite). Five selectors forbid direct `vault.{create,modify,createBinary,createFolder,rename}` /
+`adapter.{write,writeBinary,mkdir}` / `fileManager.{renameFile,trashFile}` calls on any receiver prefix
+(`this.vault`, `app.vault`, `deps.vault`, bare `vault`). Dry-run measured **115 sites across 42 files, zero
+false positives** (`rename` was added after the dry-run caught `compose.ts` `vault.rename`, which the original
+draft selector missed).
+
+**What the guard actually guarantees.** eslint sees syntax, not dataflow: it cannot tell Phase 1's
+*validate-with-`resolveVaultPath`-then-write-direct* (safe) from an unvalidated direct write. Since the facade
+does not yet cover `createBinary` / `createFolder` / `trashFile` / `rename` / canvas writes, routing the ~20
+untrusted-boundary tools through it is a real refactor (Phase 4, below), out of scope here. So the guard is a
+**file-level tripwire**: any *new* file that writes directly (a new agent tool, a new service) fails lint until
+it either routes through the facade or is consciously added to the allowlist with a justification a reviewer
+sees. It does not re-protect existing allowlisted files — the branded `VaultPath` facade type (Phase 2) and the
+Phase 1 resolver calls + regression tests are what protect those.
+
+The allowlist is segmented so the security-sensitive entries are visibly tech-debt, not blessed:
+- **Segment 1 — sanctioned boundary**: `VaultOperations.ts` + `ObsidianPathManager.ts`.
+- **Segment 2 — trusted-internal** (code-controlled paths, no caller/LLM input: event store, cache, migration,
+  vendored runtime assets, logs, model downloads, Skills App's own `skillPaths`-confined writer). Legitimately raw.
+- **Segment 3 — TECH DEBT**: untrusted-boundary tools that already call `resolveVaultPath()` before writing but
+  still issue the raw write directly. Confined today; the guard is blind to the resolver call. **Phase 4 should
+  route these through `VaultOperations` and delete them from the allowlist.**
+
+### Phase 4 — Facade migration (shrink the Segment-3 allowlist) — FOLLOW-UP, not scoped
+
+Extend `VaultOperations` to cover the operations the untrusted tools need (`createBinary`, standalone
+`createFolder`, `trashFile`, `rename`, canvas writes), then migrate each Segment-3 file to call the facade with a
+branded `VaultPath` and remove it from the Phase 3 allowlist. End state: the allowlist is only Segments 1 + 2,
+and the arch guard sees into every user-facing write path. Large, cross-cutting (touches every write path), so it
+is deliberately a separate effort from the Phase 2+3 hardening PR.
 
 ## 5. Work breakdown (for parallel agents)
 

@@ -170,4 +170,128 @@ export default defineConfig([
             "@typescript-eslint/no-deprecated": "off",
         },
     },
+
+    // ── Vault-mutation confinement (Phase 3 arch guard) ──────────────────
+    // Direct vault / adapter / fileManager MUTATION calls are the class of
+    // code that produced the arbitrary-file-write escape (a caller-supplied
+    // `--path` reaching `vault.create` without vault confinement). All writes
+    // must be confined: untrusted (caller/LLM) paths through the shared
+    // `resolveVaultPath` resolver, then through the typed VaultOperations
+    // facade. This is a config-level restriction — the obsidian-releases bot
+    // rejects inline eslint-disable, and the allowlist below re-enables the
+    // legitimate direct-writers file-by-file.
+    //
+    // The selectors match method calls on `.vault` / `.adapter` / `.fileManager`
+    // receivers regardless of the object prefix (`this.vault`, `app.vault`,
+    // `deps.vault`, bare `vault`). Dry-run verified: 115 sites / 42 files, zero
+    // false positives (no non-Obsidian receiver named vault/adapter/fileManager).
+    // See docs/plans/vault-path-confinement-plan.md (Phase 3).
+    {
+        files: ["src/**/*.ts"],
+        rules: {
+            "no-restricted-syntax": [
+                "error",
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(create|modify|createBinary|createFolder|rename)$/][callee.object.property.name='vault']",
+                    message:
+                        "Direct vault mutation is forbidden outside the VaultOperations facade. Resolve caller paths with resolveVaultPath() and write through VaultOperations (branded VaultPath). If this is a code-controlled internal path, add the file to the Phase 3 allowlist in eslint.config.mjs.",
+                },
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(create|modify|createBinary|createFolder|rename)$/][callee.object.name='vault']",
+                    message:
+                        "Direct vault mutation is forbidden outside the VaultOperations facade. Resolve caller paths with resolveVaultPath() and write through VaultOperations (branded VaultPath). If this is a code-controlled internal path, add the file to the Phase 3 allowlist in eslint.config.mjs.",
+                },
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(write|writeBinary|mkdir)$/][callee.object.property.name='adapter']",
+                    message:
+                        "Direct adapter write/mkdir is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
+                },
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(write|writeBinary|mkdir)$/][callee.object.name='adapter']",
+                    message:
+                        "Direct adapter write/mkdir is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
+                },
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(renameFile|trashFile)$/][callee.object.property.name='fileManager']",
+                    message:
+                        "Direct fileManager rename/trash is forbidden outside the VaultOperations facade. Resolve caller paths and route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is code-controlled.",
+                },
+            ],
+        },
+    },
+
+    // Phase 3 allowlist — files that legitimately call the raw mutation APIs.
+    // Turning the rule off is file-level (the bot forbids inline disables), so
+    // the guard is a tripwire: any NEW file that writes directly (a new agent
+    // tool, a new service) fails lint until it either routes through the facade
+    // or is consciously added here with a justification. Keep this list as short
+    // as the facade migration allows — every entry is a spot the guard is blind
+    // to. Three segments:
+    {
+        files: [
+            // ── Segment 1: the sanctioned mutation boundary itself ───────────
+            "src/core/VaultOperations.ts",          // the facade — requires branded VaultPath
+            "src/core/ObsidianPathManager.ts",      // core path helper it calls (ensureParentExists)
+
+            // ── Segment 2: trusted-internal writers (code-controlled paths, no
+            //    caller/LLM input: event store, cache, migration, vendored
+            //    runtime assets, logs, model downloads). Legitimately raw. ─────
+            "src/database/storage/StorageRouter.ts",
+            "src/database/storage/SQLiteCacheManager.ts",
+            "src/database/storage/VaultAdapterCacheBlobStore.ts",
+            "src/database/storage/vaultRoot/ShardedJsonlStreamStore.ts",
+            "src/database/storage/vaultRoot/VaultEventStore.ts",
+            "src/database/migration/MigrationStatusTracker.ts",
+            "src/services/artifacts/ArtifactJobStore.ts",
+            "src/services/storage/SnapshotArchiveService.ts",
+            "src/services/llm/utils/CacheManager.ts",
+            "src/services/llm/utils/Logger.ts",
+            "src/services/llm/adapters/webllm/WebLLMModelManager.ts",
+            "src/utils/WasmEnsurer.ts",
+            "src/agents/apps/dataAnalysis/services/HucreEnsurer.ts",
+            "src/agents/apps/dataAnalysis/services/PyodideEnsurer.ts",
+            "src/agents/apps/dataAnalysis/spreadsheet/WorkbookMirrorService.ts",
+            "src/agents/apps/dataAnalysis/DataAnalysisAgent.ts",
+            "src/agents/apps/skills/services/SkillWriteService.ts", // confined via its own skillPaths resolver
+
+            // ── Segment 3: TECH DEBT — untrusted-boundary tools that already
+            //    call resolveVaultPath()/tryResolveVaultPath() before writing
+            //    (Phase 1), but still issue the raw write directly rather than
+            //    through the facade. They are confined today; the eslint guard
+            //    cannot SEE the resolver call, so it is blind here. Phase 4
+            //    should route these through VaultOperations (branded VaultPath)
+            //    and DELETE them from this allowlist — see the plan doc. ───────
+            "src/agents/contentManager/utils/ContentOperations.ts",
+            "src/agents/contentManager/tools/write.ts",
+            "src/agents/contentManager/tools/insert.ts",
+            "src/agents/contentManager/tools/replace.ts",
+            "src/agents/storageManager/utils/FileOperations.ts",
+            "src/agents/storageManager/tools/createFolder.ts",
+            "src/agents/canvasManager/utils/CanvasOperations.ts",
+            "src/agents/memoryManager/tools/workspaces/createWorkspace.ts",
+            "src/agents/memoryManager/tools/workspaces/updateWorkspace.ts",
+            "src/agents/ingestManager/tools/services/IngestionPipelineService.ts",
+            "src/agents/apps/elevenlabs/tools/textToSpeech.ts",
+            "src/agents/apps/elevenlabs/tools/soundEffects.ts",
+            "src/agents/apps/elevenlabs/tools/musicGeneration.ts",
+            "src/agents/apps/webTools/utils/webViewer.ts",
+            "src/agents/apps/webTools/tools/capturePagePdf.ts",
+            "src/agents/apps/webTools/tools/capturePagePng.ts",
+            "src/agents/apps/webTools/tools/captureToMarkdown.ts",
+            "src/agents/apps/composer/tools/compose.ts",
+            "src/agents/apps/dataAnalysis/tools/runPython.ts",
+            "src/services/video/VideoGenerationService.ts",
+            "src/services/audio/AudioGenerationService.ts",
+            "src/services/readAloud/ReadAloudSaveService.ts",
+            "src/services/llm/ImageFileManager.ts",
+        ],
+        rules: {
+            "no-restricted-syntax": "off",
+        },
+    },
 ]);
