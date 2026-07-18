@@ -1,7 +1,7 @@
 ---
 name: vault-work
 intent: Search the vault, read what you find, then create or edit notes — the typical loop
-tools: [search content, search directory, content read, content write, content replace, content insert, content setProperty, storage list, memory listWorkspaces, memory createState]
+tools: [search content, search directory, content read, content write, content replace, content insert, content set-property, storage list, memory list-workspaces, memory create-state]
 ---
 
 # Playbook: vault-work
@@ -20,19 +20,19 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 3. **Read before you act.** `content read --path <path>` on the hit(s). Never
    quote, summarize, or edit from a search result alone — it has no body.
 4. **Make the change** with the narrowest tool:
-   - `content setProperty` — a frontmatter field.
+   - `content set-property` — a frontmatter field.
    - `content insert` — add a section (append/prepend/at an anchor).
    - `content replace` — a surgical edit. It is **pattern-anchored**:
      `{path, start, end, content}` where `start`/`end` are exact **anchor text**
      from the note (not line numbers). Read first to copy the anchors.
    - `content write` — a new note, or a full overwrite.
-5. **Checkpoint** with `memory createState` when the edit is done.
+5. **Checkpoint** with `memory create-state` when the edit is done.
 
 ## Worked example — add a summary under a heading
 
 ```
 # 1. load the workspace you picked from the list above (--workspace = name or id)
-nexus use "memory loadWorkspace --workspace research" \
+nexus use "memory load-workspace --workspace research" \
   --memory "starting: summarize the auth notes" --goal "load the research workspace" \
   --session auth-summary
 
@@ -53,8 +53,8 @@ nexus use "content replace --path Projects/Auth/flow.md \
   --workspace research --session auth-summary \
   --memory "have the body; inserting a summary" --goal "replace the Summary section"
 
-# 5. checkpoint (createState needs name + context + task + file/step arrays)
-nexus use "memory createState --name auth-summary-done \
+# 5. checkpoint (create-state needs name + context + task + file/step arrays)
+nexus use "memory create-state --name auth-summary-done \
   --conversationContext 'summarized the auth flow note into a Summary section' \
   --activeTask 'add a summary to flow.md' \
   --activeFiles '[Projects/Auth/flow.md]' \

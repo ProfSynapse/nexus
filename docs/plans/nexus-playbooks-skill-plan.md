@@ -41,8 +41,8 @@ Two moves fix that:
     `workspaceId="default"`, `sessionId="nexus-cli"`.
   - `withClient(vault, fn)` opens one socket session; `resolveVault` handles `--vault` / `NEXUS_VAULT`
     / single-open-vault.
-- **Real memory-agent tool names** (for the playbook output + recipes): `memory listWorkspaces`,
-  `memory loadWorkspace`, `memory createWorkspace`, `memory createState`, `memory listStates`.
+- **Real memory-agent tool names** (for the playbook output + recipes): `memory list-workspaces`,
+  `memory load-workspace`, `memory create-workspace`, `memory create-state`, `memory list-states`.
 - **Asset pipeline**: `scripts/build-cli.mjs` (bundles the CLI) → `scripts/generate-cli-content.mjs`
   (embeds `nexus-cli.js` + `skill/SKILL.md` + `cli/agents-snippet.md` → `cliAssets.ts`).
 
@@ -82,9 +82,9 @@ nexus playbook vault-work      # emit the composed primer for that task
 **`nexus playbook <name>` emits one composed document to stdout, in order:**
 
 1. **Shared preamble** (constant, DRY — no playbook repeats it): the workspace/state/contract spine —
-   "load or create a workspace first, thread its id, checkpoint with `memory createState` as you go,
+   "load or create a workspace first, thread its id, checkpoint with `memory create-state` as you go,
    always pass real `memory`/`goal`."
-2. **Available workspaces** — one `memory listWorkspaces` call via `withClient`, rendered as a short
+2. **Available workspaces** — one `memory list-workspaces` call via `withClient`, rendered as a short
    list. This is the side-effect-free preload that removes the "what workspaces exist?" round-trip and
    lets the agent *choose* a workspace to load (the one step that must stay in its hands — the CLI
    can't know the name ahead of time).
@@ -102,7 +102,7 @@ workspaces exist + the exact tools loaded**, then the agent issues its first `ne
 ---
 name: vault-work
 intent: Search the vault, read what you find, then create or edit notes
-tools: [search content, search directory, content read, content write, content replace, content insert, content setProperty, storage list]
+tools: [search content, search directory, content read, content write, content replace, content insert, content set-property, storage list]
 ---
 (body: protocol, worked example, pitfalls)
 ```
@@ -125,29 +125,35 @@ selector. Adding a playbook = drop a `.md` file; no code change.
 ## 4. The four playbooks
 
 Workspace + state handling is the shared preamble, not a playbook. `search`+`edit` collapse into one
-typical loop. `organize` stays separate. `tasks` stays. A new `generate` playbook covers external LLM
-calls (PromptManager).
+typical loop. `organize` stays separate. `tasks` stays. A new `prompt` playbook covers PromptManager —
+running prompts (text or image, inline or saved) over your notes.
 
 Tool slugs below are the **verified CLI forms** (`<agent> <slug>`), confirmed against each agent's
 registration (`toKebabCase` strips `Manager`; e.g. `searchManager.searchContent` → `search content`).
 
 | Playbook | Loop | `tools` selector (real slugs) |
 |----------|------|------------------|
-| **`vault-work`** | load ws → search → **read** → create/edit → checkpoint | `search content`, `search directory`, `search memory`, `content read`, `content write`, `content replace`, `content insert`, `content setProperty`, `storage list`, `memory listWorkspaces`, `memory createState` |
-| **`organize`** | load ws → map (`list`/`queryNotes`) → plan → move/create/archive → checkpoint | `storage list`, `storage createFolder`, `storage move`, `storage copy`, `storage archive`, `search queryNotes`, `memory listWorkspaces`, `memory createState` |
-| **`tasks`** | load ws → project → tasks w/ deps → query → update | `task createProject`, `task listProjects`, `task create`, `task list`, `task query`, `task update`, `task move`, `task linkNote`, `memory listWorkspaces`, `memory createState` |
-| **`generate`** | load ws → (optional `content read` for source) → `prompt generateImage/Audio/Video` → `prompt checkGeneratedArtifact` → checkpoint | `prompt listModels`, `prompt generateImage`, `prompt generateAudio`, `prompt generateVideo`, `prompt checkGeneratedArtifact`, `prompt list`, `prompt create`, `content read`, `content write`, `memory listWorkspaces`, `memory createState` |
+| **`vault-work`** | load ws → search → **read** → create/edit → checkpoint | `search content`, `search directory`, `search memory`, `content read`, `content write`, `content replace`, `content insert`, `content set-property`, `storage list`, `memory list-workspaces`, `memory create-state` |
+| **`organize`** | load ws → map (`list`/`query-notes`) → plan → move/create/archive → checkpoint | `storage list`, `storage create-folder`, `storage move`, `storage copy`, `storage archive`, `search query-notes`, `memory list-workspaces`, `memory create-state` |
+| **`tasks`** | load ws → project → tasks w/ deps → query → update | `task create-project`, `task list-projects`, `task create`, `task list`, `task query`, `task update`, `task move`, `task link-note`, `memory list-workspaces`, `memory create-state` |
+| **`prompt`** | load ws → pick a prompt (inline or saved via `prompt list`) → attach notes → `prompt execute` (text or image) → optionally write result back → checkpoint | `prompt execute`, `prompt list`, `prompt get`, `prompt create`, `prompt list-models`, `prompt check-generated-artifact`, `content read`, `content write`, `memory list-workspaces`, `memory create-state` |
 
-> **`generate` scope correction:** PromptManager exposes **no text-execution/`executePrompts`** tool over
-> the CLI — its external-call surface is **media** generation (`generateImage`/`generateAudio`/
-> `generateVideo`, async → poll with `checkGeneratedArtifact`) plus a reusable saved-prompt library
-> (`prompt create/list/get/update/archive`) and `listModels`. So this playbook is "generate media into
-> the vault + manage prompts," not "run a note through an LLM." (Flag to confirm this matches intent.)
+> **`prompt` playbook — the real capability** (corrects an earlier misread): `prompt execute` (slug
+> `execute`) runs **text or image** prompts. Per request item you can supply an **inline `prompt`** (one
+> the agent writes) *or* reference a **saved prompt** from the database (`customPrompt` = name/ID from
+> `prompt list`), **attach notes** as context (`contextFiles: [paths]`, and/or `workspace` for scoped
+> gathering), pick `provider`/`model` (see `list-models`), and optionally **write the result back** to a
+> note (`action: {type: create|append|prepend|replace|findReplace, targetPath, start, end, …}`). It's a
+> batch tool (`prompts` array, with `sequence`/`parallelGroup`/`includePreviousResults`/`contextFromSteps`
+> for chaining). Image requests use `type: image` + `savePath`/`aspectRatio`/`referenceImages`; the
+> dedicated async `generate-image/Audio/Video` + `check-generated-artifact` tools remain for media-only jobs.
+> So the playbook teaches: **run a prompt (inline or saved) over your notes, get text or media, optionally
+> act on the output.**
 
 Each body (after the shared preamble) is just: protocol steps, one worked CLI example, pitfalls.
 Pitfalls to seed: editing from a search hit without reading; answering from `{path, score}`; `move`
-validates both source and target; `task linkNote` needs a real `notePath`; media generation is async
-(poll `checkGeneratedArtifact`); can't write outside the vault.
+validates both source and target; `task link-note` needs a real `notePath`; media generation is async
+(poll `check-generated-artifact`); can't write outside the vault.
 
 ## 5. Gotchas to encode (SKILL.md §Gotchas)
 
@@ -170,7 +176,7 @@ symptom → why → correct pattern, for each:
 | Track | Scope | Notes |
 |-------|-------|-------|
 | **A — content** | Rewrite `skill/SKILL.md` (compact self-contained); add `skill/playbooks/_preamble.md` + 4 playbook `.md` (frontmatter + body) | pure markdown; authorable immediately |
-| **B — CLI** | `nexus playbook` branch in `cli/nexus-cli.ts`: no-arg list (read frontmatter), `<name>` compose (preamble + `memory listWorkspaces` + body + `getTools`), frontmatter parser (tiny, no yaml dep — node builtins only), `--help`/USAGE update | reuses `withClient`, `parseArgs`, `printToolResult` |
+| **B — CLI** | `nexus playbook` branch in `cli/nexus-cli.ts`: no-arg list (read frontmatter), `<name>` compose (preamble + `memory list-workspaces` + body + `getTools`), frontmatter parser (tiny, no yaml dep — node builtins only), `--help`/USAGE update | reuses `withClient`, `parseArgs`, `printToolResult` |
 | **C — pipeline/installer** | `generate-cli-content.mjs` embeds the playbook set as `NEXUS_PLAYBOOKS` (a `{name → content}` map + fold it into the content hash); `LocalCliInstaller.enable()`/`reconcile()` write `<dataDir>/skill/playbooks/*.md`; `uninstall()` already drops `<dataDir>` wholesale. No new symlink needed (skill dir is already linked). | keep the single content-hash refresh model; extend the `NEXUS_SKILL_MD` compare in `reconcile()` to the playbooks |
 | **D — tests/smoke** | extend `cli/smoke.sh`: `nexus playbook` lists, `nexus playbook vault-work` returns preamble+workspaces+body+schemas; frontmatter-parser unit test | — |
 
@@ -184,7 +190,7 @@ the file set from A. D last.
   agent can read. ✔
 - **Toolset declaration**: frontmatter `tools:` per playbook (not a central manifest). ✔
 - **Side effects**: `nexus playbook` is emit-only; it *lists* workspaces but never loads/creates one —
-  the agent does that with `nexus use "memory loadWorkspace…"`. ✔
+  the agent does that with `nexus use "memory load-workspace…"`. ✔
 
 ## 8. Acceptance
 

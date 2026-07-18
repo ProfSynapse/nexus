@@ -53,7 +53,7 @@ nexus use "<agent action --flags>"  # EXECUTE — runs a tool, prints the result
 |------|-------|----------|---------|-----------|
 | `--memory` | rolling summary of what you've done/learned | **yes** | — | `"found 3 notes on auth; merging them"` |
 | `--goal` | this call's objective, one sentence | **yes** | — | `"append the summary to auth.md"` |
-| `--workspace` | scope for traces/memory | no | `default` | a workspace name from `memory listWorkspaces` |
+| `--workspace` | scope for traces/memory | no | `default` | a workspace name from `memory list-workspaces` |
 | `--session` | continuity across calls | no | `nexus-cli` | reuse one stable name per task |
 | `--constraints` | guardrails | no | — | `"don't touch archived notes"` |
 | `--vault` | which vault | no | the single open one / `NEXUS_VAULT` | `"My Notes"` (human name) |
@@ -69,21 +69,25 @@ not the note — you must `content read` it before you can act on or quote it.
 
 ## Tool catalog
 
-`<agent> <slug>` — e.g. `content read`, `search content`. Full arg schema:
-`nexus tools <agent> <slug>`.
+Commands are `<agent> <command>`, kebab-cased — e.g. `content read`, `content
+set-property`, `memory load-workspace`. Run `nexus tools <agent> <command>` for
+the full arg schema of any one; `nexus tools` for the complete live list.
 
-| Agent | Tools |
-|-------|-------|
-| **content** | `read` `write` `replace` `insert` `setProperty` |
-| **storage** | `list` `createFolder` `move` `copy` `archive` `open` |
-| **search** | `content` (semantic/keyword) · `directory` (by name/path) · `memory` (past sessions/traces/states) · `queryNotes` (read-only SQL over notes + frontmatter) |
+| Agent | Commands |
+|-------|----------|
+| **content** | `read` `write` `replace` `insert` `set-property` |
+| **storage** | `list` `create-folder` `move` `copy` `archive` `open` |
+| **search** | `content` (semantic/keyword) · `directory` (by name/path) · `memory` (past sessions/traces/states) · `query-notes` (read-only SQL over notes + frontmatter) |
 | **canvas** | `read` `write` `update` `list` |
-| **task** | `createProject` `listProjects` `updateProject` `archiveProject` · `create` `list` `open` `update` `move` `query` `linkNote` |
-| **memory** | `createWorkspace` `listWorkspaces` `loadWorkspace` `updateWorkspace` `archiveWorkspace` · `createState` `listStates` `loadState` `updateState` `archiveState` |
-| **prompt** | `list` `get` `create` `update` `archive` `listModels` · `generateImage` `generateAudio` `generateVideo` `checkGeneratedArtifact` (media generation is async — poll `checkGeneratedArtifact`) |
+| **task** | `create-project` `list-projects` `update-project` `archive-project` · `create` `list` `open` `update` `move` `query` `link-note` |
+| **memory** | `create-workspace` `list-workspaces` `load-workspace` `update-workspace` `archive-workspace` · `create-state` `list-states` `load-state` `update-state` `archive-state` |
+| **prompt** | `execute` (run a text or image prompt — inline or a saved prompt — with notes as context, optionally writing the result back) · `list` `get` `create` `update` `archive` (saved-prompt library) · `list-models` · `generate-image` `generate-audio` `generate-video` `check-generated-artifact` (async media — poll `check-generated-artifact`) |
 
-Some app tools (web capture, composer, data analysis) are **desktop-only** and
-absent on a mobile vault.
+**App agents** (some **desktop-only**; absent on a mobile vault): `web`
+(`capture-markdown`/`capture-pdf`/`capture-png`/`links`/`open`), `composer`
+(`compose`/`list-formats`), `data` (`run-python`/`list-capabilities`),
+`elevenlabs` (`generate-music`/`sound-effects`/`list-voices`), `ingest`
+(`run`/`capabilities`), `skills` (`list-skills`/`load-skill`/`create-skill`/…).
 
 ## CLI syntax
 
@@ -102,10 +106,10 @@ absent on a mobile vault.
 
 - **Workspace** = a named scope (root folder + its sessions/traces/tasks). Load
   one at the start of multi-step work so your traces group and its task summary
-  loads. List them with `memory listWorkspaces`, then `memory loadWorkspace`.
+  loads. List them with `memory list-workspaces`, then `memory load-workspace`.
 - **Session** = continuity within a task (`--session <name>`, kept stable).
 - **State** = a named checkpoint you can restore. Save one with `memory
-  createState` at meaningful milestones. You get **archive** (reversible), not
+  create-state` at meaningful milestones. You get **archive** (reversible), not
   delete.
 
 ## Gotchas
@@ -115,8 +119,8 @@ absent on a mobile vault.
 - `--memory`/`--goal` are enforced — send real values or the call is rejected.
 - Writes are **vault-confined** — no `..`/`~`/absolute escape.
 - `content replace` uses **anchor text** (`start`/`end`), not line numbers.
-- **Media generation is async** — `prompt generate*` returns a job; poll with
-  `prompt checkGeneratedArtifact`.
+- **Media generation is async** — `prompt generate-*` returns a job; poll with
+  `prompt check-generated-artifact`.
 - No open vault → the socket is absent; ask the user to open Obsidian with Nexus.
 - Multiple vaults open → pass `--vault <name>` (run `nexus vaults` to list).
 
@@ -130,8 +134,8 @@ nexus playbook                 # list available playbooks
 nexus playbook vault-work      # search → read → create/edit (the typical loop)
 nexus playbook organize        # restructure: move / archive / folder cleanup
 nexus playbook tasks           # projects & tasks with dependencies
-nexus playbook generate        # generate media (image/audio/video) + prompt library
+nexus playbook prompt          # run a prompt (text/image) over your notes — inline or saved
 ```
 
 A playbook is emit-only: it lists your workspaces but never loads one — you do
-that yourself (`nexus use "memory loadWorkspace …"`) as the recipe's first step.
+that yourself (`nexus use "memory load-workspace …"`) as the recipe's first step.
