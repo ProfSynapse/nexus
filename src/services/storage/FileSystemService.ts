@@ -5,6 +5,7 @@
 
 import { normalizePath, Plugin } from 'obsidian';
 import { VaultOperations } from '../../core/VaultOperations';
+import { vaultPathFromTrusted } from '../../core/vaultPath';
 import { IndividualConversation, IndividualWorkspace, ConversationIndex, WorkspaceIndex } from '../../types/storage/StorageTypes';
 
 type ChromaCollectionData = {
@@ -36,14 +37,14 @@ export class FileSystemService {
    * Ensure conversations/ directory exists
    */
   async ensureConversationsDirectory(): Promise<void> {
-    await this.vaultOperations.ensureDirectory(this.conversationsPath);
+    await this.vaultOperations.ensureDirectory(vaultPathFromTrusted(this.conversationsPath));
   }
 
   /**
    * Ensure workspaces/ directory exists
    */
   async ensureWorkspacesDirectory(): Promise<void> {
-    await this.vaultOperations.ensureDirectory(this.workspacesPath);
+    await this.vaultOperations.ensureDirectory(vaultPathFromTrusted(this.workspacesPath));
   }
 
   /**
@@ -53,7 +54,7 @@ export class FileSystemService {
     await this.ensureConversationsDirectory();
     const filePath = normalizePath(`${this.conversationsPath}/${id}.json`);
     const jsonString = JSON.stringify(data, null, 2);
-    await this.vaultOperations.writeFile(filePath, jsonString);
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(filePath), jsonString);
   }
 
   /**
@@ -73,7 +74,7 @@ export class FileSystemService {
    */
   async deleteConversation(id: string): Promise<void> {
     const filePath = normalizePath(`${this.conversationsPath}/${id}.json`);
-    await this.vaultOperations.deleteFile(filePath);
+    await this.vaultOperations.deleteFile(vaultPathFromTrusted(filePath));
   }
 
   /**
@@ -103,7 +104,7 @@ export class FileSystemService {
   async writeWorkspace(id: string, data: IndividualWorkspace): Promise<void> {
     const filePath = normalizePath(`${this.workspacesPath}/${id}.json`);
     const jsonString = JSON.stringify(data, null, 2);
-    await this.vaultOperations.writeFile(filePath, jsonString);
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(filePath), jsonString);
   }
 
   /**
@@ -123,7 +124,7 @@ export class FileSystemService {
    */
   async deleteWorkspace(id: string): Promise<void> {
     const filePath = normalizePath(`${this.workspacesPath}/${id}.json`);
-    await this.vaultOperations.deleteFile(filePath);
+    await this.vaultOperations.deleteFile(vaultPathFromTrusted(filePath));
   }
 
   /**
@@ -169,7 +170,7 @@ export class FileSystemService {
   async writeConversationIndex(index: ConversationIndex): Promise<void> {
     const filePath = normalizePath(`${this.conversationsPath}/index.json`);
     const jsonString = JSON.stringify(index, null, 2);
-    await this.vaultOperations.writeFile(filePath, jsonString);
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(filePath), jsonString);
   }
 
   /**
@@ -190,7 +191,7 @@ export class FileSystemService {
   async writeWorkspaceIndex(index: WorkspaceIndex): Promise<void> {
     const filePath = normalizePath(`${this.workspacesPath}/index.json`);
     const jsonString = JSON.stringify(index, null, 2);
-    await this.vaultOperations.writeFile(filePath, jsonString);
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(filePath), jsonString);
   }
 
   /**

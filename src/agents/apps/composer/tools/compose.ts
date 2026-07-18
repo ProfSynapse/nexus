@@ -14,7 +14,7 @@ import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { normalizePath, TFolder } from 'obsidian';
-import { isValidPath } from '../../../../utils/pathUtils';
+import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import {
   ComposeInput,
   ComposeOptions,
@@ -90,7 +90,7 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
 
     // --- 1. Parameter validation ---
 
-    if (!isValidPath(outputPath)) {
+    if (!tryResolveVaultPath(outputPath).ok) {
       return this.prepareResult(false, undefined,
         `Invalid output path: "${outputPath}" — must be vault-relative, no ".." or absolute paths`);
     }
@@ -105,7 +105,7 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
           'Audio mix mode requires "tracks" array with at least one track');
       }
       for (const track of tracks) {
-        if (!track.file || !isValidPath(track.file)) {
+        if (!track.file || !tryResolveVaultPath(track.file).ok) {
           return this.prepareResult(false, undefined,
             `Invalid track file path: "${track.file}"`);
         }
@@ -131,7 +131,7 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
         return this.prepareResult(false, undefined,
           'At least one file path is required in "files" array');
       }
-      const invalidPaths = files.filter(f => !isValidPath(f));
+      const invalidPaths = files.filter(f => !tryResolveVaultPath(f).ok);
       if (invalidPaths.length > 0) {
         return this.prepareResult(false, undefined,
           `Invalid file path(s): ${invalidPaths.map(p => `"${p}"`).join(', ')} — must be vault-relative, no ".." or absolute paths`);

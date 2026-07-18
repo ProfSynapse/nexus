@@ -4,6 +4,7 @@
  */
 
 import { Vault, TFile, TFolder } from 'obsidian';
+import { tryResolveVaultPath } from '../../core/vaultPath';
 import {
   ImageGenerationParams,
   ImageGenerationResponse,
@@ -115,17 +116,15 @@ export class ImageFileManager {
    * Check if a file path is safe (within vault, no directory traversal)
    */
   private validatePath(filePath: string): boolean {
-    // Normalize the path
-    const normalizedPath = pathUtils.normalize(filePath);
-
-    // Check for directory traversal attempts
-    if (normalizedPath.includes('..') || normalizedPath.startsWith('/')) {
+    // Confine to the vault via the shared resolver: segment-based traversal check
+    // (rejects `..`/absolute/home paths but accepts legit names like `a..b.md`).
+    if (!tryResolveVaultPath(filePath).ok) {
       return false;
     }
 
     // Check for invalid characters
     const invalidChars = /[<>:"|?*]/;
-    if (invalidChars.test(normalizedPath)) {
+    if (invalidChars.test(pathUtils.normalize(filePath))) {
       return false;
     }
 
