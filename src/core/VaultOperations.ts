@@ -16,9 +16,10 @@
 import { App, Vault, TFile, TFolder } from 'obsidian';
 import { ObsidianPathManager } from './ObsidianPathManager';
 import { StructuredLogger } from './StructuredLogger';
+import { VaultPath } from './vaultPath';
 
 export interface BatchWriteOperation {
-  path: string;
+  path: VaultPath;
   content: string;
 }
 
@@ -168,9 +169,11 @@ export class VaultOperations {
    * Write file content with automatic directory creation
    * Uses adapter.write() for hidden files since Obsidian doesn't index them
    */
-  async writeFile(path: string, content: string): Promise<boolean> {
+  async writeFile(path: VaultPath, content: string): Promise<boolean> {
     try {
-      const normalizedPath = this.pathManager.normalizePath(path);
+      // `path` is already a canonical, confined VaultPath (constructed via the
+      // vaultPath resolver at the caller's trust boundary); no re-normalize.
+      const normalizedPath = path;
 
       // For hidden files, use adapter directly (Obsidian doesn't index hidden files)
       if (this.isHiddenPath(normalizedPath)) {
@@ -211,9 +214,10 @@ export class VaultOperations {
    * Create directory if it doesn't exist
    * Uses adapter.mkdir() for hidden directories since Obsidian doesn't index them
    */
-  async ensureDirectory(path: string): Promise<boolean> {
+  async ensureDirectory(path: VaultPath): Promise<boolean> {
     try {
-      const normalizedPath = this.pathManager.normalizePath(path);
+      // `path` is already a canonical, confined VaultPath; no re-normalize.
+      const normalizedPath = path;
 
       // For hidden directories, use adapter directly
       if (this.isHiddenPath(normalizedPath)) {
@@ -249,11 +253,11 @@ export class VaultOperations {
   /**
    * Delete file
    */
-  async deleteFile(path: string): Promise<boolean> {
+  async deleteFile(path: VaultPath): Promise<boolean> {
     try {
-      const normalizedPath = this.pathManager.normalizePath(path);
+      const normalizedPath = path;
       const file = this.getFile(normalizedPath);
-      
+
       if (file) {
         await this.app.fileManager.trashFile(file);
         this.fileCache.delete(normalizedPath);
@@ -272,9 +276,9 @@ export class VaultOperations {
   /**
    * Delete folder
    */
-  async deleteFolder(path: string): Promise<boolean> {
+  async deleteFolder(path: VaultPath): Promise<boolean> {
     try {
-      const normalizedPath = this.pathManager.normalizePath(path);
+      const normalizedPath = path;
       const folder = this.getFolder(normalizedPath);
       
       if (folder) {
@@ -402,7 +406,7 @@ export class VaultOperations {
   /**
    * Copy file
    */
-  async copyFile(sourcePath: string, targetPath: string): Promise<boolean> {
+  async copyFile(sourcePath: VaultPath, targetPath: VaultPath): Promise<boolean> {
     try {
       const content = await this.readFile(sourcePath, false);
       if (content === null) {
@@ -420,11 +424,11 @@ export class VaultOperations {
   /**
    * Move/rename file
    */
-  async moveFile(sourcePath: string, targetPath: string): Promise<boolean> {
+  async moveFile(sourcePath: VaultPath, targetPath: VaultPath): Promise<boolean> {
     try {
-      const normalizedSource = this.pathManager.normalizePath(sourcePath);
-      const normalizedTarget = this.pathManager.normalizePath(targetPath);
-      
+      const normalizedSource = sourcePath;
+      const normalizedTarget = targetPath;
+
       const sourceFile = this.getFile(normalizedSource);
       if (!sourceFile) {
         this.logger.error(`Source file not found: ${sourcePath}`);

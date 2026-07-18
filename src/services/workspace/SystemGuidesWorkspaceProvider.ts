@@ -1,5 +1,6 @@
 import { type App, requestUrl } from 'obsidian';
 import type { VaultOperations } from '../../core/VaultOperations';
+import { vaultPathFromTrusted } from '../../core/vaultPath';
 import { resolveVaultRoot } from '../../database/storage/VaultRootResolver';
 import type { LoadWorkspaceResult } from '../../database/types/workspace/ParameterTypes';
 import type { WorkspaceContext } from '../../database/types/workspace/WorkspaceTypes';
@@ -79,8 +80,8 @@ export class SystemGuidesWorkspaceProvider {
       configDir: this.app.vault.configDir
     });
 
-    await this.vaultOperations.ensureDirectory(guidesPath);
-    await this.vaultOperations.ensureDirectory(`${guidesPath}/_meta`);
+    await this.vaultOperations.ensureDirectory(vaultPathFromTrusted(guidesPath));
+    await this.vaultOperations.ensureDirectory(vaultPathFromTrusted(`${guidesPath}/_meta`));
 
     const manifestPath = `${guidesPath}/${MANAGED_GUIDES_MANIFEST_PATH}`;
     const previousManifest = await this.readManifest(manifestPath);
@@ -99,7 +100,7 @@ export class SystemGuidesWorkspaceProvider {
         (previousHash !== undefined && this.hashContent(existingContent) === previousHash);
 
       if (shouldWrite) {
-        await this.vaultOperations.writeFile(filePath, guide.content);
+        await this.vaultOperations.writeFile(vaultPathFromTrusted(filePath), guide.content);
       }
     }
 
@@ -117,7 +118,7 @@ export class SystemGuidesWorkspaceProvider {
       }))
     };
 
-    await this.vaultOperations.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(manifestPath), JSON.stringify(manifest, null, 2));
   }
 
   /**

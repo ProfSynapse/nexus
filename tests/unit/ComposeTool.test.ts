@@ -141,10 +141,12 @@ describe('ComposeTool', () => {
       expect(getErrorMessage(result)).toContain('Invalid output path');
     });
 
-    it('should reject absolute output path', async () => {
+    it('should reject an absolute output path (Windows drive / UNC)', async () => {
+      // A POSIX leading "/" is stripped to vault-relative (backward-compat, see
+      // the vaultPath resolver); a genuine drive/UNC absolute is still rejected.
       const result = await tool.execute({
         format: 'markdown',
-        outputPath: '/etc/output.md',
+        outputPath: 'C:\\Windows\\output.md',
         files: ['notes/a.md'],
       });
 

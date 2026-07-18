@@ -15,6 +15,7 @@ import type { MCPSettings } from '../../types/plugin/PluginTypes';
 import { CORE_SERVICE_DEFINITIONS, ADDITIONAL_SERVICE_FACTORIES } from './ServiceDefinitions';
 import type { ServiceCreationContext, AdditionalServiceFactory } from './ServiceDefinitions';
 import type { VaultOperations } from '../VaultOperations';
+import { vaultPathFromTrusted } from '../vaultPath';
 import type { ChatService } from '../../services/chat/ChatService';
 import { resolvePluginStorageRoot } from '../../database/storage/PluginStoragePathResolver';
 
@@ -119,8 +120,8 @@ export class ServiceRegistrar {
             const storageDir = `${dataDir}/storage`;
 
             try {
-                await vaultOperations.ensureDirectory(dataDir);
-                await vaultOperations.ensureDirectory(storageDir);
+                await vaultOperations.ensureDirectory(vaultPathFromTrusted(dataDir));
+                await vaultOperations.ensureDirectory(vaultPathFromTrusted(storageDir));
             } catch {
                 // Directories may already exist
             }

@@ -2,6 +2,7 @@ import { normalizePath, Plugin } from 'obsidian';
 import { FileSystemService } from '../storage/FileSystemService';
 import { normalizeLegacyTraceMetadata } from '../memory/LegacyTraceMetadataNormalizer';
 import { VaultOperations } from '../../core/VaultOperations';
+import { vaultPathFromTrusted } from '../../core/vaultPath';
 
 const TRACE_SCHEMA_VERSION = 1;
 
@@ -93,11 +94,11 @@ export class TraceSchemaMigrationService {
 
   private async writeStatus(status: TraceSchemaStatus): Promise<void> {
     const json = JSON.stringify(status, null, 2);
-    await this.vaultOperations.writeFile(this.markerPath, json);
+    await this.vaultOperations.writeFile(vaultPathFromTrusted(this.markerPath), json);
   }
 
   private async ensureBackupsDir(): Promise<void> {
-    await this.vaultOperations.ensureDirectory(this.backupsPath);
+    await this.vaultOperations.ensureDirectory(vaultPathFromTrusted(this.backupsPath));
   }
 
   private async createBackup(workspaceId: string): Promise<void> {
@@ -111,7 +112,7 @@ export class TraceSchemaMigrationService {
       await this.ensureBackupsDir();
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = normalizePath(`${this.backupsPath}/${workspaceId}-${timestamp}.json.bak`);
-      await this.vaultOperations.writeFile(backupPath, content);
+      await this.vaultOperations.writeFile(vaultPathFromTrusted(backupPath), content);
     } catch (error) {
       console.error(`[TraceSchemaMigration] Failed to backup workspace ${workspaceId}:`, error);
     }

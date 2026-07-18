@@ -199,17 +199,23 @@ describe('ReadAloudSaveService', () => {
       expect(filename).not.toMatch(/[\\/:*?"<>|[\]#^]/);
     });
 
-    it('rejects (throws) a basename whose ".." survives sanitize and would escape the folder', async () => {
-      // sanitize() does NOT strip '.', so a ".." basename passes through to
-      // isValidPath, which must reject it — proving the layered guard holds.
+    it('confines a ".." basename to a legit in-folder filename (segment-based check, no escape)', async () => {
+      // sanitize() does NOT strip '.', so a ".." basename survives — but the
+      // filename builder always appends " - <timestamp>", so the resulting
+      // segment is ".. - <ts>.<ext>", never a bare ".." segment. The shared
+      // resolver's segment-based check therefore ACCEPTS it (the old
+      // includes('..') guard was a false-positive) while it stays fully confined
+      // under the audio folder: there is no directory-traversal escape.
       stubSynthesis([makeResult(8, 0x11)]);
       const fake = buildFakeVault();
       const svc = new ReadAloudSaveService(new App(), fake.vault, buildSettings());
 
-      await expect(
-        svc.saveNoteAsAudio(new TFile('..', '..'))
-      ).rejects.toThrow(/invalid audio output path/);
-      expect(fake.writes).toHaveLength(0);
+      await svc.saveNoteAsAudio(new TFile('..', '..'));
+
+      const path = fake.writes[0].path;
+      expect(path.startsWith('Nexus/audio/')).toBe(true);
+      // No path SEGMENT equals ".." — the file cannot climb out of the folder.
+      expect(path.split('/').includes('..')).toBe(false);
     });
   });
 

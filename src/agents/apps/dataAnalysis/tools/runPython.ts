@@ -15,7 +15,7 @@ import { BaseTool } from '../../../baseTool';
 import { CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { isDesktop } from '../../../../utils/platform';
-import { isValidPath } from '../../../../utils/pathUtils';
+import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { verbs } from '../../../utils/toolStatusLabels';
 import { DataAnalysisAgent } from '../DataAnalysisAgent';
@@ -78,7 +78,7 @@ export class RunPythonTool extends BaseTool<RunPythonParams, CommonResult> {
     const timeoutMs = clampTimeout(params.timeoutMs);
 
     // Validate the output path up front, before doing any work.
-    if (params.outputPath !== undefined && !isValidPath(params.outputPath)) {
+    if (params.outputPath !== undefined && !tryResolveVaultPath(params.outputPath).ok) {
       return this.prepareResult(false, undefined,
         `Invalid output path: "${params.outputPath}" — must be vault-relative, no ".." or absolute paths`);
     }

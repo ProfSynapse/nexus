@@ -24,7 +24,7 @@
 import { App, Editor, normalizePath, TFile, TFolder, Vault } from 'obsidian';
 import type { Settings } from '../../settings';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
-import { isValidPath } from '../../utils/pathUtils';
+import { tryResolveVaultPath } from '../../core/vaultPath';
 import { concatAudioBuffers } from './concatAudioBuffers';
 import { ReadAloudService } from './ReadAloudService';
 import type { SpeechSynthesisResult } from './SpeechSynthesisTypes';
@@ -185,7 +185,7 @@ export class ReadAloudSaveService {
     const subfolder = storage?.audioSubfolder?.trim() || DEFAULT_AUDIO_SUBFOLDER;
 
     const path = normalizePath(`${rootPath}/${subfolder}/${filename}`);
-    if (!isValidPath(path)) {
+    if (!tryResolveVaultPath(path).ok) {
       throw new Error(`Resolved an invalid audio output path "${path}".`);
     }
     return path;

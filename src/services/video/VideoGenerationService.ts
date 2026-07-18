@@ -1,6 +1,6 @@
 import { App, normalizePath, TFolder, Vault } from 'obsidian';
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
-import { isValidPath } from '../../utils/pathUtils';
+import { tryResolveVaultPath } from '../../core/vaultPath';
 import {
   buildVideoProviderAvailability,
   resolveDefaultVideoSelection,
@@ -273,7 +273,7 @@ export class VideoGenerationService {
       throw new Error('outputPath is required.');
     }
 
-    if (!isValidPath(outputPath)) {
+    if (!tryResolveVaultPath(outputPath).ok) {
       throw new Error(`Invalid outputPath "${outputPath}". Use a vault-relative path with no ".." or absolute path segments.`);
     }
 
