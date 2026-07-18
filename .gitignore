@@ -13,6 +13,7 @@ main.js
 .serena/
 
 connector.js
+nexus-cli.js
 
 .history
 

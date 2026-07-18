@@ -14,6 +14,7 @@ export default defineConfig([
             "main.js",
             "coverage/",
             "connector.js",
+            "nexus-cli.js",
             // Vendored runtime assets (downloaded engines) — not source
             "hucre/",
             "pyodide/",
@@ -34,6 +35,8 @@ export default defineConfig([
             "tests/",
             // Root TS file compiled separately (own tsc invocation)
             "connector.ts",
+            // Standalone CLI — bundled separately (esbuild), not in the plugin tsconfig
+            "cli/",
         ],
     },
 
