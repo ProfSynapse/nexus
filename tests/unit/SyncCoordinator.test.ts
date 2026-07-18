@@ -349,4 +349,48 @@ describe('SyncCoordinator', () => {
       { 'conversations/conv-1.jsonl': 500 }
     );
   });
+
+  it('propagates exact ReconcilePipeline paths through filesProcessed', async () => {
+    const jsonlWriter: IJSONLWriter = {
+      getDeviceId: jest.fn(() => 'mobile-device'),
+      listFiles: jest.fn(async () => []),
+      getFileModTime: jest.fn(async () => null),
+      readEvents: jest.fn(async () => []),
+      getEventsNotFromDevice: jest.fn(async () => [])
+    };
+    const sqliteCache: ISQLiteCacheManager = {
+      getSyncState: jest.fn(async () => null),
+      updateSyncState: jest.fn(async () => undefined),
+      isEventApplied: jest.fn(async () => false),
+      markEventApplied: jest.fn(async () => undefined),
+      run: jest.fn(async () => ({ changes: 1, lastInsertRowid: 1 })),
+      query: jest.fn(async () => []),
+      queryOne: jest.fn(async () => null),
+      clearAllData: jest.fn(async () => undefined),
+      rebuildFTSIndexes: jest.fn(async () => undefined),
+      save: jest.fn(async () => undefined)
+    };
+    const delta =
+      'nexus-data/data/tasks/tasks_default/' +
+      'shard-000003 (Syncthing Delta sha256-' + 'b'.repeat(64) + ').jsonl';
+    const reconcileAll = jest.fn(async () => ({
+      success: true,
+      eventsApplied: 1,
+      eventsSkipped: 41,
+      shardsScanned: 1,
+      shardsFastPathed: 0,
+      silentOverwriteRescans: 0,
+      errors: [],
+      duration: 1,
+      filesProcessed: [delta]
+    }));
+    const coordinator = new SyncCoordinator(jsonlWriter, sqliteCache);
+    coordinator.setReconcilePipeline({ reconcileAll } as never);
+
+    const result = await coordinator.sync();
+
+    expect(result.success).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.filesProcessed).toEqual([delta]);
+  });
 });

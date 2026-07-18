@@ -212,7 +212,7 @@ export class SyncCoordinator {
           reconcile.eventsSkipped,
           reconcile.errors,
           startTime,
-          []
+          reconcile.filesProcessed
         );
       }
 

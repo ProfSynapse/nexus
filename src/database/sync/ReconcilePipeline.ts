@@ -71,6 +71,8 @@ export interface ReconcileResult {
   errors: string[];
   /** Wall-clock duration in milliseconds. */
   duration: number;
+  /** Full vault-relative paths opened and nominally examined. */
+  filesProcessed: string[];
 }
 
 export interface ReconcilePipelineOptions {
@@ -234,6 +236,7 @@ export class ReconcilePipeline {
     // reads are a future optimization — applied_events PK already keeps the
     // apply path O(1) per duplicate event.
     const events = await this.readShardEvents(handle, parsed.shardFileName);
+    totals.filesProcessed.push(shardFullPath);
 
     // Layer 1 — cursor fast-path: if the last applied event matches the
     // shard's tail event, this shard has no new events for us.
@@ -321,7 +324,7 @@ export class ReconcilePipeline {
     const shards = await handle.shardStore.listShards(handle.relativeStreamPath);
     const target = shards.find((s) => s.fileName === shardFileName);
     if (!target) {
-      return [];
+      throw new Error(`Shard not found: ${handle.absoluteStreamPath}/${shardFileName}`);
     }
     return readEventsFromShardFile(handle, target.fullPath);
   }
@@ -375,7 +378,8 @@ export class ReconcilePipeline {
       shardsFastPathed: 0,
       silentOverwriteRescans: 0,
       errors: [],
-      duration: 0
+      duration: 0,
+      filesProcessed: []
     };
   }
 
@@ -386,6 +390,11 @@ export class ReconcilePipeline {
     into.shardsFastPathed += from.shardsFastPathed;
     into.silentOverwriteRescans += from.silentOverwriteRescans;
     into.errors.push(...from.errors);
+    for (const path of from.filesProcessed) {
+      if (!into.filesProcessed.includes(path)) {
+        into.filesProcessed.push(path);
+      }
+    }
   }
 
   private finalize(result: ReconcileResult, start: number): ReconcileResult {

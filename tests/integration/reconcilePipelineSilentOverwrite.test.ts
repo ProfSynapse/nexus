@@ -286,6 +286,9 @@ function makeHarness(deviceId = 'desktop-A'): PipelineHarness {
 const SHARD = 'shard-000001.jsonl';
 const STREAM = 'conv_abc';
 const SHARD_VAULT_PATH = `${ROOT_PATH}/conversations/${STREAM}/${SHARD}`;
+const DELTA_SHARD =
+  'shard-000003 (Syncthing Delta sha256-' + 'b'.repeat(64) + ').jsonl';
+const DELTA_SHARD_VAULT_PATH = `${ROOT_PATH}/conversations/${STREAM}/${DELTA_SHARD}`;
 
 // ---------------------------------------------------------------------------
 // P1.7.a — Silent-overwrite GREEN-BAR (architect §6)
@@ -535,7 +538,82 @@ describe('P1.7.f — watcher external-mutation → reconcileStream flow', () => 
 
     expect(result.success).toBe(false);
     expect(result.errors[0]).toContain('Cannot parse shard path');
+    expect(result.filesProcessed).toEqual([]);
     expect(applied.count()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nominal shard coverage receipt
+// ---------------------------------------------------------------------------
+
+describe('ReconcilePipeline nominal shard coverage receipt', () => {
+  it('reports a scanned delta path once and applies its exclusive event', async () => {
+    const { pipeline, store, applied } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, DELTA_SHARD, [
+      { id: 'delta-exclusive', timestamp: 1, deviceId: 'B' }
+    ]);
+
+    const result = await pipeline.reconcileShard(DELTA_SHARD_VAULT_PATH);
+
+    expect(result.success).toBe(true);
+    expect(result.shardsScanned).toBe(1);
+    expect(result.filesProcessed).toEqual([DELTA_SHARD_VAULT_PATH]);
+    expect(result.eventsApplied).toBe(1);
+    expect(applied.has('delta-exclusive')).toBe(true);
+  });
+
+  it('reports a cursor-fast-pathed delta without applying its event twice', async () => {
+    const { pipeline, store, applied } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, DELTA_SHARD, [
+      { id: 'delta-exclusive', timestamp: 1, deviceId: 'B' }
+    ]);
+    await pipeline.reconcileShard(DELTA_SHARD_VAULT_PATH);
+    const appliedAfterFirst = applied.count();
+
+    const second = await pipeline.reconcileShard(DELTA_SHARD_VAULT_PATH);
+
+    expect(second.success).toBe(true);
+    expect(second.shardsFastPathed).toBe(1);
+    expect(second.eventsApplied).toBe(0);
+    expect(second.filesProcessed).toEqual([DELTA_SHARD_VAULT_PATH]);
+    expect(applied.count()).toBe(appliedAfterFirst);
+  });
+
+  it('aggregates stream coverage in first-seen order without duplicate paths', async () => {
+    const { pipeline, store } = makeHarness('desktop-A');
+    store.setShardContent('conversations', 'conv_alpha', DELTA_SHARD, [
+      { id: 'alpha-exclusive', timestamp: 1, deviceId: 'A' }
+    ]);
+    store.setShardContent('conversations', 'conv_beta', SHARD, [
+      { id: 'beta-exclusive', timestamp: 2, deviceId: 'B' }
+    ]);
+    jest.spyOn(store, 'listFiles').mockImplementation(async (category) =>
+      category === 'conversations'
+        ? [
+            'conversations/conv_alpha.jsonl',
+            'conversations/conv_alpha.jsonl',
+            'conversations/conv_beta.jsonl'
+          ]
+        : []
+    );
+
+    const result = await pipeline.reconcileAll();
+
+    expect(result.success).toBe(true);
+    expect(result.filesProcessed).toEqual([
+      `${ROOT_PATH}/conversations/conv_alpha/${DELTA_SHARD}`,
+      `${ROOT_PATH}/conversations/conv_beta/${SHARD}`
+    ]);
+  });
+
+  it('does not claim coverage for a missing parseable shard', async () => {
+    const { pipeline } = makeHarness('desktop-A');
+
+    const result = await pipeline.reconcileShard(DELTA_SHARD_VAULT_PATH);
+
+    expect(result.success).toBe(false);
+    expect(result.filesProcessed).toEqual([]);
   });
 });
 
