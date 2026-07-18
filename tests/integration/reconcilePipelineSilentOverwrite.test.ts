@@ -127,6 +127,7 @@ interface FakeStreamHandle {
 class FakeVaultEventStore {
   /** Map<category/streamId, Map<fileName, jsonlContent>>. */
   private readonly shards = new Map<string, Map<string, string>>();
+  private readonly disappearAfterList = new Set<string>();
 
   getRootPath(): string {
     return ROOT_PATH;
@@ -154,6 +155,10 @@ class FakeVaultEventStore {
     events: { id: string; timestamp: number; deviceId?: string }[]
   ): void {
     this.setShardContent(category, streamId, fileName, events);
+  }
+
+  removeShardAfterNextList(category: string, streamId: string, fileName: string): void {
+    this.disappearAfterList.add(`${category}/${streamId}/${fileName}`);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -221,6 +226,12 @@ class FakeVaultEventStore {
             modTime: 0
           });
         }
+        for (const descriptor of descriptors) {
+          const disappearanceKey = `${key}/${descriptor.fileName}`;
+          if (this.disappearAfterList.delete(disappearanceKey)) {
+            files.delete(descriptor.fileName);
+          }
+        }
         return descriptors.sort((a, b) => a.index - b.index);
       },
       app: { vault: { adapter } }
@@ -237,7 +248,13 @@ class FakeVaultEventStore {
 }
 
 class FakeSqliteCache {
+  private readonly failMarkOnceFor = new Set<string>();
+
   constructor(private readonly applied: FakeAppliedEventsStore) {}
+
+  failNextMark(eventId: string): void {
+    this.failMarkOnceFor.add(eventId);
+  }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async isEventApplied(eventId: string): Promise<boolean> {
@@ -246,6 +263,9 @@ class FakeSqliteCache {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async markEventApplied(eventId: string): Promise<void> {
+    if (this.failMarkOnceFor.delete(eventId)) {
+      throw new Error(`Fake sqlite cache: mark failed for ${eventId}`);
+    }
     this.applied.mark({ id: eventId, category: '<unknown>', timestamp: 0 });
   }
 }
@@ -255,6 +275,7 @@ interface PipelineHarness {
   store: FakeVaultEventStore;
   cursors: FakeSyncStateStore;
   applied: FakeAppliedEventsStore;
+  sqliteCache: FakeSqliteCache;
   appliers: { workspace: FakeApplier; conversation: FakeApplier; task: FakeApplier };
 }
 
@@ -280,7 +301,7 @@ function makeHarness(deviceId = 'desktop-A'): PipelineHarness {
     deviceId
   });
 
-  return { pipeline, store, cursors, applied, appliers };
+  return { pipeline, store, cursors, applied, sqliteCache, appliers };
 }
 
 const SHARD = 'shard-000001.jsonl';
@@ -614,6 +635,88 @@ describe('ReconcilePipeline nominal shard coverage receipt', () => {
 
     expect(result.success).toBe(false);
     expect(result.filesProcessed).toEqual([]);
+  });
+
+  it('fails closed when a listed shard disappears before adapter read', async () => {
+    const { pipeline, store, cursors } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, DELTA_SHARD, [
+      { id: 'delta-vanished', timestamp: 1, deviceId: 'B' }
+    ]);
+    store.removeShardAfterNextList('conversations', STREAM, DELTA_SHARD);
+
+    const result = await pipeline.reconcileShard(DELTA_SHARD_VAULT_PATH);
+
+    expect(result.success).toBe(false);
+    expect(result.filesProcessed).toEqual([]);
+    expect(cursors.upsertCalls).toBe(0);
+  });
+});
+
+describe('ReconcilePipeline incomplete shard application', () => {
+  it('retries a failed apply without advancing the cursor or duplicating applied event ids', async () => {
+    const { pipeline, store, cursors, applied, appliers } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, SHARD, [
+      { id: 'e1', timestamp: 1, deviceId: 'A' },
+      { id: 'e2', timestamp: 2, deviceId: 'A' },
+      { id: 'e3', timestamp: 3, deviceId: 'A' }
+    ]);
+    const originalApply = appliers.conversation.apply.bind(appliers.conversation);
+    let failE2Once = true;
+    jest.spyOn(appliers.conversation, 'apply').mockImplementation(async (event) => {
+      if (event.id === 'e2' && failE2Once) {
+        failE2Once = false;
+        throw new Error('Fake applier: apply failed for e2');
+      }
+      await originalApply(event);
+    });
+
+    const failed = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+
+    expect(failed.success).toBe(false);
+    expect(failed.filesProcessed).toEqual([SHARD_VAULT_PATH]);
+    expect(await cursors.getCursor('desktop-A', SHARD_VAULT_PATH)).toBeNull();
+    expect(cursors.upsertCalls).toBe(0);
+    expect(applied.has('e1')).toBe(true);
+    expect(applied.has('e2')).toBe(false);
+    expect(applied.has('e3')).toBe(true);
+
+    const retried = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+
+    expect(retried.success).toBe(true);
+    expect(retried.eventsApplied).toBe(1);
+    expect(retried.eventsSkipped).toBe(2);
+    expect((await cursors.getCursor('desktop-A', SHARD_VAULT_PATH))?.lastEventId).toBe('e3');
+    expect(cursors.upsertCalls).toBe(1);
+    const appliedIds = appliers.conversation.applied.map((event) => event.id);
+    expect(appliedIds.filter((id) => id === 'e1')).toHaveLength(1);
+    expect(appliedIds.filter((id) => id === 'e2')).toHaveLength(1);
+    expect(appliedIds.filter((id) => id === 'e3')).toHaveLength(1);
+
+    const fastPathed = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+    expect(fastPathed.shardsFastPathed).toBe(1);
+  });
+
+  it('does not advance the cursor when applied_events marking fails', async () => {
+    const { pipeline, store, cursors, sqliteCache } = makeHarness('desktop-A');
+    store.setShardContent('conversations', STREAM, SHARD, [
+      { id: 'e1', timestamp: 1, deviceId: 'A' },
+      { id: 'e2', timestamp: 2, deviceId: 'A' }
+    ]);
+    sqliteCache.failNextMark('e2');
+
+    const failed = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+
+    expect(failed.success).toBe(false);
+    expect(failed.filesProcessed).toEqual([SHARD_VAULT_PATH]);
+    expect(await cursors.getCursor('desktop-A', SHARD_VAULT_PATH)).toBeNull();
+    expect(cursors.upsertCalls).toBe(0);
+
+    const retried = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+    expect(retried.success).toBe(true);
+    expect((await cursors.getCursor('desktop-A', SHARD_VAULT_PATH))?.lastEventId).toBe('e2');
+
+    const fastPathed = await pipeline.reconcileShard(SHARD_VAULT_PATH);
+    expect(fastPathed.shardsFastPathed).toBe(1);
   });
 });
 

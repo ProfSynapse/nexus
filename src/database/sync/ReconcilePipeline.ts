@@ -277,9 +277,14 @@ export class ReconcilePipeline {
       }
     }
 
-    // Cursor advances to the tail of the sorted run regardless of whether new
-    // events were applied. A re-run after a partial failure still fast-paths
-    // correctly because the tail event lives in `applied_events` (Layer 2).
+    // Cursor advances only after every event was either applied and marked or
+    // skipped as already applied. Leaving it unchanged on partial failure
+    // forces a later reconcile through Layer 2 instead of incorrectly taking
+    // the cursor fast-path past the failed event.
+    if (totals.errors.length > 0) {
+      return this.finalize(totals, start);
+    }
+
     const tail = sorted.length > 0 ? sorted[sorted.length - 1] : null;
     const nextCursor: ShardCursor = {
       deviceId: this.deviceId,
@@ -461,7 +466,7 @@ async function readEventsFromShardFile(
   }).app.vault.adapter;
 
   if (!(await adapter.exists(shardFullPath))) {
-    return [];
+    throw new Error(`Shard disappeared before read: ${shardFullPath}`);
   }
   const content = await adapter.read(shardFullPath);
   if (!content.trim()) {
