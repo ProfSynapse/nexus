@@ -40,6 +40,7 @@ export interface ShardDescriptor {
   relativePath: string;
   size: number;
   modTime: number | null;
+  conflictMarker: string | null;
 }
 
 export interface AppendEventResult<TEvent> {
@@ -48,6 +49,17 @@ export interface AppendEventResult<TEvent> {
   recordBytes: number;
   rotated: boolean;
   shard: ShardDescriptor;
+}
+
+export function latestCanonicalShard(
+  shards: readonly ShardDescriptor[]
+): ShardDescriptor | null {
+  for (let index = shards.length - 1; index >= 0; index -= 1) {
+    if (shards[index].conflictMarker === null) {
+      return shards[index];
+    }
+  }
+  return null;
 }
 
 export function formatShardFileName(index: number, width = DEFAULT_SHARD_FILE_WIDTH): string {
@@ -62,8 +74,9 @@ export function formatShardFileName(index: number, width = DEFAULT_SHARD_FILE_WI
  * siblings (e.g. `shard-000001 (1).jsonl`, `shard-000001 [Conflict].jsonl`),
  * `conflictMarker` carries the suffix string for telemetry.
  *
- * Callers index by `baseIndex`; `conflictMarker` is consumed only at the
- * telemetry warn site in `ShardedJsonlStreamStore.listShards`.
+ * Callers index by `baseIndex`; `conflictMarker` is retained on shard
+ * descriptors so readers can include conflict siblings while writers select
+ * canonical shards only.
  */
 export function parseShardFileNameWithConflict(
   fileName: string
@@ -177,7 +190,8 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
         index: parsed.baseIndex,
         relativePath: this.buildRelativePath(relativeStreamPath, fileName),
         size: stat.size,
-        modTime: stat.mtime ?? null
+        modTime: stat.mtime ?? null,
+        conflictMarker: parsed.conflictMarker
       });
     }
 
@@ -202,7 +216,7 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
     return this.locks.acquire(streamPath, async () => {
       const appended: TEvent[] = [];
       let shards = await this.listShards(relativeStreamPath);
-      let currentShard = shards.length > 0 ? shards[shards.length - 1] : null;
+      let currentShard = latestCanonicalShard(shards);
 
       for (const event of events) {
         const result = await this.appendEventToLockedStream(relativeStreamPath, event, currentShard);
@@ -303,7 +317,7 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
     currentShardOverride: ShardDescriptor | null = null
   ): Promise<AppendEventResult<TEvent>> {
     const shards = currentShardOverride ? [currentShardOverride] : await this.listShards(relativeStreamPath);
-    const currentShard = shards.length > 0 ? shards[shards.length - 1] : null;
+    const currentShard = latestCanonicalShard(shards);
     const serializedEvent = JSON.stringify(event);
     const serializedRecord = `${serializedEvent}\n`;
     const recordBytes = this.getUtf8ByteLength(serializedRecord);
@@ -342,7 +356,8 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
         index: targetIndex,
         relativePath: this.buildRelativePath(relativeStreamPath, fileName),
         size: stat?.size ?? recordBytes,
-        modTime: stat?.mtime ?? null
+        modTime: stat?.mtime ?? null,
+        conflictMarker: null
       }
     };
   }

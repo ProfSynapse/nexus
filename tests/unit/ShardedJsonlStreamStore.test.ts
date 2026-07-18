@@ -58,6 +58,87 @@ describe('ShardedJsonlStreamStore', () => {
     );
   });
 
+  it('ignores a larger conflict sibling when selecting the append target', async () => {
+    const canonical = `${JSON.stringify(makeEvent('evt-canonical'))}\n`;
+    const delta = `${JSON.stringify({
+      id: 'evt-delta',
+      type: 'test_event',
+      payload: 'x'.repeat(500)
+    })}\n`;
+    const base = 'Assistant data/tasks/tasks_default';
+    const deltaName =
+      `shard-000003 (Syncthing Delta sha256-${'a'.repeat(64)}).jsonl`;
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/shard-000003.jsonl`]: canonical,
+      [`${base}/${deltaName}`]: delta
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data',
+      maxShardBytes: canonical.length + 200
+    });
+
+    const result = await store.appendEvent('tasks/tasks_default', makeEvent('evt-new'));
+
+    expect(result.rotated).toBe(false);
+    expect(result.shard.fileName).toBe('shard-000003.jsonl');
+    expect(adapter.append).toHaveBeenCalledWith(
+      `${base}/shard-000003.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new'))}\n`
+    );
+    expect(adapter.write).not.toHaveBeenCalledWith(
+      `${base}/shard-000004.jsonl`,
+      expect.any(String)
+    );
+
+    const shards = await store.listShards('tasks/tasks_default');
+    expect(shards.map(shard => shard.fileName)).toEqual([
+      'shard-000003.jsonl',
+      deltaName
+    ]);
+  });
+
+  it('ignores a larger conflict sibling when appending multiple events', async () => {
+    const canonical = `${JSON.stringify(makeEvent('evt-canonical'))}\n`;
+    const deltaName =
+      `shard-000003 (Syncthing Delta sha256-${'b'.repeat(64)}).jsonl`;
+    const delta = `${JSON.stringify({
+      id: 'evt-delta',
+      type: 'test_event',
+      payload: 'x'.repeat(500)
+    })}\n`;
+    const base = 'Assistant data/tasks/tasks_default';
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/shard-000003.jsonl`]: canonical,
+      [`${base}/${deltaName}`]: delta
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data',
+      maxShardBytes: canonical.length + 200
+    });
+
+    await store.appendEvents('tasks/tasks_default', [
+      makeEvent('evt-new-1'),
+      makeEvent('evt-new-2')
+    ]);
+
+    expect(adapter.append).toHaveBeenNthCalledWith(
+      1,
+      `${base}/shard-000003.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new-1'))}\n`
+    );
+    expect(adapter.append).toHaveBeenNthCalledWith(
+      2,
+      `${base}/shard-000003.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new-2'))}\n`
+    );
+    expect(adapter.write).not.toHaveBeenCalledWith(
+      `${base}/shard-000004.jsonl`,
+      expect.any(String)
+    );
+  });
+
   it('rotates to a new shard when the next append would cross the byte limit', async () => {
     const initialContent = `${JSON.stringify(makeEvent('evt-1', { payload: 'x'.repeat(20) }))}\n`;
     const { app, adapter } = createMockApp({ initialFiles: {

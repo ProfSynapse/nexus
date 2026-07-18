@@ -43,6 +43,7 @@ const PARSER_FIXTURES: ParserExpectation[] = [
   { fileName: 'shard-000001_conf(1).jsonl',                                             expected: { kind: 'conflict', baseIndex: 1, conflictMarker: '(1)' },             notes: 'GDrive _conf variant' },
   { fileName: 'shard-000001 (Conflicted copy 2026-05-06).jsonl',                        expected: { kind: 'conflict', baseIndex: 1, conflictMarker: '(Conflicted copy 2026-05-06)' }, notes: 'defensive Dropbox-style' },
   { fileName: "shard-000001 (joseph's conflicted copy 2026-05-06 14-22-01).jsonl",      expected: { kind: 'conflict', baseIndex: 1, conflictMarker: "(joseph's conflicted copy 2026-05-06 14-22-01)" }, notes: 'Dropbox' },
+  { fileName: `shard-000003 (Syncthing Delta sha256-${'a'.repeat(64)}).jsonl`,             expected: { kind: 'conflict', baseIndex: 3, conflictMarker: `(Syncthing Delta sha256-${'a'.repeat(64)})` }, notes: 'managed Nexus delta shadow' },
   { fileName: 'shard-000001 2.jsonl',                                                   expected: { kind: 'conflict', baseIndex: 1, conflictMarker: '2' },               notes: 'iCloud' },
   // Rejects
   { fileName: 'shard-000001-backup.jsonl',                                              expected: { kind: 'reject' },                                                    notes: 'reject' },
