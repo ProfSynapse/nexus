@@ -177,6 +177,11 @@ CLI SYNTAX
 GOTCHAS
   • \`nexus tools\` returns schemas, not data — never loop it for content.
   • Search/list return locations (path + score) — follow every hit with \`content read\`.
+  • \`content read\` requires a start line: content read --path X --start-line 1 (1 = top).
+  • ALL flags are kebab-case — camelCase (e.g. --newPath, --activeTask) is rejected as
+    an unknown flag; use --new-path, --active-task. Get exact flags from \`nexus tools <tool>\`.
+  • Context fields (--workspace/--session/--memory/--goal) go at the TOP LEVEL, never
+    inside the "tool" string — e.g. --workspace-id inside the command is rejected.
   • --memory/--goal are enforced — send real values or the call is rejected.
   • Media generation is async — \`prompt generate-*\` returns a job; poll
     \`prompt check-generated-artifact\`.
@@ -194,7 +199,7 @@ ${playbookLines}
 
 EXAMPLES
   nexus tools "content read, search content"
-  nexus use "content read --path Daily/2026-07-17.md" --memory "auditing notes" --goal "read today's daily"
+  nexus use "content read --path Daily/2026-07-17.md --start-line 1" --memory "auditing notes" --goal "read today's daily"
   nexus use "storage list" --vault "My Notes" --memory "smoke test" --goal "list vault root"
   nexus playbook vault-work
 `;
@@ -338,7 +343,7 @@ async function main(): Promise<number> {
     if (cmd === 'use') {
         const command = positionals[1];
         if (!command) {
-            process.stderr.write('Error: `use` needs a command string, e.g. nexus use "content read --path X" --memory .. --goal ..\n');
+            process.stderr.write('Error: `use` needs a command string, e.g. nexus use "content read --path X --start-line 1" --memory .. --goal ..\n');
             return 2;
         }
         const memory = typeof flags.memory === 'string' ? flags.memory : '';

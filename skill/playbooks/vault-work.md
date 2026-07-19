@@ -17,8 +17,9 @@ update it," "answer a question from my notes," "add a section to Y," etc.
    - `search directory --query "<name>" --paths "<folder>"` — by filename/path.
    - `storage list --path "<folder>"` — browse a known folder.
    Each returns **locations** (`path` + score), not contents.
-3. **Read before you act.** `content read --path <path>` on the hit(s). Never
-   quote, summarize, or edit from a search result alone — it has no body.
+3. **Read before you act.** `content read --path <path> --start-line 1` on the
+   hit(s) — `content read` **requires a start line** (use `1` to read from the
+   top). Never quote, summarize, or edit from a search result alone — it has no body.
 4. **Make the change** with the narrowest tool:
    - `content set-property` — a frontmatter field.
    - `content insert` — add a section (append/prepend/at an anchor).
@@ -42,7 +43,7 @@ nexus use "search content --query 'authentication flow' --limit 5" \
   --memory "looking for the main auth note" --goal "locate the auth flow note"
 
 # 3. read the top hit (search gave a path, not the text)
-nexus use "content read --path Projects/Auth/flow.md" \
+nexus use "content read --path Projects/Auth/flow.md --start-line 1" \
   --workspace research --session auth-summary \
   --memory "found Projects/Auth/flow.md; reading it" --goal "read the auth flow note"
 
@@ -55,10 +56,10 @@ nexus use "content replace --path Projects/Auth/flow.md \
 
 # 5. checkpoint (create-state needs name + context + task + file/step arrays)
 nexus use "memory create-state --name auth-summary-done \
-  --conversationContext 'summarized the auth flow note into a Summary section' \
-  --activeTask 'add a summary to flow.md' \
-  --activeFiles '[Projects/Auth/flow.md]' \
-  --nextSteps '[review the summary with the team]'" \
+  --conversation-context 'summarized the auth flow note into a Summary section' \
+  --active-task 'add a summary to flow.md' \
+  --active-files '[Projects/Auth/flow.md]' \
+  --next-steps '[review the summary with the team]'" \
   --workspace research --session auth-summary \
   --memory "summary written to flow.md" --goal "checkpoint the finished edit"
 ```

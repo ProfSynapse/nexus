@@ -22,9 +22,9 @@ Unlike `vault-work` (which edits note *bodies*), this moves and files whole note
 3. **Plan the moves** — decide target folders. Create any missing folder first
    with `storage create-folder --path "<folder>"`.
 4. **Execute, one file at a time**, verifying each result:
-   - `storage move --path <src> --newPath <dst>` — relocate/rename (both paths
+   - `storage move --path <src> --new-path <dst>` — relocate/rename (both paths
      validated; target's parent folder must exist).
-   - `storage copy --path <src> --newPath <dst>` — duplicate instead of move.
+   - `storage copy --path <src> --new-path <dst>` — duplicate instead of move.
    - `storage archive --path <path>` — soft-remove (reversible), for retiring a
      note without deleting it.
 5. **Checkpoint** with `memory create-state` after a batch, so a bad reshuffle is
@@ -49,16 +49,16 @@ nexus use "storage create-folder --path Daily/Archive/2025" \
   --memory "have the 2025 list; creating archive folder" --goal "create Daily/Archive/2025"
 
 # 4. move each note (one call per file — verify each)
-nexus use "storage move --path 'Daily/2025-01-03.md' --newPath 'Daily/Archive/2025/2025-01-03.md'" \
+nexus use "storage move --path 'Daily/2025-01-03.md' --new-path 'Daily/Archive/2025/2025-01-03.md'" \
   --workspace journal --session tidy-dailies \
   --memory "moving 2025 dailies into the archive folder" --goal "move 2025-01-03.md"
 
 # 5. checkpoint after the batch
 nexus use "memory create-state --name dailies-archived \
-  --conversationContext 'moved all 2025 daily notes into Daily/Archive/2025' \
-  --activeTask 'archive old dailies' \
-  --activeFiles '[Daily/Archive/2025]' \
-  --nextSteps '[do the same for 2024]'" \
+  --conversation-context 'moved all 2025 daily notes into Daily/Archive/2025' \
+  --active-task 'archive old dailies' \
+  --active-files '[Daily/Archive/2025]' \
+  --next-steps '[do the same for 2024]'" \
   --workspace journal --session tidy-dailies \
   --memory "2025 dailies archived" --goal "checkpoint the reorg"
 ```
@@ -74,4 +74,4 @@ nexus use "memory create-state --name dailies-archived \
 - **`query-notes` is read-only** — it finds notes; it never changes them. Use its
   output as the move list.
 - **Paths are vault-relative and confined** — no `..`/`~`/absolute on either
-  `--path` or `--newPath`.
+  `--path` or `--new-path`.

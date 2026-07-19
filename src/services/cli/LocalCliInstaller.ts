@@ -118,7 +118,8 @@ export class LocalCliInstaller {
             try {
                 stale = fs.readFileSync(paths.cliJsPath, 'utf-8') !== NEXUS_CLI_JS
                     || (!fs.existsSync(paths.skillMdPath) || fs.readFileSync(paths.skillMdPath, 'utf-8') !== NEXUS_SKILL_MD)
-                    || this.playbooksStale(paths);
+                    || this.playbooksStale(paths)
+                    || this.codexBlockStale(paths.codexAgentsPath);
             } catch { stale = true; }
         }
         return {
@@ -260,6 +261,12 @@ export class LocalCliInstaller {
                 this.writePlaybooks(paths);
                 changed = true;
             }
+            // The Claude Code skill is a symlink (always live), but the Codex block is
+            // copied content — refresh it here too so it doesn't drift after an update.
+            if (this.codexBlockStale(paths.codexAgentsPath)) {
+                this.writeCodexBlock(paths.codexAgentsPath);
+                changed = true;
+            }
         } catch { /* refresh is best-effort */ }
         return changed;
     }
@@ -348,6 +355,15 @@ export class LocalCliInstaller {
         const fs = this.fs();
         try { return fs.existsSync(agentsPath) && fs.readFileSync(agentsPath, 'utf-8').includes(AGENTS_BEGIN); }
         catch { return false; }
+    }
+
+    /** True if a Codex block is present but its content differs from the current embed. */
+    private codexBlockStale(agentsPath: string): boolean {
+        if (!this.hasCodexBlock(agentsPath)) return false; // absent → nothing to refresh
+        const fs = this.fs();
+        const expected = `${AGENTS_BEGIN}\n${NEXUS_AGENTS_MD.trim()}\n${AGENTS_END}`;
+        try { return !fs.readFileSync(agentsPath, 'utf-8').includes(expected); }
+        catch { return true; }
     }
 
     private writeCodexBlock(agentsPath: string): void {

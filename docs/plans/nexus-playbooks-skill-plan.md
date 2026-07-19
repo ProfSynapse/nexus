@@ -1,8 +1,28 @@
 # Nexus usage skill + `nexus playbook` — plan
 
 **Status:** implemented (Tracks A–D landed; verified against the live `code` vault) + Fable
-red-team pass applied. Manual in-Obsidian install/reconcile smoke still pending.
+red-team pass + Opus doc-vs-schema audit applied + installed & tested in Obsidian.
 **Branch:** `feat/nexus-playbooks-skill` (PR #289)
+
+**Doc-vs-schema audit (2026-07-19, Opus, against the live vault) — fixed in-PR:** the server CLI
+parser matches `--flags` by **exact kebab-case equality** and throws `Unknown flag` on any miss (no
+camelCase normalization); context fields (`workspace`/`session`/`memory`/`goal`) are reserved and
+rejected *inside* the tool string. Every documented example must obey both. Fixed four blocking
+doc bugs an agent would hit verbatim: (1) `content read` needs `--start-line` (found during manual
+test); (2) `memory create-state` flags were camelCase → kebab (`--conversation-context`,
+`--active-task`, `--active-files`, `--next-steps`) across all 3 playbooks + `_preamble`; (3)
+`storage move`/`copy` `--newPath` → `--new-path`; (4) **tasks.md's whole `--workspace-id` model was
+fabricated** — task tools scope via the top-level `--workspace <name-or-id>` context flag (verified
+live: both name and id resolve; `--workspace-id` inside the tool string is rejected), so the "two
+workspace values" section was rewritten. Added the kebab-flag + top-level-context rules to the
+`--help` GOTCHAS. All corrected flag names re-verified against live `nexus tools <tool>` schemas.
+
+**Codex reconcile fix:** the Claude Code skill is a symlink (always live) but the Codex
+`~/.codex/AGENTS.md` block is copied text that `reconcile()` never refreshed → stale after updates.
+Added `codexBlockStale()`, wired into `reconcile()` (auto-refresh) and `status().stale`.
+
+**Follow-up (agreed):** provider-selection UI in GetStartedTab (checkbox list of which agent
+providers to install into, incl. ones we don't auto-detect) — its own small PR after #289 lands.
 
 **Red-team review (2026-07-19, Fable) — fixed in-PR:** (1) BLOCKING — `readdirSync` was dropped
 from the `node:fs` import during the `cli/playbooks.ts` extraction, silently killing vault

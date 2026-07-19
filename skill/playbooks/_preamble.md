@@ -17,7 +17,10 @@ so you can go straight to `nexus use` without a separate `nexus tools` call.
    current objective. Placeholders are rejected.
 4. **Checkpoint at milestones** with `memory create-state` so the work is
    restorable (archive is reversible; there is no destructive delete). It needs a
-   few fields — `name`, `conversationContext`, `activeTask`, `activeFiles` (array),
-   `nextSteps` (array); run `nexus tools memory create-state` for the full schema.
+   few flags — `--name`, `--conversation-context`, `--active-task`, `--active-files`
+   (array), `--next-steps` (array); run `nexus tools memory create-state` for the
+   full schema.
 
-Paths are vault-relative and confined — no `..`, `~`, or absolute escapes.
+Paths are vault-relative and confined — no `..`, `~`, or absolute escapes. **All
+flags are kebab-case** — camelCase (e.g. `--activeTask`) is rejected as an unknown
+flag; use `--active-task`.

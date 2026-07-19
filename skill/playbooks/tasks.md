@@ -8,26 +8,29 @@ tools: [task create-project, task list-projects, task create, task list, task qu
 
 Workspace-scoped project/task management with a dependency DAG. Use it for "start
 a project," "add these tasks and their dependencies," "what's unblocked," "mark X
-done." Tasks live **inside a workspace and a project**, so this playbook's first
-job is getting those two ids.
+done." Tasks live **inside a workspace, under a project** — so the flow is: load
+the workspace, get or create a project (capture its `projectId`), then add tasks.
 
-## The one thing to get right: two different "workspace" values
+## The one thing to get right: workspace vs project
 
-- The **outer `--workspace` context flag** scopes traces/memory (a name).
-- Task tools take an **explicit `--workspace-id` param** — the id **returned by
-  `memory load-workspace`** (or `create-workspace`). Projects then return a
-  **`projectId`** you pass to task calls as `--project-id`.
+- **Workspace** comes from the **top-level `--workspace <name-or-id>` context
+  flag** — the same flag you pass on every call, set to the workspace you loaded.
+  Task tools read their workspace scope from it automatically. **Do not** put
+  `--workspace-id` *inside* the tool string — it's a reserved context field and
+  is rejected there.
+- **Project** is identified by a **`projectId`** that `task create-project` (or
+  `task list-projects`) returns. Capture it and pass it to task calls as
+  `--project-id`.
 
-So: load the workspace → capture its id → create/find a project → capture its id
-→ create tasks under it. Don't assume the outer `--workspace` name is accepted as
-`--workspace-id`; pass the id the load returned.
+So: load the workspace → thread `--workspace` on every call → create/find a
+project → capture its `projectId` → create tasks with `--project-id`.
 
 ## Protocol
 
-1. **Load the workspace** (spine above) and note the **workspaceId** it returns.
-2. **Get a project.** `task list-projects --workspace-id <id>` to find one, or
-   `task create-project --workspace-id <id> --name "<name>"` — note the
-   **projectId** it returns.
+1. **Load the workspace** (spine above); thread `--workspace <name-or-id>` on
+   every following call.
+2. **Get a project.** `task list-projects` (scoped by `--workspace`) to find one,
+   or `task create-project --name "<name>"` — note the **projectId** it returns.
 3. **Add tasks.** `task create --project-id <projectId> --title "<title>"` (add
    `--description`, dependencies, etc. — see `nexus tools task create`).
 4. **Wire dependencies / reorganize.** `task move` to reparent or reorder in the
@@ -41,14 +44,13 @@ So: load the workspace → capture its id → create/find a project → capture 
 ## Worked example — new project, two tasks, one depends on the other
 
 ```
-# 1. load the workspace — capture the workspaceId from the result
+# 1. load the workspace — thread --workspace (name or id) on every later call
 nexus use "memory load-workspace --workspace product" \
   --memory "planning the launch" --goal "load the product workspace" \
   --session launch-plan
-# → result includes the workspaceId, e.g. "ws_abc123"
 
-# 2. create a project — capture the projectId from the result
-nexus use "task create-project --workspace-id ws_abc123 --name 'Q3 Launch'" \
+# 2. create a project — workspace comes from --workspace; capture the projectId
+nexus use "task create-project --name 'Q3 Launch'" \
   --workspace product --session launch-plan \
   --memory "starting the Q3 launch project" --goal "create the Q3 Launch project"
 # → result includes the projectId, e.g. "proj_def456"
@@ -69,10 +71,10 @@ nexus use "task list --project-id proj_def456" \
 
 # 5. checkpoint
 nexus use "memory create-state --name launch-tasks-seeded \
-  --conversationContext 'created Q3 Launch project with copy + publish tasks' \
-  --activeTask 'set up the launch project' \
-  --activeFiles '[]' \
-  --nextSteps '[wire publish to depend on copy, assign owners]'" \
+  --conversation-context 'created Q3 Launch project with copy + publish tasks' \
+  --active-task 'set up the launch project' \
+  --active-files '[]' \
+  --next-steps '[wire publish to depend on copy, assign owners]'" \
   --workspace product --session launch-plan \
   --memory "project + tasks created" --goal "checkpoint the setup"
 ```
@@ -82,12 +84,13 @@ Run `nexus tools task create` / `task move` / `task update` for the exact fields
 
 ## Pitfalls
 
-- **Passing the workspace *name* as `--workspace-id`** — use the id the load
-  *returned*, not the outer `--workspace` name.
+- **Putting `--workspace-id` inside the tool string** — rejected as a reserved
+  context field. Scope task tools with the top-level `--workspace <name-or-id>`
+  flag instead (the workspace you loaded); it accepts a name *or* an id.
 - **Creating tasks with no project** — `task create` needs `--project-id`; make or
-  find the project first.
+  find the project first and capture the id it returns.
 - **`task link-note` needs a real `--note-path`** — a vault-relative path to an
   existing note (same confinement rules).
-- **Losing the ids** — capture `workspaceId`/`projectId` from each result; the
-  next call needs them. (Use `--json` if you need to parse them out.)
+- **Losing the projectId** — capture it from `create-project`/`list-projects`; the
+  task calls need it. (Use `--json` if you need to parse it out.)
 - **`archive-project` is reversible** — it's the retire action, not a delete.

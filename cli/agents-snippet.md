@@ -15,7 +15,8 @@ offline and instant, so read it before your first command instead of guessing.
 - **Task recipes:** `nexus playbook <name>` emits a ready-to-run recipe plus your
   workspaces and preloaded tools in one call (`nexus playbook` lists them).
 - Search/list results are **locations, not contents** — follow a hit with
-  `content read --path <path>`. `nexus tools` returns schemas, never data.
+  `content read --path <path> --start-line 1` (read requires a start line).
+  `nexus tools` returns schemas, never data.
 - One open vault is used automatically; if several are open, run `nexus vaults`
   and pass `--vault <name>` (or set `NEXUS_VAULT`).
 
