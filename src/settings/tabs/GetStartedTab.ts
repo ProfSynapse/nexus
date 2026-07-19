@@ -15,7 +15,7 @@ import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 import { CONNECTOR_JS_CONTENT } from '../../utils/connectorContent';
-import { LocalCliInstaller } from '../../services/cli/LocalCliInstaller';
+import { LocalCliInstaller, CliProviderId, CliInstallTargets } from '../../services/cli/LocalCliInstaller';
 import {
     appendCodexMcpTomlSnippet,
     buildCodexMcpTomlSnippet,
@@ -648,10 +648,54 @@ export class GetStartedTab {
         row.createSpan({ text: statusText, cls: 'nexus-mcp-status' });
 
         const actions = row.createDiv('nexus-mcp-actions');
+
+        // Provider picker — which agents to wire the nexus CLI into. Claude Code and
+        // Cursor use the same skills mechanism (a symlink into their skills dir);
+        // Codex gets an AGENTS.md pointer block.
+        const providers: Array<{ id: CliProviderId; label: string; hint: string }> = [
+            { id: 'claudeCode', label: 'Claude Code', hint: '~/.claude/skills' },
+            { id: 'cursor', label: 'Cursor', hint: '~/.cursor/skills' },
+            { id: 'codex', label: 'Codex', hint: '~/.codex/AGENTS.md' },
+        ];
+        const isLinked = (id: CliProviderId): boolean =>
+            id === 'claudeCode' ? status.skillLinked
+                : id === 'cursor' ? status.cursorLinked
+                    : status.codexLinked;
+
+        const picker = block.createDiv('nexus-cli-providers');
+        picker.createEl('p', {
+            text: status.installed
+                ? 'Wire the nexus CLI into these agents — toggle any time:'
+                : 'Choose which agents to wire the nexus CLI into:',
+            cls: 'setting-item-description'
+        });
+        const checkboxes = new Map<CliProviderId, HTMLInputElement>();
+        for (const prov of providers) {
+            const detectedHere = status.detected[prov.id];
+            const rowEl = picker.createDiv('nexus-cli-provider-row');
+            const cb = rowEl.createEl('input', { attr: { type: 'checkbox' } });
+            cb.checked = status.installed ? isLinked(prov.id) : detectedHere;
+            const label = rowEl.createEl('label');
+            label.createSpan({ text: prov.label });
+            label.createSpan({
+                text: detectedHere ? ` — ${prov.hint}` : ` — ${prov.hint} (not detected)`,
+                cls: 'nexus-cli-provider-hint'
+            });
+            checkboxes.set(prov.id, cb);
+            if (status.installed && component) {
+                // Post-install: each toggle wires/unwires that provider immediately.
+                component.registerDomEvent(cb, 'change', () => this.setCliProvider(installer, prov.id, prov.label, cb.checked));
+            }
+        }
+
         if (!status.installed) {
             const enableBtn = actions.createEl('button', { text: 'Install CLI', cls: 'mod-cta' });
             if (component) {
-                component.registerDomEvent(enableBtn, 'click', () => this.enableLocalCli(installer));
+                component.registerDomEvent(enableBtn, 'click', () => {
+                    const targets: Partial<CliInstallTargets> = {};
+                    for (const [id, cb] of checkboxes) targets[id] = cb.checked;
+                    this.enableLocalCli(installer, targets);
+                });
             }
         } else {
             const revealBtn = actions.createEl('button', { text: this.getRevealButtonText() });
@@ -663,17 +707,6 @@ export class GetStartedTab {
                 component.registerDomEvent(uninstallBtn, 'click', () => this.uninstallLocalCli(installer));
             }
         }
-
-        const detected = status.detected;
-        const detectedNames: string[] = [];
-        if (detected.claudeCode) detectedNames.push('Claude Code');
-        if (detected.codex) detectedNames.push('Codex');
-        block.createEl('p', {
-            text: detectedNames.length
-                ? `Detected on this machine: ${detectedNames.join(', ')}. The skill and pointer are wired up automatically.`
-                : 'No Claude Code (~/.claude) or Codex (~/.codex) detected — only the nexus command will be installed.',
-            cls: 'setting-item-description'
-        });
 
         const details = block.createEl('details', { cls: 'nexus-manual-details' });
         details.createEl('summary', { text: status.installed ? 'What’s installed' : 'What this installs' });
@@ -687,9 +720,9 @@ export class GetStartedTab {
         });
     }
 
-    private enableLocalCli(installer: LocalCliInstaller): void {
+    private enableLocalCli(installer: LocalCliInstaller, targets?: Partial<CliInstallTargets>): void {
         try {
-            const result = installer.enable();
+            const result = installer.enable(targets);
             const warn = result.warnings.length
                 ? ` (${result.warnings.length} note${result.warnings.length === 1 ? '' : 's'})`
                 : '';
@@ -699,6 +732,18 @@ export class GetStartedTab {
         } catch (error) {
             console.error('[GetStartedTab] Error installing local CLI:', error);
             new Notice(`Failed to install local CLI: ${(error as Error).message}`);
+        }
+    }
+
+    private setCliProvider(installer: LocalCliInstaller, id: CliProviderId, label: string, enabled: boolean): void {
+        try {
+            const result = installer.setProvider(id, enabled);
+            for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
+            new Notice(enabled ? `Wired nexus into ${label}.` : `Removed nexus from ${label}.`);
+            this.render();
+        } catch (error) {
+            console.error('[GetStartedTab] Error updating CLI provider:', error);
+            new Notice(`Failed to update ${label}: ${(error as Error).message}`);
         }
     }
 

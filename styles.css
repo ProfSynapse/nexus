@@ -4776,6 +4776,36 @@ body.is-mobile .message-action-btn.message-branch-next {
     color: var(--text-success);
 }
 
+.nexus-cli-providers {
+    margin-top: 10px;
+    padding: 10px 16px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+}
+
+.nexus-cli-provider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.nexus-cli-provider-row input[type="checkbox"] {
+    margin: 0;
+}
+
+.nexus-cli-provider-row label {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.nexus-cli-provider-hint {
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
+}
+
 .nexus-mcp-actions {
     display: flex;
     gap: 8px;
