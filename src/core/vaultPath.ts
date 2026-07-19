@@ -55,6 +55,18 @@ export class VaultPathError extends Error {
 const brand = (path: string): VaultPath => path as VaultPath;
 
 /**
+ * True if the string contains any C0 control character (U+0000–U+001F, incl. NUL).
+ * Codepoint scan rather than a control-char regex literal, which the store-scanner
+ * lint rejects.
+ */
+function hasControlCharacter(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) < 0x20) return true;
+  }
+  return false;
+}
+
+/**
  * Windows reserved device names. A file named after any of these (with or without
  * an extension, in any folder) maps to a device, not a file — writes silently
  * vanish (data loss) or block on a device (hang). Matched case-insensitively
@@ -143,8 +155,7 @@ export function tryResolveVaultPath(
 
   // Control characters (incl. NUL) are never legitimate in a vault path and can
   // defeat downstream string handling; Obsidian's normalizePath does not strip them.
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f]/.test(trimmed)) {
+  if (hasControlCharacter(trimmed)) {
     return { ok: false, error: 'Path cannot contain control characters.' };
   }
 
