@@ -7,8 +7,13 @@ import {
   tryResolveVaultPath,
   resolveVaultPath,
   vaultPathFromTrusted,
+  setConfinementConfigDir,
   VaultPathError,
 } from '@/core/vaultPath';
+
+// The Obsidian config-dir denylist is injected at startup; register the default
+// so the ".obsidian" rejection cases below are exercised (`.git` is unconditional).
+beforeAll(() => setConfinementConfigDir('.obsidian'));
 
 describe('vaultPath resolver — rejects escaping paths', () => {
   const escaping: Array<[string, string]> = [
@@ -27,6 +32,33 @@ describe('vaultPath resolver — rejects escaping paths', () => {
     ['leading backslash', '\\x.md'],
     ['backslash traversal', 'a\\..\\..\\b.md'],
     ['dot segment in middle', 'notes/./secret.md'],
+    // Windows strips trailing dots/spaces at the syscall layer, so these reach
+    // the filesystem as ".." even though they don't literally equal "..".
+    ['Windows dot-dot-space segment', 'a/.. /b.md'],
+    ['Windows dot-dot-space climb', 'a/.. /.. /secret.md'],
+    ['dots-only segment', 'a/.../b.md'],
+    ['dot-space segment', 'a/. /b.md'],
+    ['spaces-only segment', 'a/  /b.md'],
+    ['dot-dot with trailing dots', 'a/..../b.md'],
+    // Control characters (incl. NUL) — never valid, defeat downstream handling.
+    ['null byte', 'notes/x\x00.md'],
+    ['carriage return', 'notes/x\r.md'],
+    // NTFS alternate data stream via interior colon.
+    ['ADS colon', 'notes/x.md:hidden'],
+    ['bare colon', 'a/b:c.md'],
+    // Windows reserved device names (any folder, with/without extension).
+    ['reserved NUL', 'NUL'],
+    ['reserved NUL.md', 'notes/NUL.md'],
+    ['reserved CON lowercase', 'con.txt'],
+    ['reserved COM1', 'a/COM1.md'],
+    ['reserved LPT9', 'LPT9'],
+    ['reserved NUL trailing space', 'notes/NUL. '],
+    // Sensitive vault-internal dirs — inside the vault but RCE/config-tamper vectors.
+    ['.obsidian plugin write', '.obsidian/plugins/x/main.js'],
+    ['.obsidian data.json', '.obsidian/plugins/x/data.json'],
+    ['.git hook write', '.git/hooks/post-commit'],
+    ['.obsidian case-insensitive', '.Obsidian/x.json'],
+    ['.git leading slash', '/.git/config'],
   ];
 
   it.each(escaping)('rejects %s (%s)', (_label, input) => {
@@ -79,6 +111,8 @@ describe('vaultPath resolver — accepts legitimate vault paths (no false positi
     ['strips trailing slash', 'folder/', 'folder'],
     ['double dots as whole name', '..foo.md', '..foo.md'],
     ['trailing double-dot name', 'a/b..', 'a/b..'],
+    ['name with inner space', 'my notes/daily log.md', 'my notes/daily log.md'],
+    ['name ending in single dot', 'notes/draft./x.md', 'notes/draft./x.md'],
   ];
 
   it.each(valid)('accepts %s and canonicalizes to %s', (_label, input, expected) => {
@@ -93,6 +127,33 @@ describe('vaultPath resolver — accepts legitimate vault paths (no false positi
     const result = tryResolveVaultPath('.');
     expect(result.ok).toBe(true);
     if (result.ok) expect(String(result.path)).toBe('');
+  });
+});
+
+describe('sensitive-dir denylist (config-dir injection)', () => {
+  afterAll(() => setConfinementConfigDir('.obsidian')); // restore the suite default
+
+  it('always rejects .git regardless of injected config dir', () => {
+    setConfinementConfigDir(null);
+    expect(tryResolveVaultPath('.git/hooks/pre-commit').ok).toBe(false);
+  });
+
+  it('rejects the injected config dir but allows a note named like the default', () => {
+    setConfinementConfigDir('.obsidian');
+    expect(tryResolveVaultPath('.obsidian/plugins/x/main.js').ok).toBe(false);
+    // A folder that merely shares the prefix is not the config dir — allowed.
+    expect(tryResolveVaultPath('.obsidian-notes/x.md').ok).toBe(true);
+  });
+
+  it('honors a CUSTOM config dir and then allows .obsidian', () => {
+    setConfinementConfigDir('my-config');
+    expect(tryResolveVaultPath('my-config/plugins/x/main.js').ok).toBe(false);
+    expect(tryResolveVaultPath('.obsidian/x.md').ok).toBe(true); // not the config dir now
+  });
+
+  it('leaves trusted paths exempt from the denylist', () => {
+    setConfinementConfigDir('.obsidian');
+    expect(String(vaultPathFromTrusted('.obsidian/plugins/x/data.json'))).toBe('.obsidian/plugins/x/data.json');
   });
 });
 
@@ -115,6 +176,12 @@ describe('vaultPathFromTrusted (canonicalize-only, no rejection)', () => {
     expect(String(vaultPathFromTrusted('a/b/../c'))).toBe('a/c');
     expect(String(vaultPathFromTrusted('../../a'))).toBe('a');
     expect(String(vaultPathFromTrusted('..'))).toBe('');
+  });
+
+  it('pops the Windows dot-dot-space form and skips all-dots/spaces segments', () => {
+    expect(String(vaultPathFromTrusted('a/b/.. /c'))).toBe('a/c'); // ".. " → parent
+    expect(String(vaultPathFromTrusted('a/.../b'))).toBe('a/b');   // "..." → no-op skip
+    expect(String(vaultPathFromTrusted('a/   /b'))).toBe('a/b');   // spaces → no-op skip
   });
 
   it('handles empty / nullish input without throwing', () => {

@@ -55,6 +55,48 @@ export class VaultPathError extends Error {
 const brand = (path: string): VaultPath => path as VaultPath;
 
 /**
+ * Windows reserved device names. A file named after any of these (with or without
+ * an extension, in any folder) maps to a device, not a file — writes silently
+ * vanish (data loss) or block on a device (hang). Matched case-insensitively
+ * against the segment's basename (portion before the first dot).
+ */
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+/**
+ * Vault-internal directories that are inside the vault (so traversal confinement
+ * passes) but must never receive an UNTRUSTED write, because their contents are
+ * executed: the Obsidian config folder holds plugin code and config
+ * (`plugins/<x>/main.js`, `data.json`) that Obsidian runs on load, and `.git`
+ * holds hooks that run on the next git operation — both are remote-code-execution
+ * vectors. Trusted, code-controlled writes go through {@link vaultPathFromTrusted},
+ * which is exempt.
+ *
+ * `.git` is fixed. The Obsidian config folder is user-configurable (defaults to
+ * `.obsidian` but can be renamed via `Vault#configDir`), so it is injected once
+ * at startup through {@link setConfinementConfigDir} rather than hardcoded — this
+ * keeps the module dependency-free/mobile-safe and correct for custom config dirs.
+ * Matched case-insensitively on the first segment (macOS/Windows are case-insensitive).
+ */
+const FIXED_DENY_ROOTS = new Set(['.git']);
+let configDirDeny: string | null = null;
+
+/**
+ * Register the vault's Obsidian config directory (from `app.vault.configDir`) so
+ * untrusted writes into it are rejected. Call once during plugin startup, before
+ * any agent-facing server accepts tool calls. Idempotent.
+ */
+export function setConfinementConfigDir(configDir: string | null | undefined): void {
+  const trimmed = (configDir ?? '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
+  configDirDeny = trimmed === '' ? null : trimmed;
+}
+
+/** True when the first path segment targets a deny-listed, executable-content root. */
+function isDeniedRoot(firstSegment: string): boolean {
+  const seg = firstSegment.toLowerCase();
+  return FIXED_DENY_ROOTS.has(seg) || (configDirDeny !== null && seg === configDirDeny);
+}
+
+/**
  * True when the raw path is filesystem-absolute in a way that is NOT vault-root
  * relative: a Windows drive (`C:\x` / `C:/x`) or a UNC / leading backslash
  * (`\\server` / `\x`). These are genuinely off-vault and rejected.
@@ -99,6 +141,13 @@ export function tryResolveVaultPath(
     return { ok: false, error: 'Path cannot be empty.' };
   }
 
+  // Control characters (incl. NUL) are never legitimate in a vault path and can
+  // defeat downstream string handling; Obsidian's normalizePath does not strip them.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f]/.test(trimmed)) {
+    return { ok: false, error: 'Path cannot contain control characters.' };
+  }
+
   if (isAbsolute(trimmed)) {
     return { ok: false, error: 'Path must be relative to the vault, not absolute.' };
   }
@@ -123,16 +172,40 @@ export function tryResolveVaultPath(
     if (segment === '') {
       continue; // collapse leading/trailing/duplicate separators
     }
-    if (segment === '..') {
+    // Windows silently strips trailing dots and spaces at the syscall layer, so
+    // a segment like ".. " or "..." reaches the filesystem as ".." — a traversal
+    // the literal comparison below would miss. Compare the stripped form, and
+    // reject segments that strip to nothing (all dots/spaces). Legit names like
+    // "a..b.md" or "notes." are unaffected: they strip to a non-dot name.
+    const winCollapsed = segment.replace(/[. ]+$/, '');
+    if (segment === '..' || winCollapsed === '..') {
       return {
         ok: false,
         error: 'Path cannot contain ".." segments. Directory traversal outside the vault is not allowed.',
       };
     }
-    if (segment === '.') {
-      return { ok: false, error: 'Path cannot contain "." segments.' };
+    if (segment === '.' || winCollapsed === '.' || winCollapsed === '') {
+      return { ok: false, error: 'Path cannot contain "." segments or segments of only dots/spaces.' };
+    }
+    // NTFS alternate data streams: a ':' outside a leading drive letter (already
+    // rejected as absolute) writes a hidden stream on Windows. ':' is also an
+    // invalid filename char there, so reject it everywhere for a portable vault.
+    if (segment.includes(':')) {
+      return { ok: false, error: 'Path cannot contain ":" — it is not a valid file name character.' };
+    }
+    // Windows reserved device names (CON, NUL, COM1, …) — check the Windows-collapsed
+    // basename so "NUL. " / "NUL.md" are caught too.
+    if (WIN_RESERVED.test(winCollapsed.split('.')[0])) {
+      return { ok: false, error: `"${segment}" is a reserved device name and cannot be used as a file or folder name.` };
     }
     out.push(segment);
+  }
+
+  if (out.length > 0 && isDeniedRoot(out[0])) {
+    return {
+      ok: false,
+      error: `Writes to "${out[0]}/" are not allowed — it holds executable plugin/config or git internals.`,
+    };
   }
 
   return { ok: true, path: brand(out.join('/')) };
@@ -166,11 +239,16 @@ export function resolveVaultPath(raw: string): VaultPath {
 export function vaultPathFromTrusted(codeControlledPath: string): VaultPath {
   const out: string[] = [];
   for (const segment of normalizePath(codeControlledPath ?? '').split('/')) {
-    if (segment === '' || segment === '.') {
+    // A ".." (incl. the Windows "dot-dot + trailing spaces" form that collapses
+    // to ".." at the syscall layer) pops the prior segment. Check this BEFORE the
+    // empty/current-dir skip, since ".." would otherwise strip to empty.
+    if (segment === '..' || /^\.\. *$/.test(segment)) {
+      out.pop();
       continue;
     }
-    if (segment === '..') {
-      out.pop();
+    // Empty, current-dir ".", or an all-dots/spaces component (Windows strips
+    // trailing dots/spaces to nothing) → no-op segment, skip.
+    if (segment === '' || segment.replace(/[. ]+$/, '') === '') {
       continue;
     }
     out.push(segment);

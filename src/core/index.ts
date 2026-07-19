@@ -18,6 +18,7 @@
  */
 
 import { Plugin } from 'obsidian';
+import { setConfinementConfigDir } from './vaultPath';
 import type { StructuredLogger } from './StructuredLogger';
 import type { ObsidianPathManager } from './ObsidianPathManager';
 import type { PluginDataManager } from './PluginDataManager';
@@ -89,6 +90,10 @@ export async function createCoreServices(plugin: CorePluginLike): Promise<CoreSe
   // Create logger first
   const logger = new StructuredLogger(plugin);
   
+  // Register the vault's config dir so untrusted writes into it (executable
+  // plugin code / config) are rejected by the path-confinement resolver.
+  setConfinementConfigDir(plugin.app.vault.configDir);
+
   // Create path manager with manifest
   const pathManager = new ObsidianPathManager(plugin.app.vault, plugin.manifest);
   

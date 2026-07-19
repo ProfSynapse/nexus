@@ -196,31 +196,37 @@ export default defineConfig([
                 "error",
                 {
                     selector:
-                        "CallExpression[callee.property.name=/^(create|modify|createBinary|createFolder|rename)$/][callee.object.property.name='vault']",
+                        "CallExpression[callee.property.name=/^(create|modify|modifyBinary|createBinary|createFolder|rename|append|process|copy|delete|trash)$/][callee.object.property.name='vault']",
                     message:
                         "Direct vault mutation is forbidden outside the VaultOperations facade. Resolve caller paths with resolveVaultPath() and write through VaultOperations (branded VaultPath). If this is a code-controlled internal path, add the file to the Phase 3 allowlist in eslint.config.mjs.",
                 },
                 {
                     selector:
-                        "CallExpression[callee.property.name=/^(create|modify|createBinary|createFolder|rename)$/][callee.object.name='vault']",
+                        "CallExpression[callee.property.name=/^(create|modify|modifyBinary|createBinary|createFolder|rename|append|process|copy|delete|trash)$/][callee.object.name='vault']",
                     message:
                         "Direct vault mutation is forbidden outside the VaultOperations facade. Resolve caller paths with resolveVaultPath() and write through VaultOperations (branded VaultPath). If this is a code-controlled internal path, add the file to the Phase 3 allowlist in eslint.config.mjs.",
                 },
                 {
                     selector:
-                        "CallExpression[callee.property.name=/^(write|writeBinary|mkdir)$/][callee.object.property.name='adapter']",
+                        "CallExpression[callee.property.name=/^(write|writeBinary|append|mkdir|remove|rename|copy|rmdir|trashLocal|trashSystem)$/][callee.object.property.name='adapter']",
                     message:
-                        "Direct adapter write/mkdir is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
+                        "Direct adapter write/mkdir/remove/rename/copy is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
                 },
                 {
                     selector:
-                        "CallExpression[callee.property.name=/^(write|writeBinary|mkdir)$/][callee.object.name='adapter']",
+                        "CallExpression[callee.property.name=/^(write|writeBinary|append|mkdir|remove|rename|copy|rmdir|trashLocal|trashSystem)$/][callee.object.name='adapter']",
                     message:
-                        "Direct adapter write/mkdir is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
+                        "Direct adapter write/mkdir/remove/rename/copy is forbidden outside VaultOperations / the storage-internal allowlist. Route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is a code-controlled internal path.",
                 },
                 {
                     selector:
                         "CallExpression[callee.property.name=/^(renameFile|trashFile)$/][callee.object.property.name='fileManager']",
+                    message:
+                        "Direct fileManager rename/trash is forbidden outside the VaultOperations facade. Resolve caller paths and route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is code-controlled.",
+                },
+                {
+                    selector:
+                        "CallExpression[callee.property.name=/^(renameFile|trashFile)$/][callee.object.name='fileManager']",
                     message:
                         "Direct fileManager rename/trash is forbidden outside the VaultOperations facade. Resolve caller paths and route through VaultOperations, or add the file to the Phase 3 allowlist in eslint.config.mjs if it is code-controlled.",
                 },
@@ -250,6 +256,8 @@ export default defineConfig([
             "src/database/storage/vaultRoot/ShardedJsonlStreamStore.ts",
             "src/database/storage/vaultRoot/VaultEventStore.ts",
             "src/database/migration/MigrationStatusTracker.ts",
+            "src/database/migration/CacheBackendMigration.ts", // removes code-controlled cache.db conflict siblings
+            "src/database/migration/LegacyArchiver.ts",        // renames legacy storage folder to archive path
             "src/services/artifacts/ArtifactJobStore.ts",
             "src/services/storage/SnapshotArchiveService.ts",
             "src/services/llm/utils/CacheManager.ts",

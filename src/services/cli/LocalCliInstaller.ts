@@ -135,16 +135,19 @@ export class LocalCliInstaller {
                 stale = fs.readFileSync(paths.cliJsPath, 'utf-8') !== NEXUS_CLI_JS
                     || (!fs.existsSync(paths.skillMdPath) || fs.readFileSync(paths.skillMdPath, 'utf-8') !== NEXUS_SKILL_MD)
                     || this.playbooksStale(paths)
-                    || this.codexBlockStale(paths.codexAgentsPath);
+                    || this.codexBlockStale(paths.codexAgentsPath)
+                    || this.winCopyStale(paths.claudeSkillLink)
+                    || this.winCopyStale(paths.cursorSkillLink);
             } catch { stale = true; }
         }
         return {
             supported: true,
             installed,
-            onPath: this.pointsTo(paths.binPath, paths.cliJsPath),
+            // Windows has a real .cmd shim, not a symlink — existence is the signal there.
+            onPath: Platform.isWin ? fs.existsSync(paths.binPath) : this.pointsTo(paths.binPath, paths.cliJsPath),
             stale,
-            skillLinked: this.pointsTo(paths.claudeSkillLink, paths.skillDir),
-            cursorLinked: this.pointsTo(paths.cursorSkillLink, paths.skillDir),
+            skillLinked: this.skillWired(paths.claudeSkillLink, paths),
+            cursorLinked: this.skillWired(paths.cursorSkillLink, paths),
             codexLinked: this.hasCodexBlock(paths.codexAgentsPath),
             detected: this.detectAgents(),
             paths,
@@ -340,6 +343,14 @@ export class LocalCliInstaller {
                 this.writeCodexBlock(paths.codexAgentsPath);
                 changed = true;
             }
+            // Windows skill "links" are independent copies (no symlink tracking) —
+            // re-copy any wired provider whose content drifted from the embed.
+            for (const link of [paths.claudeSkillLink, paths.cursorSkillLink]) {
+                if (this.winCopyStale(link)) {
+                    this.copyDir(paths.skillDir, link);
+                    changed = true;
+                }
+            }
         } catch { /* refresh is best-effort */ }
         return changed;
     }
@@ -375,8 +386,11 @@ export class LocalCliInstaller {
         const fs = this.fs();
         try {
             if (fs.existsSync(link) || this.isSymlink(link)) {
-                if (this.isSymlink(link)) {
+                if (this.isOurSymlink(link)) {
                     fs.unlinkSync(link);
+                } else if (this.isSymlink(link)) {
+                    warnings.push(`Skipped ${link} — an existing symlink there points outside Nexus (not overwriting).`);
+                    return false;
                 } else {
                     warnings.push(`Skipped ${link} — a real file/folder already exists there (not overwriting).`);
                     return false;
@@ -394,9 +408,21 @@ export class LocalCliInstaller {
         try { return this.fs().lstatSync(p).isSymbolicLink(); } catch { return false; }
     }
 
+    /**
+     * A symlink is ours only if its target resolves inside our dataDir — `nexus`
+     * is a common command name, and a user's pre-existing symlink (another tool,
+     * a version-manager shim) must never be replaced or uninstalled. Works for
+     * dangling links too: readlink needs no live target.
+     */
     private isOurSymlink(link: string): boolean {
-        // A symlink we created whose target is missing still reads back as a symlink.
-        return this.isSymlink(link);
+        const fs = this.fs();
+        const path = this.path();
+        try {
+            if (!this.isSymlink(link)) return false;
+            const resolved = path.resolve(path.dirname(link), fs.readlinkSync(link));
+            const dataDir = path.resolve(this.getPaths().dataDir);
+            return resolved === dataDir || resolved.startsWith(dataDir + path.sep);
+        } catch { return false; }
     }
 
     private pointsTo(link: string, target: string): boolean {
@@ -405,6 +431,31 @@ export class LocalCliInstaller {
             if (!this.isSymlink(link)) return false;
             return this.path().resolve(fs.readlinkSync(link)) === this.path().resolve(target);
         } catch { return false; }
+    }
+
+    /** True when a provider skill is wired: symlink on POSIX, copied dir on Windows. */
+    private skillWired(link: string, paths: CliInstallPaths): boolean {
+        if (Platform.isWin) {
+            try { return this.fs().existsSync(this.path().join(link, 'SKILL.md')); } catch { return false; }
+        }
+        return this.pointsTo(link, paths.skillDir);
+    }
+
+    /** Windows only: a wired skill copy whose content no longer matches the embed. */
+    private winCopyStale(link: string): boolean {
+        if (!Platform.isWin) return false;
+        const fs = this.fs();
+        const path = this.path();
+        try {
+            const skillMd = path.join(link, 'SKILL.md');
+            if (!fs.existsSync(skillMd)) return false; // not wired → nothing to refresh
+            if (fs.readFileSync(skillMd, 'utf-8') !== NEXUS_SKILL_MD) return true;
+            for (const [file, content] of Object.entries(NEXUS_PLAYBOOKS)) {
+                const p = path.join(link, 'playbooks', file);
+                if (!fs.existsSync(p) || fs.readFileSync(p, 'utf-8') !== content) return true;
+            }
+            return false;
+        } catch { return true; }
     }
 
     private dirOnPath(dir: string): boolean {

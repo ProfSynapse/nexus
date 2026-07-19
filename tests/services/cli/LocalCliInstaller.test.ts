@@ -119,6 +119,43 @@ describe('LocalCliInstaller', () => {
         expect(result.warnings.some((w) => w.includes(p.binPath))).toBe(true);
     });
 
+    it('does not clobber a foreign symlink at the bin path (e.g. another tool named nexus)', () => {
+        const p = installer.getPaths();
+        const otherTool = realPath.join(TEST_HOME, 'other-nexus.sh');
+        realFs.writeFileSync(otherTool, '#!/bin/sh\necho other\n', 'utf-8');
+        realFs.mkdirSync(p.binDir, { recursive: true });
+        realFs.symlinkSync(otherTool, p.binPath);
+
+        const result = installer.enable();
+        expect(realFs.readlinkSync(p.binPath)).toBe(otherTool);
+        expect(result.warnings.some((w) => w.includes(p.binPath))).toBe(true);
+    });
+
+    it('uninstall() preserves a foreign symlink at the bin path', () => {
+        const p = installer.getPaths();
+        installer.enable();
+        // Simulate the user replacing our PATH entry with their own tool afterward.
+        const otherTool = realPath.join(TEST_HOME, 'other-nexus.sh');
+        realFs.writeFileSync(otherTool, '#!/bin/sh\necho other\n', 'utf-8');
+        realFs.unlinkSync(p.binPath);
+        realFs.symlinkSync(otherTool, p.binPath);
+
+        installer.uninstall();
+        expect(realFs.existsSync(p.dataDir)).toBe(false);
+        expect(realFs.readlinkSync(p.binPath)).toBe(otherTool);
+    });
+
+    it('replaces our own dangling symlink on reinstall', () => {
+        const p = installer.getPaths();
+        realFs.mkdirSync(p.binDir, { recursive: true });
+        // Our link from a previous install whose dataDir was wiped.
+        realFs.symlinkSync(p.cliJsPath, p.binPath);
+
+        const result = installer.enable();
+        expect(realFs.realpathSync(p.binPath)).toBe(realFs.realpathSync(p.cliJsPath));
+        expect(result.warnings.some((w) => w.includes(p.binPath) && w.includes('Skipped'))).toBe(false);
+    });
+
     it('uninstall() removes our artifacts and strips the Codex block while preserving other content', () => {
         const p = installer.getPaths();
         realFs.writeFileSync(p.codexAgentsPath, '# My Codex rules\nKeep this line.\n', 'utf-8');

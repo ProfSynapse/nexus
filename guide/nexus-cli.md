@@ -9,14 +9,15 @@ Design & rationale: [`docs/plans/local-cli-agent-bridge-plan.md`](plans/local-cl
 
 ## Install
 
-Obsidian → Settings → Nexus → Get Started → MCP integration → **Local CLI (no
-MCP)** → **Enable for local agents**. It:
+Obsidian → Settings → Nexus → Get Started → External agents → **Local CLI (no
+MCP required)** → pick your agents → **Install CLI**. It:
 
 - writes the CLI to a machine-global location and puts `nexus` on your PATH
   (macOS/Linux symlink in `~/.local/bin`; Windows `nexus.cmd` in
   `%LOCALAPPDATA%\nexus`, add to PATH manually);
-- installs a Claude Code skill (`~/.claude/skills/nexus`) and/or a Codex
-  `AGENTS.md` pointer, **only** for agents it detects on your machine;
+- wires the CLI into the agents you pick: a Claude Code skill
+  (`~/.claude/skills/nexus`), a Cursor skill (`~/.cursor/skills/nexus`), and/or
+  a Codex `AGENTS.md` pointer — defaults to whatever it detects on your machine;
 - is fully reversible via **Uninstall**.
 
 Requires `node` on the shell's PATH. Obsidian must be **open** for the target
@@ -67,8 +68,10 @@ The vault name lives in the socket name, so selection happens at call time:
 
 - On macOS, `~/.local/bin` is often not on PATH by default — the installer warns
   if so; add it to your shell profile.
-- Windows support mirrors `connector.js` (pipe path + pipe-namespace
-  enumeration) but is currently unverified on a Windows host.
+- On Windows, vault auto-detection is not available (the named-pipe namespace
+  can't be enumerated) — always pass `--vault <name>` (the vault folder's name)
+  or set `NEXUS_VAULT`. Explicit connections work; overall Windows support is
+  currently unverified on a Windows host.
 
 ## Troubleshooting
 
