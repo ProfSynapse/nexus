@@ -42,6 +42,8 @@ For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
 - **You can't escape the vault.** Paths are vault-relative; `..`, `~`, and
   absolute paths are rejected. That's a guardrail, not a bug.
 - **Nothing is destroyed.** The AI gets archive (reversible), not delete.
+- **Windows: always pass `--vault <name>`** (the vault folder's name) or set
+  `NEXUS_VAULT` — named pipes can't be auto-detected there.
 
 ## The shape
 

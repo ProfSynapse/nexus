@@ -20,7 +20,8 @@ Nexus can be used in two ways:
 - Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, and `main.js`
 - Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
 - Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md) for chat, live voice, read-aloud, and built-in audio/video generation
-- External agent over MCP: use **Nexus settings -> Get started -> MCP integration** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
+- External agent over MCP: use **Nexus settings -> Get started -> External agents** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
+- External agent over CLI (no MCP config): install the `nexus` command from **Get started -> External agents -> Local CLI** so shell agents (Claude Code, Cursor, Codex) can drive your vault directly — see the [Nexus CLI guide](guide/nexus-cli.md)
 - Optional desktop features: [Semantic search](guide/semantic-search.md), [Adaptive search](guide/adaptive-search.md), and [Apps and integrations](guide/apps.md)
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
@@ -35,6 +36,7 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 | Workspace memory and tasks | Yes | Yes |
 | Skills (author and load) | Yes | Yes |
 | MCP clients (Claude Desktop, Cursor, etc.) | No | Yes |
+| Local CLI bridge (`nexus` command) | No | Yes |
 | Semantic search (local embeddings) | No | Yes |
 | Ingestion (PDF, audio, DOCX) | No | Yes |
 | Composer and Web Tools | No | Yes |
@@ -47,6 +49,7 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 | If you want to... | Start here |
 |---|---|
 | Connect Claude Desktop, Codex CLI, Gemini CLI, Cursor, Cline, or another MCP client | [MCP setup](guide/mcp-setup.md) |
+| Drive your vault from the shell with Claude Code, Cursor, or Codex — no MCP config | [Nexus CLI](guide/nexus-cli.md) |
 | Configure built-in chat providers inside Obsidian | [Provider setup](guide/provider-setup.md) |
 | Use live voice, read notes aloud, or save spoken audio back into your notes | [Native chat](guide/native-chat.md) |
 | Generate voice audio or text-to-video files directly into your vault | [Native chat](guide/native-chat.md) |
@@ -95,6 +98,7 @@ When a config file needs to be edited, show the exact snippet with my vault path
 - [Apps](guide/apps.md)
 - [Workflow examples](guide/workflow-examples.md)
 - [Two-tool architecture](guide/two-tool-architecture.md)
+- [Nexus CLI](guide/nexus-cli.md)
 
 ## Development
 

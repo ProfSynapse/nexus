@@ -208,7 +208,8 @@ export class IPCTransportManager {
         this.cleanupSocket()
             .then(() => {
                 try {
-                    server.listen(ipcPath);
+                    // Retry after clearing a stale socket — same owner-only creation.
+                    this.listenSecure(server, ipcPath);
                 } catch (listenError) {
                     logger.systemError(listenError as Error, 'Server Listen Retry');
                     reject(listenError instanceof Error ? listenError : new Error(String(listenError)));
@@ -230,9 +231,34 @@ export class IPCTransportManager {
         resolve: (server: NetServer) => void,
         reject: (error: Error) => void
     ): void {
-        server.listen(ipcPath, () => {
+        this.listenSecure(server, ipcPath, () => {
             this.handleListeningStarted(server, ipcPath, isWindows, resolve, reject);
         });
+    }
+
+    /**
+     * Bind the unix-domain socket owner-only. The socket file is created during
+     * listen(), BEFORE the 'listening' callback runs — so tightening it only in
+     * the callback (or via an async chmod) leaves a window where another local
+     * user could connect to the unauthenticated tool server. We set a restrictive
+     * umask (0o177 → mode 0o600) around the synchronous listen() so the socket is
+     * never observable with wider permissions, then restore the prior umask.
+     * No-op tightening on Windows (named pipes; POSIX modes don't apply).
+     */
+    private listenSecure(server: NetServer, ipcPath: string, onListening?: () => void): void {
+        const isWindows = this.configuration.isWindows();
+        let priorUmask: number | undefined;
+        if (!isWindows && typeof process.umask === 'function') {
+            try { priorUmask = process.umask(0o177); } catch { priorUmask = undefined; }
+        }
+        try {
+            if (onListening) server.listen(ipcPath, onListening);
+            else server.listen(ipcPath);
+        } finally {
+            if (priorUmask !== undefined) {
+                try { process.umask(priorUmask); } catch { /* restore best-effort */ }
+            }
+        }
     }
 
     /**
@@ -246,12 +272,14 @@ export class IPCTransportManager {
         _reject: (error: Error) => void
     ): void {
         if (!isWindows) {
-            const fs = desktopRequire<typeof import('fs')>('fs').promises;
-            // Owner-only: the MCP socket is unauthenticated, so a world-writable
-            // socket would let any local user/process drive vault tools.
-            fs.chmod(ipcPath, 0o600).catch(error => {
+            // Backstop only — the socket is already born 0o600 via the umask in
+            // listenSecure(). chmod SYNCHRONOUSLY (not async) so there is no
+            // event-loop turn during which a wider mode could be observed.
+            try {
+                desktopRequire<typeof import('fs')>('fs').chmodSync(ipcPath, 0o600);
+            } catch (error) {
                 logger.systemError(error as Error, 'Socket Permissions');
-            });
+            }
         }
 
         this.ipcServer = server;
