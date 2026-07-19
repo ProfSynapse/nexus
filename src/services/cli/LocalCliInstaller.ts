@@ -26,10 +26,17 @@ type PathModule = typeof import('node:path');
 const AGENTS_BEGIN = '<!-- BEGIN nexus-cli (managed by Nexus plugin) -->';
 const AGENTS_END = '<!-- END nexus-cli -->';
 
+/** The agent providers the CLI can wire into. */
+export type CliProviderId = 'claudeCode' | 'cursor' | 'codex';
+
 export interface DetectedAgents {
     claudeCode: boolean;
     codex: boolean;
+    cursor: boolean;
 }
+
+/** Which providers to wire the CLI skill/pointer into (defaults to whatever is detected). */
+export type CliInstallTargets = Record<CliProviderId, boolean>;
 
 export interface CliInstallPaths {
     dataDir: string;
@@ -40,6 +47,7 @@ export interface CliInstallPaths {
     binDir: string;
     binPath: string;
     claudeSkillLink: string;
+    cursorSkillLink: string;
     codexAgentsPath: string;
 }
 
@@ -49,6 +57,7 @@ export interface CliInstallStatus {
     onPath: boolean;
     stale: boolean;
     skillLinked: boolean;
+    cursorLinked: boolean;
     codexLinked: boolean;
     detected: DetectedAgents;
     paths: CliInstallPaths;
@@ -87,6 +96,7 @@ export class LocalCliInstaller {
             binDir,
             binPath: path.join(binDir, Platform.isWin ? 'nexus.cmd' : 'nexus'),
             claudeSkillLink: path.join(home, '.claude', 'skills', 'nexus'),
+            cursorSkillLink: path.join(home, '.cursor', 'skills', 'nexus'),
             codexAgentsPath: path.join(home, '.codex', 'AGENTS.md'),
         };
     }
@@ -98,15 +108,21 @@ export class LocalCliInstaller {
         return {
             claudeCode: fs.existsSync(path.join(home, '.claude')),
             codex: fs.existsSync(path.join(home, '.codex')),
+            cursor: fs.existsSync(path.join(home, '.cursor')),
         };
+    }
+
+    /** The skill-symlink location for a skill-based provider (Claude Code, Cursor). */
+    private skillLinkFor(id: 'claudeCode' | 'cursor', paths: CliInstallPaths): string {
+        return id === 'cursor' ? paths.cursorSkillLink : paths.claudeSkillLink;
     }
 
     status(): CliInstallStatus {
         if (!this.isSupported()) {
             return {
                 supported: false, installed: false, onPath: false, stale: false,
-                skillLinked: false, codexLinked: false,
-                detected: { claudeCode: false, codex: false },
+                skillLinked: false, cursorLinked: false, codexLinked: false,
+                detected: { claudeCode: false, codex: false, cursor: false },
                 paths: {} as CliInstallPaths,
             };
         }
@@ -128,34 +144,48 @@ export class LocalCliInstaller {
             onPath: this.pointsTo(paths.binPath, paths.cliJsPath),
             stale,
             skillLinked: this.pointsTo(paths.claudeSkillLink, paths.skillDir),
+            cursorLinked: this.pointsTo(paths.cursorSkillLink, paths.skillDir),
             codexLinked: this.hasCodexBlock(paths.codexAgentsPath),
             detected: this.detectAgents(),
             paths,
         };
     }
 
+    /** Default install targets: wire whatever is detected on the machine. */
+    private defaultTargets(): CliInstallTargets {
+        const d = this.detectAgents();
+        return { claudeCode: d.claudeCode, codex: d.codex, cursor: d.cursor };
+    }
+
     /** Human-readable list of exactly what enable() will create, for disclosure before acting. */
-    describePlan(): string[] {
+    describePlan(targets?: Partial<CliInstallTargets>): string[] {
         if (!this.isSupported()) return ['Local CLI install requires desktop.'];
         const paths = this.getPaths();
-        const detected = this.detectAgents();
+        const t = { ...this.defaultTargets(), ...targets };
         const lines = [
             `CLI binary: ${paths.cliJsPath}`,
             `On PATH:    ${paths.binPath} → nexus-cli.js`,
         ];
-        if (detected.claudeCode) lines.push(`Claude Code skill: ${paths.claudeSkillLink} → ${paths.skillDir}`);
-        if (detected.codex) lines.push(`Codex pointer: appended to ${paths.codexAgentsPath}`);
-        if (!detected.claudeCode && !detected.codex) {
-            lines.push('No Claude Code (~/.claude) or Codex (~/.codex) detected — only the CLI will be installed.');
+        if (t.claudeCode) lines.push(`Claude Code skill: ${paths.claudeSkillLink} → ${paths.skillDir}`);
+        if (t.cursor) lines.push(`Cursor skill: ${paths.cursorSkillLink} → ${paths.skillDir}`);
+        if (t.codex) lines.push(`Codex pointer: appended to ${paths.codexAgentsPath}`);
+        if (!t.claudeCode && !t.cursor && !t.codex) {
+            lines.push('No agent provider selected — only the nexus command will be installed.');
         }
         return lines;
     }
 
-    enable(): CliInstallResult {
+    /**
+     * Install the `nexus` command and wire it into the selected agent providers.
+     * `targets` defaults to whatever is detected on the machine; pass an explicit
+     * selection (from the Get Started picker) to override per provider.
+     */
+    enable(targets?: Partial<CliInstallTargets>): CliInstallResult {
         if (!this.isSupported()) throw new Error('Local CLI install is desktop-only.');
         const fs = this.fs();
         const paths = this.getPaths();
         const detected = this.detectAgents();
+        const t = { ...this.defaultTargets(), ...targets };
         const created: string[] = [];
         const warnings: string[] = [];
 
@@ -186,24 +216,66 @@ export class LocalCliInstaller {
             }
         }
 
-        // 4. Claude Code skill
-        if (detected.claudeCode) {
-            fs.mkdirSync(this.path().dirname(paths.claudeSkillLink), { recursive: true });
-            if (Platform.isWin) {
-                this.copyDir(paths.skillDir, paths.claudeSkillLink);
-                created.push(paths.claudeSkillLink);
-            } else if (this.linkReplace(paths.claudeSkillLink, paths.skillDir, warnings)) {
-                created.push(paths.claudeSkillLink);
-            }
-        }
+        // 4. Skill-based providers (Claude Code, Cursor) — same skills mechanism,
+        //    just different link locations. Both read the same skill dir.
+        if (t.claudeCode) this.wireSkillLink(paths.claudeSkillLink, paths, created, warnings);
+        if (t.cursor) this.wireSkillLink(paths.cursorSkillLink, paths, created, warnings);
 
-        // 5. Codex pointer
-        if (detected.codex) {
+        // 5. Codex pointer (AGENTS.md block).
+        if (t.codex) {
             this.writeCodexBlock(paths.codexAgentsPath);
             created.push(paths.codexAgentsPath);
         }
 
         return { created, warnings, detected };
+    }
+
+    /**
+     * Wire or unwire the CLI into a single provider after the CLI is installed
+     * (from the Get Started provider checkboxes). No-op with a warning if the CLI
+     * binary isn't installed yet.
+     */
+    setProvider(id: CliProviderId, enabled: boolean): CliInstallResult {
+        if (!this.isSupported()) throw new Error('Local CLI install is desktop-only.');
+        const fs = this.fs();
+        const paths = this.getPaths();
+        const created: string[] = [];
+        const warnings: string[] = [];
+        if (!fs.existsSync(paths.cliJsPath)) {
+            warnings.push('Install the CLI first, then choose providers.');
+            return { created, warnings, detected: this.detectAgents() };
+        }
+        if (id === 'codex') {
+            if (enabled) { this.writeCodexBlock(paths.codexAgentsPath); created.push(paths.codexAgentsPath); }
+            else this.removeCodexBlock(paths.codexAgentsPath);
+        } else {
+            const link = this.skillLinkFor(id, paths);
+            if (enabled) this.wireSkillLink(link, paths, created, warnings);
+            else this.unwireSkillLink(link, created, warnings);
+        }
+        return { created, warnings, detected: this.detectAgents() };
+    }
+
+    /** Create the skill symlink (or copy on Windows) at `link` → skillDir. */
+    private wireSkillLink(link: string, paths: CliInstallPaths, created: string[], warnings: string[]): void {
+        this.fs().mkdirSync(this.path().dirname(link), { recursive: true });
+        if (Platform.isWin) {
+            this.copyDir(paths.skillDir, link);
+            created.push(link);
+        } else if (this.linkReplace(link, paths.skillDir, warnings)) {
+            created.push(link);
+        }
+    }
+
+    /** Remove a skill link we own (symlink, or copied dir on Windows). */
+    private unwireSkillLink(link: string, created: string[], warnings: string[]): void {
+        const fs = this.fs();
+        try {
+            if (this.pointsTo(link, this.getPaths().skillDir) || this.isOurSymlink(link) || (Platform.isWin && fs.existsSync(link))) {
+                fs.rmSync(link, { recursive: true, force: true });
+                created.push(link);
+            }
+        } catch (e) { warnings.push(`Could not remove ${link}: ${(e as Error).message}`); }
     }
 
     uninstall(): CliInstallResult {
@@ -217,6 +289,7 @@ export class LocalCliInstaller {
         for (const [link, target] of [
             [paths.binPath, paths.cliJsPath] as const,
             [paths.claudeSkillLink, paths.skillDir] as const,
+            [paths.cursorSkillLink, paths.skillDir] as const,
         ]) {
             if (this.pointsTo(link, target) || this.isOurSymlink(link)) {
                 try { fs.rmSync(link, { recursive: true, force: true }); created.push(link); }
@@ -225,7 +298,7 @@ export class LocalCliInstaller {
         }
         // Windows shim / copied skill are real files — remove by path if present.
         if (Platform.isWin) {
-            for (const p of [paths.binPath, paths.claudeSkillLink]) {
+            for (const p of [paths.binPath, paths.claudeSkillLink, paths.cursorSkillLink]) {
                 try { if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); created.push(p); } } catch { /* ignore */ }
             }
         }

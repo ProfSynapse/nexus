@@ -35,8 +35,9 @@ describe('LocalCliInstaller', () => {
 
     beforeEach(() => {
         TEST_HOME = realFs.mkdtempSync(realPath.join(realOs.tmpdir(), 'nexus-cli-test-'));
-        // Simulate both agents being installed so detection fires.
+        // Simulate all three agents being installed so detection fires.
         realFs.mkdirSync(realPath.join(TEST_HOME, '.claude'), { recursive: true });
+        realFs.mkdirSync(realPath.join(TEST_HOME, '.cursor'), { recursive: true });
         realFs.mkdirSync(realPath.join(TEST_HOME, '.codex'), { recursive: true });
         installer = new LocalCliInstaller();
     });
@@ -45,7 +46,7 @@ describe('LocalCliInstaller', () => {
         realFs.rmSync(TEST_HOME, { recursive: true, force: true });
     });
 
-    it('enable() writes the CLI, skill, PATH symlink, Claude skill link, and Codex block', () => {
+    it('enable() writes the CLI, skill, PATH symlink, Claude + Cursor skill links, and Codex block', () => {
         const result = installer.enable();
         const p = installer.getPaths();
 
@@ -54,9 +55,11 @@ describe('LocalCliInstaller', () => {
         expect(realFs.lstatSync(p.binPath).isSymbolicLink()).toBe(true);
         expect(realFs.realpathSync(p.binPath)).toBe(realFs.realpathSync(p.cliJsPath));
         expect(realFs.lstatSync(p.claudeSkillLink).isSymbolicLink()).toBe(true);
+        expect(realFs.lstatSync(p.cursorSkillLink).isSymbolicLink()).toBe(true);
+        expect(realFs.realpathSync(p.cursorSkillLink)).toBe(realFs.realpathSync(p.skillDir));
         expect(realFs.readFileSync(p.codexAgentsPath, 'utf-8')).toContain('Nexus vault access');
         expect(result.created).toContain(p.cliJsPath);
-        expect(result.detected).toEqual({ claudeCode: true, codex: true });
+        expect(result.detected).toEqual({ claudeCode: true, cursor: true, codex: true });
     });
 
     it('status() reflects an installed, on-PATH, linked state', () => {
@@ -66,7 +69,32 @@ describe('LocalCliInstaller', () => {
         expect(s.onPath).toBe(true);
         expect(s.stale).toBe(false);
         expect(s.skillLinked).toBe(true);
+        expect(s.cursorLinked).toBe(true);
         expect(s.codexLinked).toBe(true);
+    });
+
+    it('enable(targets) wires only the selected providers', () => {
+        installer.enable({ claudeCode: true, cursor: false, codex: false });
+        const s = installer.status();
+        expect(s.installed).toBe(true);
+        expect(s.skillLinked).toBe(true);
+        expect(s.cursorLinked).toBe(false);
+        expect(s.codexLinked).toBe(false);
+    });
+
+    it('setProvider() wires and unwires a single provider without touching the others', () => {
+        installer.enable({ claudeCode: true, cursor: false, codex: false });
+        expect(installer.status().cursorLinked).toBe(false);
+
+        installer.setProvider('cursor', true);
+        let s = installer.status();
+        expect(s.cursorLinked).toBe(true);
+        expect(s.skillLinked).toBe(true);
+
+        installer.setProvider('cursor', false);
+        s = installer.status();
+        expect(s.cursorLinked).toBe(false);
+        expect(s.skillLinked).toBe(true);
     });
 
     it('reconcile() refreshes a stale on-disk CLI copy', () => {
@@ -103,6 +131,7 @@ describe('LocalCliInstaller', () => {
         expect(realFs.existsSync(p.dataDir)).toBe(false);
         expect(realFs.existsSync(p.binPath)).toBe(false);
         expect(realFs.existsSync(p.claudeSkillLink)).toBe(false);
+        expect(realFs.existsSync(p.cursorSkillLink)).toBe(false);
 
         const codex = realFs.readFileSync(p.codexAgentsPath, 'utf-8');
         expect(codex).toContain('Keep this line.');
