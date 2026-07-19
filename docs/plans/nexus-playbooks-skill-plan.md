@@ -1,8 +1,20 @@
 # Nexus usage skill + `nexus playbook` — plan
 
-**Status:** implemented (Tracks A–D landed; verified against the live `code` vault). Manual
-in-Obsidian install/reconcile smoke still pending.
-**Branch:** `feat/nexus-playbooks-skill`
+**Status:** implemented (Tracks A–D landed; verified against the live `code` vault) + Fable
+red-team pass applied. Manual in-Obsidian install/reconcile smoke still pending.
+**Branch:** `feat/nexus-playbooks-skill` (PR #289)
+
+**Red-team review (2026-07-19, Fable) — fixed in-PR:** (1) BLOCKING — `readdirSync` was dropped
+from the `node:fs` import during the `cli/playbooks.ts` extraction, silently killing vault
+enumeration (every no-`--vault` command failed; caught by nothing because `cli/**` was never
+type-checked). Fixed + root-caused: added `cli/tsconfig.json` and a `tsc -p cli` gate in
+`build-cli.mjs` (proven to catch the exact dropped-import class), plus a `nexus vaults` assertion
+in `smoke.sh`. (2) Minor — path-traversal in `nexus playbook <name>` (local `.md` read, no
+privilege boundary): added a name guard rejecting `/`, `\`, `..`, leading `.`. (3) Minor — `--help`
+CONTEXT line overstated flags on `playbook`: narrowed. **Deferred (follow-up-safe):** orphaned
+playbooks are never pruned when the embed set shrinks (add a dir-vs-embed prune, like the skills-app
+provider prune); a unit test asserting `playbooksDir() === getPaths().playbooksDir`; extracting
+`runPlaybook()` from `main()` for SRP.
 **Builds on:** the local CLI agent bridge (PR #287 / `docs/plans/local-cli-agent-bridge-plan.md`).
 
 ## 1. Goal

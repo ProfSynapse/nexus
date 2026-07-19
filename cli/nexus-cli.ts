@@ -11,7 +11,7 @@
  * result, and exits. Spike scope per docs/plans/local-cli-agent-bridge-plan.md §9 step 1:
  * self-contained (node builtins only), macOS/Linux sockets only.
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
@@ -153,7 +153,8 @@ COMMANDS
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
 
-CONTEXT (flags on \`use\`; also accepted on \`playbook\`/\`tools\`)
+CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
+         --workspace/--session/--vault and fills memory/goal for you)
   --memory "<text>"       REQUIRED — rolling summary of what you've done/learned
   --goal "<text>"         REQUIRED — this call's objective, one sentence
                           (empty or placeholder like "N/A" is REJECTED with a steer)
@@ -281,6 +282,12 @@ async function main(): Promise<number> {
 
         // Named → compose the primer. Static parts need no socket; workspaces + tool
         // schemas do. Print the static spine first, then try the live parts.
+        // Guard the name: it becomes a filename, so reject path separators / traversal
+        // before the join (validate-in-code, matching the vault-path confinement rule).
+        if (name.includes('/') || name.includes('\\') || name.includes('..') || name.startsWith('.')) {
+            process.stderr.write(`Invalid playbook name "${name}". Use a plain name — run \`nexus playbook\` to list.\n`);
+            return 2;
+        }
         const file = join(dir, `${name}.md`);
         if (!existsSync(file)) {
             const books = listPlaybooks(dir);
