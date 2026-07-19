@@ -169,11 +169,11 @@ export class GetStartedTab {
             component.registerDomEvent(chatPath, 'click', chatClickHandler);
         }
 
-        // Path 2: MCP Integration
+        // Path 2: External agents (MCP clients + CLI coding agents)
         const mcpPath = paths.createDiv('nexus-setup-path');
         mcpPath.createDiv('nexus-setup-path-icon').setText('🔗');
-        mcpPath.createDiv('nexus-setup-path-title').setText('MCP integration');
-        mcpPath.createDiv('nexus-setup-path-desc').setText('Connect Claude Desktop, LM Studio, etc.');
+        mcpPath.createDiv('nexus-setup-path-title').setText('External agents');
+        mcpPath.createDiv('nexus-setup-path-desc').setText('Connect Claude Desktop, Codex, Cursor, and more');
         const mcpClickHandler = () => {
             this.currentView = 'mcp-setup';
             this.render();
@@ -242,7 +242,7 @@ export class GetStartedTab {
     }
 
     /**
-     * Render MCP Integration setup view
+     * Render External agents setup view (MCP clients + CLI coding agents)
      */
     private renderMCPSetup(): void {
         new BackButton(
@@ -255,12 +255,12 @@ export class GetStartedTab {
             this.services.component
         );
 
-        this.container.createEl('h3', { text: 'MCP integration setup' });
+        this.container.createEl('h3', { text: 'External agent setup' });
 
-        // MCP setup requires Node.js modules (path, fs, child_process) — desktop only
+        // Setup requires Node.js modules (path, fs, child_process) — desktop only
         if (!Platform.isDesktop) {
             this.container.createEl('p', {
-                text: 'MCP integration requires a desktop environment.',
+                text: 'External agent setup requires a desktop environment.',
                 cls: 'setting-item-description'
             });
             return;
