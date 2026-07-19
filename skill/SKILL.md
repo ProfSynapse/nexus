@@ -14,56 +14,44 @@ when_to_use: >-
 
 # Nexus vault CLI
 
-`nexus` bridges the shell to a running Nexus (Obsidian) vault over a local
-socket. Two steps: **discover**, then **use**.
+`nexus` drives a running Nexus (Obsidian) vault from the shell over a local
+socket — no MCP config. It has two verbs: **discover** what you can do, then
+**execute**.
 
-## 1. Discover the tools you need (`nexus tools`)
+## Start here
 
-`nexus tools` returns a live catalog. **Drill down to the narrowest thing you
-need** — this keeps output small and gives you full argument schemas only for
-the tools you'll actually call:
+**Run `nexus --help` first.** It is the authoritative, always-current manual —
+commands, the context contract, CLI syntax, gotchas, and the tool catalog. It's
+offline and instant (no socket), so read it before your first real command
+instead of guessing.
+
+For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
+*plus* your workspaces and the exact tools it needs, in one call. Run
+`nexus playbook` to see what's available (typically: `vault-work`, `organize`,
+`tasks`, `prompt`).
+
+## The mindset (this is what `--help` can't teach you)
+
+- **Explore → inspect → exploit.** Search/list find *locations*; `content read`
+  gets *contents*; then you write. A search hit is a `{path, score}`, **not** the
+  note — never quote, summarize, or edit from a hit without reading it first.
+- **`nexus tools` returns schemas, not data.** It's discovery. Don't loop it
+  hoping for vault content — that comes from `nexus use "content read …"`.
+- **`--memory` and `--goal` are real and enforced.** You're operating a person's
+  live vault; pass a genuine running summary and objective, not placeholders.
+- **You can't escape the vault.** Paths are vault-relative; `..`, `~`, and
+  absolute paths are rejected. That's a guardrail, not a bug.
+- **Nothing is destroyed.** The AI gets archive (reversible), not delete.
+
+## The shape
 
 ```
-nexus tools                          # all agents (overview)
-nexus tools storage                  # one agent's tools (compact)
-nexus tools storage list             # ONE tool, full arg schema  ← prefer this
-nexus tools "storage list, content read"   # several tools at once
+nexus tools [selector]              # discover — tool schemas (never vault data)
+nexus use "<agent command --flags>" # execute — runs a tool, prints the result
+    --memory "<what you're doing>" --goal "<objective>"
 ```
 
-Agents include: `content` (read/write/replace/insert notes), `storage`
-(list/move/copy/archive files+folders), `search` (content/directory/memory),
-`canvas`, `task`, `memory` (workspaces/states), `prompt`. Run `nexus tools`
-once to see them all.
-
-## 2. Run a tool (`nexus use`)
-
-```
-nexus use "<agent action --flags>" --memory "<what you're doing>" --goal "<objective>"
-```
-
-`--memory` and `--goal` are **required** (Nexus rejects calls without them).
-Results are JSON on stdout.
-
-```
-nexus use "content read --path Daily/2026-07-17.md" \
-  --memory "reviewing this week's notes" --goal "read today's daily note"
-
-nexus use "search content --query 'context budget' --limit 5" \
-  --memory "auditing retrieval work" --goal "find notes about the budget service"
-```
-
-## Choosing a vault
-
-If exactly one vault is open, it's used automatically. If several are open,
-`nexus` errors and lists them — run `nexus vaults` and add `--vault <name>`
-(the human vault name works: `--vault "My Notes"`). You can also set
-`NEXUS_VAULT` in the environment to pin one.
-
-## Notes
-
-- The search/list tools return **locations, not contents** — follow a hit with
-  `content read --path <path>` to get the actual note.
-- Reuse one stable `--session "<name>"` across a task so traces group together.
-- If a command fails, run `nexus --help` or `nexus tools <that tool>` for the
-  exact argument schema. If nothing connects, the vault's Obsidian window may be
-  closed — ask the user to open it.
+Everything else — the flag table, per-tool schemas, syntax rules, the live
+per-vault catalog (including any enabled app agents) — comes from `nexus --help`,
+`nexus tools <tool>`, and `nexus playbook <name>`. Prefer those over guessing;
+they're always current.

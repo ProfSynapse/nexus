@@ -37,8 +37,13 @@ VAULT_FLAG=()
 [[ -n "$VAULT" ]] && VAULT_FLAG=(--vault "$VAULT")
 
 echo
-echo "▸ nexus vaults"
-NEXUS vaults
+echo "▸ nexus vaults  (socket enumeration — must find at least one)"
+VAULTS_OUT="$(NEXUS vaults)"
+echo "$VAULTS_OUT"
+if ! printf '%s' "$VAULTS_OUT" | grep -q '/nexus_mcp_'; then
+  echo "✗ nexus vaults found no sockets — enumeration is broken (regression check)." >&2
+  exit 1
+fi
 
 echo
 echo "▸ nexus doctor  (connect + MCP handshake + tools/list)"
@@ -55,4 +60,13 @@ NEXUS use "storage list" "${VAULT_FLAG[@]}" \
   --goal "list vault root to prove end-to-end execution" | head -12
 
 echo
-echo "✓ smoke passed — socket → handshake → getTools → useTools all round-tripped."
+echo "▸ nexus playbook  (list — no socket needed)"
+NEXUS_PLAYBOOKS_DIR="$REPO_ROOT/skill/playbooks" NEXUS playbook | head -8
+
+echo
+echo "▸ nexus playbook vault-work  (compose: spine + workspaces + recipe + preloaded schemas)"
+NEXUS_PLAYBOOKS_DIR="$REPO_ROOT/skill/playbooks" NEXUS playbook vault-work "${VAULT_FLAG[@]}" \
+  | grep -E "^## (Your workspaces|Preloaded tool schemas)|^# Playbook: vault-work" || true
+
+echo
+echo "✓ smoke passed — socket → handshake → getTools → useTools + playbooks all round-tripped."
