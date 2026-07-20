@@ -385,11 +385,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
       resolution: plan.vaultRoot
     });
     this.jsonlWriter.setBasePath(plan.vaultWriteBasePath);
-    this.jsonlWriter.setReadBasePaths(plan.legacyReadBasePaths);
+    const migrationComplete = plan.state.migration.state === 'verified'
+      || plan.state.migration.state === 'not_needed';
+    // Legacy roots are migration inputs, not permanent read replicas. Keeping
+    // them active after cutover can resurrect deleted data and race cloud-sync
+    // deletion/placeholder operations during every startup read.
+    this.jsonlWriter.setReadBasePaths(migrationComplete ? [] : plan.legacyReadBasePaths);
     this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
-    this.jsonlWriter.setVaultEventStoreReadEnabled(
-      plan.state.migration.state === 'verified' || plan.state.migration.state === 'not_needed'
-    );
+    this.jsonlWriter.setVaultEventStoreReadEnabled(migrationComplete);
     this.sqliteCache.setDbPath(plan.pluginCacheDbPath);
     this.wireReconcilePipeline();
   }
@@ -467,9 +470,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
           completedAt: Date.now(),
           verifiedAt: Date.now()
         });
+        this.jsonlWriter.setReadBasePaths([]);
         this.jsonlWriter.setVaultEventStoreReadEnabled(true);
         return {
           ...plan,
+          legacyReadBasePaths: [],
           state: nextState
         };
       }

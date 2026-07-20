@@ -15,6 +15,10 @@
 
 **Local CLI installer & socket hardening**
 - The installer no longer overwrites (or, on uninstall, deletes) a pre-existing `nexus` command from another tool. The CLI verifies socket ownership before connecting, and the plugin's local socket is created owner-only with no permission-window race. On Windows the provider picker now reflects wired agents correctly and refreshes stale skill copies after an update; pass `--vault <name>` since named pipes can't be auto-detected there.
+- On Windows, **Install CLI** now adds `%LOCALAPPDATA%\nexus` to the current user's PATH automatically. Uninstall removes the entry only when Nexus originally added it, and the status display now distinguishes a present shim from a command that is actually resolvable on PATH.
+
+**Storage cutover fix**
+- Once vault-root migration is verified (or no migration is needed), startup no longer merges legacy flat JSONL roots into normal reads. This prevents deleted legacy files and cloud-sync placeholders from being reopened after cutover; legacy roots remain enabled only while migration is pending or failed.
 
 **v5.14.2** — Clearer MCP integration setup
 

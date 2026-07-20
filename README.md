@@ -21,7 +21,7 @@ Nexus can be used in two ways:
 - Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
 - Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md) for chat, live voice, read-aloud, and built-in audio/video generation
 - External agent over MCP: use **Nexus settings -> Get started -> External agents** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
-- External agent over CLI (no MCP config): install the `nexus` command from **Get started -> External agents -> Local CLI** so shell agents (Claude Code, Cursor, Codex) can drive your vault directly — see the [Nexus CLI guide](guide/nexus-cli.md)
+- External agent over CLI (no MCP config): install the `nexus` command from **Get started -> External agents -> Local CLI** so shell agents (Claude Code, Cursor, Codex) can drive your vault directly — see the [Nexus CLI guide](guide/nexus-cli.md). Installation is user-triggered, writes only outside the vault, and on Windows adds the Nexus directory to the current user's PATH without administrator rights; uninstall removes only entries Nexus recorded as its own.
 - Optional desktop features: [Semantic search](guide/semantic-search.md), [Adaptive search](guide/adaptive-search.md), and [Apps and integrations](guide/apps.md)
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.

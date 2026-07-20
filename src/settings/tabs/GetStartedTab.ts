@@ -698,6 +698,12 @@ export class GetStartedTab {
                 });
             }
         } else {
+            if (Platform.isWin && !status.onPath) {
+                const pathBtn = actions.createEl('button', { text: 'Add to path', cls: 'mod-cta' });
+                if (component) {
+                    component.registerDomEvent(pathBtn, 'click', () => this.addLocalCliToPath(installer));
+                }
+            }
             const revealBtn = actions.createEl('button', { text: this.getRevealButtonText() });
             if (component) {
                 component.registerDomEvent(revealBtn, 'click', () => this.revealInFolder(status.paths.cliJsPath));
@@ -726,12 +732,29 @@ export class GetStartedTab {
             const warn = result.warnings.length
                 ? ` (${result.warnings.length} note${result.warnings.length === 1 ? '' : 's'})`
                 : '';
-            new Notice(`Nexus CLI installed${warn}. Try running \`nexus vaults\` in your terminal.`);
+            const terminalHint = Platform.isWin
+                ? 'Open a new terminal, then run `nexus vaults`.'
+                : 'Try running `nexus vaults` in your terminal.';
+            new Notice(`Nexus CLI installed${warn}. ${terminalHint}`);
             for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
             this.render();
         } catch (error) {
             console.error('[GetStartedTab] Error installing local CLI:', error);
             new Notice(`Failed to install local CLI: ${(error as Error).message}`);
+        }
+    }
+
+    private addLocalCliToPath(installer: LocalCliInstaller): void {
+        try {
+            const result = installer.addToWindowsUserPath();
+            for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
+            new Notice(result.warnings.length
+                ? 'Could not add Nexus CLI to PATH. See the developer console for details.'
+                : 'Nexus CLI added to your user PATH. Open a new terminal to use it.');
+            this.render();
+        } catch (error) {
+            console.error('[GetStartedTab] Error adding local CLI to PATH:', error);
+            new Notice(`Failed to add Nexus CLI to PATH: ${(error as Error).message}`);
         }
     }
 

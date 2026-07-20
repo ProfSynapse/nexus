@@ -22,6 +22,7 @@ import { NEXUS_CLI_JS, NEXUS_SKILL_MD, NEXUS_AGENTS_MD, NEXUS_PLAYBOOKS } from '
 type FsModule = typeof import('node:fs');
 type OsModule = typeof import('node:os');
 type PathModule = typeof import('node:path');
+type ChildProcessModule = typeof import('node:child_process');
 
 const AGENTS_BEGIN = '<!-- BEGIN nexus-cli (managed by Nexus plugin) -->';
 const AGENTS_END = '<!-- END nexus-cli -->';
@@ -46,6 +47,7 @@ export interface CliInstallPaths {
     playbooksDir: string;
     binDir: string;
     binPath: string;
+    pathMarkerPath: string;
     claudeSkillLink: string;
     cursorSkillLink: string;
     codexAgentsPath: string;
@@ -73,6 +75,7 @@ export class LocalCliInstaller {
     private fs(): FsModule { return desktopRequire<FsModule>('node:fs'); }
     private os(): OsModule { return desktopRequire<OsModule>('node:os'); }
     private path(): PathModule { return desktopRequire<PathModule>('node:path'); }
+    private childProcess(): ChildProcessModule { return desktopRequire<ChildProcessModule>('node:child_process'); }
 
     /** True on desktop where Node fs/os/path are available. */
     isSupported(): boolean {
@@ -95,6 +98,7 @@ export class LocalCliInstaller {
             playbooksDir: path.join(skillDir, 'playbooks'),
             binDir,
             binPath: path.join(binDir, Platform.isWin ? 'nexus.cmd' : 'nexus'),
+            pathMarkerPath: path.join(dataDir, '.path-managed'),
             claudeSkillLink: path.join(home, '.claude', 'skills', 'nexus'),
             cursorSkillLink: path.join(home, '.cursor', 'skills', 'nexus'),
             codexAgentsPath: path.join(home, '.codex', 'AGENTS.md'),
@@ -143,8 +147,9 @@ export class LocalCliInstaller {
         return {
             supported: true,
             installed,
-            // Windows has a real .cmd shim, not a symlink — existence is the signal there.
-            onPath: Platform.isWin ? fs.existsSync(paths.binPath) : this.pointsTo(paths.binPath, paths.cliJsPath),
+            onPath: Platform.isWin
+                ? fs.existsSync(paths.binPath) && this.dirOnPath(paths.binDir)
+                : this.pointsTo(paths.binPath, paths.cliJsPath),
             stale,
             skillLinked: this.skillWired(paths.claudeSkillLink, paths),
             cursorLinked: this.skillWired(paths.cursorSkillLink, paths),
@@ -167,7 +172,9 @@ export class LocalCliInstaller {
         const t = { ...this.defaultTargets(), ...targets };
         const lines = [
             `CLI binary: ${paths.cliJsPath}`,
-            `On PATH:    ${paths.binPath} → nexus-cli.js`,
+            Platform.isWin
+                ? `Windows user PATH: ${paths.binDir}`
+                : `On PATH:    ${paths.binPath} → nexus-cli.js`,
         ];
         if (t.claudeCode) lines.push(`Claude Code skill: ${paths.claudeSkillLink} → ${paths.skillDir}`);
         if (t.cursor) lines.push(`Cursor skill: ${paths.cursorSkillLink} → ${paths.skillDir}`);
@@ -206,11 +213,12 @@ export class LocalCliInstaller {
 
         // 3. PATH entry
         if (Platform.isWin) {
-            // Windows: a .cmd shim (symlinks need elevation); user adds dataDir to PATH.
+            // Windows: a .cmd shim (symlinks need elevation) plus a persistent,
+            // per-user PATH entry. No admin rights are required.
             const shim = `@echo off\r\nnode "%~dp0nexus-cli.js" %*\r\n`;
             fs.writeFileSync(paths.binPath, shim, 'utf-8');
             created.push(paths.binPath);
-            warnings.push(`Add ${paths.binDir} to your PATH to call \`nexus\` directly.`);
+            this.ensureWindowsUserPath(paths, created, warnings);
         } else {
             fs.mkdirSync(paths.binDir, { recursive: true });
             if (this.linkReplace(paths.binPath, paths.cliJsPath, warnings)) created.push(paths.binPath);
@@ -304,13 +312,20 @@ export class LocalCliInstaller {
             for (const p of [paths.binPath, paths.claudeSkillLink, paths.cursorSkillLink]) {
                 try { if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); created.push(p); } } catch { /* ignore */ }
             }
+            const pathCleanupSucceeded = this.removeManagedWindowsUserPath(paths, created, warnings);
+            if (!pathCleanupSucceeded) {
+                warnings.push(`Retained ${paths.dataDir} so Windows PATH cleanup can be retried safely.`);
+            }
         }
 
         this.removeCodexBlock(paths.codexAgentsPath);
 
-        try {
-            if (fs.existsSync(paths.dataDir)) { fs.rmSync(paths.dataDir, { recursive: true, force: true }); created.push(paths.dataDir); }
-        } catch (e) { warnings.push(`Could not remove ${paths.dataDir}: ${(e as Error).message}`); }
+        const preserveDataDir = Platform.isWin && fs.existsSync(paths.pathMarkerPath);
+        if (!preserveDataDir) {
+            try {
+                if (fs.existsSync(paths.dataDir)) { fs.rmSync(paths.dataDir, { recursive: true, force: true }); created.push(paths.dataDir); }
+            } catch (e) { warnings.push(`Could not remove ${paths.dataDir}: ${(e as Error).message}`); }
+        }
 
         return { created, warnings, detected: this.detectAgents() };
     }
@@ -353,6 +368,21 @@ export class LocalCliInstaller {
             }
         } catch { /* refresh is best-effort */ }
         return changed;
+    }
+
+    /** Explicitly add an existing Windows install to the current user's PATH. */
+    addToWindowsUserPath(): CliInstallResult {
+        if (!this.isSupported() || !Platform.isWin) {
+            throw new Error('Windows user PATH setup is available on Windows desktop only.');
+        }
+        const paths = this.getPaths();
+        if (!this.fs().existsSync(paths.binPath)) {
+            throw new Error('Install the Nexus CLI before adding it to PATH.');
+        }
+        const created: string[] = [];
+        const warnings: string[] = [];
+        this.ensureWindowsUserPath(paths, created, warnings);
+        return { created, warnings, detected: this.detectAgents() };
     }
 
     /** Write every embedded playbook to <skillDir>/playbooks/. Returns true if any were written. */
@@ -461,7 +491,103 @@ export class LocalCliInstaller {
     private dirOnPath(dir: string): boolean {
         const entries = (process.env.PATH || '').split(this.path().delimiter);
         const norm = this.path().resolve(dir);
-        return entries.some((e) => { try { return this.path().resolve(e) === norm; } catch { return false; } });
+        return entries.some((e) => {
+            try {
+                const candidate = this.path().resolve(e);
+                return Platform.isWin ? candidate.toLowerCase() === norm.toLowerCase() : candidate === norm;
+            } catch { return false; }
+        });
+    }
+
+    /** Persist the CLI directory in the current Windows user's PATH. */
+    private ensureWindowsUserPath(paths: CliInstallPaths, created: string[], warnings: string[]): void {
+        const fs = this.fs();
+        const script = [
+            '$target = $env:NEXUS_CLI_BIN_DIR',
+            "$current = [Environment]::GetEnvironmentVariable('Path', 'User')",
+            "$entries = @($current -split ';' | Where-Object { $_ })",
+            "$present = $entries | Where-Object { $_.TrimEnd('\\') -ieq $target.TrimEnd('\\') }",
+            "if ($present) { Write-Output 'PRESENT'; exit 0 }",
+            "$updated = (($entries + $target) -join ';')",
+            "[Environment]::SetEnvironmentVariable('Path', $updated, 'User')",
+            "Write-Output 'ADDED'",
+        ].join('; ');
+        try {
+            const result = this.childProcess().spawnSync(
+                'powershell.exe',
+                ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+                {
+                    encoding: 'utf-8',
+                    timeout: 10_000,
+                    windowsHide: true,
+                    env: { ...process.env, NEXUS_CLI_BIN_DIR: paths.binDir },
+                }
+            );
+            if (result.error || result.status !== 0) {
+                const detail = result.error?.message || String(result.stderr || '').trim();
+                warnings.push(`Could not add ${paths.binDir} to your Windows user PATH${detail ? `: ${detail}` : '.'}`);
+                return;
+            }
+            this.setProcessPathEntry(paths.binDir, true);
+            if (String(result.stdout || '').includes('ADDED')) {
+                fs.writeFileSync(paths.pathMarkerPath, paths.binDir, 'utf-8');
+                created.push(paths.pathMarkerPath);
+            }
+        } catch (error) {
+            warnings.push(`Could not add ${paths.binDir} to your Windows user PATH: ${(error as Error).message}`);
+        }
+    }
+
+    /** Remove the user-PATH entry only when this installer originally added it. */
+    private removeManagedWindowsUserPath(paths: CliInstallPaths, created: string[], warnings: string[]): boolean {
+        const fs = this.fs();
+        if (!fs.existsSync(paths.pathMarkerPath)) return true;
+        const script = [
+            '$target = $env:NEXUS_CLI_BIN_DIR',
+            "$current = [Environment]::GetEnvironmentVariable('Path', 'User')",
+            "$entries = @($current -split ';' | Where-Object { $_ -and $_.TrimEnd('\\') -ine $target.TrimEnd('\\') })",
+            "$updated = ($entries -join ';')",
+            "[Environment]::SetEnvironmentVariable('Path', $updated, 'User')",
+            "Write-Output 'REMOVED'",
+        ].join('; ');
+        try {
+            const result = this.childProcess().spawnSync(
+                'powershell.exe',
+                ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+                {
+                    encoding: 'utf-8',
+                    timeout: 10_000,
+                    windowsHide: true,
+                    env: { ...process.env, NEXUS_CLI_BIN_DIR: paths.binDir },
+                }
+            );
+            if (result.error || result.status !== 0) {
+                const detail = result.error?.message || String(result.stderr || '').trim();
+                warnings.push(`Could not remove ${paths.binDir} from your Windows user PATH${detail ? `: ${detail}` : '.'}`);
+                return false;
+            }
+            this.setProcessPathEntry(paths.binDir, false);
+            created.push(paths.pathMarkerPath);
+            return true;
+        } catch (error) {
+            warnings.push(`Could not remove ${paths.binDir} from your Windows user PATH: ${(error as Error).message}`);
+            return false;
+        }
+    }
+
+    /** Keep this Obsidian process in sync so status updates immediately. */
+    private setProcessPathEntry(dir: string, present: boolean): void {
+        const delimiter = this.path().delimiter;
+        const normalized = this.path().resolve(dir).toLowerCase();
+        const entries = (process.env.PATH || '')
+            .split(delimiter)
+            .filter(Boolean)
+            .filter((entry) => {
+                try { return this.path().resolve(entry).toLowerCase() !== normalized; }
+                catch { return true; }
+            });
+        if (present) entries.push(dir);
+        process.env.PATH = entries.join(delimiter);
     }
 
     private copyDir(src: string, dest: string): void {

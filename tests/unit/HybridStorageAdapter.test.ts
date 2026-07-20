@@ -47,7 +47,7 @@ describe('HybridStorageAdapter', () => {
   });
 
   describe('applyStoragePlan', () => {
-    it('wires the vault event store and read gating into JSONLWriter', () => {
+    it('disables legacy reads after verified cutover', () => {
       const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
         app: unknown;
         basePath: string;
@@ -100,13 +100,62 @@ describe('HybridStorageAdapter', () => {
       });
 
       expect(adapter.jsonlWriter.setBasePath).toHaveBeenCalledWith('Nexus/data');
+      expect(adapter.jsonlWriter.setReadBasePaths).toHaveBeenCalledWith([]);
+      expect(adapter.jsonlWriter.setVaultEventStore).toHaveBeenCalledWith(expect.any(Object));
+      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(true);
+      expect(adapter.sqliteCache.setDbPath).toHaveBeenCalledWith('.obsidian/plugins/claudesidian-mcp/data/cache.db');
+    });
+
+    it('keeps detected legacy roots readable while migration is pending', () => {
+      const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
+        app: unknown;
+        basePath: string;
+        vaultEventStore: unknown;
+        jsonlWriter: {
+          setBasePath: jest.Mock<void, [string]>;
+          setReadBasePaths: jest.Mock<void, [string[]]>;
+          setVaultEventStore: jest.Mock<void, [unknown]>;
+          setVaultEventStoreReadEnabled: jest.Mock<void, [boolean]>;
+        };
+        sqliteCache: { setDbPath: jest.Mock<void, [string]> };
+      };
+      adapter.app = { vault: { adapter: {} } };
+      adapter.jsonlWriter = {
+        setBasePath: jest.fn(),
+        setReadBasePaths: jest.fn(),
+        setVaultEventStore: jest.fn(),
+        setVaultEventStoreReadEnabled: jest.fn()
+      };
+      adapter.sqliteCache = { setDbPath: jest.fn() };
+
+      (adapter as unknown as { applyStoragePlan: (plan: unknown) => void }).applyStoragePlan({
+        vaultWriteBasePath: 'Nexus/data',
+        legacyReadBasePaths: ['.obsidian/plugins/claudesidian-mcp/data', '.nexus'],
+        pluginCacheDbPath: '.obsidian/plugins/claudesidian-mcp/data/cache.db',
+        state: {
+          storageVersion: 2,
+          sourceOfTruthLocation: 'legacy-dotnexus',
+          migration: {
+            state: 'pending',
+            legacySourcesDetected: ['.obsidian/plugins/claudesidian-mcp/data', '.nexus'],
+            activeDestination: 'Nexus/data'
+          }
+        },
+        roots: {},
+        vaultRoot: {
+          configuredPath: 'Nexus',
+          resolvedPath: 'Nexus',
+          dataPath: 'Nexus/data',
+          guidesPath: 'Nexus/guides',
+          maxShardBytes: 1024
+        }
+      });
+
       expect(adapter.jsonlWriter.setReadBasePaths).toHaveBeenCalledWith([
         '.obsidian/plugins/claudesidian-mcp/data',
         '.nexus'
       ]);
-      expect(adapter.jsonlWriter.setVaultEventStore).toHaveBeenCalledWith(expect.any(Object));
-      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(true);
-      expect(adapter.sqliteCache.setDbPath).toHaveBeenCalledWith('.obsidian/plugins/claudesidian-mcp/data/cache.db');
+      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(false);
     });
   });
 

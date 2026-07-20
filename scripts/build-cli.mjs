@@ -19,9 +19,9 @@ const root = path.join(__dirname, '..');
 
 // Type-check the CLI first. esbuild bundles without checking types, and cli/** is
 // not in the main tsconfig, so this is the only gate that catches a bad import.
-const tsc = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc.cmd' : 'tsc');
+const tsc = path.join(root, 'node_modules', 'typescript', 'bin', 'tsc');
 try {
-    execFileSync(tsc, ['-p', path.join(root, 'cli', 'tsconfig.json')], { stdio: 'inherit' });
+    execFileSync(process.execPath, [tsc, '-p', path.join(root, 'cli', 'tsconfig.json')], { stdio: 'inherit' });
     console.log('[build-cli] tsc type-check passed');
 } catch {
     console.error('[build-cli] tsc type-check FAILED — aborting bundle.');

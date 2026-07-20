@@ -14,7 +14,7 @@ MCP required)** → pick your agents → **Install CLI**. It:
 
 - writes the CLI to a machine-global location and puts `nexus` on your PATH
   (macOS/Linux symlink in `~/.local/bin`; Windows `nexus.cmd` in
-  `%LOCALAPPDATA%\nexus`, add to PATH manually);
+  `%LOCALAPPDATA%\nexus` with an automatic per-user PATH entry);
 - wires the CLI into the agents you pick: a Claude Code skill
   (`~/.claude/skills/nexus`), a Cursor skill (`~/.cursor/skills/nexus`), and/or
   a Codex `AGENTS.md` pointer — defaults to whatever it detects on your machine;
@@ -64,7 +64,7 @@ The vault name lives in the socket name, so selection happens at call time:
 | Platform | Transport | Install |
 |----------|-----------|---------|
 | macOS / Linux | unix socket `/tmp/nexus_mcp_<vault>.sock` | `~/.local/bin/nexus` symlink; `~/.claude/skills/nexus` symlink |
-| Windows | named pipe `\\.\pipe\nexus_mcp_<vault>` | `%LOCALAPPDATA%\nexus\nexus.cmd` (add to PATH); skill **copied** (no symlink) |
+| Windows | named pipe `\\.\pipe\nexus_mcp_<vault>` | `%LOCALAPPDATA%\nexus\nexus.cmd` (user PATH is updated automatically); skill **copied** (no symlink) |
 
 - On macOS, `~/.local/bin` is often not on PATH by default — the installer warns
   if so; add it to your shell profile.
@@ -77,8 +77,9 @@ The vault name lives in the socket name, so selection happens at call time:
 
 - **"No open Nexus vaults" / connect error** — Obsidian isn't open for that
   vault, or Nexus isn't loaded. Open it, then retry.
-- **`nexus: command not found`** — PATH doesn't include the install dir (macOS
-  `~/.local/bin`, Windows `%LOCALAPPDATA%\nexus`), or `node` isn't installed.
+- **`nexus: command not found`** — restart the terminal after installing. If it
+  still fails, PATH doesn't include the install dir (macOS `~/.local/bin`,
+  Windows `%LOCALAPPDATA%\nexus`), or `node` isn't installed.
 - **"Multiple vaults open"** — run `nexus vaults`, then pass `--vault <name>`.
 - **Rejected for missing memory/goal** — every `use` needs `--memory` and
   `--goal`.
