@@ -18,8 +18,8 @@ offline and instant, so read it before your first command instead of guessing.
   `content read --path <path> --start-line 1` (read requires a start line).
   `nexus tools` returns schemas, never data.
 - One open vault is used automatically; if several are open, run `nexus vaults`
-  and pass `--vault <name>` (or set `NEXUS_VAULT`). On Windows auto-detection is
-  not available — always pass `--vault <name>` (the vault folder's name).
+  and pass `--vault <name>` (or set `NEXUS_VAULT`). If Windows policy blocks
+  named-pipe enumeration, direct `--vault <name>` connections still work.
 
 This applies to the user's Obsidian vault, not files in the current code
 repository — use normal file tools for those.

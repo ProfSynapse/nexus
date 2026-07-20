@@ -14,6 +14,27 @@ const ORIGINAL_LOCALAPPDATA = process.env.LOCALAPPDATA;
 const ORIGINAL_PATH = process.env.PATH;
 const mockSpawnSync = jest.fn();
 
+interface MockSpawnResult {
+    status: number;
+    stdout: string;
+    stderr: string;
+    error?: Error;
+}
+
+const nodeOk: MockSpawnResult = { status: 0, stdout: 'v20.19.0\n', stderr: '' };
+
+function mockNodeAndPowerShell(...powerShellResults: MockSpawnResult[]): void {
+    let powerShellIndex = 0;
+    mockSpawnSync.mockImplementation((command: string) => {
+        if (command === 'node') return nodeOk;
+        return powerShellResults[powerShellIndex++] ?? { status: 0, stdout: 'PRESENT\n', stderr: '' };
+    });
+}
+
+function powerShellCalls(): unknown[][] {
+    return mockSpawnSync.mock.calls.filter((call) => call[0] === 'powershell.exe');
+}
+
 jest.mock('obsidian', () => ({
     Platform: { isDesktop: true, isWin: false, isMacOS: true, isMobile: false },
 }));
@@ -54,6 +75,7 @@ describe('LocalCliInstaller', () => {
         if (ORIGINAL_PATH === undefined) delete process.env.PATH;
         else process.env.PATH = ORIGINAL_PATH;
         mockSpawnSync.mockReset();
+        mockNodeAndPowerShell();
         TEST_HOME = realFs.mkdtempSync(realPath.join(realOs.tmpdir(), 'nexus-cli-test-'));
         // Simulate all three agents being installed so detection fires.
         realFs.mkdirSync(realPath.join(TEST_HOME, '.claude'), { recursive: true });
@@ -212,7 +234,7 @@ describe('LocalCliInstaller', () => {
         });
 
         it('enable() persists the CLI directory in the user PATH and reports it accurately', () => {
-            mockSpawnSync.mockReturnValue({ status: 0, stdout: 'ADDED\n', stderr: '' });
+            mockNodeAndPowerShell({ status: 0, stdout: 'ADDED\n', stderr: '' });
 
             const result = installer.enable({ claudeCode: false, cursor: false, codex: false });
             const paths = installer.getPaths();
@@ -229,39 +251,46 @@ describe('LocalCliInstaller', () => {
             expect(realFs.existsSync(paths.pathMarkerPath)).toBe(true);
             expect(process.env.PATH?.toLowerCase()).toContain(paths.binDir.toLowerCase());
             expect(installer.status().onPath).toBe(true);
+            expect(installer.status().runtimeReady).toBe(true);
             expect(result.warnings).toEqual([]);
         });
 
-        it('uninstall() removes a PATH entry that Nexus added', () => {
-            mockSpawnSync
-                .mockReturnValueOnce({ status: 0, stdout: 'ADDED\n', stderr: '' })
-                .mockReturnValueOnce({ status: 0, stdout: 'REMOVED\n', stderr: '' });
+        it('uninstall() removes a PATH entry and all payloads that Nexus added', () => {
+            mockNodeAndPowerShell(
+                { status: 0, stdout: 'ADDED\n', stderr: '' },
+                { status: 0, stdout: 'REMOVED\n', stderr: '' }
+            );
 
             installer.enable({ claudeCode: false, cursor: false, codex: false });
             const paths = installer.getPaths();
             const result = installer.uninstall();
 
-            expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+            expect(powerShellCalls()).toHaveLength(2);
             expect(process.env.PATH?.toLowerCase()).not.toContain(paths.binDir.toLowerCase());
+            expect(realFs.existsSync(paths.pathMarkerPath)).toBe(false);
+            expect(realFs.existsSync(paths.cliJsPath)).toBe(false);
+            expect(realFs.existsSync(paths.dataDir)).toBe(false);
             expect(result.warnings).toEqual([]);
         });
 
         it('reconcile() never changes the user PATH without an explicit action', () => {
-            mockSpawnSync.mockReturnValue({ status: 0, stdout: 'PRESENT\n', stderr: '' });
+            mockNodeAndPowerShell({ status: 0, stdout: 'PRESENT\n', stderr: '' });
             installer.enable({ claudeCode: false, cursor: false, codex: false });
             process.env.PATH = 'C:\\Windows\\System32';
             mockSpawnSync.mockReset();
+            mockNodeAndPowerShell();
 
             installer.reconcile();
 
-            expect(mockSpawnSync).not.toHaveBeenCalled();
+            expect(powerShellCalls()).toHaveLength(0);
             expect(installer.status().onPath).toBe(false);
         });
 
         it('supports an explicit PATH repair for an existing install', () => {
-            mockSpawnSync
-                .mockReturnValueOnce({ status: 0, stdout: 'PRESENT\n', stderr: '' })
-                .mockReturnValueOnce({ status: 0, stdout: 'ADDED\n', stderr: '' });
+            mockNodeAndPowerShell(
+                { status: 0, stdout: 'PRESENT\n', stderr: '' },
+                { status: 0, stdout: 'ADDED\n', stderr: '' }
+            );
             installer.enable({ claudeCode: false, cursor: false, codex: false });
             process.env.PATH = 'C:\\Windows\\System32';
 
@@ -274,19 +303,19 @@ describe('LocalCliInstaller', () => {
         it('uninstall() preserves a PATH entry that was already user-managed', () => {
             const paths = installer.getPaths();
             process.env.PATH = `${process.env.PATH};${paths.binDir}`;
-            mockSpawnSync.mockReturnValue({ status: 0, stdout: 'PRESENT\n', stderr: '' });
+            mockNodeAndPowerShell({ status: 0, stdout: 'PRESENT\n', stderr: '' });
 
             installer.enable({ claudeCode: false, cursor: false, codex: false });
             expect(realFs.existsSync(paths.pathMarkerPath)).toBe(false);
 
             installer.uninstall();
 
-            expect(mockSpawnSync).toHaveBeenCalledTimes(1);
+            expect(powerShellCalls()).toHaveLength(1);
             expect(process.env.PATH?.toLowerCase()).toContain(paths.binDir.toLowerCase());
         });
 
         it('keeps the install but reports PATH persistence failures', () => {
-            mockSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'registry denied' });
+            mockNodeAndPowerShell({ status: 1, stdout: '', stderr: 'registry denied' });
 
             const result = installer.enable({ claudeCode: false, cursor: false, codex: false });
             const paths = installer.getPaths();
@@ -299,9 +328,10 @@ describe('LocalCliInstaller', () => {
         });
 
         it('retains its PATH ownership marker when cleanup fails', () => {
-            mockSpawnSync
-                .mockReturnValueOnce({ status: 0, stdout: 'ADDED\n', stderr: '' })
-                .mockReturnValueOnce({ status: 1, stdout: '', stderr: 'registry denied' });
+            mockNodeAndPowerShell(
+                { status: 0, stdout: 'ADDED\n', stderr: '' },
+                { status: 1, stdout: '', stderr: 'registry denied' }
+            );
             installer.enable({ claudeCode: false, cursor: false, codex: false });
             const paths = installer.getPaths();
 
@@ -313,6 +343,69 @@ describe('LocalCliInstaller', () => {
                 expect.stringContaining('registry denied'),
                 expect.stringContaining('cleanup can be retried safely'),
             ]));
+        });
+
+        it('refuses installation when Node.js 18+ is unavailable', () => {
+            mockSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'not found' });
+            const paths = installer.getPaths();
+
+            expect(() => installer.enable()).toThrow('requires Node.js 18 or newer');
+            expect(realFs.existsSync(paths.cliJsPath)).toBe(false);
+        });
+
+        it('reports a namesake command that appears earlier on PATH', () => {
+            const otherBin = realPath.join(TEST_HOME, 'other-bin');
+            realFs.mkdirSync(otherBin, { recursive: true });
+            realFs.writeFileSync(realPath.join(otherBin, 'nexus.cmd'), '@echo other\r\n', 'utf-8');
+            process.env.PATH = `${otherBin};C:\\Windows\\System32`;
+            mockNodeAndPowerShell({ status: 0, stdout: 'ADDED\n', stderr: '' });
+
+            const result = installer.enable({ claudeCode: false, cursor: false, codex: false });
+            const status = installer.status();
+
+            expect(status.pathConfigured).toBe(true);
+            expect(status.onPath).toBe(false);
+            expect(result.warnings).toEqual(expect.arrayContaining([
+                expect.stringContaining('appears earlier on PATH'),
+            ]));
+        });
+
+        it('preserves an unmarked provider skill directory during install and uninstall', () => {
+            const paths = installer.getPaths();
+            realFs.mkdirSync(paths.claudeSkillLink, { recursive: true });
+            const userSkill = realPath.join(paths.claudeSkillLink, 'SKILL.md');
+            realFs.writeFileSync(userSkill, '# User-owned Nexus skill\n', 'utf-8');
+            mockNodeAndPowerShell({ status: 0, stdout: 'PRESENT\n', stderr: '' });
+
+            const installResult = installer.enable({ claudeCode: true, cursor: false, codex: false });
+            expect(realFs.readFileSync(userSkill, 'utf-8')).toBe('# User-owned Nexus skill\n');
+            expect(installResult.warnings).toEqual(expect.arrayContaining([
+                expect.stringContaining('not managed by Nexus'),
+            ]));
+
+            const uninstallResult = installer.uninstall();
+            expect(realFs.readFileSync(userSkill, 'utf-8')).toBe('# User-owned Nexus skill\n');
+            expect(uninstallResult.warnings).toEqual(expect.arrayContaining([
+                expect.stringContaining(`Preserved ${paths.claudeSkillLink}`),
+            ]));
+        });
+
+        it('marks, refreshes, and removes Windows provider skill copies that Nexus owns', () => {
+            mockNodeAndPowerShell(
+                { status: 0, stdout: 'ADDED\n', stderr: '' },
+                { status: 0, stdout: 'REMOVED\n', stderr: '' }
+            );
+            installer.enable({ claudeCode: true, cursor: false, codex: false });
+            const paths = installer.getPaths();
+            const marker = realPath.join(paths.claudeSkillLink, '.nexus-managed');
+            expect(realFs.existsSync(marker)).toBe(true);
+
+            realFs.writeFileSync(paths.claudeSkillLink + realPath.sep + 'SKILL.md', '# stale\n', 'utf-8');
+            expect(installer.reconcile()).toBe(true);
+            expect(realFs.readFileSync(paths.claudeSkillLink + realPath.sep + 'SKILL.md', 'utf-8')).toContain('# Nexus vault CLI');
+
+            installer.uninstall();
+            expect(realFs.existsSync(paths.claudeSkillLink)).toBe(false);
         });
     });
 });

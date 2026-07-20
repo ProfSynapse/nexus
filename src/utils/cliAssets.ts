@@ -7,18 +7,37 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "1a9353854abd4e99";
+export const NEXUS_CLI_ASSETS_HASH = "c1cb8294cdbef6ec";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
 "use strict";
 
 // cli/nexus-cli.ts
-var import_node_fs2 = require("node:fs");
+var import_node_fs3 = require("node:fs");
 var import_node_path2 = require("node:path");
 
 // cli/mcpLineClient.ts
 var import_node_net = require("node:net");
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseJsonRpcResponse(line) {
+  let parsed;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || typeof parsed.id !== "number") return null;
+  const response = { id: parsed.id };
+  if ("result" in parsed) response.result = parsed.result;
+  if ("error" in parsed) {
+    if (!isRecord(parsed.error) || typeof parsed.error.code !== "number" || typeof parsed.error.message !== "string") return null;
+    response.error = { code: parsed.error.code, message: parsed.error.message };
+  }
+  return response;
+}
 var McpLineClient = class {
   constructor(socketPath, opts = {}) {
     this.socketPath = socketPath;
@@ -54,13 +73,9 @@ var McpLineClient = class {
       const line = this.buffer.slice(0, idx).trim();
       this.buffer = this.buffer.slice(idx + 1);
       if (!line) continue;
-      let msg;
-      try {
-        msg = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (typeof msg.id === "number" && this.pending.has(msg.id)) {
+      const msg = parseJsonRpcResponse(line);
+      if (!msg) continue;
+      if (this.pending.has(msg.id)) {
         const p = this.pending.get(msg.id);
         this.pending.delete(msg.id);
         if (msg.error) {
@@ -150,12 +165,67 @@ function listPlaybooks(dir) {
   return (0, import_node_fs.readdirSync)(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).map((f) => parseFrontmatter((0, import_node_fs.readFileSync)((0, import_node_path.join)(dir, f), "utf8")).meta).filter((m) => m.name);
 }
 
-// cli/nexus-cli.ts
-var IS_WIN = process.platform === "win32";
+// cli/vaultDiscovery.ts
+var import_node_fs2 = require("node:fs");
+var import_node_child_process = require("node:child_process");
 var NAME_PREFIX = "nexus_mcp_";
 var UNIX_SOCK_DIR = "/tmp";
 var UNIX_SUFFIX = ".sock";
 var WIN_PIPE_DIR = "\\\\\\\\.\\\\pipe\\\\";
+var WINDOWS_PIPE_LIST_SCRIPT = "Get-ChildItem -LiteralPath '\\\\\\\\.\\\\pipe\\\\' -Name";
+var SAFE_PIPE_NAME = /^nexus_mcp_[a-z0-9_-]+$/;
+function parseWindowsPipeListing(output) {
+  const names = output.split(/\\r?\\n/).map((line) => line.trim()).filter((line) => SAFE_PIPE_NAME.test(line));
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right)).map((pipeName) => ({
+    name: pipeName.slice(NAME_PREFIX.length),
+    path: \`\${WIN_PIPE_DIR}\${pipeName}\`
+  }));
+}
+function listWindowsVaultPipes() {
+  const result = (0, import_node_child_process.spawnSync)(
+    "powershell.exe",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_PIPE_LIST_SCRIPT],
+    {
+      encoding: "utf8",
+      timeout: 5e3,
+      windowsHide: true
+    }
+  );
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message || String(result.stderr || "").trim() || "unknown error";
+    throw new Error(
+      \`Could not enumerate Windows named pipes: \${detail}. Pass --vault <name> or set NEXUS_VAULT as a fallback.\`
+    );
+  }
+  return parseWindowsPipeListing(String(result.stdout || ""));
+}
+function isOwnUnixSocket(path) {
+  if (typeof process.getuid !== "function") return false;
+  try {
+    const stat = (0, import_node_fs2.lstatSync)(path);
+    return stat.isSocket() && stat.uid === process.getuid();
+  } catch {
+    return false;
+  }
+}
+function listVaultSockets(platform = process.platform) {
+  if (platform === "win32") {
+    return listWindowsVaultPipes();
+  }
+  try {
+    return (0, import_node_fs2.readdirSync)(UNIX_SOCK_DIR).filter((fileName) => fileName.startsWith(NAME_PREFIX) && fileName.endsWith(UNIX_SUFFIX)).map((fileName) => ({
+      name: fileName.slice(NAME_PREFIX.length, -UNIX_SUFFIX.length),
+      path: \`\${UNIX_SOCK_DIR}/\${fileName}\`
+    })).filter((socket) => isOwnUnixSocket(socket.path));
+  } catch (error) {
+    const code = error.code;
+    if (code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+// cli/nexus-cli.ts
+var IS_WIN = process.platform === "win32";
 function sanitizeVaultName(name) {
   if (!name) return "";
   return name.toLowerCase().replace(/[^\\w\\s-]/g, "").replace(/\\s+/g, "-").replace(/-+/g, "-");
@@ -163,31 +233,12 @@ function sanitizeVaultName(name) {
 function vaultSocketPath(sanitized) {
   return IS_WIN ? \`\${WIN_PIPE_DIR}\${NAME_PREFIX}\${sanitized}\` : \`\${UNIX_SOCK_DIR}/\${NAME_PREFIX}\${sanitized}\${UNIX_SUFFIX}\`;
 }
-function isOwnSocket(p) {
-  if (IS_WIN || typeof process.getuid !== "function") return true;
-  try {
-    const st = (0, import_node_fs2.lstatSync)(p);
-    return st.isSocket() && st.uid === process.getuid();
-  } catch {
-    return false;
-  }
-}
-function listVaultSockets() {
-  try {
-    if (IS_WIN) {
-      return (0, import_node_fs2.readdirSync)(WIN_PIPE_DIR).filter((f) => f.startsWith(NAME_PREFIX)).map((f) => ({ name: f.slice(NAME_PREFIX.length), path: \`\${WIN_PIPE_DIR}\${f}\` }));
-    }
-    return (0, import_node_fs2.readdirSync)(UNIX_SOCK_DIR).filter((f) => f.startsWith(NAME_PREFIX) && f.endsWith(UNIX_SUFFIX)).map((f) => ({ name: f.slice(NAME_PREFIX.length, -UNIX_SUFFIX.length), path: \`\${UNIX_SOCK_DIR}/\${f}\` })).filter((s) => isOwnSocket(s.path));
-  } catch {
-    return [];
-  }
-}
 function resolveVault(requested) {
   const want = requested ?? process.env.NEXUS_VAULT ?? void 0;
   if (want) {
     const s = sanitizeVaultName(want);
     const p = vaultSocketPath(s);
-    if (!IS_WIN && (0, import_node_fs2.existsSync)(p) && !isOwnSocket(p)) {
+    if (!IS_WIN && (0, import_node_fs3.existsSync)(p) && !isOwnUnixSocket(p)) {
       throw new Error(\`Refusing to connect: \${p} is not owned by the current user.\`);
     }
     return { name: s, path: p };
@@ -195,7 +246,7 @@ function resolveVault(requested) {
   const sockets = listVaultSockets();
   if (sockets.length === 1) return sockets[0];
   if (sockets.length === 0) {
-    throw new Error(IS_WIN ? "Cannot auto-detect vaults on Windows (the named-pipe namespace is not enumerable). Pass --vault <name> or set NEXUS_VAULT." : "No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.");
+    throw new Error("No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.");
   }
   throw new Error(\`Multiple vaults open: \${sockets.map((x) => x.name).join(", ")}. Pass --vault <name>.\`);
 }
@@ -268,8 +319,7 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
   --workspace <id>        scope for traces/memory (default: "default")
   --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
   --constraints "<text>"  optional guardrails
-  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT;
-                          REQUIRED on Windows \\u2014 pipes cannot be auto-detected)
+  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
   --json                  print the raw JSON result
 
 CLI SYNTAX
@@ -336,7 +386,7 @@ async function main() {
   if (cmd === "vaults") {
     const sockets = listVaultSockets();
     if (sockets.length === 0) {
-      process.stdout.write(IS_WIN ? "Cannot list vaults on Windows (pipes are not enumerable) \\u2014 pass --vault <name> to commands directly.\\n" : "No open Nexus vaults (no sockets in /tmp). Is Obsidian running?\\n");
+      process.stdout.write("No open Nexus vaults. Is Obsidian running with Nexus enabled?\\n");
       return 0;
     }
     for (const s of sockets) process.stdout.write(\`\${s.name}	\${s.path}
@@ -387,16 +437,16 @@ async function main() {
       return 2;
     }
     const file = (0, import_node_path2.join)(dir, \`\${name}.md\`);
-    if (!(0, import_node_fs2.existsSync)(file)) {
+    if (!(0, import_node_fs3.existsSync)(file)) {
       const books = listPlaybooks(dir);
       const names = books.map((b) => b.name).join(", ") || "(none installed)";
       process.stderr.write(\`Unknown playbook "\${name}". Available: \${names}. Run \\\`nexus playbook\\\` to list.
 \`);
       return 2;
     }
-    const { meta, body } = parseFrontmatter((0, import_node_fs2.readFileSync)(file, "utf8"));
+    const { meta, body } = parseFrontmatter((0, import_node_fs3.readFileSync)(file, "utf8"));
     const preamblePath = (0, import_node_path2.join)(dir, "_preamble.md");
-    const preamble = (0, import_node_fs2.existsSync)(preamblePath) ? (0, import_node_fs2.readFileSync)(preamblePath, "utf8").trim() : "";
+    const preamble = (0, import_node_fs3.existsSync)(preamblePath) ? (0, import_node_fs3.readFileSync)(preamblePath, "utf8").trim() : "";
     if (preamble) process.stdout.write(preamble + "\\n\\n");
     const ctx = {
       workspaceId: typeof flags.workspace === "string" ? flags.workspace : "default",
@@ -557,8 +607,8 @@ offline and instant, so read it before your first command instead of guessing.
   \`content read --path <path> --start-line 1\` (read requires a start line).
   \`nexus tools\` returns schemas, never data.
 - One open vault is used automatically; if several are open, run \`nexus vaults\`
-  and pass \`--vault <name>\` (or set \`NEXUS_VAULT\`). On Windows auto-detection is
-  not available — always pass \`--vault <name>\` (the vault folder's name).
+  and pass \`--vault <name>\` (or set \`NEXUS_VAULT\`). If Windows policy blocks
+  named-pipe enumeration, direct \`--vault <name>\` connections still work.
 
 This applies to the user's Obsidian vault, not files in the current code
 repository — use normal file tools for those.

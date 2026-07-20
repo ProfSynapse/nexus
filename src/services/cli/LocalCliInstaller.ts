@@ -26,6 +26,10 @@ type ChildProcessModule = typeof import('node:child_process');
 
 const AGENTS_BEGIN = '<!-- BEGIN nexus-cli (managed by Nexus plugin) -->';
 const AGENTS_END = '<!-- END nexus-cli -->';
+const WINDOWS_SKILL_MARKER = '.nexus-managed';
+const WINDOWS_SKILL_MARKER_CONTENT = 'Managed by the Nexus local CLI installer.\n';
+const WINDOWS_SHIM = '@echo off\r\nnode "%~dp0nexus-cli.js" %*\r\n';
+const MINIMUM_NODE_MAJOR = 18;
 
 /** The agent providers the CLI can wire into. */
 export type CliProviderId = 'claudeCode' | 'cursor' | 'codex';
@@ -57,6 +61,8 @@ export interface CliInstallStatus {
     supported: boolean;
     installed: boolean;
     onPath: boolean;
+    pathConfigured: boolean;
+    runtimeReady: boolean;
     stale: boolean;
     skillLinked: boolean;
     cursorLinked: boolean;
@@ -125,6 +131,7 @@ export class LocalCliInstaller {
         if (!this.isSupported()) {
             return {
                 supported: false, installed: false, onPath: false, stale: false,
+                pathConfigured: false, runtimeReady: false,
                 skillLinked: false, cursorLinked: false, codexLinked: false,
                 detected: { claudeCode: false, codex: false, cursor: false },
                 paths: {} as CliInstallPaths,
@@ -144,12 +151,17 @@ export class LocalCliInstaller {
                     || this.winCopyStale(paths.cursorSkillLink);
             } catch { stale = true; }
         }
+        const pathConfigured = Platform.isWin
+            ? fs.existsSync(paths.binPath) && this.dirOnPath(paths.binDir)
+            : this.pointsTo(paths.binPath, paths.cliJsPath);
         return {
             supported: true,
             installed,
             onPath: Platform.isWin
-                ? fs.existsSync(paths.binPath) && this.dirOnPath(paths.binDir)
-                : this.pointsTo(paths.binPath, paths.cliJsPath),
+                ? pathConfigured && this.windowsCommandResolvesTo(paths.binPath)
+                : pathConfigured,
+            pathConfigured,
+            runtimeReady: this.nodeRuntimeReady(),
             stale,
             skillLinked: this.skillWired(paths.claudeSkillLink, paths),
             cursorLinked: this.skillWired(paths.cursorSkillLink, paths),
@@ -192,6 +204,7 @@ export class LocalCliInstaller {
      */
     enable(targets?: Partial<CliInstallTargets>): CliInstallResult {
         if (!this.isSupported()) throw new Error('Local CLI install is desktop-only.');
+        this.requireNodeRuntime();
         const fs = this.fs();
         const paths = this.getPaths();
         const detected = this.detectAgents();
@@ -215,10 +228,16 @@ export class LocalCliInstaller {
         if (Platform.isWin) {
             // Windows: a .cmd shim (symlinks need elevation) plus a persistent,
             // per-user PATH entry. No admin rights are required.
-            const shim = `@echo off\r\nnode "%~dp0nexus-cli.js" %*\r\n`;
-            fs.writeFileSync(paths.binPath, shim, 'utf-8');
-            created.push(paths.binPath);
-            this.ensureWindowsUserPath(paths, created, warnings);
+            if (fs.existsSync(paths.binPath) && !this.isManagedWindowsShim(paths.binPath)) {
+                warnings.push(`Skipped ${paths.binPath} — an existing command there is not managed by Nexus.`);
+            } else {
+                fs.writeFileSync(paths.binPath, WINDOWS_SHIM, 'utf-8');
+                created.push(paths.binPath);
+                this.ensureWindowsUserPath(paths, created, warnings);
+                if (this.dirOnPath(paths.binDir) && !this.windowsCommandResolvesTo(paths.binPath)) {
+                    warnings.push('Another nexus command appears earlier on PATH; Nexus did not replace or reorder it.');
+                }
+            }
         } else {
             fs.mkdirSync(paths.binDir, { recursive: true });
             if (this.linkReplace(paths.binPath, paths.cliJsPath, warnings)) created.push(paths.binPath);
@@ -269,9 +288,16 @@ export class LocalCliInstaller {
 
     /** Create the skill symlink (or copy on Windows) at `link` → skillDir. */
     private wireSkillLink(link: string, paths: CliInstallPaths, created: string[], warnings: string[]): void {
-        this.fs().mkdirSync(this.path().dirname(link), { recursive: true });
+        const fs = this.fs();
+        fs.mkdirSync(this.path().dirname(link), { recursive: true });
         if (Platform.isWin) {
+            if (fs.existsSync(link) && !this.isManagedWindowsSkillCopy(link)) {
+                warnings.push(`Skipped ${link} — an existing skill directory there is not managed by Nexus.`);
+                return;
+            }
+            if (fs.existsSync(link)) fs.rmSync(link, { recursive: true, force: true });
             this.copyDir(paths.skillDir, link);
+            fs.writeFileSync(this.path().join(link, WINDOWS_SKILL_MARKER), WINDOWS_SKILL_MARKER_CONTENT, 'utf-8');
             created.push(link);
         } else if (this.linkReplace(link, paths.skillDir, warnings)) {
             created.push(link);
@@ -282,9 +308,13 @@ export class LocalCliInstaller {
     private unwireSkillLink(link: string, created: string[], warnings: string[]): void {
         const fs = this.fs();
         try {
-            if (this.pointsTo(link, this.getPaths().skillDir) || this.isOurSymlink(link) || (Platform.isWin && fs.existsSync(link))) {
+            if (this.pointsTo(link, this.getPaths().skillDir)
+                || this.isOurSymlink(link)
+                || (Platform.isWin && this.isManagedWindowsSkillCopy(link))) {
                 fs.rmSync(link, { recursive: true, force: true });
                 created.push(link);
+            } else if (Platform.isWin && fs.existsSync(link)) {
+                warnings.push(`Preserved ${link} because it is not managed by Nexus.`);
             }
         } catch (e) { warnings.push(`Could not remove ${link}: ${(e as Error).message}`); }
     }
@@ -307,10 +337,33 @@ export class LocalCliInstaller {
                 catch (e) { warnings.push(`Could not remove ${link}: ${(e as Error).message}`); }
             }
         }
-        // Windows shim / copied skill are real files — remove by path if present.
+        // Windows shim / copied skills are real files — remove only artifacts
+        // carrying our content/marker. Preserve any same-named user content.
         if (Platform.isWin) {
-            for (const p of [paths.binPath, paths.claudeSkillLink, paths.cursorSkillLink]) {
-                try { if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); created.push(p); } } catch { /* ignore */ }
+            try {
+                if (fs.existsSync(paths.binPath)) {
+                    if (this.isManagedWindowsShim(paths.binPath)) {
+                        fs.rmSync(paths.binPath, { force: true });
+                        created.push(paths.binPath);
+                    } else {
+                        warnings.push(`Preserved ${paths.binPath} because it is not managed by Nexus.`);
+                    }
+                }
+            } catch (error) {
+                warnings.push(`Could not remove ${paths.binPath}: ${(error as Error).message}`);
+            }
+            for (const link of [paths.claudeSkillLink, paths.cursorSkillLink]) {
+                try {
+                    if (!fs.existsSync(link)) continue;
+                    if (this.isManagedWindowsSkillCopy(link)) {
+                        fs.rmSync(link, { recursive: true, force: true });
+                        created.push(link);
+                    } else {
+                        warnings.push(`Preserved ${link} because it is not managed by Nexus.`);
+                    }
+                } catch (error) {
+                    warnings.push(`Could not remove ${link}: ${(error as Error).message}`);
+                }
             }
             const pathCleanupSucceeded = this.removeManagedWindowsUserPath(paths, created, warnings);
             if (!pathCleanupSucceeded) {
@@ -382,6 +435,9 @@ export class LocalCliInstaller {
         const created: string[] = [];
         const warnings: string[] = [];
         this.ensureWindowsUserPath(paths, created, warnings);
+        if (this.dirOnPath(paths.binDir) && !this.windowsCommandResolvesTo(paths.binPath)) {
+            warnings.push('Another nexus command appears earlier on PATH; Nexus did not replace or reorder it.');
+        }
         return { created, warnings, detected: this.detectAgents() };
     }
 
@@ -466,7 +522,10 @@ export class LocalCliInstaller {
     /** True when a provider skill is wired: symlink on POSIX, copied dir on Windows. */
     private skillWired(link: string, paths: CliInstallPaths): boolean {
         if (Platform.isWin) {
-            try { return this.fs().existsSync(this.path().join(link, 'SKILL.md')); } catch { return false; }
+            try {
+                return this.isManagedWindowsSkillCopy(link)
+                    && this.fs().existsSync(this.path().join(link, 'SKILL.md'));
+            } catch { return false; }
         }
         return this.pointsTo(link, paths.skillDir);
     }
@@ -477,8 +536,9 @@ export class LocalCliInstaller {
         const fs = this.fs();
         const path = this.path();
         try {
+            if (!this.isManagedWindowsSkillCopy(link)) return false;
             const skillMd = path.join(link, 'SKILL.md');
-            if (!fs.existsSync(skillMd)) return false; // not wired → nothing to refresh
+            if (!fs.existsSync(skillMd)) return true;
             if (fs.readFileSync(skillMd, 'utf-8') !== NEXUS_SKILL_MD) return true;
             for (const [file, content] of Object.entries(NEXUS_PLAYBOOKS)) {
                 const p = path.join(link, 'playbooks', file);
@@ -497,6 +557,61 @@ export class LocalCliInstaller {
                 return Platform.isWin ? candidate.toLowerCase() === norm.toLowerCase() : candidate === norm;
             } catch { return false; }
         });
+    }
+
+    /** True only when Windows command lookup reaches our shim before any namesake. */
+    private windowsCommandResolvesTo(expectedPath: string): boolean {
+        if (!Platform.isWin) return false;
+        const fs = this.fs();
+        const path = this.path();
+        const extensions = (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD')
+            .split(';')
+            .filter(Boolean);
+        for (const entry of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+            for (const extension of extensions) {
+                const candidate = path.join(entry, `nexus${extension.toLowerCase()}`);
+                const alternate = path.join(entry, `nexus${extension.toUpperCase()}`);
+                const existing = fs.existsSync(candidate) ? candidate : (fs.existsSync(alternate) ? alternate : null);
+                if (!existing) continue;
+                return path.resolve(existing).toLowerCase() === path.resolve(expectedPath).toLowerCase();
+            }
+        }
+        return false;
+    }
+
+    private nodeRuntimeReady(): boolean {
+        try {
+            const result = this.childProcess().spawnSync('node', ['--version'], {
+                encoding: 'utf-8',
+                timeout: 5_000,
+                windowsHide: true,
+            });
+            if (result.error || result.status !== 0) return false;
+            const match = String(result.stdout || '').trim().match(/^v?(\d+)\./);
+            return match !== null && Number(match[1]) >= MINIMUM_NODE_MAJOR;
+        } catch {
+            return false;
+        }
+    }
+
+    private requireNodeRuntime(): void {
+        if (!this.nodeRuntimeReady()) {
+            throw new Error(`Nexus CLI requires Node.js ${MINIMUM_NODE_MAJOR} or newer on PATH.`);
+        }
+    }
+
+    private isManagedWindowsShim(path: string): boolean {
+        try { return this.fs().readFileSync(path, 'utf-8') === WINDOWS_SHIM; }
+        catch { return false; }
+    }
+
+    private isManagedWindowsSkillCopy(link: string): boolean {
+        try {
+            const marker = this.path().join(link, WINDOWS_SKILL_MARKER);
+            return this.fs().readFileSync(marker, 'utf-8') === WINDOWS_SKILL_MARKER_CONTENT;
+        } catch {
+            return false;
+        }
     }
 
     /** Persist the CLI directory in the current Windows user's PATH. */
@@ -567,6 +682,7 @@ export class LocalCliInstaller {
                 return false;
             }
             this.setProcessPathEntry(paths.binDir, false);
+            fs.rmSync(paths.pathMarkerPath, { force: true });
             created.push(paths.pathMarkerPath);
             return true;
         } catch (error) {

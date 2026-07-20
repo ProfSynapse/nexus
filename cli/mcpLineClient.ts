@@ -23,6 +23,37 @@ export interface McpToolResult {
     [k: string]: unknown;
 }
 
+interface JsonRpcResponse {
+    id: number;
+    result?: unknown;
+    error?: { code: number; message: string };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Parse only the JSON-RPC response shape consumed by this client. */
+export function parseJsonRpcResponse(line: string): JsonRpcResponse | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(line) as unknown;
+    } catch {
+        return null;
+    }
+    if (!isRecord(parsed) || typeof parsed.id !== 'number') return null;
+
+    const response: JsonRpcResponse = { id: parsed.id };
+    if ('result' in parsed) response.result = parsed.result;
+    if ('error' in parsed) {
+        if (!isRecord(parsed.error)
+            || typeof parsed.error.code !== 'number'
+            || typeof parsed.error.message !== 'string') return null;
+        response.error = { code: parsed.error.code, message: parsed.error.message };
+    }
+    return response;
+}
+
 export class McpLineClient {
     private socket: Socket | null = null;
     private nextId = 1;
@@ -62,13 +93,9 @@ export class McpLineClient {
             const line = this.buffer.slice(0, idx).trim();
             this.buffer = this.buffer.slice(idx + 1);
             if (!line) continue;
-            let msg: { id?: number; result?: unknown; error?: { code: number; message: string } };
-            try {
-                msg = JSON.parse(line);
-            } catch {
-                continue; // ignore non-JSON / partial noise
-            }
-            if (typeof msg.id === 'number' && this.pending.has(msg.id)) {
+            const msg = parseJsonRpcResponse(line);
+            if (!msg) continue; // ignore non-JSON, notifications, and malformed responses
+            if (this.pending.has(msg.id)) {
                 const p = this.pending.get(msg.id)!;
                 this.pending.delete(msg.id);
                 if (msg.error) {

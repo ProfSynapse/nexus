@@ -11,20 +11,24 @@
  * result, and exits. Spike scope per docs/plans/local-cli-agent-bridge-plan.md §9 step 1:
  * self-contained (node builtins only), macOS/Linux sockets only.
  */
-import { readdirSync, readFileSync, existsSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
+import {
+    listVaultSockets,
+    NAME_PREFIX,
+    UNIX_SOCK_DIR,
+    UNIX_SUFFIX,
+    WIN_PIPE_DIR,
+    VaultSocket,
+    isOwnUnixSocket,
+} from './vaultDiscovery';
 
 // Transport endpoints mirror connector.ts exactly:
 //   macOS/Linux: unix domain socket  /tmp/nexus_mcp_<vault>.sock
 //   Windows:     named pipe          \\.\pipe\nexus_mcp_<vault>
 const IS_WIN = process.platform === 'win32';
-const NAME_PREFIX = 'nexus_mcp_';
-const UNIX_SOCK_DIR = '/tmp';
-const UNIX_SUFFIX = '.sock';
-const WIN_PIPE_DIR = '\\\\.\\pipe\\';
-
 /** Mirror of connector.ts sanitizeVaultName — MUST stay identical. */
 function sanitizeVaultName(name: string): string {
     if (!name) return '';
@@ -42,41 +46,6 @@ function vaultSocketPath(sanitized: string): string {
         : `${UNIX_SOCK_DIR}/${NAME_PREFIX}${sanitized}${UNIX_SUFFIX}`;
 }
 
-interface VaultSocket { name: string; path: string; }
-
-/**
- * Unix only: the socket must be owned by the current user. /tmp is world-writable,
- * so on a shared machine another user could plant a look-alike socket and feed the
- * driving agent forged tool results. Windows named pipes are not enumerable this
- * way and connect errors surface directly, so they pass through.
- */
-function isOwnSocket(p: string): boolean {
-    if (IS_WIN || typeof process.getuid !== 'function') return true;
-    try {
-        const st = lstatSync(p);
-        return st.isSocket() && st.uid === process.getuid();
-    } catch {
-        return false;
-    }
-}
-
-/** Enumerate live vault endpoints (unix: glob /tmp; windows: list the named-pipe namespace). */
-function listVaultSockets(): VaultSocket[] {
-    try {
-        if (IS_WIN) {
-            return readdirSync(WIN_PIPE_DIR)
-                .filter((f) => f.startsWith(NAME_PREFIX))
-                .map((f) => ({ name: f.slice(NAME_PREFIX.length), path: `${WIN_PIPE_DIR}${f}` }));
-        }
-        return readdirSync(UNIX_SOCK_DIR)
-            .filter((f) => f.startsWith(NAME_PREFIX) && f.endsWith(UNIX_SUFFIX))
-            .map((f) => ({ name: f.slice(NAME_PREFIX.length, -UNIX_SUFFIX.length), path: `${UNIX_SOCK_DIR}/${f}` }))
-            .filter((s) => isOwnSocket(s.path));
-    } catch {
-        return [];
-    }
-}
-
 function resolveVault(requested?: string): VaultSocket {
     const want = requested ?? process.env.NEXUS_VAULT ?? undefined;
     if (want) {
@@ -85,7 +54,7 @@ function resolveVault(requested?: string): VaultSocket {
         // endpoint surfaces a clear connect error from the client.
         const s = sanitizeVaultName(want);
         const p = vaultSocketPath(s);
-        if (!IS_WIN && existsSync(p) && !isOwnSocket(p)) {
+        if (!IS_WIN && existsSync(p) && !isOwnUnixSocket(p)) {
             throw new Error(`Refusing to connect: ${p} is not owned by the current user.`);
         }
         return { name: s, path: p };
@@ -93,9 +62,7 @@ function resolveVault(requested?: string): VaultSocket {
     const sockets = listVaultSockets();
     if (sockets.length === 1) return sockets[0];
     if (sockets.length === 0) {
-        throw new Error(IS_WIN
-            ? 'Cannot auto-detect vaults on Windows (the named-pipe namespace is not enumerable). Pass --vault <name> or set NEXUS_VAULT.'
-            : 'No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.');
+        throw new Error('No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.');
     }
     throw new Error(`Multiple vaults open: ${sockets.map((x) => x.name).join(', ')}. Pass --vault <name>.`);
 }
@@ -184,8 +151,7 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --workspace <id>        scope for traces/memory (default: "default")
   --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
   --constraints "<text>"  optional guardrails
-  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT;
-                          REQUIRED on Windows — pipes cannot be auto-detected)
+  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
   --json                  print the raw JSON result
 
 CLI SYNTAX
@@ -256,9 +222,7 @@ async function main(): Promise<number> {
     if (cmd === 'vaults') {
         const sockets = listVaultSockets();
         if (sockets.length === 0) {
-            process.stdout.write(IS_WIN
-                ? 'Cannot list vaults on Windows (pipes are not enumerable) — pass --vault <name> to commands directly.\n'
-                : 'No open Nexus vaults (no sockets in /tmp). Is Obsidian running?\n');
+            process.stdout.write('No open Nexus vaults. Is Obsidian running with Nexus enabled?\n');
             return 0;
         }
         for (const s of sockets) process.stdout.write(`${s.name}\t${s.path}\n`);

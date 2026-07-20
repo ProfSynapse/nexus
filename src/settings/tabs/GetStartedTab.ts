@@ -643,7 +643,13 @@ export class GetStartedTab {
 
         const row = block.createDiv('nexus-mcp-row');
         const statusText = status.installed
-            ? (status.onPath ? 'Installed and on your PATH' : 'Installed (not yet on your PATH)')
+            ? (!status.runtimeReady
+                ? 'Installed (Node.js 18+ is not available on PATH)'
+                : status.onPath
+                    ? 'Installed and on your PATH'
+                    : Platform.isWin && status.pathConfigured
+                        ? 'Installed (another nexus command takes precedence)'
+                        : 'Installed (not yet on your PATH)')
             : 'Not installed';
         row.createSpan({ text: statusText, cls: 'nexus-mcp-status' });
 
@@ -698,7 +704,7 @@ export class GetStartedTab {
                 });
             }
         } else {
-            if (Platform.isWin && !status.onPath) {
+            if (Platform.isWin && !status.pathConfigured) {
                 const pathBtn = actions.createEl('button', { text: 'Add to path', cls: 'mod-cta' });
                 if (component) {
                     component.registerDomEvent(pathBtn, 'click', () => this.addLocalCliToPath(installer));
@@ -735,7 +741,9 @@ export class GetStartedTab {
             const terminalHint = Platform.isWin
                 ? 'Open a new terminal, then run `nexus vaults`.'
                 : 'Try running `nexus vaults` in your terminal.';
-            new Notice(`Nexus CLI installed${warn}. ${terminalHint}`);
+            new Notice(result.warnings.length
+                ? `Nexus CLI installed${warn}, but some requested wiring was preserved or unavailable. See the developer console for details.`
+                : `Nexus CLI installed. ${terminalHint}`);
             for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
             this.render();
         } catch (error) {
@@ -762,7 +770,9 @@ export class GetStartedTab {
         try {
             const result = installer.setProvider(id, enabled);
             for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
-            new Notice(enabled ? `Wired nexus into ${label}.` : `Removed nexus from ${label}.`);
+            new Notice(result.warnings.length
+                ? `Could not ${enabled ? 'wire nexus into' : 'remove nexus from'} ${label}. See the developer console for details.`
+                : enabled ? `Wired nexus into ${label}.` : `Removed nexus from ${label}.`);
             this.render();
         } catch (error) {
             console.error('[GetStartedTab] Error updating CLI provider:', error);
@@ -772,8 +782,11 @@ export class GetStartedTab {
 
     private uninstallLocalCli(installer: LocalCliInstaller): void {
         try {
-            installer.uninstall();
-            new Notice('Nexus CLI uninstalled.');
+            const result = installer.uninstall();
+            for (const w of result.warnings) console.warn('[GetStartedTab] Local CLI:', w);
+            new Notice(result.warnings.length
+                ? 'Nexus CLI cleanup was incomplete. See the developer console for details.'
+                : 'Nexus CLI uninstalled.');
             this.render();
         } catch (error) {
             console.error('[GetStartedTab] Error uninstalling local CLI:', error);
