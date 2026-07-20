@@ -5,7 +5,8 @@
  *
  * Design: docs/plans/local-cli-agent-bridge-plan.md
  *
- * What it creates (all outside the vault, only on explicit user action):
+ * What it creates (all outside the vault; initial installation is explicit,
+ * then plugin updates refresh only the already-installed Nexus-owned copies):
  *   <dataDir>/nexus-cli.js         the bundled CLI (chmod +x)
  *   <dataDir>/skill/SKILL.md       the Claude Code skill body
  *   <binDir>/nexus                 symlink → the CLI (PATH)

@@ -36,22 +36,26 @@ For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
   gets *contents*; then you write. A search hit is a `{path, score}`, **not** the
   note — never quote, summarize, or edit from a hit without reading it first.
 - **`nexus tools` returns schemas, not data.** It's discovery. Don't loop it
-  hoping for vault content — that comes from `nexus use "content read …"`.
+  hoping for vault content — that comes from `nexus use --memory … --goal … -- content read …`.
 - **`--memory` and `--goal` are real and enforced.** You're operating a person's
   live vault; pass a genuine running summary and objective, not placeholders.
 - **You can't escape the vault.** Paths are vault-relative; `..`, `~`, and
   absolute paths are rejected. That's a guardrail, not a bug.
 - **Nothing is destroyed.** The AI gets archive (reversible), not delete.
-- **Windows: always pass `--vault <name>`** (the vault folder's name) or set
-  `NEXUS_VAULT` — named pipes can't be auto-detected there.
+- **Windows:** `nexus vaults` discovers local named pipes. If policy blocks
+  enumeration, pass `--vault <name>` or set `NEXUS_VAULT`.
 
 ## The shape
 
 ```
 nexus tools [selector]              # discover — tool schemas (never vault data)
-nexus use "<agent command --flags>" # execute — runs a tool, prints the result
-    --memory "<what you're doing>" --goal "<objective>"
+nexus use --memory "<what you're doing>" --goal "<objective>" -- \
+    <agent command --flags>         # execute — runs one tool, prints the result
 ```
+
+The `--` delimiter is canonical: context belongs before it; the tool command
+belongs after it. This avoids nested command-string quoting, especially in
+Windows PowerShell. The legacy one-string form remains supported.
 
 Everything else — the flag table, per-tool schemas, syntax rules, the live
 per-vault catalog (including any enabled app agents) — comes from `nexus --help`,

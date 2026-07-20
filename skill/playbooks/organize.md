@@ -34,33 +34,38 @@ Unlike `vault-work` (which edits note *bodies*), this moves and files whole note
 
 ```
 # 1. load the workspace
-nexus use "memory load-workspace --workspace journal" \
+nexus use \
   --memory "tidying old dailies" --goal "load the journal workspace" \
-  --session tidy-dailies
+  --session tidy-dailies \
+  -- memory load-workspace --workspace journal
 
 # 2. map — which dailies are from 2025? (query frontmatter; --describe to see columns first)
-nexus use "search query-notes --sql \"SELECT path FROM notes WHERE path LIKE 'Daily/2025-%' ORDER BY path\"" \
+nexus use \
   --workspace journal --session tidy-dailies \
-  --memory "finding 2025 dailies to archive" --goal "list 2025 daily notes"
+  --memory "finding 2025 dailies to archive" --goal "list 2025 daily notes" \
+  -- search query-notes --sql "SELECT path FROM notes WHERE path LIKE 'Daily/2025-%' ORDER BY path"
 
 # 3. make the destination folder
-nexus use "storage create-folder --path Daily/Archive/2025" \
+nexus use \
   --workspace journal --session tidy-dailies \
-  --memory "have the 2025 list; creating archive folder" --goal "create Daily/Archive/2025"
+  --memory "have the 2025 list; creating archive folder" --goal "create Daily/Archive/2025" \
+  -- storage create-folder --path Daily/Archive/2025
 
 # 4. move each note (one call per file — verify each)
-nexus use "storage move --path 'Daily/2025-01-03.md' --new-path 'Daily/Archive/2025/2025-01-03.md'" \
+nexus use \
   --workspace journal --session tidy-dailies \
-  --memory "moving 2025 dailies into the archive folder" --goal "move 2025-01-03.md"
+  --memory "moving 2025 dailies into the archive folder" --goal "move 2025-01-03.md" \
+  -- storage move --path Daily/2025-01-03.md --new-path Daily/Archive/2025/2025-01-03.md
 
 # 5. checkpoint after the batch
-nexus use "memory create-state --name dailies-archived \
-  --conversation-context 'moved all 2025 daily notes into Daily/Archive/2025' \
-  --active-task 'archive old dailies' \
-  --active-files '[Daily/Archive/2025]' \
-  --next-steps '[do the same for 2024]'" \
+nexus use \
   --workspace journal --session tidy-dailies \
-  --memory "2025 dailies archived" --goal "checkpoint the reorg"
+  --memory "2025 dailies archived" --goal "checkpoint the reorg" \
+  -- memory create-state --name dailies-archived \
+  --conversation-context "moved all 2025 daily notes into Daily/Archive/2025" \
+  --active-task "archive old dailies" \
+  --active-files "[Daily/Archive/2025]" \
+  --next-steps "[do the same for 2024]"
 ```
 
 ## Pitfalls

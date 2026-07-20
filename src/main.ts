@@ -120,12 +120,36 @@ export default class NexusPlugin extends Plugin {
 
             this.lifecycleManager = new PluginLifecycleManager(lifecycleConfig);
             await this.lifecycleManager.initialize();
+            this.scheduleLocalCliReconcile();
 
         } catch (error) {
             console.error(`[${BRAND_NAME}] Plugin loading failed:`, error);
             new Notice(`${BRAND_NAME}: Plugin failed to load. Check console for details.`);
             throw error;
         }
+    }
+
+    /** Refresh an existing Nexus-owned CLI after a desktop plugin update. */
+    private scheduleLocalCliReconcile(): void {
+        if (!Platform.isDesktop) return;
+
+        let cancelled = false;
+        const timeoutId = window.setTimeout(() => {
+            void import('./services/cli/LocalCliInstaller')
+                .then(({ LocalCliInstaller }) => {
+                    if (!cancelled) new LocalCliInstaller().reconcile();
+                })
+                .catch((error: unknown) => {
+                    if (!cancelled) {
+                        console.error(`[${BRAND_NAME}] Failed to refresh the installed local CLI:`, error);
+                    }
+                });
+        }, 0);
+
+        this.register(() => {
+            cancelled = true;
+            window.clearTimeout(timeoutId);
+        });
     }
 
     onunload(): void {

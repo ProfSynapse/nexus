@@ -10,7 +10,7 @@ offline and instant, so read it before your first command instead of guessing.
 
 - **Discover:** `nexus tools [selector]` returns tool schemas (not vault data).
   Drill down: `nexus tools storage list` = one tool's full arg schema.
-- **Execute:** `nexus use "<agent command --flags>" --memory "<what you're doing>" --goal "<objective>"`.
+- **Execute:** `nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>`.
   `--memory`/`--goal` are **required** on every `use`.
 - **Task recipes:** `nexus playbook <name>` emits a ready-to-run recipe plus your
   workspaces and preloaded tools in one call (`nexus playbook` lists them).

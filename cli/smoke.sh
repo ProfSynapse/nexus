@@ -54,10 +54,11 @@ echo "▸ nexus tools storage  (getTools discovery)"
 NEXUS tools storage "${VAULT_FLAG[@]}" | head -8
 
 echo
-echo "▸ nexus use \"storage list\"  (read-only useTools execution)"
-NEXUS use "storage list" "${VAULT_FLAG[@]}" \
+echo "▸ nexus use -- storage list  (read-only useTools execution)"
+NEXUS use "${VAULT_FLAG[@]}" \
   --memory "smoke test of local CLI bridge" \
-  --goal "list vault root to prove end-to-end execution" | head -12
+  --goal "list vault root to prove end-to-end execution" \
+  -- storage list | head -12
 
 echo
 echo "▸ nexus playbook  (list — no socket needed)"

@@ -7,7 +7,7 @@ so you can go straight to `nexus use` without a separate `nexus tools` call.
 **Every playbook starts the same way:**
 
 1. **Pick a workspace and load it.** Choose from *Your workspaces* below and run
-   `nexus use "memory load-workspace --workspace <name>" --memory … --goal …`. If
+   `nexus use --memory … --goal … -- memory load-workspace --workspace "<name>"`. If
    none fits, create one with `memory create-workspace`. Loading scopes your traces
    and auto-loads that workspace's task summary. (This playbook only *lists*
    workspaces — loading is your call, since only you know which one.)

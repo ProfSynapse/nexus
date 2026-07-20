@@ -47,50 +47,62 @@ Full live schema: `nexus tools prompt execute`. Saved prompts: `prompt list`
 
 ## Quoting the JSON
 
-The `--prompts` value is JSON, so it carries double-quotes. Inside
-`nexus use "…"`, escape those inner quotes (`\"`) and wrap the array in single
-quotes. Keep the JSON compact. If quoting fights you, save the prompt first and
-reference it by `customPrompt` so the inline JSON stays small.
+The `--prompts` value is JSON, so it carries literal double-quotes. Put it after
+the structured `--` delimiter as one argument:
+
+- Bash/zsh: single-quote the compact JSON normally: `'[{"type":"text",…}]'`.
+- Windows PowerShell: native argument marshalling needs each literal JSON quote
+  tripled inside the single-quoted value: `'[{"""type""":"""text""",…}]'`.
+
+Use top-level `--dry-run` to inspect the reconstructed `tool` string without
+connecting or executing. If quoting fights you, use a saved `customPrompt` so
+the inline JSON stays small.
 
 ## Worked examples
 
 **A — inline prompt, one note as context, result to stdout:**
 
 ```
-nexus use "prompt execute --prompts '[{\"type\":\"text\",\"prompt\":\"Summarize this note in 3 bullets\",\"contextFiles\":[\"Projects/Auth/flow.md\"]}]'" \
+nexus use \
   --json --workspace research --session prompt-run \
-  --memory "summarizing the auth flow note" --goal "get a 3-bullet summary"
+  --memory "summarizing the auth flow note" --goal "get a 3-bullet summary" \
+  -- prompt execute --prompts '[{"type":"text","prompt":"Summarize this note in 3 bullets","contextFiles":["Projects/Auth/flow.md"]}]'
 ```
 
 **B — saved prompt + note context, write the result back into a note:**
 
 ```
 # find the saved prompt's name
-nexus use "prompt list" --workspace research --session prompt-run \
-  --memory "looking for my weekly-review prompt" --goal "list saved prompts"
+nexus use --workspace research --session prompt-run \
+  --memory "looking for my weekly-review prompt" --goal "list saved prompts" \
+  -- prompt list
 
 # run it over this week's notes and append the output to the review note
-nexus use "prompt execute --prompts '[{\"type\":\"text\",\"customPrompt\":\"weekly-review\",\"contextFiles\":[\"Daily/2026-07-14.md\",\"Daily/2026-07-15.md\"],\"action\":{\"type\":\"append\",\"targetPath\":\"Reviews/2026-W29.md\"}}]'" \
+nexus use \
   --workspace research --session prompt-run \
-  --memory "have the daily notes; running weekly-review" --goal "append a weekly review"
+  --memory "have the daily notes; running weekly-review" --goal "append a weekly review" \
+  -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
 ```
 
 **C — image, saved to the vault:**
 
 ```
-nexus use "prompt execute --prompts '[{\"type\":\"image\",\"prompt\":\"a minimalist logo, teal on white\",\"savePath\":\"Assets/logo.png\",\"aspectRatio\":\"1:1\"}]'" \
+nexus use \
   --workspace research --session prompt-run \
-  --memory "need a logo asset" --goal "generate a logo image"
+  --memory "need a logo asset" --goal "generate a logo image" \
+  -- prompt execute --prompts '[{"type":"image","prompt":"a minimalist logo, teal on white","savePath":"Assets/logo.png","aspectRatio":"1:1"}]'
 # then poll:
-nexus use "prompt check-generated-artifact --id <job-id>" --workspace research --session prompt-run \
-  --memory "waiting on the logo" --goal "check image generation status"
+nexus use --workspace research --session prompt-run \
+  --memory "waiting on the logo" --goal "check image generation status" \
+  -- prompt check-generated-artifact --id <job-id>
 ```
 
 ## Pitfalls
 
 - **Forgetting `type`/`prompt`** — both are required on every item.
-- **JSON quoting** — escape inner `"` as `\"` inside `nexus use "…"`; keep it
-  compact; prefer `customPrompt` for anything reusable.
+- **JSON quoting** — use ordinary compact JSON in Bash/zsh; triple each literal
+  `"` for Windows PowerShell as shown above. Confirm with `--dry-run`; prefer
+  `customPrompt` for anything reusable.
 - **`contextFiles` are vault-relative** — the same confinement as everywhere;
   no `..`/absolute.
 - **A bad `model`/`provider`** — check `prompt list-models` first.

@@ -33,35 +33,40 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 
 ```
 # 1. load the workspace you picked from the list above (--workspace = name or id)
-nexus use "memory load-workspace --workspace research" \
+nexus use \
   --memory "starting: summarize the auth notes" --goal "load the research workspace" \
-  --session auth-summary
+  --session auth-summary \
+  -- memory load-workspace --workspace research
 
 # 2. find
-nexus use "search content --query 'authentication flow' --limit 5" \
+nexus use \
   --workspace research --session auth-summary \
-  --memory "looking for the main auth note" --goal "locate the auth flow note"
+  --memory "looking for the main auth note" --goal "locate the auth flow note" \
+  -- search content --query "authentication flow" --limit 5
 
 # 3. read the top hit (search gave a path, not the text)
-nexus use "content read --path Projects/Auth/flow.md --start-line 1" \
+nexus use \
   --workspace research --session auth-summary \
-  --memory "found Projects/Auth/flow.md; reading it" --goal "read the auth flow note"
+  --memory "found Projects/Auth/flow.md; reading it" --goal "read the auth flow note" \
+  -- content read --path Projects/Auth/flow.md --start-line 1
 
 # 4. edit — anchor on exact text pulled from the read
-nexus use "content replace --path Projects/Auth/flow.md \
-  --start '## Summary' --end '## Details' \
-  --content '## Summary\n\nOAuth2 + PKCE; tokens rotate hourly.\n\n'" \
+nexus use \
   --workspace research --session auth-summary \
-  --memory "have the body; inserting a summary" --goal "replace the Summary section"
+  --memory "have the body; inserting a summary" --goal "replace the Summary section" \
+  -- content replace --path Projects/Auth/flow.md \
+  --start "## Summary" --end "## Details" \
+  --content "## Summary\n\nOAuth2 + PKCE; tokens rotate hourly.\n\n"
 
 # 5. checkpoint (create-state needs name + context + task + file/step arrays)
-nexus use "memory create-state --name auth-summary-done \
-  --conversation-context 'summarized the auth flow note into a Summary section' \
-  --active-task 'add a summary to flow.md' \
-  --active-files '[Projects/Auth/flow.md]' \
-  --next-steps '[review the summary with the team]'" \
+nexus use \
   --workspace research --session auth-summary \
-  --memory "summary written to flow.md" --goal "checkpoint the finished edit"
+  --memory "summary written to flow.md" --goal "checkpoint the finished edit" \
+  -- memory create-state --name auth-summary-done \
+  --conversation-context "summarized the auth flow note into a Summary section" \
+  --active-task "add a summary to flow.md" \
+  --active-files "[Projects/Auth/flow.md]" \
+  --next-steps "[review the summary with the team]"
 ```
 
 ## Pitfalls

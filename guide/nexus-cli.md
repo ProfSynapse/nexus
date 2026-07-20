@@ -20,6 +20,11 @@ MCP required)** → pick your agents → **Install CLI**. It:
   a Codex `AGENTS.md` pointer — defaults to whatever it detects on your machine;
 - is fully reversible via **Uninstall**.
 
+After that explicit installation, plugin updates automatically reconcile the
+already-installed Nexus CLI, skill, playbooks, and managed agent copies with the
+new plugin build. Reconciliation does nothing when the CLI is not installed and
+does not claim or replace foreign commands or unmarked skill directories.
+
 Requires Node.js 18 or newer on the shell's PATH; installation stops with an
 actionable error when that runtime is unavailable. Obsidian must be **open** for the target
 vault (the CLI bridges to the live process).
@@ -32,7 +37,7 @@ nexus tools [selector...]           Discover tools. Drill down as far as you wan
                                       nexus tools storage            one agent (compact)
                                       nexus tools storage list       one tool, full arg schema
                                       nexus tools "storage list, content read"   several at once
-nexus use "<command>" [context]     Run a CLI-style tool command
+nexus use [context] -- <command>    Run a CLI-style tool command
 nexus vaults                        List open vaults
 nexus doctor [--vault <name>]       Connect + MCP handshake + tools/list
 nexus --help                        Full usage
@@ -41,15 +46,29 @@ nexus --help                        Full usage
 ### `use` context (required)
 
 ```
-nexus use "content read --path Daily/2026-07-17.md" \
+nexus use \
   --memory "reviewing this week's notes" \
-  --goal "read today's daily note"
+  --goal "read today's daily note" \
+  -- content read --path Daily/2026-07-17.md --start-line 1
 ```
 
 `--memory` and `--goal` are **required** — Nexus enforces the context contract
 and rejects calls without them. Optional: `--workspace <id>` (default
 `default`), `--session <name>` (default `nexus-cli`; reuse one name per task),
 `--constraints <text>`, `--json` (raw JSON-RPC result).
+
+The `--` delimiter separates CLI context from the tool command. Values after it
+are ordinary shell arguments, so a multiword value needs only one quote layer:
+
+```powershell
+nexus use --memory "resuming research" --goal "load the workspace" -- memory load-workspace --workspace "NeuroAI Mapping" --limit 1
+```
+
+The legacy `nexus use "<command>" ...` form remains supported. If Windows
+PowerShell splits a legacy command at nested double quotes, Nexus rejects it
+with a structured-form example instead of executing a truncated request.
+Use `--dry-run` before the delimiter to print the reconstructed request without
+opening a vault connection or executing a tool.
 
 ## Choosing a vault
 
@@ -87,3 +106,5 @@ The vault name lives in the socket name, so selection happens at call time:
 - **"Multiple vaults open"** — run `nexus vaults`, then pass `--vault <name>`.
 - **Rejected for missing memory/goal** — every `use` needs `--memory` and
   `--goal`.
+- **PowerShell split a legacy command** — move context flags before `--` and
+  pass the tool normally after it; do not nest a quoted command string.

@@ -45,38 +45,44 @@ project → capture its `projectId` → create tasks with `--project-id`.
 
 ```
 # 1. load the workspace — thread --workspace (name or id) on every later call
-nexus use "memory load-workspace --workspace product" \
+nexus use \
   --memory "planning the launch" --goal "load the product workspace" \
-  --session launch-plan
+  --session launch-plan \
+  -- memory load-workspace --workspace product
 
 # 2. create a project — workspace comes from --workspace; capture the projectId
-nexus use "task create-project --name 'Q3 Launch'" \
+nexus use \
   --workspace product --session launch-plan \
-  --memory "starting the Q3 launch project" --goal "create the Q3 Launch project"
+  --memory "starting the Q3 launch project" --goal "create the Q3 Launch project" \
+  -- task create-project --name "Q3 Launch"
 # → result includes the projectId, e.g. "proj_def456"
 
 # 3. add tasks under that project
-nexus use "task create --project-id proj_def456 --title 'Write launch copy'" \
+nexus use \
   --workspace product --session launch-plan \
-  --memory "adding launch tasks" --goal "create the copy task"
+  --memory "adding launch tasks" --goal "create the copy task" \
+  -- task create --project-id proj_def456 --title "Write launch copy"
 
-nexus use "task create --project-id proj_def456 --title 'Publish blog post'" \
+nexus use \
   --workspace product --session launch-plan \
-  --memory "adding the dependent task" --goal "create the publish task"
+  --memory "adding the dependent task" --goal "create the publish task" \
+  -- task create --project-id proj_def456 --title "Publish blog post"
 
 # 4. see the board (statuses, what's blocked)
-nexus use "task list --project-id proj_def456" \
+nexus use \
   --workspace product --session launch-plan \
-  --memory "reviewing the launch tasks" --goal "list tasks in the project"
+  --memory "reviewing the launch tasks" --goal "list tasks in the project" \
+  -- task list --project-id proj_def456
 
 # 5. checkpoint
-nexus use "memory create-state --name launch-tasks-seeded \
-  --conversation-context 'created Q3 Launch project with copy + publish tasks' \
-  --active-task 'set up the launch project' \
-  --active-files '[]' \
-  --next-steps '[wire publish to depend on copy, assign owners]'" \
+nexus use \
   --workspace product --session launch-plan \
-  --memory "project + tasks created" --goal "checkpoint the setup"
+  --memory "project + tasks created" --goal "checkpoint the setup" \
+  -- memory create-state --name launch-tasks-seeded \
+  --conversation-context "created Q3 Launch project with copy + publish tasks" \
+  --active-task "set up the launch project" \
+  --active-files "[]" \
+  --next-steps "[wire publish to depend on copy, assign owners]"
 ```
 
 Run `nexus tools task create` / `task move` / `task update` for the exact fields
