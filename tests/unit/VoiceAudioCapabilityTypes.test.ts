@@ -192,7 +192,11 @@ describe('SpeechTypes', () => {
 
 describe('RealtimeVoiceTypes', () => {
   it('declares realtime models separately from speech models', () => {
-    expect(getRealtimeVoiceModelsForProvider('openai').map(model => model.id)).toContain('gpt-realtime-2');
+    expect(getRealtimeVoiceModelsForProvider('openai').map(model => model.id)).toEqual(expect.arrayContaining([
+      'gpt-realtime-2.1',
+      'gpt-realtime-2.1-mini',
+      'gpt-realtime-2'
+    ]));
     expect(getRealtimeVoiceModelsForProvider('openrouter')).toEqual([]);
   });
 
@@ -218,7 +222,7 @@ describe('RealtimeVoiceTypes', () => {
 
     expect(selection).toEqual(expect.objectContaining({
       provider: 'openai',
-      model: 'gpt-realtime-2',
+      model: 'gpt-realtime-2.1',
       source: 'auto',
       status: 'resolved'
     }));

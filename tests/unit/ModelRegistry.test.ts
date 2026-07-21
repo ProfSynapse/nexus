@@ -160,3 +160,22 @@ describe('ModelRegistry Gemini 3.5 Flash models', () => {
     }));
   });
 });
+
+describe('ModelRegistry Kimi K3 model', () => {
+  it('registers Kimi K3 for OpenRouter with current pricing and capabilities', () => {
+    expect(ModelRegistry.findModel('openrouter', 'moonshotai/kimi-k3')).toEqual(expect.objectContaining({
+      name: 'Kimi K3',
+      contextWindow: 1048576,
+      maxTokens: 131072,
+      inputCostPerMillion: 3,
+      outputCostPerMillion: 15,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+});

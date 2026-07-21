@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated July 2026 — added the GPT-5.6 family; pruned superseded
+ * Updated July 2026 — added the GPT-5.6 family and Kimi K3; pruned superseded
  * Claude 4.5 Opus/Sonnet, Gemini 2.5 / 3.0 Preview, and GPT-5 / GPT-5.1 entries
  */
 
@@ -530,6 +530,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 16384,
     inputCostPerMillion: 0.74,
     outputCostPerMillion: 3.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Kimi K3',
+    apiName: 'moonshotai/kimi-k3',
+    contextWindow: 1048576,
+    maxTokens: 131072,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

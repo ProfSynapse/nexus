@@ -7,7 +7,7 @@
 
 import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 
-export type TranscriptionProvider = 'openai' | 'groq' | 'mistral' | 'deepgram' | 'assemblyai';
+export type TranscriptionProvider = 'openai' | 'groq' | 'mistral' | 'deepgram' | 'assemblyai' | 'openrouter';
 
 export type TranscriptionExecution =
   | 'speech-api-segmented'
@@ -107,6 +107,15 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
     supportsWordTimestamps: true,
     supportsSpeakerLabels: true,
     supportsPrompt: true
+  },
+  {
+    provider: 'openrouter',
+    id: 'mistralai/voxtral-mini-transcribe',
+    name: 'Voxtral Mini Transcribe via OpenRouter',
+    execution: 'speech-api-segmented',
+    supportsWordTimestamps: false,
+    supportsSpeakerLabels: false,
+    supportsPrompt: false
   },
   {
     provider: 'deepgram',
