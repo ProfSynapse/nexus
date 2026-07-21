@@ -39,7 +39,7 @@ describe('VoiceTypes', () => {
     });
 
     it.each([
-      'openai', 'groq', 'mistral', 'deepgram', 'assemblyai'
+      'openai', 'groq', 'mistral', 'deepgram', 'assemblyai', 'openrouter'
     ] as TranscriptionProvider[])('returns at least one model for %s', (provider) => {
       const models = getTranscriptionModelsForProvider(provider);
       expect(models.length).toBeGreaterThanOrEqual(1);
@@ -78,14 +78,15 @@ describe('VoiceTypes', () => {
   // ── getTranscriptionProviders ───────────────────────────────────────
 
   describe('getTranscriptionProviders', () => {
-    it('returns all 5 providers', () => {
+    it('returns all 6 providers', () => {
       const providers = getTranscriptionProviders();
       expect(providers).toContain('openai');
       expect(providers).toContain('groq');
       expect(providers).toContain('mistral');
       expect(providers).toContain('deepgram');
       expect(providers).toContain('assemblyai');
-      expect(providers).toHaveLength(5);
+      expect(providers).toContain('openrouter');
+      expect(providers).toHaveLength(6);
     });
 
     it('returns no duplicates', () => {

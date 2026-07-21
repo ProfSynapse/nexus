@@ -110,6 +110,28 @@ const GOOGLE_REALTIME_VOICES: RealtimeVoiceDeclaration[] = [
 const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
   {
     provider: 'openai',
+    id: 'gpt-realtime-2.1',
+    name: 'GPT Realtime 2.1',
+    transport: 'webrtc',
+    defaultVoice: 'marin',
+    voices: OPENAI_REALTIME_VOICES,
+    supportsTools: true,
+    supportsTranscripts: true,
+    maxSessionMinutes: 60
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-realtime-2.1-mini',
+    name: 'GPT Realtime 2.1 mini',
+    transport: 'webrtc',
+    defaultVoice: 'marin',
+    voices: OPENAI_REALTIME_VOICES,
+    supportsTools: true,
+    supportsTranscripts: true,
+    maxSessionMinutes: 60
+  },
+  {
+    provider: 'openai',
     id: 'gpt-realtime-2',
     name: 'GPT Realtime 2',
     transport: 'webrtc',

@@ -24,10 +24,12 @@ jest.mock('../../src/services/llm/adapters/groq/GroqTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/mistral/MistralTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/deepgram/DeepgramTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/assemblyai/AssemblyAITranscriptionAdapter');
+jest.mock('../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter');
 
 import { TranscriptionService } from '../../src/services/llm/TranscriptionService';
 import { chunkAudio } from '../../src/services/llm/utils/AudioChunkingService';
 import { OpenAITranscriptionAdapter } from '../../src/services/llm/adapters/openai/OpenAITranscriptionAdapter';
+import { OpenRouterTranscriptionAdapter } from '../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, type LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
 import type { AudioChunk } from '../../src/services/llm/types/VoiceTypes';
 
@@ -93,6 +95,27 @@ describe('TranscriptionService (class-based)', () => {
       const service = new TranscriptionService(makeSettings());
       // OpenAI adapter should have been constructed
       expect(OpenAITranscriptionAdapter).toHaveBeenCalledWith({ apiKey: 'sk-test' });
+    });
+
+    it('initializes OpenRouter transcription with attribution headers', () => {
+      new TranscriptionService(makeSettings({
+        providers: {
+          ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+          openai: { apiKey: '', enabled: false },
+          openrouter: {
+            apiKey: 'or-test',
+            enabled: true,
+            httpReferer: 'https://example.com',
+            xTitle: 'Nexus test'
+          }
+        }
+      }));
+
+      expect(OpenRouterTranscriptionAdapter).toHaveBeenCalledWith({
+        apiKey: 'or-test',
+        httpReferer: 'https://example.com',
+        xTitle: 'Nexus test'
+      });
     });
 
     it('does not initialize adapters for disabled providers', () => {

@@ -9,6 +9,7 @@
  *   DEEPGRAM_API_KEY=...
  *   ASSEMBLYAI_API_KEY=...
  *   MISTRAL_API_KEY=...
+ *   OPENROUTER_API_KEY=...
  *
  * Run:
  *   npx jest tests/integration/transcription-live.test.ts --no-coverage --verbose
@@ -21,6 +22,7 @@ import { GroqTranscriptionAdapter } from '../../src/services/llm/adapters/groq/G
 import { DeepgramTranscriptionAdapter } from '../../src/services/llm/adapters/deepgram/DeepgramTranscriptionAdapter';
 import { AssemblyAITranscriptionAdapter } from '../../src/services/llm/adapters/assemblyai/AssemblyAITranscriptionAdapter';
 import { MistralTranscriptionAdapter } from '../../src/services/llm/adapters/mistral/MistralTranscriptionAdapter';
+import { OpenRouterTranscriptionAdapter } from '../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter';
 import type { AudioChunk, TranscriptionRequest, TranscriptionProvider, TranscriptionSegment } from '../../src/services/llm/types/VoiceTypes';
 
 // Wire requestUrl to real HTTP via fetch
@@ -131,6 +133,7 @@ const groqKey = process.env.GROQ_API_KEY;
 const deepgramKey = process.env.DEEPGRAM_API_KEY;
 const assemblyaiKey = process.env.ASSEMBLYAI_API_KEY;
 const mistralKey = process.env.MISTRAL_API_KEY;
+const openrouterKey = process.env.OPENROUTER_API_KEY;
 
 // --- Speech-API providers (Whisper format) ---
 
@@ -170,6 +173,19 @@ describe('Live Transcription: Mistral', () => {
   }, 30_000);
 });
 
+describe('Live Transcription: OpenRouter', () => {
+  const runTest = openrouterKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
+
+  runTest('transcribes with Voxtral Mini Transcribe', async () => {
+    const adapter = new OpenRouterTranscriptionAdapter({ apiKey: openrouterKey! });
+    const segments = await adapter.transcribeChunk(
+      testChunk,
+      makeRequest('openrouter', 'mistralai/voxtral-mini-transcribe')
+    );
+    validateSegments(segments, 'OpenRouter/mistralai/voxtral-mini-transcribe');
+  }, 30_000);
+});
+
 // --- Deepgram (raw binary body) ---
 
 describe('Live Transcription: Deepgram', () => {
@@ -206,6 +222,7 @@ const configuredProviders = [
   mistralKey && 'mistral',
   deepgramKey && 'deepgram',
   assemblyaiKey && 'assemblyai',
+  openrouterKey && 'openrouter',
 ].filter(Boolean) as string[];
 
 describe('Provider summary', () => {
@@ -219,13 +236,13 @@ describe('Provider summary', () => {
         'afconvert -f WAVE -d LEI16 /tmp/test-transcription.aiff /tmp/test-transcription.wav'
       );
     }
-    console.log(`\nConfigured providers (${configuredProviders.length}/5): ${configuredProviders.join(', ')}`);
-    const missing = ['openai', 'groq', 'mistral', 'deepgram', 'assemblyai']
+    console.log(`\nConfigured providers (${configuredProviders.length}/6): ${configuredProviders.join(', ')}`);
+    const missing = ['openai', 'groq', 'mistral', 'deepgram', 'assemblyai', 'openrouter']
       .filter(p => !configuredProviders.includes(p));
     if (missing.length > 0) {
       console.log(`Skipped (no API key): ${missing.join(', ')}`);
     }
     // All providers accounted for (configured + skipped = total)
-    expect(configuredProviders.length + missing.length).toBe(5);
+    expect(configuredProviders.length + missing.length).toBe(6);
   });
 });
