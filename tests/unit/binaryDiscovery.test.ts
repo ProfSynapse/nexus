@@ -15,6 +15,7 @@ jest.mock('fs', () => ({
 describe('resolveDesktopBinaryPath', () => {
   const originalAppData = process.env.APPDATA;
   const execSyncMock = childProcess.execSync as jest.Mock;
+  const execFileSyncMock = childProcess.execFileSync as jest.Mock;
   const existsSyncMock = nodeFs.existsSync as jest.Mock;
 
   beforeEach(() => {
@@ -59,6 +60,23 @@ describe('resolveDesktopBinaryPath', () => {
 
     expect(resolveDesktopBinaryPath('claude')?.replace(/\//g, '\\')).toBe(
       'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd'
+    );
+  });
+
+  it('finds Node from the macOS login shell when the app PATH is stale', () => {
+    Platform.isWin = false;
+    const nodePath = '/Users/test/.nvm/versions/node/v24.4.0/bin/node';
+    execSyncMock.mockImplementation(() => {
+      throw new Error('node is not on the app PATH');
+    });
+    execFileSyncMock.mockReturnValue(`${nodePath}\n` as never);
+    existsSyncMock.mockImplementation((path) => String(path) === nodePath);
+
+    expect(resolveDesktopBinaryPath('node')).toBe(nodePath);
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      process.env.SHELL || '/bin/zsh',
+      ['-lc', "command -v 'node'"],
+      expect.objectContaining({ encoding: 'utf8' })
     );
   });
 });
