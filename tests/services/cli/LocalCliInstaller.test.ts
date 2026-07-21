@@ -13,6 +13,8 @@ let TEST_HOME = '';
 const ORIGINAL_LOCALAPPDATA = process.env.LOCALAPPDATA;
 const ORIGINAL_PATH = process.env.PATH;
 const mockSpawnSync = jest.fn();
+const DEFAULT_NODE_PATH = '/resolved/bin/node';
+const mockResolveDesktopBinaryPath = jest.fn(() => DEFAULT_NODE_PATH);
 
 interface MockSpawnResult {
     status: number;
@@ -26,7 +28,7 @@ const nodeOk: MockSpawnResult = { status: 0, stdout: 'v20.19.0\n', stderr: '' };
 function mockNodeAndPowerShell(...powerShellResults: MockSpawnResult[]): void {
     let powerShellIndex = 0;
     mockSpawnSync.mockImplementation((command: string) => {
-        if (command === 'node') return nodeOk;
+        if (command === DEFAULT_NODE_PATH) return nodeOk;
         return powerShellResults[powerShellIndex++] ?? { status: 0, stdout: 'PRESENT\n', stderr: '' };
     });
 }
@@ -54,6 +56,10 @@ jest.mock('../../../src/utils/desktopRequire', () => ({
     },
 }));
 
+jest.mock('../../../src/utils/binaryDiscovery', () => ({
+    resolveDesktopBinaryPath: mockResolveDesktopBinaryPath,
+}));
+
 import { LocalCliInstaller } from '../../../src/services/cli/LocalCliInstaller';
 import { NEXUS_CLI_JS } from '../../../src/utils/cliAssets';
 
@@ -75,6 +81,8 @@ describe('LocalCliInstaller', () => {
         if (ORIGINAL_PATH === undefined) delete process.env.PATH;
         else process.env.PATH = ORIGINAL_PATH;
         mockSpawnSync.mockReset();
+        mockResolveDesktopBinaryPath.mockReset();
+        mockResolveDesktopBinaryPath.mockReturnValue(DEFAULT_NODE_PATH);
         mockNodeAndPowerShell();
         TEST_HOME = realFs.mkdtempSync(realPath.join(realOs.tmpdir(), 'nexus-cli-test-'));
         // Simulate all three agents being installed so detection fires.
@@ -117,6 +125,29 @@ describe('LocalCliInstaller', () => {
         expect(s.skillLinked).toBe(true);
         expect(s.cursorLinked).toBe(true);
         expect(s.codexLinked).toBe(true);
+    });
+
+    posixIt('accepts Node.js 24 discovered outside Obsidian\'s inherited PATH', () => {
+        const discoveredNode = realPath.join(TEST_HOME, '.nvm', 'versions', 'node', 'v24.4.0', 'bin', 'node');
+        mockResolveDesktopBinaryPath.mockReturnValue(discoveredNode);
+        mockSpawnSync.mockImplementation((command: string) => {
+            if (command === discoveredNode) {
+                return { status: 0, stdout: 'v24.4.0\n', stderr: '' };
+            }
+            return { status: 1, stdout: '', stderr: 'not found' };
+        });
+
+        expect(() => installer.enable({ claudeCode: false, cursor: false, codex: false })).not.toThrow();
+        expect(mockSpawnSync).toHaveBeenCalledWith(
+            discoveredNode,
+            ['--version'],
+            expect.objectContaining({ encoding: 'utf-8' })
+        );
+        expect(mockSpawnSync).not.toHaveBeenCalledWith(
+            'node',
+            ['--version'],
+            expect.anything()
+        );
     });
 
     posixIt('enable(targets) wires only the selected providers', () => {
