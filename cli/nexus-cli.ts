@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
-import { partitionUseArgv, resolveUseCommand } from './commandLine';
+import { hydrateToolContentArgv, partitionUseArgv, resolveUseCommand } from './commandLine';
 import {
     listVaultSockets,
     NAME_PREFIX,
@@ -156,12 +156,20 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
+CONTENT INPUT (CLI-only flags after the \`--\` delimiter)
+  --content-stdin         read the tool's --content value from standard input
+  --content-file <path>   read the tool's --content value from a local file
+                          (use one transport flag; do not also pass --content)
+
 CLI SYNTAX
   • Canonical form: context flags first, then \`--\`, then one tool command as normal
     shell arguments. Commands are kebab-case (content set-property, memory load-workspace).
     Multiword values need only one shell quote layer: --workspace "NeuroAI Mapping".
   • The legacy one-string form remains supported. On Windows PowerShell, nested double
     quotes can be consumed before Node receives them; prefer the canonical \`--\` form.
+  • For multiline Markdown or text containing embedded quotes, keep the payload out of
+    shell argv: \`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\`,
+    or pass \`--content-file note.md\`.
   • Paths are vault-relative. "..", "~", absolute paths are rejected; a leading "/" is
     stripped. You cannot read or write outside the vault.
   • Arrays: --tags "[work, urgent]". Wikilinks keep brackets: --links "[[[A]], [[B]]]".
@@ -340,7 +348,18 @@ async function main(): Promise<number> {
     if (cmd === 'use') {
         let command: string;
         try {
-            command = resolveUseCommand(positionals, toolArgv);
+            const hydratedToolArgv = toolArgv === null
+                ? null
+                : hydrateToolContentArgv(toolArgv, {
+                    readStdin: () => {
+                        if (process.stdin.isTTY) {
+                            throw new Error('--content-stdin requires piped or redirected standard input.');
+                        }
+                        return readFileSync(0, 'utf8');
+                    },
+                    readFile: (path) => readFileSync(path, 'utf8'),
+                });
+            command = resolveUseCommand(positionals, hydratedToolArgv);
         } catch (error) {
             process.stderr.write(`Error: ${(error as Error).message}\n`);
             return 2;

@@ -24,3 +24,7 @@ so you can go straight to `nexus use` without a separate `nexus tools` call.
 Paths are vault-relative and confined — no `..`, `~`, or absolute escapes. **All
 flags are kebab-case** — camelCase (e.g. `--activeTask`) is rejected as an unknown
 flag; use `--active-task`.
+
+For multiline Markdown/YAML or embedded quotes, keep content out of shell argv:
+after `--`, pipe with `--content-stdin` or pass `--content-file <local-path>`
+instead of `--content`.

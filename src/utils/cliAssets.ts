@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "2441e94c26231d02";
+export const NEXUS_CLI_ASSETS_HASH = "ff4ecbd3b850b8a8";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -186,6 +186,44 @@ function serializeToolArgv(toolArgv) {
   }
   return toolArgv.map(quoteToolToken).join(" ");
 }
+function hydrateToolContentArgv(toolArgv, readers) {
+  const stdinIndexes = [];
+  const fileIndexes = [];
+  const contentIndexes = [];
+  toolArgv.forEach((token, index2) => {
+    if (token === "--content-stdin") stdinIndexes.push(index2);
+    if (token === "--content-file") fileIndexes.push(index2);
+    if (token === "--content") contentIndexes.push(index2);
+  });
+  const transportCount = stdinIndexes.length + fileIndexes.length;
+  if (transportCount === 0) return toolArgv;
+  if (transportCount > 1) {
+    throw new Error("Use exactly one of --content-stdin or --content-file.");
+  }
+  if (contentIndexes.length > 0) {
+    throw new Error("Do not combine --content with --content-stdin or --content-file.");
+  }
+  if (stdinIndexes.length === 1) {
+    const index2 = stdinIndexes[0];
+    return [
+      ...toolArgv.slice(0, index2),
+      "--content",
+      readers.readStdin(),
+      ...toolArgv.slice(index2 + 1)
+    ];
+  }
+  const index = fileIndexes[0];
+  const path = toolArgv[index + 1];
+  if (path === void 0 || path.startsWith("--")) {
+    throw new Error("--content-file requires a local file path.");
+  }
+  return [
+    ...toolArgv.slice(0, index),
+    "--content",
+    readers.readFile(path),
+    ...toolArgv.slice(index + 2)
+  ];
+}
 function resolveUseCommand(positionals, toolArgv) {
   if (toolArgv !== null) {
     if (positionals.length !== 1 || positionals[0] !== "use") {
@@ -362,12 +400,20 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
+CONTENT INPUT (CLI-only flags after the \\\`--\\\` delimiter)
+  --content-stdin         read the tool's --content value from standard input
+  --content-file <path>   read the tool's --content value from a local file
+                          (use one transport flag; do not also pass --content)
+
 CLI SYNTAX
   \\u2022 Canonical form: context flags first, then \\\`--\\\`, then one tool command as normal
     shell arguments. Commands are kebab-case (content set-property, memory load-workspace).
     Multiword values need only one shell quote layer: --workspace "NeuroAI Mapping".
   \\u2022 The legacy one-string form remains supported. On Windows PowerShell, nested double
     quotes can be consumed before Node receives them; prefer the canonical \\\`--\\\` form.
+  \\u2022 For multiline Markdown or text containing embedded quotes, keep the payload out of
+    shell argv: \\\`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\\\`,
+    or pass \\\`--content-file note.md\\\`.
   \\u2022 Paths are vault-relative. "..", "~", absolute paths are rejected; a leading "/" is
     stripped. You cannot read or write outside the vault.
   \\u2022 Arrays: --tags "[work, urgent]". Wikilinks keep brackets: --links "[[[A]], [[B]]]".
@@ -536,7 +582,16 @@ Once a vault is open, preload them with:
   if (cmd === "use") {
     let command;
     try {
-      command = resolveUseCommand(positionals, toolArgv);
+      const hydratedToolArgv = toolArgv === null ? null : hydrateToolContentArgv(toolArgv, {
+        readStdin: () => {
+          if (process.stdin.isTTY) {
+            throw new Error("--content-stdin requires piped or redirected standard input.");
+          }
+          return (0, import_node_fs3.readFileSync)(0, "utf8");
+        },
+        readFile: (path) => (0, import_node_fs3.readFileSync)(path, "utf8")
+      });
+      command = resolveUseCommand(positionals, hydratedToolArgv);
     } catch (error) {
       process.stderr.write(\`Error: \${error.message}
 \`);
@@ -585,11 +640,8 @@ description: >-
   tasks, memory/workspaces, saved prompts) from the shell via the \`nexus\` CLI —
   no MCP connection needed. Use whenever the user refers to their vault, notes,
   daily notes, second brain, or Obsidian, or asks you to find/read/change
-  something stored there.
-when_to_use: >-
-  The task involves the user's Obsidian vault or notes and the \`nexus\` command
-  is on PATH. Not for editing files in the current code repo — use normal file
-  tools for those.
+  something stored there and the \`nexus\` command is on PATH. Do not use it to
+  edit files in the current code repository; use normal file tools for those.
 ---
 
 # Nexus vault CLI
@@ -637,6 +689,16 @@ The \`--\` delimiter is canonical: context belongs before it; the tool command
 belongs after it. This avoids nested command-string quoting, especially in
 Windows PowerShell. The legacy one-string form remains supported.
 
+For multiline Markdown or content containing embedded quotes, keep the body
+out of shell argv. Pipe it with \`--content-stdin\` or pass a local path with
+\`--content-file\`; put either flag after the \`--\` delimiter and do not also pass
+\`--content\`:
+
+\`\`\`powershell
+Get-Content -Raw .\\note.md |
+    nexus use --memory "importing note" --goal "write note" -- content write --path Notes/Imported.md --content-stdin
+\`\`\`
+
 Everything else — the flag table, per-tool schemas, syntax rules, the live
 per-vault catalog (including any enabled app agents) — comes from \`nexus --help\`,
 \`nexus tools <tool>\`, and \`nexus playbook <name>\`. Prefer those over guessing;
@@ -658,6 +720,9 @@ offline and instant, so read it before your first command instead of guessing.
   Drill down: \`nexus tools storage list\` = one tool's full arg schema.
 - **Execute:** \`nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>\`.
   \`--memory\`/\`--goal\` are **required** on every \`use\`.
+- **Multiline content:** keep Markdown/YAML and embedded quotes out of shell
+  argv. After \`--\`, use \`--content-stdin\` with piped input or
+  \`--content-file <local-path>\` instead of \`--content\`.
 - **Task recipes:** \`nexus playbook <name>\` emits a ready-to-run recipe plus your
   workspaces and preloaded tools in one call (\`nexus playbook\` lists them).
 - Search/list results are **locations, not contents** — follow a hit with
@@ -699,6 +764,10 @@ so you can go straight to \`nexus use\` without a separate \`nexus tools\` call.
 Paths are vault-relative and confined — no \`..\`, \`~\`, or absolute escapes. **All
 flags are kebab-case** — camelCase (e.g. \`--activeTask\`) is rejected as an unknown
 flag; use \`--active-task\`.
+
+For multiline Markdown/YAML or embedded quotes, keep content out of shell argv:
+after \`--\`, pipe with \`--content-stdin\` or pass \`--content-file <local-path>\`
+instead of \`--content\`.
 `,
     "organize.md": `---
 name: organize
