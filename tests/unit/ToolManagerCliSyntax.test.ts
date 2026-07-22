@@ -20,6 +20,7 @@ import * as path from 'node:path';
 import { createHeadlessAgentStack, HeadlessAgentStackResult } from '../eval/headless/HeadlessAgentStack';
 import { TestVaultManager } from '../eval/headless/TestVaultManager';
 import { ToolCliNormalizer, parseCliForDisplay, splitTopLevelSegments, tokenizeWithMeta } from '../../src/agents/toolManager/services/ToolCliNormalizer';
+import { serializeToolArgv } from '../../cli/commandLine';
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
 import type { ITool } from '../../src/agents/interfaces/ITool';
 
@@ -1242,6 +1243,28 @@ describe('parser characterization — CLI migration audit', () => {
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].params.content).toBe('alpha, beta, gamma');
+  });
+
+  it('E.1b: shell-preserved YAML quotes and wikilinks survive downstream parsing', () => {
+    const markdown = [
+      '---',
+      'owner: "[[Stakeholders/Ashlea Burke]]"',
+      'reviewers: ["[[People/Joseph Rosenbaum]]", "[[People/Ada Lovelace]]"]',
+      '---',
+      '',
+      '# Project update',
+    ].join('\n');
+    const tool = serializeToolArgv([
+      'content', 'write', '--path', 'Projects/Update.md', '--content', markdown,
+    ]);
+
+    const calls = makeNormalizer().normalizeExecutionCalls({ tool });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params).toEqual({
+      path: 'Projects/Update.md',
+      content: markdown,
+    });
   });
 
   it('E.2: comma inside JSON array-flag value does not split segments', () => {

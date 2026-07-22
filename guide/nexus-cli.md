@@ -70,6 +70,25 @@ with a structured-form example instead of executing a truncated request.
 Use `--dry-run` before the delimiter to print the reconstructed request without
 opening a vault connection or executing a tool.
 
+### Multiline content
+
+On Windows, a `.cmd` wrapper cannot reliably forward a multiline argument
+through `%*`. Embedded quote layers can also be altered before Node receives
+them. For Markdown, YAML frontmatter, wikilinks, or other large text, keep the
+content out of shell arguments with either CLI-only transport flag:
+
+```powershell
+Get-Content -Raw .\note.md |
+  nexus use --memory "importing a note" --goal "write the note" -- content write --path Notes/Imported.md --content-stdin
+
+nexus use --memory "importing a note" --goal "write the note" -- content write --path Notes/Imported.md --content-file ".\note.md"
+```
+
+Both flags must appear after the `--` delimiter. They are converted to the
+tool's normal `--content` value inside the CLI. Use only one, and do not combine
+either with `--content`. `--content-file` reads a local filesystem path; the
+destination passed to the Nexus tool remains vault-relative.
+
 ## Choosing a vault
 
 The vault name lives in the socket name, so selection happens at call time:
@@ -108,3 +127,5 @@ The vault name lives in the socket name, so selection happens at call time:
   `--goal`.
 - **PowerShell split a legacy command** — move context flags before `--` and
   pass the tool normally after it; do not nest a quoted command string.
+- **Multiline content is truncated or split** — pipe it with
+  `--content-stdin` or pass its local path with `--content-file`.
