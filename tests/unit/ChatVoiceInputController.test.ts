@@ -15,8 +15,10 @@ jest.mock('../../src/services/llm/TranscriptionService', () => ({
 
 class MockMediaRecorder {
   static isTypeSupported = jest.fn(() => true);
+  static latestInstance: MockMediaRecorder | null = null;
 
   state: 'inactive' | 'recording' = 'inactive';
+  finalData = 'voice';
   ondataavailable: ((event: BlobEvent) => void) | null = null;
   onstop: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -24,7 +26,9 @@ class MockMediaRecorder {
   constructor(
     public readonly _stream: MediaStream,
     public readonly _options: { mimeType: string }
-  ) {}
+  ) {
+    MockMediaRecorder.latestInstance = this;
+  }
 
   start(): void {
     this.state = 'recording';
@@ -32,10 +36,14 @@ class MockMediaRecorder {
 
   stop(): void {
     this.state = 'inactive';
-    this.ondataavailable?.({
-      data: new Blob(['voice'], { type: 'audio/webm' })
-    } as BlobEvent);
+    this.emitData(this.finalData);
     this.onstop?.();
+  }
+
+  emitData(data: string): void {
+    this.ondataavailable?.({
+      data: new Blob([data], { type: 'audio/webm' })
+    } as BlobEvent);
   }
 }
 
@@ -48,6 +56,7 @@ describe('ChatVoiceInputController', () => {
     mockedGetNexusPlugin.mockReset();
     mockedCreateOrReuse.mockReset();
     mediaTrackStop.mockReset();
+    MockMediaRecorder.latestInstance = null;
 
     Object.defineProperty(global, 'MediaRecorder', {
       writable: true,
@@ -91,7 +100,7 @@ describe('ChatVoiceInputController', () => {
     expect(controller.isAvailable()).toBe(true);
   });
 
-  it('records, transcribes queued chunks, and returns the transcript when stopped', async () => {
+  it('records, transcribes the recording, and returns the transcript when stopped', async () => {
     const onStateChange = jest.fn();
     const onTranscriptReady = jest.fn();
     const onError = jest.fn();
@@ -134,6 +143,55 @@ describe('ChatVoiceInputController', () => {
     expect(onStateChange).toHaveBeenLastCalledWith('idle');
     expect(onError).not.toHaveBeenCalled();
     expect(mediaTrackStop).toHaveBeenCalled();
+  });
+
+  it('combines periodic and final recorder slices before transcribing', async () => {
+    const onTranscriptReady = jest.fn();
+    const transcribe = jest.fn().mockImplementation(async request => {
+      const audioText = new TextDecoder().decode(new Uint8Array(request.audioData));
+      return {
+        provider: 'openai',
+        model: 'whisper-1',
+        text: audioText === 'update me on what is happening with Alex'
+          ? 'update me on what is happening with Alex'
+          : '',
+        segments: []
+      };
+    });
+
+    mockedGetNexusPlugin.mockReturnValue({
+      settings: {
+        settings: {
+          llmProviders: { providers: {} } as never
+        }
+      }
+    } as App);
+    mockedCreateOrReuse.mockReturnValue({
+      getAvailableProviders: () => [
+        {
+          provider: 'openai',
+          available: true,
+          models: [{ id: 'whisper-1' }]
+        }
+      ],
+      transcribe
+    } as never);
+
+    const controller = new ChatVoiceInputController({} as App, {
+      onStateChange: jest.fn(),
+      onTranscriptReady,
+      onError: jest.fn()
+    });
+
+    await controller.startRecording();
+    MockMediaRecorder.latestInstance?.emitData('update me on what is happening with ');
+    if (MockMediaRecorder.latestInstance) {
+      MockMediaRecorder.latestInstance.finalData = 'Alex';
+    }
+    await controller.stopRecording();
+
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(onTranscriptReady).toHaveBeenCalledWith('update me on what is happening with Alex');
   });
 
   it('prefers resolved chat transcription settings when provided', () => {
