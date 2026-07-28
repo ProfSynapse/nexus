@@ -23,6 +23,7 @@ import {
     UNIX_SUFFIX,
     WIN_PIPE_DIR,
     VaultSocket,
+    formatAvailableVaults,
     isOwnUnixSocket,
 } from './vaultDiscovery';
 
@@ -125,6 +126,15 @@ function buildUsage(): string {
         playbookLines = '    (run `nexus playbook` to list)';
     }
 
+    // Help remains useful without a running vault, but when discovery is available it
+    // should answer the immediate follow-up question: which value can I pass to --vault?
+    let availableVaultLines: string;
+    try {
+        availableVaultLines = formatAvailableVaults(listVaultSockets());
+    } catch (error) {
+        availableVaultLines = `  (could not enumerate: ${(error as Error).message})`;
+    }
+
     return `nexus — drive a running Nexus (Obsidian) vault from the shell (no MCP config)
 
 Two verbs: DISCOVER what you can do, then EXECUTE. Discovery returns schemas, never
@@ -143,6 +153,9 @@ COMMANDS
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
+
+AVAILABLE VAULTS  (live; refreshed whenever help runs)
+${availableVaultLines}
 
 CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
          --workspace/--session/--vault and fills memory/goal for you)

@@ -19,6 +19,18 @@ export interface VaultSocket {
     path: string;
 }
 
+/** Format live endpoints for the dynamic section in `nexus --help`. */
+export function formatAvailableVaults(sockets: readonly VaultSocket[]): string {
+    if (sockets.length === 0) {
+        return '  (none detected — open Obsidian with Nexus enabled)';
+    }
+
+    const nameWidth = Math.max(...sockets.map((socket) => socket.name.length));
+    return sockets
+        .map((socket) => `  ${socket.name.padEnd(nameWidth)}  ${socket.path}`)
+        .join('\n');
+}
+
 const WINDOWS_PIPE_LIST_SCRIPT = "Get-ChildItem -LiteralPath '\\\\.\\pipe\\' -Name";
 const SAFE_PIPE_NAME = /^nexus_mcp_[a-z0-9_-]+$/;
 

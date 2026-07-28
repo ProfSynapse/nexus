@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { listVaultSockets, parseWindowsPipeListing } from '../../cli/vaultDiscovery';
+import { formatAvailableVaults, listVaultSockets, parseWindowsPipeListing } from '../../cli/vaultDiscovery';
 
 jest.mock('node:child_process', () => ({
     spawnSync: jest.fn(),
@@ -88,5 +88,23 @@ describe('Windows Nexus vault discovery', () => {
         expect(() => listVaultSockets('win32')).toThrow(
             'Could not enumerate Windows named pipes: access denied. Pass --vault <name> or set NEXUS_VAULT as a fallback.'
         );
+    });
+});
+
+describe('Nexus vault help formatting', () => {
+    it('shows a useful empty state when no vaults are open', () => {
+        expect(formatAvailableVaults([])).toBe(
+            '  (none detected — open Obsidian with Nexus enabled)'
+        );
+    });
+
+    it('shows every available vault with aligned paths', () => {
+        expect(formatAvailableVaults([
+            { name: 'notes', path: '/tmp/nexus_mcp_notes.sock' },
+            { name: 'research-vault', path: '/tmp/nexus_mcp_research-vault.sock' },
+        ])).toBe([
+            '  notes           /tmp/nexus_mcp_notes.sock',
+            '  research-vault  /tmp/nexus_mcp_research-vault.sock',
+        ].join('\n'));
     });
 });

@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "ff4ecbd3b850b8a8";
+export const NEXUS_CLI_ASSETS_HASH = "456748a5a1137be8";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -249,6 +249,13 @@ var NAME_PREFIX = "nexus_mcp_";
 var UNIX_SOCK_DIR = "/tmp";
 var UNIX_SUFFIX = ".sock";
 var WIN_PIPE_DIR = "\\\\\\\\.\\\\pipe\\\\";
+function formatAvailableVaults(sockets) {
+  if (sockets.length === 0) {
+    return "  (none detected \\u2014 open Obsidian with Nexus enabled)";
+  }
+  const nameWidth = Math.max(...sockets.map((socket) => socket.name.length));
+  return sockets.map((socket) => \`  \${socket.name.padEnd(nameWidth)}  \${socket.path}\`).join("\\n");
+}
 var WINDOWS_PIPE_LIST_SCRIPT = "Get-ChildItem -LiteralPath '\\\\\\\\.\\\\pipe\\\\' -Name";
 var SAFE_PIPE_NAME = /^nexus_mcp_[a-z0-9_-]+$/;
 function parseWindowsPipeListing(output) {
@@ -369,6 +376,12 @@ function buildUsage() {
   } catch {
     playbookLines = "    (run \`nexus playbook\` to list)";
   }
+  let availableVaultLines;
+  try {
+    availableVaultLines = formatAvailableVaults(listVaultSockets());
+  } catch (error) {
+    availableVaultLines = \`  (could not enumerate: \${error.message})\`;
+  }
   return \`nexus \\u2014 drive a running Nexus (Obsidian) vault from the shell (no MCP config)
 
 Two verbs: DISCOVER what you can do, then EXECUTE. Discovery returns schemas, never
@@ -387,6 +400,9 @@ COMMANDS
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
+
+AVAILABLE VAULTS  (live; refreshed whenever help runs)
+\${availableVaultLines}
 
 CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` reads only
          --workspace/--session/--vault and fills memory/goal for you)
