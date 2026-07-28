@@ -32,14 +32,13 @@ export class ChatVoiceInputController {
   private stream: MediaStream | null = null;
   private activeMimeType: string | null = null;
   private activeSettings: LLMProviderSettings | null = null;
-  private queuedBlobs: Blob[] = [];
-  private transcriptChunks: string[] = [];
-  private processingQueue = false;
+  private recordedBlobs: Blob[] = [];
+  private finalizingRecording = false;
   private recorderStopped = false;
   private finalizePromise: Promise<string> | null = null;
   private resolveFinalize: ((value: string) => void) | null = null;
   private rejectFinalize: ((error: Error) => void) | null = null;
-  private firstChunkError: Error | null = null;
+  private recordingError: Error | null = null;
 
   constructor(
     private readonly app: App | undefined,
@@ -115,8 +114,9 @@ export class ChatVoiceInputController {
       this.recorder = new MediaRecorder(this.stream, { mimeType });
       this.recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data.size > 0) {
-          this.queuedBlobs.push(event.data);
-          void this.processQueuedChunks();
+          // Timeslice blobs are not guaranteed to be independently playable.
+          // Preserve their order and transcribe the complete recording on stop.
+          this.recordedBlobs.push(event.data);
         }
       };
       this.recorder.onstop = () => {
@@ -125,7 +125,7 @@ export class ChatVoiceInputController {
         this.tryFinalize();
       };
       this.recorder.onerror = () => {
-        this.firstChunkError = this.firstChunkError ?? new Error('Audio recording failed.');
+        this.recordingError = this.recordingError ?? new Error('Audio recording failed.');
         this.recorderStopped = true;
         this.stopStreamTracks();
         this.tryFinalize();
@@ -161,8 +161,8 @@ export class ChatVoiceInputController {
       if (normalizedTranscript.length > 0) {
         this.callbacks.onTranscriptReady(normalizedTranscript);
       }
-      if (this.firstChunkError && normalizedTranscript.length > 0) {
-        this.callbacks.onError('Voice input kept a partial transcript after one chunk failed.');
+      if (this.recordingError && normalizedTranscript.length > 0) {
+        this.callbacks.onError('Voice input kept a partial transcript after recording ended unexpectedly.');
       }
     } catch (error) {
       this.callbacks.onError(
@@ -195,34 +195,38 @@ export class ChatVoiceInputController {
     this.setState('idle');
   }
 
-  private async processQueuedChunks(): Promise<void> {
-    if (this.processingQueue) {
+  private tryFinalize(): void {
+    if (!this.recorderStopped || this.finalizingRecording) {
       return;
     }
 
-    this.processingQueue = true;
+    this.finalizingRecording = true;
+    const combinedBlob = new Blob(this.recordedBlobs, {
+      type: this.activeMimeType ?? 'audio/webm'
+    });
 
+    void this.transcribeCombinedRecording(combinedBlob);
+  }
+
+  private async transcribeCombinedRecording(blob: Blob): Promise<void> {
     try {
-      while (this.queuedBlobs.length > 0) {
-        const blob = this.queuedBlobs.shift();
-        if (!blob) {
-          continue;
-        }
-
-        try {
-          const text = await this.transcribeBlob(blob);
-          if (text.length > 0) {
-            this.transcriptChunks.push(text);
-          }
-        } catch (error) {
-          this.firstChunkError = this.firstChunkError ?? (
-            error instanceof Error ? error : new Error('Voice input transcription failed.')
-          );
-        }
+      const transcript = blob.size > 0 ? await this.transcribeBlob(blob) : '';
+      if (transcript.length > 0) {
+        this.resolveFinalize?.(transcript);
+      } else if (this.recordingError) {
+        this.rejectFinalize?.(this.recordingError);
+      } else {
+        this.resolveFinalize?.('');
       }
+    } catch (error) {
+      this.rejectFinalize?.(
+        error instanceof Error ? error : new Error('Voice input transcription failed.')
+      );
     } finally {
-      this.processingQueue = false;
-      this.tryFinalize();
+      this.finalizingRecording = false;
+      this.resolveFinalize = null;
+      this.rejectFinalize = null;
+      this.finalizePromise = null;
     }
   }
 
@@ -244,37 +248,16 @@ export class ChatVoiceInputController {
     return result.text.replace(/\s+/g, ' ').trim();
   }
 
-  private tryFinalize(): void {
-    if (!this.recorderStopped || this.processingQueue || this.queuedBlobs.length > 0) {
-      return;
-    }
-
-    const transcript = this.transcriptChunks.join(' ').replace(/\s+/g, ' ').trim();
-
-    if (transcript.length > 0) {
-      this.resolveFinalize?.(transcript);
-    } else if (this.firstChunkError) {
-      this.rejectFinalize?.(this.firstChunkError);
-    } else {
-      this.resolveFinalize?.('');
-    }
-
-    this.resolveFinalize = null;
-    this.rejectFinalize = null;
-    this.finalizePromise = null;
-  }
-
   private stopStreamTracks(): void {
     this.stream?.getTracks().forEach(track => track.stop());
     this.stream = null;
   }
 
   private resetSessionState(): void {
-    this.queuedBlobs = [];
-    this.transcriptChunks = [];
-    this.processingQueue = false;
+    this.recordedBlobs = [];
+    this.finalizingRecording = false;
     this.recorderStopped = false;
-    this.firstChunkError = null;
+    this.recordingError = null;
   }
 
   private setState(state: ChatVoiceInputState): void {
