@@ -5,11 +5,8 @@ description: >-
   tasks, memory/workspaces, saved prompts) from the shell via the `nexus` CLI —
   no MCP connection needed. Use whenever the user refers to their vault, notes,
   daily notes, second brain, or Obsidian, or asks you to find/read/change
-  something stored there.
-when_to_use: >-
-  The task involves the user's Obsidian vault or notes and the `nexus` command
-  is on PATH. Not for editing files in the current code repo — use normal file
-  tools for those.
+  something stored there and the `nexus` command is on PATH. Do not use it to
+  edit files in the current code repository; use normal file tools for those.
 ---
 
 # Nexus vault CLI
@@ -56,6 +53,16 @@ nexus use --memory "<what you're doing>" --goal "<objective>" -- \
 The `--` delimiter is canonical: context belongs before it; the tool command
 belongs after it. This avoids nested command-string quoting, especially in
 Windows PowerShell. The legacy one-string form remains supported.
+
+For multiline Markdown or content containing embedded quotes, keep the body
+out of shell argv. Pipe it with `--content-stdin` or pass a local path with
+`--content-file`; put either flag after the `--` delimiter and do not also pass
+`--content`:
+
+```powershell
+Get-Content -Raw .\note.md |
+    nexus use --memory "importing note" --goal "write note" -- content write --path Notes/Imported.md --content-stdin
+```
 
 Everything else — the flag table, per-tool schemas, syntax rules, the live
 per-vault catalog (including any enabled app agents) — comes from `nexus --help`,

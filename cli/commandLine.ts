@@ -5,6 +5,11 @@ export interface PartitionedUseArgv {
     toolArgv: string[] | null;
 }
 
+export interface ToolContentReaders {
+    readStdin: () => string;
+    readFile: (path: string) => string;
+}
+
 /**
  * Split `nexus use [context] -- [tool argv]` before generic flag parsing.
  * The delimiter is meaningful only for `use`; other verbs retain their
@@ -39,6 +44,54 @@ export function serializeToolArgv(toolArgv: string[]): string {
         throw new Error('Structured `use` needs an agent and command after `--`.');
     }
     return toolArgv.map(quoteToolToken).join(' ');
+}
+
+/**
+ * Replace CLI-only content transport flags with the normal tool `--content`
+ * flag. This keeps large/multiline payloads out of shell argv, where Windows
+ * `.cmd` wrappers and nested quote parsing can otherwise alter them.
+ */
+export function hydrateToolContentArgv(toolArgv: string[], readers: ToolContentReaders): string[] {
+    const stdinIndexes: number[] = [];
+    const fileIndexes: number[] = [];
+    const contentIndexes: number[] = [];
+
+    toolArgv.forEach((token, index) => {
+        if (token === '--content-stdin') stdinIndexes.push(index);
+        if (token === '--content-file') fileIndexes.push(index);
+        if (token === '--content') contentIndexes.push(index);
+    });
+
+    const transportCount = stdinIndexes.length + fileIndexes.length;
+    if (transportCount === 0) return toolArgv;
+    if (transportCount > 1) {
+        throw new Error('Use exactly one of --content-stdin or --content-file.');
+    }
+    if (contentIndexes.length > 0) {
+        throw new Error('Do not combine --content with --content-stdin or --content-file.');
+    }
+
+    if (stdinIndexes.length === 1) {
+        const index = stdinIndexes[0];
+        return [
+            ...toolArgv.slice(0, index),
+            '--content',
+            readers.readStdin(),
+            ...toolArgv.slice(index + 1),
+        ];
+    }
+
+    const index = fileIndexes[0];
+    const path = toolArgv[index + 1];
+    if (path === undefined || path.startsWith('--')) {
+        throw new Error('--content-file requires a local file path.');
+    }
+    return [
+        ...toolArgv.slice(0, index),
+        '--content',
+        readers.readFile(path),
+        ...toolArgv.slice(index + 2),
+    ];
 }
 
 /** Resolve either canonical structured argv or the legacy one-string form. */
