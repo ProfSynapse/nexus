@@ -119,6 +119,49 @@ describe('OpenAITranscriptionAdapter', () => {
       );
     });
 
+    it('asks gpt-transcribe for plain json, never verbose_json or timestamps', async () => {
+      await adapter.transcribeChunk(makeChunk(), makeRequest({ model: 'gpt-transcribe' }));
+
+      const fields = buildMultipartMock.mock.calls[0][0];
+      expect(fields).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'model', value: 'gpt-transcribe' }),
+          expect.objectContaining({ name: 'response_format', value: 'json' })
+        ])
+      );
+      expect(fields.some(f => f.name === 'timestamp_granularities[]')).toBe(false);
+    });
+
+    it('does not request word timestamps from gpt-transcribe even when asked', async () => {
+      await adapter.transcribeChunk(
+        makeChunk(),
+        makeRequest({ model: 'gpt-transcribe', requestWordTimestamps: true })
+      );
+
+      const fields = buildMultipartMock.mock.calls[0][0];
+      expect(fields.some(f => f.name === 'timestamp_granularities[]')).toBe(false);
+    });
+
+    it('asks the diarization model for diarized_json', async () => {
+      await adapter.transcribeChunk(makeChunk(), makeRequest({ model: 'gpt-4o-transcribe-diarize' }));
+
+      expect(buildMultipartMock).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'response_format', value: 'diarized_json' })
+        ])
+      );
+    });
+
+    it('omits prompt for the diarization model, which rejects it outright', async () => {
+      await adapter.transcribeChunk(
+        makeChunk(),
+        makeRequest({ model: 'gpt-4o-transcribe-diarize', prompt: 'A support call.' })
+      );
+
+      const fields = buildMultipartMock.mock.calls[0][0];
+      expect(fields.some(f => f.name === 'prompt')).toBe(false);
+    });
+
     it('includes prompt when provided', async () => {
       await adapter.transcribeChunk(
         makeChunk(),
@@ -230,6 +273,52 @@ describe('OpenAITranscriptionAdapter', () => {
         text: 'Full transcript',
         words: undefined
       }]);
+    });
+
+    it('spans the whole chunk for a gpt-transcribe response, which carries no timing', async () => {
+      __setRequestUrlMock(async () => ({
+        status: 200,
+        json: {
+          text: 'Nexus transcription smoke test.',
+          languages: [{ code: 'en' }],
+          usage: { type: 'duration', seconds: 7 }
+        }
+      }));
+
+      const result = await adapter.transcribeChunk(
+        makeChunk({ durationSeconds: 45 }),
+        makeRequest({ model: 'gpt-transcribe' })
+      );
+
+      expect(result).toEqual([{
+        startSeconds: 0,
+        endSeconds: 45,
+        text: 'Nexus transcription smoke test.',
+        words: undefined
+      }]);
+    });
+
+    it('keeps speaker labels from a diarized_json response', async () => {
+      __setRequestUrlMock(async () => ({
+        status: 200,
+        json: {
+          text: 'Hello there. Hi back.',
+          segments: [
+            { type: 'transcript.text.segment', text: ' Hello there.', speaker: 'A', start: 0, end: 2.5 },
+            { type: 'transcript.text.segment', text: ' Hi back.', speaker: 'B', start: 3.3, end: 5.1 }
+          ]
+        }
+      }));
+
+      const result = await adapter.transcribeChunk(
+        makeChunk(),
+        makeRequest({ model: 'gpt-4o-transcribe-diarize' })
+      );
+
+      expect(result).toEqual([
+        expect.objectContaining({ text: 'Hello there.', speaker: 'A', startSeconds: 0, endSeconds: 2.5 }),
+        expect.objectContaining({ text: 'Hi back.', speaker: 'B', startSeconds: 3.3, endSeconds: 5.1 })
+      ]);
     });
 
     it('uses chunk duration when response has no duration', async () => {

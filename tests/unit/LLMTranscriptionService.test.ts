@@ -31,7 +31,10 @@ import { chunkAudio } from '../../src/services/llm/utils/AudioChunkingService';
 import { OpenAITranscriptionAdapter } from '../../src/services/llm/adapters/openai/OpenAITranscriptionAdapter';
 import { OpenRouterTranscriptionAdapter } from '../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, type LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
-import type { AudioChunk } from '../../src/services/llm/types/VoiceTypes';
+import {
+  getTranscriptionModelsForProvider,
+  type AudioChunk
+} from '../../src/services/llm/types/VoiceTypes';
 
 const chunkAudioMock = chunkAudio as jest.MockedFunction<typeof chunkAudio>;
 
@@ -361,7 +364,9 @@ describe('TranscriptionService (class-based)', () => {
     it('returns all models when none are disabled', () => {
       const service = new TranscriptionService(makeSettings());
       const models = service.getModelsForProvider('openai');
-      expect(models).toHaveLength(1);
+      expect(models.map(m => m.id)).toEqual(
+        getTranscriptionModelsForProvider('openai').map(m => m.id)
+      );
       expect(models[0].id).toBe('whisper-1');
     });
 

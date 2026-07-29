@@ -76,12 +76,31 @@ export interface AudioChunk {
 
 const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
   {
+    // Kept first so it stays the OpenAI default: it is the only OpenAI model
+    // that still returns word timestamps, which ingestion asks for.
     provider: 'openai',
     id: 'whisper-1',
     name: 'Whisper 1',
     execution: 'speech-api-segmented',
     supportsWordTimestamps: true,
     supportsPrompt: true
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-transcribe',
+    name: 'GPT Transcribe',
+    execution: 'speech-api-segmented',
+    supportsWordTimestamps: false,
+    supportsPrompt: true
+  },
+  {
+    provider: 'openai',
+    id: 'gpt-4o-transcribe-diarize',
+    name: 'GPT-4o Transcribe Diarize',
+    execution: 'speech-api-segmented',
+    supportsWordTimestamps: false,
+    supportsSpeakerLabels: true,
+    supportsPrompt: false
   },
   {
     provider: 'groq',
