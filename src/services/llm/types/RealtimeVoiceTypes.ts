@@ -171,6 +171,15 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     supportsTranscripts: true
   },
   {
+    provider: 'openai',
+    id: 'gpt-live-transcribe',
+    name: 'GPT Live Transcribe',
+    transport: 'websocket',
+    execution: 'transcription-pipeline',
+    supportsTools: true,
+    supportsTranscripts: true
+  },
+  {
     provider: 'assemblyai',
     id: 'universal-3-5-pro',
     name: 'Universal 3.5 Pro Realtime',

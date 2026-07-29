@@ -21,11 +21,27 @@ describe('VoiceTypes', () => {
   // ── getTranscriptionModelsForProvider ────────────────────────────────
 
   describe('getTranscriptionModelsForProvider', () => {
-    it('returns OpenAI models', () => {
+    it('returns OpenAI models, with whisper-1 first so the default keeps word timestamps', () => {
       const models = getTranscriptionModelsForProvider('openai');
-      expect(models).toHaveLength(1);
-      expect(models[0].id).toBe('whisper-1');
+      expect(models.map(m => m.id)).toEqual([
+        'whisper-1',
+        'gpt-transcribe',
+        'gpt-4o-transcribe-diarize'
+      ]);
+      expect(models[0].supportsWordTimestamps).toBe(true);
       expect(models.every(m => m.provider === 'openai')).toBe(true);
+    });
+
+    it('declares the newer OpenAI models honestly: no word timestamps, speakers only on diarize', () => {
+      expect(getTranscriptionModel('openai', 'gpt-transcribe')).toEqual(expect.objectContaining({
+        supportsWordTimestamps: false,
+        supportsPrompt: true
+      }));
+      expect(getTranscriptionModel('openai', 'gpt-4o-transcribe-diarize')).toEqual(expect.objectContaining({
+        supportsWordTimestamps: false,
+        supportsSpeakerLabels: true,
+        supportsPrompt: false
+      }));
     });
 
     it('returns Groq models', () => {

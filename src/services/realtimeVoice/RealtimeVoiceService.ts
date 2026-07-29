@@ -7,6 +7,7 @@ import {
 import { OpenAIRealtimeVoiceSession } from './OpenAIRealtimeVoiceSession';
 import { GoogleRealtimeVoiceSession } from './GoogleRealtimeVoiceSession';
 import { AssemblyAIRealtimeVoiceSession } from './AssemblyAIRealtimeVoiceSession';
+import { OpenAILiveTranscribeSession } from './OpenAILiveTranscribeSession';
 import type {
   RealtimeVoiceAvailability,
   RealtimeVoiceSession,
@@ -35,8 +36,20 @@ export class RealtimeVoiceService {
     if (resolved.provider === 'assemblyai') {
       return new AssemblyAIRealtimeVoiceSession(resolved);
     }
+    if (this.isTranscriptionPipeline(resolved.provider, resolved.model)) {
+      return new OpenAILiveTranscribeSession(resolved);
+    }
 
     return new OpenAIRealtimeVoiceSession(resolved);
+  }
+
+  /**
+   * Pipeline models transcribe only; the reply comes from Nexus chat and the
+   * speech model. OpenAI ships both shapes, so the model decides which session
+   * class and which transport requirements apply.
+   */
+  private isTranscriptionPipeline(provider: string, model: string): boolean {
+    return getRealtimeVoiceModel(provider, model)?.execution === 'transcription-pipeline';
   }
 
   private resolveRequest(
@@ -96,10 +109,12 @@ export class RealtimeVoiceService {
     }
 
     const declaration = getRealtimeVoiceModel(selection.provider, selection.model);
+    // Pipeline models have no voice of their own — the speech model supplies it.
+    const fallbackVoice = declaration?.execution === 'transcription-pipeline' ? '' : 'marin';
     return {
       provider: selection.provider,
       model: selection.model,
-      voice: selection.voice || declaration?.defaultVoice || (selection.provider === 'assemblyai' ? '' : 'marin'),
+      voice: selection.voice || declaration?.defaultVoice || fallbackVoice,
     };
   }
 
@@ -149,6 +164,18 @@ export class RealtimeVoiceService {
 
     if (!this.getOpenAIApiKey()) {
       return { available: false, reason: 'OpenAI is not enabled and configured for live voice.' };
+    }
+
+    if (this.isTranscriptionPipeline(selection.provider, selection.model)) {
+      if (typeof WebSocket === 'undefined') {
+        return { available: false, reason: 'WebSocket is not available in this Obsidian environment.' };
+      }
+
+      if (typeof AudioContext === 'undefined') {
+        return { available: false, reason: 'AudioContext is not available in this Obsidian environment.' };
+      }
+
+      return { available: true };
     }
 
     if (typeof RTCPeerConnection === 'undefined') {
