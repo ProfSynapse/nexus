@@ -230,6 +230,17 @@ export interface ListWorkspacesParameters extends CommonParameters {
   limit?: number;
 }
 
+export interface SearchWorkspacesParameters extends CommonParameters {
+  query: string;
+  limit?: number;
+  includeArchived?: boolean;
+  /**
+   * When true, auto-load the match if the search returns exactly one.
+   * Strict by design: 0 or 2+ matches never auto-load.
+   */
+  load?: boolean;
+}
+
 export interface EditWorkspaceParameters extends CommonParameters {
   id: string;
   name?: string;
@@ -277,6 +288,32 @@ export interface ListWorkspacesResult extends CommonResult {
       lastAccessed: number;
       childCount: number;
     }>;
+  };
+}
+
+export interface SearchWorkspacesMatch {
+  id: string;
+  name: string;
+  description?: string;
+  rootFolder: string;
+  lastAccessed: number;
+  /** Relevance score from WorkspaceMatcher (higher is better). */
+  score: number;
+  /** Fields that contributed to the score. */
+  matchedOn: string[];
+}
+
+export interface SearchWorkspacesResult extends CommonResult {
+  data: {
+    query: string;
+    matches: SearchWorkspacesMatch[];
+    /** Match count before `limit` truncation — this drives the auto-load decision. */
+    totalMatches: number;
+    autoLoaded: boolean;
+    /** Full loadWorkspace payload, present only when autoLoaded is true. */
+    workspace?: unknown;
+    /** Next-step steer for the caller when nothing was auto-loaded. */
+    nudge?: string;
   };
 }
 
