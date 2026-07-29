@@ -925,9 +925,13 @@ export class ChatSettingsRenderer {
       const selection = getSelection();
       const model = getRealtimeVoiceModel(selection.provider, selection.model);
       const voices = model?.voices ?? [];
+      const usesSpeechDefault = model?.execution === 'transcription-pipeline';
 
       voiceDropdown.empty();
-      voiceDropdown.createEl('option', { value: '', text: 'Provider default' });
+      voiceDropdown.createEl('option', {
+        value: '',
+        text: usesSpeechDefault ? 'Uses speech default' : 'Provider default'
+      });
       voices.forEach(voice => {
         voiceDropdown?.createEl('option', { value: voice.id, text: voice.name });
       });
@@ -939,8 +943,8 @@ export class ChatSettingsRenderer {
         });
       }
 
-      voiceDropdown.disabled = !selection.provider || !selection.model;
-      voiceDropdown.value = selection.voice || '';
+      voiceDropdown.disabled = usesSpeechDefault || !selection.provider || !selection.model;
+      voiceDropdown.value = usesSpeechDefault ? '' : selection.voice || '';
     };
 
     const updateModelOptions = (): void => {
@@ -988,7 +992,7 @@ export class ChatSettingsRenderer {
 
     new Setting(parent)
       .setName('Live voice provider')
-      .setDesc('Only true realtime voice providers appear here.')
+      .setDesc('Native voice agents and realtime transcription pipelines appear here.')
       .addDropdown(dropdown => {
         const availability = getAvailability();
         const selection = getSelection();
@@ -1043,7 +1047,7 @@ export class ChatSettingsRenderer {
       });
 
     new Setting(parent)
-      .setName('Live voice')
+      .setName('Live voice output')
       .addDropdown(dropdown => {
         voiceDropdown = dropdown.selectEl;
         updateVoiceOptions();

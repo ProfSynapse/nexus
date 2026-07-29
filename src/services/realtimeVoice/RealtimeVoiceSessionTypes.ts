@@ -4,14 +4,17 @@ import type { LiveVoiceComposerState } from '../../ui/chat/types/LiveVoiceTypes'
 export interface RealtimeVoiceSessionCallbacks {
   onStateChange: (state: Exclude<LiveVoiceComposerState, 'inactive' | 'error'>) => void;
   onError: (message: string, error?: unknown) => void;
+  onSpeechStarted?: () => void;
   onUserTranscript?: (text: string) => void;
   onAssistantTranscriptDelta?: (text: string) => void;
   onAssistantTranscriptCompleted?: (text: string) => void;
 }
 
 export interface RealtimeVoiceSession {
+  readonly mode?: 'native' | 'composed';
   start(): Promise<void>;
   stop(): void;
+  updateAgentContext?(text: string): void;
 }
 
 export interface RealtimeVoiceSessionRequest {
@@ -21,7 +24,7 @@ export interface RealtimeVoiceSessionRequest {
 }
 
 interface BaseResolvedRealtimeVoiceSessionRequest {
-  provider: 'openai' | 'google';
+  provider: 'openai' | 'google' | 'assemblyai';
   model: string;
   voice: string;
   apiKey: string;
@@ -37,12 +40,17 @@ export interface ResolvedGoogleRealtimeVoiceSessionRequest extends BaseResolvedR
   provider: 'google';
 }
 
+export interface ResolvedAssemblyAIRealtimeVoiceSessionRequest extends BaseResolvedRealtimeVoiceSessionRequest {
+  provider: 'assemblyai';
+}
+
 export type ResolvedRealtimeVoiceSessionRequest =
   | ResolvedOpenAIRealtimeVoiceSessionRequest
-  | ResolvedGoogleRealtimeVoiceSessionRequest;
+  | ResolvedGoogleRealtimeVoiceSessionRequest
+  | ResolvedAssemblyAIRealtimeVoiceSessionRequest;
 
 export interface RealtimeVoiceSelection {
-  provider: 'openai' | 'google' | 'elevenlabs';
+  provider: 'openai' | 'google' | 'assemblyai' | 'elevenlabs';
   model: string;
   voice: string;
 }

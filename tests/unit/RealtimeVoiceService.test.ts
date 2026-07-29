@@ -113,4 +113,36 @@ describe('RealtimeVoiceService', () => {
       available: true,
     });
   });
+
+  it('is available when AssemblyAI realtime transcription is configured', () => {
+    const service = new RealtimeVoiceService(buildSettings({
+      providers: {
+        openai: {
+          enabled: false,
+          apiKey: '',
+        },
+        google: {
+          enabled: false,
+          apiKey: '',
+        },
+        assemblyai: {
+          enabled: true,
+          apiKey: 'assemblyai-key',
+        },
+      },
+      defaultRealtimeVoiceModel: {
+        provider: 'assemblyai',
+        model: 'universal-3-5-pro',
+        source: 'user',
+      },
+    }));
+
+    expect(service.getAvailability()).toEqual({ available: true });
+    expect(service.createSession({
+      callbacks: {
+        onStateChange: jest.fn(),
+        onError: jest.fn(),
+      },
+    }).mode).toBe('composed');
+  });
 });

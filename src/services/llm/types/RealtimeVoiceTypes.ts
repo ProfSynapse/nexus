@@ -1,7 +1,9 @@
 /**
  * Realtime voice model declarations and default resolution for live chat.
  *
- * This deliberately excludes transcription-only and TTS-only providers.
+ * Native voice models own the full audio conversation. Composed models provide
+ * realtime turn transcription and use Nexus chat + the configured speech model
+ * for the assistant response.
  */
 
 import type {
@@ -10,7 +12,7 @@ import type {
   VoiceDefaultSelectionSource
 } from '../../../types/llm/ProviderTypes';
 
-export type RealtimeVoiceProvider = 'openai' | 'google' | 'elevenlabs';
+export type RealtimeVoiceProvider = 'openai' | 'google' | 'assemblyai' | 'elevenlabs';
 
 export type RealtimeVoiceTransport = 'webrtc' | 'websocket';
 
@@ -25,6 +27,7 @@ export interface RealtimeVoiceModelDeclaration {
   id: string;
   name: string;
   transport: RealtimeVoiceTransport;
+  execution: 'native-agent' | 'transcription-pipeline';
   defaultVoice?: string;
   voices?: RealtimeVoiceDeclaration[];
   supportsDynamicVoices?: boolean;
@@ -113,6 +116,7 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'gpt-realtime-2.1',
     name: 'GPT Realtime 2.1',
     transport: 'webrtc',
+    execution: 'native-agent',
     defaultVoice: 'marin',
     voices: OPENAI_REALTIME_VOICES,
     supportsTools: true,
@@ -124,6 +128,7 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'gpt-realtime-2.1-mini',
     name: 'GPT Realtime 2.1 mini',
     transport: 'webrtc',
+    execution: 'native-agent',
     defaultVoice: 'marin',
     voices: OPENAI_REALTIME_VOICES,
     supportsTools: true,
@@ -135,6 +140,7 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'gpt-realtime-2',
     name: 'GPT Realtime 2',
     transport: 'webrtc',
+    execution: 'native-agent',
     defaultVoice: 'marin',
     voices: OPENAI_REALTIME_VOICES,
     supportsTools: true,
@@ -146,6 +152,7 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'gpt-realtime-mini',
     name: 'GPT Realtime mini',
     transport: 'webrtc',
+    execution: 'native-agent',
     defaultVoice: 'marin',
     voices: OPENAI_REALTIME_VOICES,
     supportsTools: true,
@@ -157,8 +164,18 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'gemini-3.1-flash-live-preview',
     name: 'Gemini 3.1 Flash Live Preview',
     transport: 'websocket',
+    execution: 'native-agent',
     defaultVoice: 'Kore',
     voices: GOOGLE_REALTIME_VOICES,
+    supportsTools: true,
+    supportsTranscripts: true
+  },
+  {
+    provider: 'assemblyai',
+    id: 'universal-3-5-pro',
+    name: 'Universal 3.5 Pro Realtime',
+    transport: 'websocket',
+    execution: 'transcription-pipeline',
     supportsTools: true,
     supportsTranscripts: true
   },
@@ -167,6 +184,7 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     id: 'eleven-agents-conversation',
     name: 'ElevenAgents conversation',
     transport: 'websocket',
+    execution: 'native-agent',
     supportsDynamicVoices: true,
     supportsTools: true,
     supportsTranscripts: true,
@@ -174,11 +192,12 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
   }
 ];
 
-const WIRED_REALTIME_VOICE_PROVIDERS: RealtimeVoiceProvider[] = ['openai', 'google'];
+const WIRED_REALTIME_VOICE_PROVIDERS: RealtimeVoiceProvider[] = ['openai', 'google', 'assemblyai'];
 
 export const REALTIME_VOICE_PROVIDER_PRIORITY: RealtimeVoiceProvider[] = [
   'openai',
-  'google'
+  'google',
+  'assemblyai'
 ];
 
 export function getRealtimeVoiceProviders(): RealtimeVoiceProvider[] {
