@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-04-30T11:43:19.411Z",
+  "generatedAt": "2026-07-29T12:49:12.029Z",
   "selector": "--help",
-  "toolCount": 60,
+  "toolCount": 66,
   "agentCount": 11,
   "agents": {
     "canvasManager": 4,
     "composer": 2,
     "contentManager": 5,
-    "elevenlabs": 4,
+    "elevenlabs": 3,
     "ingestManager": 2,
-    "memoryManager": 9,
-    "promptManager": 9,
-    "searchManager": 3,
+    "memoryManager": 12,
+    "promptManager": 12,
+    "searchManager": 4,
     "storageManager": 6,
     "taskManager": 11,
     "webTools": 5
@@ -238,7 +238,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Audio only: output encoding format. Default: \"wav\" (One of: [\"wav\", \"mp3\", \"webm\"])"
+          "description": "[OPTIONAL] Audio only: output encoding format. Default: \"wav\" (One of: [\"wav\", \"webm\"])"
         },
         {
           "name": "duration",
@@ -349,7 +349,7 @@
       "tool": "replace",
       "description": "Replace or delete existing content in a note. Validates that the content at the specified lines matches before making changes. If the content has moved, returns the new line numbers.",
       "command": "content replace",
-      "usage": "content replace <path> <oldContent> <newContent> <startLine> <endLine>",
+      "usage": "content replace <path> <start> <end> <content>",
       "arguments": [
         {
           "name": "path",
@@ -360,40 +360,32 @@
           "description": "[REQUIRED] Path to the note to modify (e.g. \"folder/note.md\"). Do not include a leading slash. (string)"
         },
         {
-          "name": "oldContent",
-          "flag": "--old-content",
+          "name": "start",
+          "flag": "--start",
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] The exact text currently at lines startLine through endLine that you want to replace. This is validated before any changes are made — if the content at those lines doesn't match, the tool will search the entire note to find where your content actually is and tell you the correct line numbers. To delete content, set newContent to an empty string. (string)"
+          "description": "[REQUIRED] The opening line(s) of the range you want to replace, copied as-is from your read — keep the exact words but don't worry about quote/apostrophe style or invisible spacing; matching is normalization-tolerant. Must match exactly one location in the file. If a single line is not unique, extend `start` to multiple lines using \\n until it identifies one location only. (string)"
         },
         {
-          "name": "newContent",
-          "flag": "--new-content",
+          "name": "end",
+          "flag": "--end",
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] The text to replace oldContent with. Set to an empty string to delete the content at the specified lines. (string)"
+          "description": "[REQUIRED] The closing line(s) of the range. Same rules as `start`. Must come after `start` in the file. (string)"
         },
         {
-          "name": "startLine",
-          "flag": "--start-line",
-          "type": "number",
+          "name": "content",
+          "flag": "--content",
+          "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] The line number (1-indexed) where oldContent begins. Required — ensures the correct occurrence is targeted when identical content appears multiple times in a note. (number)"
-        },
-        {
-          "name": "endLine",
-          "flag": "--end-line",
-          "type": "number",
-          "required": true,
-          "positional": true,
-          "description": "[REQUIRED] The line number (1-indexed) where oldContent ends (inclusive). Required — defines the exact range to validate and replace. (number)"
+          "description": "[REQUIRED] What to write in place of the range from `start` through `end` (inclusive of both anchor lines). Set to an empty string to delete the range entirely. (string)"
         }
       ],
       "examples": [
-        "content replace \"path-value\" \"oldContent-value\" \"newContent-value\" 1 1"
+        "content replace \"path-value\" \"start-value\" \"end-value\" \"content-value\""
       ]
     },
     {
@@ -425,7 +417,7 @@
           "type": "oneOfArray",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Value to set. Can be a string, number, boolean, or array of strings."
+          "description": "[REQUIRED] Value to set: a string, number, boolean, or array of strings. Pass a single value (including an Obsidian wikilink) verbatim — e.g. --value \"[[Note]]\" — do NOT add wrapping brackets. For multiple values use a comma-separated list: --value \"[[A]],[[B]]\". The CLI parses these reliably; no bracket-escaping is needed."
         },
         {
           "name": "mode",
@@ -593,66 +585,6 @@
       ]
     },
     {
-      "agent": "elevenlabs",
-      "tool": "textToSpeech",
-      "description": "Convert text to speech audio using ElevenLabs voices. Saves MP3 to vault.",
-      "command": "elevenlabs text-to-speech",
-      "usage": "elevenlabs text-to-speech <prompt> [--voice-id <voiceId>] [--model-id <modelId>] [--output-path <outputPath>] [--stability <stability>] [--similarity-boost <similarityBoost>]",
-      "arguments": [
-        {
-          "name": "prompt",
-          "flag": "--prompt",
-          "type": "string",
-          "required": true,
-          "positional": true,
-          "description": "[REQUIRED] Text prompt to convert to speech. Supports dialogue tags like [fearful], [whispered], etc. (string)"
-        },
-        {
-          "name": "voiceId",
-          "flag": "--voice-id",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] ElevenLabs voice ID (use listVoices to find IDs). Defaults to Sarah. (string)"
-        },
-        {
-          "name": "modelId",
-          "flag": "--model-id",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Model ID. Options: eleven_multilingual_v2 (default), eleven_turbo_v2 (faster), eleven_monolingual_v1 (string)"
-        },
-        {
-          "name": "outputPath",
-          "flag": "--output-path",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Output file path in vault (default: audio/tts-{timestamp}.mp3) (string)"
-        },
-        {
-          "name": "stability",
-          "flag": "--stability",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Voice stability 0.0-1.0 (default: 0.5) (number)"
-        },
-        {
-          "name": "similarityBoost",
-          "flag": "--similarity-boost",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Voice similarity boost 0.0-1.0 (default: 0.75) (number)"
-        }
-      ],
-      "examples": [
-        "elevenlabs text-to-speech \"prompt-value\" --voice-id \"voiceId-value\" --model-id \"modelId-value\" --output-path \"outputPath-value\" --stability 1 --similarity-boost 1"
-      ]
-    },
-    {
       "agent": "ingestManager",
       "tool": "capabilities",
       "description": "List available OCR models and audio transcription models that the ingest pipeline supports. Use before ingest to discover valid provider/model options.",
@@ -676,7 +608,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Path to the file to ingest (PDF, DOCX, PPTX, XLSX, or audio). Relative to vault root. (string)"
+          "description": "[REQUIRED] Path to the file to ingest (PDF, DOCX, PPTX, or audio). Relative to vault root. (string)"
         },
         {
           "name": "mode",
@@ -705,6 +637,34 @@
       ],
       "examples": [
         "ingest run \"filePath-value\" --mode \"mode-value\" --ocr-provider \"ocrProvider-value\" --ocr-model \"ocrModel-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "archiveState",
+      "description": "Archive a state (soft delete). State will be hidden from lists but can be restored.",
+      "command": "memory archive-state",
+      "usage": "memory archive-state <name> [--restore]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name or ID of the state to archive or restore (REQUIRED). (string)"
+        },
+        {
+          "name": "restore",
+          "flag": "--restore",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, restores the state from archive. If false/omitted, archives the state. (boolean)"
+        }
+      ],
+      "examples": [
+        "memory archive-state \"name-value\""
       ]
     },
     {
@@ -950,7 +910,7 @@
     {
       "agent": "memoryManager",
       "tool": "listWorkspaces",
-      "description": "List available workspaces with filters and sorting",
+      "description": "List every available workspace with filters and sorting. Prefer searchWorkspaces when you already have a name fragment.",
       "command": "memory list-workspaces",
       "usage": "memory list-workspaces [--include-archived] [--sort-by <sortBy>] [--order <order>] [--limit <limit>]",
       "arguments": [
@@ -1016,15 +976,15 @@
       "tool": "loadWorkspace",
       "description": "Load a workspace by ID and restore context and state",
       "command": "memory load-workspace",
-      "usage": "memory load-workspace <id> [--limit <limit>] [--recursive]",
+      "usage": "memory load-workspace <workspace> [--limit <limit>] [--recursive]",
       "arguments": [
         {
-          "name": "id",
-          "flag": "--id",
+          "name": "workspace",
+          "flag": "--workspace",
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Workspace ID or name to load (REQUIRED). Accepts either the unique workspace ID or the workspace name. Using the name returned by create-workspace is fine; you do not need to call list-workspaces just to find the UUID. (string)"
+          "description": "[REQUIRED] Workspace name or ID to load (REQUIRED). Accepts either the workspace name or the unique workspace ID. Using the name returned by create-workspace is fine; you do not need to call list-workspaces just to find the UUID. (string)"
         },
         {
           "name": "limit",
@@ -1044,7 +1004,7 @@
         }
       ],
       "examples": [
-        "memory load-workspace \"id-value\" --limit 1"
+        "memory load-workspace \"workspace-value\" --limit 1"
       ]
     },
     {
@@ -1081,6 +1041,94 @@
       ],
       "examples": [
         "memory run --workflow-id \"workflowId-value\" --workflow-name \"workflowName-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "searchWorkspaces",
+      "description": "Find workspaces by name, description, or folder without listing them all. Pass --load to auto-load when exactly one workspace matches.",
+      "command": "memory search-workspaces",
+      "usage": "memory search-workspaces <query> [--load] [--limit <limit>] [--include-archived]",
+      "arguments": [
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Free-text query matched against workspace name, description, folder, and id. Partial words work (e.g. \"resear\" matches \"Research\"). (string)"
+        },
+        {
+          "name": "load",
+          "flag": "--load",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Auto-load the workspace when the search matches exactly one (default: false). With 0 or 2+ matches nothing is loaded and the match list is returned instead. (boolean)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum matches to return (default: 10). Does not affect the auto-load decision, which uses the full match count. (number)"
+        },
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include archived workspaces in the search (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "memory search-workspaces \"query-value\" --limit 1"
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "updateState",
+      "description": "Update state metadata (name, description, tags). Snapshot context is immutable.",
+      "command": "memory update-state",
+      "usage": "memory update-state <name> [--new-name <newName>] [--description <description>] [--tags <tags>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name or ID of the state to update (REQUIRED). This selects the target state. (string)"
+        },
+        {
+          "name": "newName",
+          "flag": "--new-name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New name for the state (optional). This renames the state; it is not the target identifier. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New description for the state (optional). (string)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New tags array for the state (optional, replaces the prior tag list). (Array of a string)"
+        }
+      ],
+      "examples": [
+        "memory update-state \"name-value\" --new-name \"newName-value\" --description \"description-value\" --tags \"value-1,value-2\""
       ]
     },
     {
@@ -1189,6 +1237,42 @@
     },
     {
       "agent": "promptManager",
+      "tool": "checkGeneratedArtifact",
+      "description": "Check a previously timed-out generated artifact job and save the completed output to its requested vault path.",
+      "command": "prompt check-generated-artifact",
+      "usage": "prompt check-generated-artifact <jobId> [--poll-interval-ms <pollIntervalMs>] [--timeout-ms <timeoutMs>]",
+      "arguments": [
+        {
+          "name": "jobId",
+          "flag": "--job-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Nexus generated artifact job ID returned by a timed-out generation tool call. (string)"
+        },
+        {
+          "name": "pollIntervalMs",
+          "flag": "--poll-interval-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional polling interval while waiting for completion. Default: 5000. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional maximum time to wait in this status check. Default: 30000. (number)"
+        }
+      ],
+      "examples": [
+        "prompt check-generated-artifact \"jobId-value\" --poll-interval-ms 1 --timeout-ms 1"
+      ]
+    },
+    {
+      "agent": "promptManager",
       "tool": "create",
       "description": "Create a new custom prompt",
       "command": "prompt create",
@@ -1261,6 +1345,74 @@
     },
     {
       "agent": "promptManager",
+      "tool": "generateAudio",
+      "description": "Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.",
+      "command": "prompt generate-audio",
+      "usage": "prompt generate-audio [--mode <mode>] <prompt> [--provider <provider>] [--model <model>] [--voice <voice>] <outputPath> [--overwrite]",
+      "arguments": [
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio generation mode. Voice is currently supported; music and sfx will be unlocked by provider capability in a later phase. (One of: [\"voice\"])"
+        },
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text to convert into voice audio. (string)"
+        },
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech provider. Defaults to Voice settings. (One of: [\"openai\", \"elevenlabs\", \"google\", \"mistral\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. (string)"
+        },
+        {
+          "name": "voice",
+          "flag": "--voice",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider voice ID. Defaults to Voice settings or the model default. (string)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative output path for the generated audio file, usually ending in .mp3. (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, replace an existing file at outputPath. Default: false. (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt generate-audio --mode \"mode-value\" \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --voice \"voice-value\" \"outputPath-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
       "tool": "generateImage",
       "description": "Generate images using Google Nano Banana models (direct or via OpenRouter). Supports reference images for style/composition guidance.",
       "command": "prompt generate-image",
@@ -1288,7 +1440,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-2.5-flash-image). Available: gemini-2.5-flash-image, gemini-3-pro-image-preview, gemini-3.1-flash-image-preview, gpt-5-image, flux-2-pro, flux-2-flex (One of: [\"gemini-2.5-flash-image\", \"gemini-3-pro-image-preview\", \"gemini-3.1-flash-image-preview\", \"gpt-5-image\", \"flux-2-pro\", \"flux-2-flex\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-2.5-flash-image). Available: gemini-2.5-flash-image, gemini-3-pro-image-preview, gemini-3.1-flash-image-preview, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex (One of: [\"gemini-2.5-flash-image\", \"gemini-3-pro-image-preview\", \"gemini-3.1-flash-image-preview\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\"])"
         },
         {
           "name": "aspectRatio",
@@ -1333,6 +1485,122 @@
       ],
       "examples": [
         "prompt generate-image \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --aspect-ratio \"aspectRatio-value\" --number-of-images 1 --image-size \"imageSize-value\" --reference-images \"value-1,value-2\" \"savePath-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "generateVideo",
+      "description": "Generate text-to-video MP4 files in the vault using Google Veo or OpenRouter video models.",
+      "command": "prompt generate-video",
+      "usage": "prompt generate-video <prompt> [--provider <provider>] [--model <model>] <outputPath> [--overwrite] [--aspect-ratio <aspectRatio>] [--resolution <resolution>] [--seconds <seconds>] [--reference-image <referenceImage>] [--generate-audio] [--negative-prompt <negativePrompt>] [--poll-interval-ms <pollIntervalMs>] [--timeout-ms <timeoutMs>]",
+      "arguments": [
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text description of the video to generate. (string)"
+        },
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional video provider. Defaults to Video generation settings. (One of: [\"google\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. (string)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative output path for the generated MP4 file, ending in .mp4. (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, replace an existing file at outputPath. Default: false. (boolean)"
+        },
+        {
+          "name": "aspectRatio",
+          "flag": "--aspect-ratio",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional output aspect ratio. Defaults to Video generation settings or model default. (One of: [\"16:9\", \"9:16\", \"1:1\"])"
+        },
+        {
+          "name": "resolution",
+          "flag": "--resolution",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. (One of: [\"720p\", \"1080p\", \"4k\"])"
+        },
+        {
+          "name": "seconds",
+          "flag": "--seconds",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional clip duration in seconds. Provider/model support varies. (number)"
+        },
+        {
+          "name": "referenceImage",
+          "flag": "--reference-image",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional vault-relative image path to guide image-to-video or reference-to-video generation. (string)"
+        },
+        {
+          "name": "generateAudio",
+          "flag": "--generate-audio",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether to ask the provider to generate audio when the selected model supports it. (boolean)"
+        },
+        {
+          "name": "negativePrompt",
+          "flag": "--negative-prompt",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional negative prompt for providers/models that support it. (string)"
+        },
+        {
+          "name": "pollIntervalMs",
+          "flag": "--poll-interval-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional polling interval for asynchronous jobs. Default: 10000. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional timeout for asynchronous jobs. Default: 600000. (number)"
+        }
+      ],
+      "examples": [
+        "prompt generate-video \"prompt-value\" --provider \"provider-value\" --model \"model-value\" \"outputPath-value\" --aspect-ratio \"aspectRatio-value\" --resolution \"resolution-value\" --seconds 1 --reference-image \"referenceImage-value\" --negative-prompt \"negativePrompt-value\" --poll-interval-ms 1 --timeout-ms 1"
       ]
     },
     {
@@ -1735,6 +2003,50 @@
       ]
     },
     {
+      "agent": "searchManager",
+      "tool": "queryNotes",
+      "description": "Run a read-only SQL SELECT over the notes index — your vault's notes + frontmatter as a queryable database. Filter by arbitrary frontmatter properties, compute aggregates, and sort/group, all in SQL (SQLite does the work; there is no separate query language).\n\nTABLES:\n- notes(n): id, path, basename, folder, ext, title, ctime, mtime, size, tags_json, links_json, frontmatter_json (ctime/mtime are epoch ms).\n- note_properties(p): note_id, key, key_raw, value_text, value_num, value_type, position — one row per frontmatter property (per list element). This is the INDEXED filter path.\n\nPATTERNS:\n- Filter by a property: ... WHERE EXISTS (SELECT 1 FROM note_properties p WHERE p.note_id = n.id AND p.key = 'status' AND p.value_text = 'active').\n- Dates/numbers: compare p.value_num (dates stored as epoch ms).\n- Project a value: SELECT json_extract(n.frontmatter_json, '$.status') AS status FROM notes n.\n\nOnly a single SELECT/WITH statement is allowed. Pass describe=true to get live columns + the distinct property keys present in the vault.",
+      "command": "search query-notes",
+      "usage": "search query-notes [--sql <sql>] [--params <params>] [--max-rows <maxRows>] [--describe]",
+      "arguments": [
+        {
+          "name": "sql",
+          "flag": "--sql",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] A single read-only SELECT/WITH statement. Example: \"SELECT path, json_extract(frontmatter_json,'$.status') AS status FROM notes LIMIT 20\". (string)"
+        },
+        {
+          "name": "params",
+          "flag": "--params",
+          "type": "array<unknown>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional positional bind values for ? placeholders. (Array of any)"
+        },
+        {
+          "name": "maxRows",
+          "flag": "--max-rows",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Max rows to return (default 500, hard cap 5000). (number) [min: 1, max: 5000]"
+        },
+        {
+          "name": "describe",
+          "flag": "--describe",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Return the index schema + distinct frontmatter keys instead of running sql. (boolean)"
+        }
+      ],
+      "examples": [
+        "search query-notes --sql \"sql-value\" --params \"value-1,value-2\" --max-rows 1"
+      ]
+    },
+    {
       "agent": "storageManager",
       "tool": "archive",
       "description": "Safely archive a file or folder (moves to .archive/ with timestamp)",
@@ -1859,7 +2171,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Destination path (string)"
+          "description": "[REQUIRED] Destination path. Uses Obsidian rename semantics, so internal links are updated when enabled in Obsidian settings. (string)"
         },
         {
           "name": "overwrite",
@@ -1967,7 +2279,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Parent task ID to nest this task under as a subtask (optional — from createTask or listTasks) (string)"
+          "description": "[OPTIONAL] Parent task ID or taskRef to nest this task under as a subtask (optional — from createTask or listTasks) (string)"
         },
         {
           "name": "priority",
@@ -2007,15 +2319,15 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Task IDs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error. (Array of a string)"
+          "description": "[OPTIONAL] Task IDs or taskRefs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error. (Array of a string)"
         },
         {
           "name": "linkedNotes",
           "flag": "--linked-notes",
-          "type": "array<string>",
+          "type": "array<unknown>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Vault note paths to link to this task (link type defaults to reference) (Array of a string)"
+          "description": "[OPTIONAL] Vault notes to link to this task. Each item is EITHER a plain string vault path (linkType defaults to \"reference\") OR an object { notePath, linkType } to set the relationship explicitly. linkType values: input = the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output = the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference = related/contextual note the task does NOT consume (association only, not part of the data flow). Links can also be added or changed after creation via the linkNote tool or updateTask addNoteLinks. (Array of any)"
         },
         {
           "name": "metadata",
@@ -2079,7 +2391,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Task ID to link the note to (REQUIRED — from createTask or listTasks) (string)"
+          "description": "[REQUIRED] Task ID or short taskRef to link the note to (REQUIRED — from createTask or listTasks) (string)"
         },
         {
           "name": "notePath",
@@ -2095,7 +2407,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Type of link (default: reference). reference=related note, output=task produces this note, input=task consumes this note (One of: [\"reference\", \"output\", \"input\"])"
+          "description": "[OPTIONAL] Type of link (default: reference). input=the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output=the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference=related/contextual note the task does NOT consume (association only, not part of the data flow). (One of: [\"reference\", \"output\", \"input\"])"
         },
         {
           "name": "action",
@@ -2155,7 +2467,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Filter by parent task (subtasks of this task) (string)"
+          "description": "[OPTIONAL] Filter by parent task ID or taskRef (subtasks of this task) (string)"
         },
         {
           "name": "includeSubtasks",
@@ -2251,7 +2563,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Task ID to move (REQUIRED — from createTask or listTasks) (string)"
+          "description": "[REQUIRED] Task ID or short taskRef to move (REQUIRED — from createTask or listTasks) (string)"
         },
         {
           "name": "projectId",
@@ -2267,7 +2579,7 @@
           "type": "unknown",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] New parent task ID (null to make top-level, string to nest under another task) (string | null)"
+          "description": "[OPTIONAL] New parent task ID or taskRef (null to make top-level, string to nest under another task) (string | null)"
         }
       ],
       "examples": [
@@ -2339,7 +2651,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Task ID (REQUIRED for dependencyTree query — from createTask or listTasks) (string)"
+          "description": "[OPTIONAL] Task ID or short taskRef (REQUIRED for dependencyTree query — from createTask or listTasks) (string)"
         }
       ],
       "examples": [
@@ -2359,7 +2671,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Task ID to update (REQUIRED — from createTask or listTasks) (string)"
+          "description": "[REQUIRED] Task ID or short taskRef to update (REQUIRED — from createTask or listTasks) (string)"
         },
         {
           "name": "title",
@@ -2423,7 +2735,7 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Task IDs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error. (Array of a string)"
+          "description": "[OPTIONAL] Task IDs or taskRefs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error. (Array of a string)"
         },
         {
           "name": "removeDependencies",
@@ -2431,7 +2743,7 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Task IDs to remove from this task's dependencies (Array of a string)"
+          "description": "[OPTIONAL] Task IDs or taskRefs to remove from this task's dependencies (Array of a string)"
         },
         {
           "name": "addNoteLinks",

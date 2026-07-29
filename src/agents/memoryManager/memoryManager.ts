@@ -17,6 +17,7 @@ import { UpdateStateTool } from './tools/states/updateState';
 import { ArchiveStateTool } from './tools/states/archiveState';
 import { CreateWorkspaceTool } from './tools/workspaces/createWorkspace';
 import { ListWorkspacesTool } from './tools/workspaces/listWorkspaces';
+import { SearchWorkspacesTool } from './tools/workspaces/searchWorkspaces';
 import { LoadWorkspaceTool } from './tools/workspaces/loadWorkspace';
 import { UpdateWorkspaceTool } from './tools/workspaces/updateWorkspace';
 import { ArchiveWorkspaceTool } from './tools/workspaces/archiveWorkspace';
@@ -145,9 +146,15 @@ export class MemoryManagerAgent extends BaseAgent {
     });
     this.registerLazyTool({
       slug: 'listWorkspaces', name: 'List Workspaces',
-      description: 'List available workspaces with filters and sorting',
+      description: 'List every available workspace with filters and sorting. Prefer searchWorkspaces when you already have a name fragment.',
       version: '1.0.0',
       factory: () => new ListWorkspacesTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'searchWorkspaces', name: 'Search Workspaces',
+      description: 'Find workspaces by name, description, or folder without listing them all. Pass --load to auto-load when exactly one workspace matches.',
+      version: '1.0.0',
+      factory: () => new SearchWorkspacesTool(this),
     });
     this.registerLazyTool({
       slug: 'loadWorkspace', name: 'Load Workspace',

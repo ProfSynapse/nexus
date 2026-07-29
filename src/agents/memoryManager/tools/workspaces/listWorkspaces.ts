@@ -32,7 +32,7 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
     super(
       'listWorkspaces',
       'List Workspaces',
-      'List available workspaces with filters and sorting',
+      'List every available workspace with filters and sorting. Prefer searchWorkspaces when you already have a name fragment.',
       '1.0.0'
     );
     this.agent = agent;
