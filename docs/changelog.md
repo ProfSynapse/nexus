@@ -2,6 +2,12 @@
 
 ## July 2026
 
+**v5.16.1** — Republish of 5.16.0
+
+No functional change. 5.16.0's first release build failed lint, so the default branch briefly advertised a version with no matching GitHub release; the Obsidian developer platform kept reporting "no release matches your manifest version" even after the release published. This version republishes identical plugin code to give the platform a clean version to pick up.
+
+---
+
 **v5.16.0** — Composed live voice, workspace search, and shell-safe CLI content
 
 **Live voice beyond native agents**
