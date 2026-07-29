@@ -54,7 +54,16 @@ Use the live voice button in the chat composer to start a realtime voice session
 - User and assistant transcripts are appended back into the chat thread, so the voice exchange becomes part of the conversation history
 - The session uses the provider/model/voice selected under **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice &rarr; Live voice**
 
-In the current build, live voice is wired only for **OpenAI realtime/WebRTC**. If another provider is selected in the defaults UI, Nexus will show an availability error instead of starting the session.
+Live voice comes in two shapes, and the model you pick decides which one you get:
+
+| Shape | Models | How it works |
+|-------|--------|--------------|
+| **Native agent** | OpenAI GPT Realtime (WebRTC), Gemini Flash Live (WebSocket) | The voice provider owns the whole conversation — it listens, thinks, and speaks |
+| **Composed pipeline** | OpenAI GPT Live Transcribe, AssemblyAI Universal 3.5 Pro Realtime | The provider only transcribes. Your reply comes from your normal Nexus chat model and tools, then the configured speech model speaks it |
+
+Composed pipelines are the option to pick when you want live voice to use your actual chat model rather than whatever the voice provider hosts. For those models the voice dropdown reads *"Uses speech default"* and is disabled, since the voice comes from your speech model. Talking over a reply interrupts it — the answer you spoke over is discarded rather than spoken.
+
+If a selected provider is not enabled and configured, Nexus shows an availability error instead of starting the session.
 
 ---
 

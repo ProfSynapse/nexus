@@ -2,6 +2,41 @@
 
 ## July 2026
 
+**v5.16.0** — Composed live voice, workspace search, and shell-safe CLI content
+
+**Live voice beyond native agents**
+- Live voice gains a second shape: a **composed pipeline**, where the provider handles only realtime transcription and the reply comes from your normal Nexus chat model, tools, and speech model. Native agents (OpenAI GPT Realtime, Gemini Flash Live) are unchanged. See the [native chat guide](../guide/native-chat.md#live-voice).
+- **AssemblyAI Universal 3.5 Pro Realtime** and **OpenAI GPT Live Transcribe** both ship as pipelines. Talking over a reply interrupts it and discards the answer you spoke over, so a stale response is never spoken.
+- For pipeline models the voice dropdown reads *"Uses speech default"* and is disabled — the voice comes from your speech model, not the realtime provider.
+
+**Search workspaces instead of listing them**
+- New `memory search-workspaces <query>` tool ranks workspaces by name, description, and folder, so an agent looking for one workspace no longer pays for a full inventory dump. Partial words match. `--load` opens the workspace directly, but only when the query resolves to exactly one match.
+
+**Models**
+- Chat: **Gemini 3.6 Flash** and **Gemini 3.5 Flash-Lite** (Google and OpenRouter).
+- Transcription: **`gpt-transcribe`** (cheaper and more accurate than Whisper on real-world audio) and **`gpt-4o-transcribe-diarize`** (the first OpenAI model here that labels speakers). `whisper-1` remains the OpenAI default because it is the only one that still returns word timestamps, which ingestion relies on.
+- OpenRouter: **Deepgram Nova-3** transcription and **Deepgram Aura-2** speech synthesis. AssemblyAI async transcription now prefers **Universal 3.5 Pro**.
+- **Gemini 3 parameter fix:** the whole Gemini 3 family now correctly omits `temperature`/`topK`/`topP` and uses thinking levels. Previously only the two newest models did, so Gemini 3.1 Pro — the default — was silently being sent sampling parameters Google asks callers to leave alone on reasoning work.
+
+**CLI**
+- New `--content-stdin` and `--content-file <path>` transports keep multiline Markdown, YAML, and embedded quotes out of shell argv, where the Windows `.cmd` wrapper and nested quoting could otherwise corrupt them.
+- `nexus --help` now lists your live vaults and their socket paths, so there is no separate `nexus vaults` call before choosing a `--vault` value.
+
+**Fixes**
+- Chat voice input no longer drops trailing words. Recording slices were being transcribed individually, but MediaRecorder does not guarantee each slice is independently playable; the complete recording is now combined before transcription.
+
+---
+
+**v5.15.4** — Realtime 2.1, Kimi K3, and Voxtral transcription; CLI Node discovery on macOS
+
+**v5.15.3** — Preserve quoted CLI values across shells
+
+**v5.15.2** — Harden Windows CLI discovery and installation
+
+**v5.15.1** — Harden Windows CLI install and storage cutover
+
+---
+
 **v5.15.0** — Local CLI bridge for shell agents (`nexus`)
 
 **Drive your vault from the shell — no MCP config**

@@ -20,6 +20,7 @@ JSONL files are the source of truth (sync-friendly). SQLite is a local performan
 Workspaces scope your sessions, traces, and operations. Every tool call is tagged to a workspace via the context schema.
 
 - Create and load workspaces via tools or the chat UI
+- **Search by name fragment** instead of listing everything — `memory search-workspaces "research"` ranks matches across name, description, and folder, and `--load` opens the workspace directly when exactly one matches
 - **Save states** to capture a point-in-time view of your workspace context
 - Archive workspaces and states for cold storage (restorable)
 - No external database required
