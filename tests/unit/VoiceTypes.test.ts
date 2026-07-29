@@ -64,10 +64,19 @@ describe('VoiceTypes', () => {
       expect(getTranscriptionModel('openai', 'nonexistent')).toBeUndefined();
     });
 
-    it('finds assemblyai universal-3-pro model', () => {
-      const model = getTranscriptionModel('assemblyai', 'universal-3-pro');
+    it('finds AssemblyAI Universal 3.5 Pro as the preferred async model', () => {
+      const model = getTranscriptionModel('assemblyai', 'universal-3-5-pro');
       expect(model).toBeDefined();
       expect(model?.execution).toBe('speech-api-async');
+      expect(getTranscriptionModelsForProvider('assemblyai')[0].id).toBe('universal-3-5-pro');
+    });
+
+    it('finds Deepgram Nova-3 through OpenRouter', () => {
+      const model = getTranscriptionModel('openrouter', 'deepgram/nova-3');
+      expect(model).toEqual(expect.objectContaining({
+        name: 'Deepgram Nova-3 via OpenRouter',
+        execution: 'speech-api-segmented'
+      }));
     });
 
     it('returns undefined for removed google model', () => {

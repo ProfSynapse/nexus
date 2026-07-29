@@ -93,6 +93,10 @@ export class SpeechModelCatalogService {
 }
 
 function getDefaultOpenRouterVoice(modelId: string): string {
+  if (modelId.startsWith('deepgram/')) {
+    return 'aura-2-thalia-en';
+  }
+
   if (modelId.startsWith('openai/')) {
     return 'alloy';
   }

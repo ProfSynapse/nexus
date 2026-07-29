@@ -1,8 +1,9 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated July 2026 — added the GPT-5.6 family and Kimi K3; pruned superseded
- * Claude 4.5 Opus/Sonnet, Gemini 2.5 / 3.0 Preview, and GPT-5 / GPT-5.1 entries
+ * Updated July 2026 — added the GPT-5.6 family, Kimi K3, Gemini 3.6 Flash,
+ * and Gemini 3.5 Flash-Lite; pruned superseded Claude 4.5 Opus/Sonnet,
+ * Gemini 2.5 / 3.0 Preview, and GPT-5 / GPT-5.1 entries.
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -220,22 +221,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
-    name: 'Gemini 3.1 Flash Lite Preview',
-    apiName: 'google/gemini-3.1-flash-lite-preview',
-    contextWindow: 1048576,
-    maxTokens: 64000,
-    inputCostPerMillion: 0.25,
-    outputCostPerMillion: 1.50,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
     name: 'Gemini 3.1 Pro Preview',
     apiName: 'google/gemini-3.1-pro-preview',
     contextWindow: 1048576,
@@ -258,6 +243,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 1.50,
     outputCostPerMillion: 9.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Gemini 3.5 Flash-Lite',
+    apiName: 'google/gemini-3.5-flash-lite',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.30,
+    outputCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Gemini 3.6 Flash',
+    apiName: 'google/gemini-3.6-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 1.50,
+    outputCostPerMillion: 7.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

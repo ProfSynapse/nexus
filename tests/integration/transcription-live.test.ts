@@ -184,6 +184,15 @@ describe('Live Transcription: OpenRouter', () => {
     );
     validateSegments(segments, 'OpenRouter/mistralai/voxtral-mini-transcribe');
   }, 30_000);
+
+  runTest('transcribes with Deepgram Nova-3', async () => {
+    const adapter = new OpenRouterTranscriptionAdapter({ apiKey: openrouterKey! });
+    const segments = await adapter.transcribeChunk(
+      testChunk,
+      makeRequest('openrouter', 'deepgram/nova-3')
+    );
+    validateSegments(segments, 'OpenRouter/deepgram/nova-3');
+  }, 30_000);
 });
 
 // --- Deepgram (raw binary body) ---
@@ -205,10 +214,10 @@ describe('Live Transcription: Deepgram', () => {
 describe('Live Transcription: AssemblyAI', () => {
   const runTest = assemblyaiKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
-  runTest('transcribes with universal-3-pro model', async () => {
+  runTest('transcribes with Universal 3.5 Pro', async () => {
     const adapter = new AssemblyAITranscriptionAdapter({ apiKey: assemblyaiKey! });
-    const segments = await adapter.transcribeChunk(testChunk, makeRequest('assemblyai', 'universal-3-pro'));
-    validateSegments(segments, 'AssemblyAI/universal-3-pro');
+    const segments = await adapter.transcribeChunk(testChunk, makeRequest('assemblyai', 'universal-3-5-pro'));
+    validateSegments(segments, 'AssemblyAI/universal-3-5-pro');
     const hasWords = segments.some(s => s.words && s.words.length > 0);
     console.log(`[AssemblyAI] Word timestamps: ${hasWords}`);
   }, 120_000);

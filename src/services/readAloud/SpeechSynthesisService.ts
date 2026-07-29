@@ -195,6 +195,10 @@ export class SpeechSynthesisService {
 
 function getProviderDefaultVoice(provider: SpeechProvider, model: string): string {
   if (provider === 'openrouter') {
+    if (model.startsWith('deepgram/')) {
+      return 'aura-2-thalia-en';
+    }
+
     if (model.startsWith('microsoft/')) {
       return 'en-US-Harper:MAI-Voice-2';
     }

@@ -84,6 +84,62 @@ describe('GoogleAdapter', () => {
       }));
       expect((await adapter.generateUncached('hi')).finishReason).toBe('content_filter');
     });
+
+    it('omits deprecated sampling parameters for Gemini 3.5 Flash-Lite', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }]
+        });
+      });
+
+      const adapter = new GoogleAdapter('gk-test', 'gemini-3.5-flash-lite');
+      await adapter.generateUncached('hi', { temperature: 0.2 });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.generationConfig).not.toHaveProperty('temperature');
+      expect(body.generationConfig).not.toHaveProperty('topK');
+      expect(body.generationConfig).not.toHaveProperty('topP');
+    });
+
+    it('omits deprecated sampling parameters for every Gemini 3 model, not just the newest', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }]
+        });
+      });
+
+      const adapter = new GoogleAdapter('gk-test', 'gemini-3.1-pro-preview');
+      await adapter.generateUncached('hi', { temperature: 0.2 });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.generationConfig).not.toHaveProperty('temperature');
+      expect(body.generationConfig).not.toHaveProperty('topK');
+      expect(body.generationConfig).not.toHaveProperty('topP');
+    });
+
+    it('still sends sampling parameters for pre-Gemini 3 models', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }]
+        });
+      });
+
+      const adapter = new GoogleAdapter('gk-test', 'gemini-2.5-flash');
+      await adapter.generateUncached('hi', { temperature: 0.2 });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.generationConfig).toEqual(expect.objectContaining({
+        temperature: 0.2,
+        topK: 40,
+        topP: 0.95
+      }));
+    });
   });
 
   describe('SSE streaming', () => {
@@ -140,6 +196,31 @@ describe('GoogleAdapter', () => {
 
       expect(error).toBeInstanceOf(ProviderHttpError);
       expect((error as ProviderHttpError).response.status).toBe(401);
+    });
+
+    it('uses thinkingLevel and omits deprecated sampling parameters for Gemini 3.6 Flash', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse({
+          candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }]
+        }));
+      });
+
+      const adapter = new GoogleAdapter('gk-test', 'gemini-3.6-flash');
+      await collect(adapter.generateStreamAsync('hi', {
+        enableThinking: true,
+        thinkingEffort: 'high',
+        temperature: 0.2
+      }));
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.generationConfig).toEqual(expect.objectContaining({
+        thinkingConfig: { thinkingLevel: 'high' }
+      }));
+      expect(body.generationConfig).not.toHaveProperty('temperature');
+      expect(body.generationConfig).not.toHaveProperty('topK');
+      expect(body.generationConfig).not.toHaveProperty('topP');
     });
   });
 
