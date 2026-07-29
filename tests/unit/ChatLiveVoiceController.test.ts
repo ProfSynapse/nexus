@@ -27,6 +27,7 @@ describe('ChatLiveVoiceController', () => {
     mockSessionStart.mockResolvedValue(undefined);
     mockGetAvailability.mockReturnValue({ available: true });
     mockCreateSession.mockReturnValue({
+      mode: 'native',
       start: mockSessionStart,
       stop: mockSessionStop,
     });
@@ -73,6 +74,21 @@ describe('ChatLiveVoiceController', () => {
     const liveVoiceButton = createMockElement('button');
     const component = new Component();
     const onTranscriptMessage = jest.fn();
+    const onComposedUserTurn = jest.fn().mockResolvedValue('This is the assistant reply.');
+    const onAbortComposedTurn = jest.fn().mockResolvedValue(undefined);
+    const synthesize = jest.fn().mockResolvedValue({
+      audioData: new ArrayBuffer(8),
+      mimeType: 'audio/mpeg',
+    });
+    const resolveRequest = jest.fn().mockReturnValue({
+      provider: 'openrouter',
+      model: 'deepgram/aura-2',
+      voice: 'aura-2-thalia-en',
+    });
+    const playback = {
+      play: jest.fn().mockResolvedValue(undefined),
+      stop: jest.fn(),
+    };
     const getConversationContext = jest.fn(() => '<conversation_context>Prior chat</conversation_context>');
     const registerDomEventSpy = jest.spyOn(component, 'registerDomEvent');
     const controller = new ChatLiveVoiceController({
@@ -83,6 +99,10 @@ describe('ChatLiveVoiceController', () => {
       getHasConversation: () => hasConversation,
       getConversationContext,
       onTranscriptMessage,
+      onComposedUserTurn,
+      onAbortComposedTurn,
+      createSpeechService: () => ({ resolveRequest, synthesize }),
+      playbackFactory: { create: () => playback },
       component,
     });
 
@@ -94,7 +114,12 @@ describe('ChatLiveVoiceController', () => {
       getConversationContext,
       liveVoiceButton,
       onTranscriptMessage,
+      onComposedUserTurn,
+      onAbortComposedTurn,
+      playback,
+      resolveRequest,
       registerDomEventSpy,
+      synthesize,
       toolStatusBar,
     };
   }
@@ -224,5 +249,60 @@ describe('ChatLiveVoiceController', () => {
 
     expect(onTranscriptMessage).toHaveBeenCalledWith('assistant', 'Hello there');
     expect(controller.getState()).toBe('listening');
+  });
+
+  it('routes AssemblyAI turns through chat, speech synthesis, and playback', async () => {
+    const updateAgentContext = jest.fn();
+    mockCreateSession.mockReturnValue({
+      mode: 'composed',
+      start: mockSessionStart,
+      stop: mockSessionStop,
+      updateAgentContext,
+    });
+    const {
+      controller,
+      onComposedUserTurn,
+      onTranscriptMessage,
+      playback,
+      resolveRequest,
+      synthesize,
+    } = createHarness(true);
+    await controller.start();
+    const createSessionRequest = mockCreateSession.mock.calls[0]?.[0];
+
+    createSessionRequest.callbacks.onUserTranscript('  Ask   Nexus  ');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(resolveRequest).toHaveBeenCalledWith({ text: 'Live voice availability check.' });
+    expect(onComposedUserTurn).toHaveBeenCalledWith('Ask Nexus');
+    expect(onTranscriptMessage).not.toHaveBeenCalled();
+    expect(updateAgentContext).toHaveBeenCalledWith('This is the assistant reply.');
+    expect(synthesize).toHaveBeenCalledWith({ text: 'This is the assistant reply.' });
+    expect(playback.play).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'audio/mpeg');
+    expect(controller.getState()).toBe('listening');
+  });
+
+  it('interrupts a composed response when AssemblyAI detects new speech', async () => {
+    mockCreateSession.mockReturnValue({
+      mode: 'composed',
+      start: mockSessionStart,
+      stop: mockSessionStop,
+    });
+    const pendingResponse = new Promise<string>(() => undefined);
+    const { controller, onAbortComposedTurn, onComposedUserTurn, playback } = createHarness(true);
+    onComposedUserTurn.mockReturnValue(pendingResponse);
+    await controller.start();
+    const createSessionRequest = mockCreateSession.mock.calls[0]?.[0];
+
+    createSessionRequest.callbacks.onUserTranscript('First turn');
+    await Promise.resolve();
+    createSessionRequest.callbacks.onSpeechStarted();
+    await Promise.resolve();
+
+    expect(playback.stop).toHaveBeenCalled();
+    expect(onAbortComposedTurn).toHaveBeenCalledTimes(1);
   });
 });

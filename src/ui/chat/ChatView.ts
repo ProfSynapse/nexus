@@ -695,10 +695,13 @@ export class ChatView extends ItemView {
       liveVoiceButton: this.layoutElements.liveVoiceButton,
       getHasConversation: () => this.conversationManager.getCurrentConversation() !== null,
       getLLMSettings: () => this.getEffectiveVoiceLLMSettings(),
+      getAppsSettings: () => getNexusPlugin<NexusPlugin>(this.app)?.settings?.settings?.apps,
       getConversationContext: () => new LiveVoiceContextBuilder().build(this.conversationManager.getCurrentConversation()),
       onTranscriptMessage: (role, content) => {
         void this.appendLiveVoiceTranscriptMessage(role, content);
       },
+      onComposedUserTurn: (content) => this.sendComposedLiveVoiceTurn(content),
+      onAbortComposedTurn: () => this.messageManager.interruptCurrentGeneration(),
       component: this,
     });
 
@@ -942,6 +945,31 @@ export class ChatView extends ItemView {
     this.conversationManager.updateCurrentConversation(updatedConversation);
     this.messageDisplay.setConversation(updatedConversation);
     void this.updateContextProgress();
+  }
+
+  private async sendComposedLiveVoiceTurn(content: string): Promise<string> {
+    const conversation = this.conversationManager.getCurrentConversation();
+    if (!conversation) {
+      throw new Error('Select or create a conversation to use live voice.');
+    }
+
+    const existingMessageIds = new Set(conversation.messages.map(message => message.id));
+    await this.sendCoordinator.handleSendMessage(content);
+
+    const updatedConversation = this.conversationManager.getCurrentConversation();
+    if (!updatedConversation || updatedConversation.id !== conversation.id) {
+      throw new Error('The active conversation changed during the live voice response.');
+    }
+
+    const assistantMessage = [...updatedConversation.messages]
+      .reverse()
+      .find(message => message.role === 'assistant' && !existingMessageIds.has(message.id));
+    const assistantText = assistantMessage?.content?.replace(/\s+/g, ' ').trim();
+    if (!assistantText) {
+      throw new Error('The chat model did not produce a voice response.');
+    }
+
+    return assistantText;
   }
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {

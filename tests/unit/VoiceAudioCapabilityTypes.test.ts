@@ -209,6 +209,16 @@ describe('RealtimeVoiceTypes', () => {
     expect(model?.voices?.some(voice => voice.id === 'Kore')).toBe(true);
   });
 
+  it('declares AssemblyAI Universal 3.5 as a composed realtime pipeline', () => {
+    const model = getRealtimeVoiceModel('assemblyai', 'universal-3-5-pro');
+
+    expect(model).toEqual(expect.objectContaining({
+      execution: 'transcription-pipeline',
+      supportsTools: true,
+      supportsTranscripts: true,
+    }));
+  });
+
   it('auto-selects OpenAI before Google when both realtime providers are configured', () => {
     const settings = makeSettings({
       providers: {
