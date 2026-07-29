@@ -186,6 +186,10 @@ describe('SpeechTypes', () => {
     expect(getSpeechModelsForProvider('google').map(model => model.id)).toContain('gemini-3.1-flash-tts-preview');
     expect(getSpeechModelsForProvider('mistral').map(model => model.id)).toContain('voxtral-mini-tts-2603');
     expect(getSpeechModelsForProvider('openrouter').map(model => model.id)).toContain('mistralai/voxtral-mini-tts-2603');
+    expect(getSpeechModel('openrouter', 'deepgram/aura-2')).toEqual(expect.objectContaining({
+      defaultVoice: 'aura-2-thalia-en',
+      supportsDynamicVoices: true
+    }));
     expect(getSpeechModelsForProvider('groq')).toEqual([]);
   });
 });

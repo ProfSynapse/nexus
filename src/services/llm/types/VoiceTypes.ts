@@ -118,6 +118,15 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
     supportsPrompt: false
   },
   {
+    provider: 'openrouter',
+    id: 'deepgram/nova-3',
+    name: 'Deepgram Nova-3 via OpenRouter',
+    execution: 'speech-api-segmented',
+    supportsWordTimestamps: false,
+    supportsSpeakerLabels: false,
+    supportsPrompt: false
+  },
+  {
     provider: 'deepgram',
     id: 'nova-3',
     name: 'Nova-3',
@@ -125,6 +134,15 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
     supportsWordTimestamps: true,
     supportsSpeakerLabels: true,
     supportsPrompt: false
+  },
+  {
+    provider: 'assemblyai',
+    id: 'universal-3-5-pro',
+    name: 'Universal 3.5 Pro',
+    execution: 'speech-api-async',
+    supportsWordTimestamps: true,
+    supportsSpeakerLabels: true,
+    supportsPrompt: true
   },
   {
     provider: 'assemblyai',

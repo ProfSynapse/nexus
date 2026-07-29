@@ -73,6 +73,28 @@ describe('OpenRouterTranscriptionAdapter', () => {
     }]);
   });
 
+  it('routes Deepgram Nova-3 through the same dedicated transcription endpoint', async () => {
+    let capturedBody = '';
+    __setRequestUrlMock(async request => {
+      capturedBody = request.body as string;
+      return {
+        status: 200,
+        json: { text: 'Hello from Nova-3.' }
+      };
+    });
+
+    const adapter = new OpenRouterTranscriptionAdapter({ apiKey: 'or-test-key' });
+    const result = await adapter.transcribeChunk(
+      makeChunk(),
+      makeRequest({ model: 'deepgram/nova-3' })
+    );
+
+    expect(JSON.parse(capturedBody)).toEqual(expect.objectContaining({
+      model: 'deepgram/nova-3'
+    }));
+    expect(result[0].text).toBe('Hello from Nova-3.');
+  });
+
   it('rejects audio formats OpenRouter does not document', async () => {
     const adapter = new OpenRouterTranscriptionAdapter({ apiKey: 'or-test-key' });
 

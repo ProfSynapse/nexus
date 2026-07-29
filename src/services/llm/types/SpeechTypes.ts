@@ -261,6 +261,18 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsInstructions: false,
     supportsSpeed: true,
     responseFormats: ['mp3', 'pcm']
+  },
+  {
+    provider: 'openrouter',
+    id: 'deepgram/aura-2',
+    name: 'Deepgram Aura-2 via OpenRouter',
+    execution: 'speech-api',
+    defaultVoice: 'aura-2-thalia-en',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: false,
+    supportsSpeed: true,
+    responseFormats: ['mp3', 'pcm']
   }
 ];
 

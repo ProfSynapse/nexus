@@ -34,6 +34,7 @@ describe('SpeechModelCatalogService', () => {
         data: [
           { id: 'mistralai/voxtral-mini-tts-2603', name: 'Voxtral Mini TTS' },
           { id: 'openai/gpt-4o-mini-tts-2025-12-15', name: 'GPT-4o mini TTS' },
+          { id: 'deepgram/aura-2', name: 'Deepgram Aura-2' },
         ]
       },
     });
@@ -65,6 +66,12 @@ describe('SpeechModelCatalogService', () => {
         provider: 'openrouter',
         id: 'openai/gpt-4o-mini-tts-2025-12-15',
         name: 'GPT-4o mini TTS',
+      }),
+      expect.objectContaining({
+        provider: 'openrouter',
+        id: 'deepgram/aura-2',
+        name: 'Deepgram Aura-2',
+        defaultVoice: 'aura-2-thalia-en',
       }),
     ]);
   });

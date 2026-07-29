@@ -65,15 +65,18 @@ interface GoogleToolWrapper {
   googleSearch?: JsonObject;
 }
 
+interface GoogleThinkingConfig {
+  thinkingBudget?: number;
+  thinkingLevel?: 'low' | 'medium' | 'high';
+}
+
 interface GoogleGenerationConfig {
   generationConfig?: {
     temperature?: number;
     maxOutputTokens?: number;
     topK?: number;
     topP?: number;
-    thinkingConfig?: {
-      thinkingBudget: number;
-    };
+    thinkingConfig?: GoogleThinkingConfig;
   };
   systemInstruction?: {
     parts: Array<{ text: string }>;
@@ -215,23 +218,25 @@ export class GoogleAdapter extends BaseAdapter {
         }];
       }
 
-      // Determine thinking budget based on options or tools
+      const model = options?.model || this.currentModel;
+
+      // Gemini 3 uses thinking levels. Keep token budgets only for older custom
+      // model IDs that users may still pass through the adapter explicitly.
       const effort = options?.thinkingEffort || 'medium';
-      const googleThinkingParams = ThinkingEffortMapper.getGoogleParams({ enabled: true, effort });
-      const thinkingBudget = googleThinkingParams?.thinkingBudget || 8192;
+      const thinkingConfig = this.getThinkingConfig(model, effort);
+      const samplingConfig = this.getSamplingConfig(
+        model,
+        (options?.tools && options.tools.length > 0) ? 0 : (options?.temperature ?? 0.7)
+      );
 
       // Build config object with all generation settings
       const config: GoogleGenerationConfig = {
         generationConfig: {
-          // Use temperature 0 when tools are provided for more deterministic function calling
-          temperature: (options?.tools && options.tools.length > 0) ? 0 : (options?.temperature ?? 0.7),
+          ...samplingConfig,
           maxOutputTokens: options?.maxTokens || 4096,
-          topK: 40,
-          topP: 0.95,
           // Enable thinking mode when tools are present or explicitly requested
-          // Gemini 2.5 Flash supports 0-24576 token thinking budget
           ...((options?.enableThinking || (options?.tools && options.tools.length > 0)) && {
-            thinkingConfig: { thinkingBudget }
+            thinkingConfig
           })
         }
       };
@@ -292,7 +297,7 @@ export class GoogleAdapter extends BaseAdapter {
 
       // Build final request with config wrapper
       const request: GoogleRequest = {
-        model: options?.model || this.currentModel,
+        model,
         contents: contents,
         config: config
       };
@@ -478,18 +483,17 @@ export class GoogleAdapter extends BaseAdapter {
       WebSearchUtils.validateWebSearchRequest('google', options.webSearch);
     }
 
+    const model = options?.model || this.currentModel;
     const request: GoogleRequest = {
-      model: options?.model || this.currentModel,
+      model,
       contents: [{
         role: 'user',
         parts: [{ text: prompt }]
       }],
       config: {
         generationConfig: {
-          temperature: options?.temperature,
-          maxOutputTokens: options?.maxTokens,
-          topK: 40,
-          topP: 0.95
+          ...this.getSamplingConfig(model, options?.temperature),
+          maxOutputTokens: options?.maxTokens
         }
       }
     };
@@ -590,6 +594,44 @@ export class GoogleAdapter extends BaseAdapter {
       tools: request.config.tools,
       toolConfig: request.config.toolConfig
     };
+  }
+
+  private getSamplingConfig(
+    model: string,
+    temperature: number | undefined
+  ): Pick<NonNullable<GoogleGenerationConfig['generationConfig']>, 'temperature' | 'topK' | 'topP'> {
+    // Gemini 3 asks callers to leave temperature at its default of 1.0 — lowering
+    // it can cause looping or degraded performance on reasoning-heavy work. topK
+    // and topP are not part of the Gemini 3 surface either, so send none of them
+    // and let the model self-tune. This includes the tool-calling path, where the
+    // older generations relied on temperature 0 for deterministic function calls.
+    if (this.isGemini3Model(model)) {
+      return {};
+    }
+
+    return {
+      temperature,
+      topK: 40,
+      topP: 0.95
+    };
+  }
+
+  private getThinkingConfig(
+    model: string,
+    effort: 'low' | 'medium' | 'high'
+  ): GoogleThinkingConfig {
+    // thinkingLevel and the legacy thinkingBudget are mutually exclusive: sending
+    // both in one request is rejected, so each generation gets exactly one.
+    if (this.isGemini3Model(model)) {
+      return { thinkingLevel: effort };
+    }
+
+    const params = ThinkingEffortMapper.getGoogleParams({ enabled: true, effort });
+    return { thinkingBudget: params?.thinkingBudget || 8192 };
+  }
+
+  private isGemini3Model(model: string): boolean {
+    return model.startsWith('gemini-3');
   }
 
   private buildStreamingRequestSummary(

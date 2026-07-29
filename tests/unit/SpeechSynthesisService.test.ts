@@ -267,6 +267,40 @@ describe('SpeechSynthesisService', () => {
     });
   });
 
+  it('uses a Deepgram Aura-2 voice for OpenRouter speech', async () => {
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new Uint8Array([1, 2, 3]).buffer,
+      text: '',
+      json: {},
+    });
+
+    const service = new SpeechSynthesisService(makeSettings({
+      providers: {
+        ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+        openrouter: providerConfig({ apiKey: 'openrouter-key' })
+      },
+      defaultSpeechModel: {
+        provider: 'openrouter',
+        model: 'deepgram/aura-2',
+        source: 'user'
+      }
+    }));
+
+    const result = await service.synthesize({ text: 'Read this.' });
+
+    expect(requestUrlMock).toHaveBeenCalledWith(expect.objectContaining({
+      body: JSON.stringify({
+        model: 'deepgram/aura-2',
+        input: 'Read this.',
+        voice: 'aura-2-thalia-en',
+        response_format: 'mp3',
+      }),
+    }));
+    expect(result.voice).toBe('aura-2-thalia-en');
+  });
+
   it('synthesizes ElevenLabs speech with app credentials', async () => {
     requestUrlMock.mockResolvedValue({
       status: 200,

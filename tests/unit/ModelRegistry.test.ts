@@ -161,6 +161,46 @@ describe('ModelRegistry Gemini 3.5 Flash models', () => {
   });
 });
 
+describe('ModelRegistry latest Gemini Flash models', () => {
+  it.each([
+    ['gemini-3.6-flash', 'Gemini 3.6 Flash', 1.5, 7.5],
+    ['gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5]
+  ])('registers %s for Google', (id, name, input, output) => {
+    expect(ModelRegistry.findModel('google', id)).toEqual(expect.objectContaining({
+      name,
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: input,
+      outputCostPerMillion: output,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it.each([
+    ['google/gemini-3.6-flash', 'Gemini 3.6 Flash', 1.5, 7.5],
+    ['google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5]
+  ])('registers %s for OpenRouter', (id, name, input, output) => {
+    expect(ModelRegistry.findModel('openrouter', id)).toEqual(expect.objectContaining({
+      name,
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: input,
+      outputCostPerMillion: output
+    }));
+  });
+
+  it('removes the superseded Gemini 3.1 Flash-Lite preview entries', () => {
+    expect(ModelRegistry.findModel('google', 'gemini-3.1-flash-lite-preview')).toBeUndefined();
+    expect(ModelRegistry.findModel('openrouter', 'google/gemini-3.1-flash-lite-preview')).toBeUndefined();
+  });
+});
+
 describe('ModelRegistry Kimi K3 model', () => {
   it('registers Kimi K3 for OpenRouter with current pricing and capabilities', () => {
     expect(ModelRegistry.findModel('openrouter', 'moonshotai/kimi-k3')).toEqual(expect.objectContaining({
