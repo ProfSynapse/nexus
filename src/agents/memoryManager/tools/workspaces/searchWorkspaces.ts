@@ -94,7 +94,7 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
             workspace: target.id,
             context: params.context,
             workspaceContext: params.workspaceContext
-          } as unknown as Record<string, unknown>);
+          });
 
           if (loaded && loaded.success) {
             return {
