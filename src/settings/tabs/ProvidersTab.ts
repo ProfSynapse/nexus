@@ -25,6 +25,7 @@ import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../compo
 import { OAuthService } from '../../services/oauth/OAuthService';
 import { ClaudeCodeAuthService } from '../../services/external/ClaudeCodeAuthService';
 import { GeminiCliAuthService } from '../../services/external/GeminiCliAuthService';
+import { BRAND_NAME } from '../../constants/branding';
 
 /**
  * Provider display configuration
@@ -218,13 +219,13 @@ export class ProvidersTab {
                 providerLabel: 'OpenRouter',
                 preAuthFields: [
                     {
-                        key: 'key_name',
+                        key: 'key_label',
                         label: 'Key label',
-                        defaultValue: 'Claudesidian MCP',
+                        defaultValue: BRAND_NAME,
                         required: false,
                     },
                     {
-                        key: 'limit',
+                        key: 'credit_limit',
                         label: 'Credit limit (optional)',
                         placeholder: 'Leave blank for unlimited',
                         required: false,
