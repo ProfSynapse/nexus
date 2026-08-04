@@ -44,6 +44,7 @@ interface LoadedStateContext {
 interface LoadedStateResult {
     loadedState: WorkspaceState;
     relatedTraces: WorkspaceMemoryTrace[];
+    currentTags?: string[];
 }
 
 interface RestoredStateResult {
@@ -208,7 +209,9 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
                 success: true,
                 data: {
                     loadedState,
-                    relatedTraces: relatedTraces || []
+                    relatedTraces: relatedTraces || [],
+                    // getState returns the stored snapshot and drops mutable top-level metadata.
+                    currentTags: matchingState.tags
                 }
             };
 
@@ -309,7 +312,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             activeFiles: stateContext.activeFiles || [],
             nextSteps: stateContext.nextSteps || [],
             description: loadedState.description,
-            tags: loadedState.state?.metadata?.tags || []
+            tags: stateData.currentTags ?? loadedState.state?.metadata?.tags ?? []
         };
 
         return this.prepareResult(
