@@ -74,29 +74,67 @@ describe('SQLiteTransactionCoordinator', () => {
     expect(rollbackTransaction).not.toHaveBeenCalled();
   });
 
-  it('does not open nested SQL transactions', async () => {
+  it('serializes a transaction that starts after the first body has entered', async () => {
     const coordinator = new SQLiteTransactionCoordinator();
+    const firstGate = createDeferred<void>();
+    const firstStarted = createDeferred<void>();
     const beginTransaction = jest.fn().mockResolvedValue(undefined);
     const commitTransaction = jest.fn().mockResolvedValue(undefined);
     const rollbackTransaction = jest.fn().mockResolvedValue(undefined);
+    const order: string[] = [];
 
-    await coordinator.run(
-      beginTransaction,
-      commitTransaction,
+    const first = coordinator.run(
+      async () => {
+        order.push('first-begin');
+        await beginTransaction();
+      },
+      async () => {
+        order.push('first-commit');
+        await commitTransaction();
+      },
       rollbackTransaction,
       async () => {
-        await coordinator.run(
-          beginTransaction,
-          commitTransaction,
-          rollbackTransaction,
-          async () => 'nested'
-        );
-        return 'outer';
+        order.push('first-start');
+        firstStarted.resolve();
+        await firstGate.promise;
+        order.push('first-end');
       }
     );
 
-    expect(beginTransaction).toHaveBeenCalledTimes(1);
-    expect(commitTransaction).toHaveBeenCalledTimes(1);
+    await firstStarted.promise;
+
+    const second = coordinator.run(
+      async () => {
+        order.push('second-begin');
+        await beginTransaction();
+      },
+      async () => {
+        order.push('second-commit');
+        await commitTransaction();
+      },
+      rollbackTransaction,
+      async () => {
+        order.push('second-start');
+      }
+    );
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(order).toEqual(['first-begin', 'first-start']);
+
+    firstGate.resolve();
+    await Promise.all([first, second]);
+
+    expect(order).toEqual([
+      'first-begin',
+      'first-start',
+      'first-end',
+      'first-commit',
+      'second-begin',
+      'second-start',
+      'second-commit'
+    ]);
+    expect(beginTransaction).toHaveBeenCalledTimes(2);
+    expect(commitTransaction).toHaveBeenCalledTimes(2);
     expect(rollbackTransaction).not.toHaveBeenCalled();
   });
 

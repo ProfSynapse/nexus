@@ -31,10 +31,19 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
         return this.prepareResult(false, undefined, 'taskId is required');
       }
 
+      const hasMetadataRequest = params.metadata !== undefined
+        || params.metadataMode !== undefined
+        || params.removeMetadataKeys !== undefined;
+
       // Update task fields
-      const hasFieldUpdates = params.title || params.description !== undefined ||
-        params.status || params.priority || params.dueDate !== undefined ||
-        params.assignee !== undefined || params.tags || params.metadata;
+      const hasFieldUpdates = params.title !== undefined
+        || params.description !== undefined
+        || params.status !== undefined
+        || params.priority !== undefined
+        || params.dueDate !== undefined
+        || params.assignee !== undefined
+        || params.tags !== undefined
+        || hasMetadataRequest;
 
       if (hasFieldUpdates) {
         await this.taskService.updateTask(params.taskId, {
@@ -45,7 +54,9 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
           dueDate: params.dueDate,
           assignee: params.assignee,
           tags: params.tags,
-          metadata: params.metadata
+          metadata: params.metadata,
+          metadataMode: params.metadataMode,
+          removeMetadataKeys: params.removeMetadataKeys
         });
       }
 
@@ -110,7 +121,9 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
           }
         },
         removeNoteLinks: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to unlink from this task' },
-        metadata: { type: 'object', description: 'Custom metadata to merge (keys are merged, not replaced)', additionalProperties: true }
+        metadata: { type: 'object', description: 'Custom metadata. Shallow-merged by default: supplied top-level keys overwrite matching keys and all other stored keys survive. Nested objects are replaced whole. Use metadataMode "replace" with {} to clear all metadata.', additionalProperties: true },
+        metadataMode: { type: 'string', enum: ['merge', 'replace'], description: 'How to apply metadata. "merge" is the default. "replace" stores exactly the supplied metadata object and requires metadata; it cannot be combined with removeMetadataKeys.' },
+        removeMetadataKeys: { type: 'array', items: { type: 'string' }, description: 'Top-level metadata keys to delete after applying a merge patch. Merge mode only.' }
       },
       required: ['taskId']
     });

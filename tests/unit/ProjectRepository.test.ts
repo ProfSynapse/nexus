@@ -272,6 +272,76 @@ describe('ProjectRepository', () => {
       expect(sql).not.toContain('name = ?');
     });
 
+    it('shallow-merges metadata and writes the complete snapshot to both stores', async () => {
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
+        id: 'proj-1',
+        workspaceId: 'ws-1',
+        name: 'Original',
+        description: null,
+        status: 'active',
+        created: 1000,
+        updated: 1000,
+        metadataJson: JSON.stringify({ keep: true, nested: { old: true } })
+      });
+
+      await repo.update('proj-1', { metadata: { nested: { next: true }, added: 1 } });
+
+      const event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({
+        keep: true,
+        nested: { next: true },
+        added: 1
+      });
+
+      const [sql, params] = (deps.sqliteCache.run as jest.Mock).mock.calls[0];
+      const metadataIndex = (sql as string).split(' WHERE ')[0].split(', ').indexOf('metadataJson = ?');
+      expect(JSON.parse(params[metadataIndex])).toEqual({
+        keep: true,
+        nested: { next: true },
+        added: 1
+      });
+      expect(deps.sqliteCache.queryOne).toHaveBeenCalledWith(
+        'SELECT metadataJson FROM projects WHERE id = ?',
+        ['proj-1']
+      );
+    });
+
+    it('supports replacement and removals', async () => {
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
+        id: 'proj-1', workspaceId: 'ws-1', name: 'Original', description: null,
+        status: 'active', created: 1000, updated: 1000,
+        metadataJson: JSON.stringify({ keep: true, stale: true })
+      });
+
+      await repo.update('proj-1', { removeMetadataKeys: ['stale'] });
+      let event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({ keep: true });
+
+      jest.clearAllMocks();
+      (deps.queryCache.cachedQuery as jest.Mock).mockImplementation(
+        (_key: string, fn: () => Promise<unknown>) => fn()
+      );
+      (deps.sqliteCache.transaction as jest.Mock).mockImplementation(
+        (fn: () => Promise<unknown>) => fn()
+      );
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
+        id: 'proj-1', workspaceId: 'ws-1', name: 'Original', description: null,
+        status: 'active', created: 1000, updated: 1000, metadataJson: null
+      });
+      await repo.update('proj-1', { metadataMode: 'replace', metadata: {} });
+      event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({});
+    });
+
+    it('writes nothing for an ineffective metadata-only update', async () => {
+      await repo.update('proj-1', { metadata: {} });
+
+      expect(deps.jsonlWriter.appendEvent).not.toHaveBeenCalled();
+      expect(deps.sqliteCache.run).not.toHaveBeenCalled();
+      expect(deps.queryCache.invalidateById).not.toHaveBeenCalled();
+      expect(deps.queryCache.invalidateByType).not.toHaveBeenCalled();
+    });
+
     it('should invalidate cache by ID for non-status updates', async () => {
       await repo.update('proj-1', { name: 'X' });
       expect(deps.queryCache.invalidateById).toHaveBeenCalledWith('project', 'proj-1');

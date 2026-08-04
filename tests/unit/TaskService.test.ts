@@ -265,6 +265,44 @@ describe('TaskService', () => {
 
       expect(projectRepo.getByName).not.toHaveBeenCalled();
     });
+
+    it('forwards metadata operations without precomputing the merge', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject({ metadata: { keep: true } }));
+
+      await service.updateProject('proj-1', {
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      });
+
+      expect(projectRepo.update).toHaveBeenCalledWith('proj-1', expect.objectContaining({
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      }));
+    });
+
+    it('validates malformed metadata before treating an update as a no-op', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+
+      await expect(service.updateProject('proj-1', {
+        metadata: [] as unknown as Record<string, unknown>
+      })).rejects.toThrow(/metadata must be an object/);
+      await expect(service.updateProject('proj-1', {
+        metadataMode: 'invalid' as 'merge'
+      })).rejects.toThrow(/metadataMode/);
+
+      expect(projectRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('does not persist or notify for an empty metadata-only merge', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+
+      await service.updateProject('proj-1', { metadata: {} });
+
+      expect(projectRepo.update).not.toHaveBeenCalled();
+      expect(taskBoardNotifier.notify).not.toHaveBeenCalled();
+    });
   });
 
   describe('archiveProject', () => {
@@ -853,6 +891,44 @@ describe('TaskService', () => {
         status: 'done',
         completedAt: expect.any(Number)
       }));
+    });
+
+    it('forwards metadata operations without precomputing the merge', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask({ metadata: { keep: true } }));
+
+      await service.updateTask('task-1', {
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      });
+
+      expect(taskRepo.update).toHaveBeenCalledWith('task-1', expect.objectContaining({
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      }));
+    });
+
+    it('validates malformed metadata before treating an update as a no-op', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask());
+
+      await expect(service.updateTask('task-1', {
+        metadata: [] as unknown as Record<string, unknown>
+      })).rejects.toThrow(/metadata must be an object/);
+      await expect(service.updateTask('task-1', {
+        removeMetadataKeys: 'stale' as unknown as string[]
+      })).rejects.toThrow(/removeMetadataKeys/);
+
+      expect(taskRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('does not persist or notify for an empty metadata-only merge', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask());
+
+      await service.updateTask('task-1', { metadata: {} });
+
+      expect(taskRepo.update).not.toHaveBeenCalled();
+      expect(taskBoardNotifier.notify).not.toHaveBeenCalled();
     });
   });
 

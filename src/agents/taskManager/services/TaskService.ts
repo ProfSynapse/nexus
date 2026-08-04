@@ -28,10 +28,16 @@ import {
   LinkedNoteInput
 } from '../types';
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
-import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
+import type {
+  ITaskRepository,
+  TaskMetadata,
+  NoteLink,
+  UpdateTaskData as RepositoryUpdateTaskData
+} from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { logger } from '../../../utils/logger';
 import { formatTaskRef, taskRefToIdPrefix } from '../utils/taskRefs';
+import { isMetadataUpdateTriviallyEmpty } from '../../../database/repositories/metadataUpdate';
 
 /**
  * Page size used when draining a paginated repository query to build a
@@ -209,6 +215,14 @@ export class TaskService {
       throw new Error(`Project "${projectId}" not found`);
     }
 
+    const metadataTriviallyEmpty = isMetadataUpdateTriviallyEmpty(data);
+    const hasOrdinaryUpdate = data.name !== undefined
+      || data.description !== undefined
+      || data.status !== undefined;
+    if (!hasOrdinaryUpdate && metadataTriviallyEmpty) {
+      return;
+    }
+
     // If renaming, check for duplicate
     if (data.name && data.name !== project.name) {
       const existing = await this.projectRepo.getByName(project.workspaceId, data.name);
@@ -217,10 +231,7 @@ export class TaskService {
       }
     }
 
-    await this.projectRepo.update(projectId, {
-      ...data,
-      updated: Date.now()
-    });
+    await this.projectRepo.update(projectId, data);
 
     this.notifyTaskBoard({
       workspaceId: project.workspaceId,
@@ -239,8 +250,7 @@ export class TaskService {
     }
 
     await this.projectRepo.update(projectId, {
-      status: 'archived',
-      updated: Date.now()
+      status: 'archived'
     });
 
     this.notifyTaskBoard({
@@ -399,10 +409,9 @@ export class TaskService {
     }
     taskId = task.id;
 
-    const updateData: Partial<Omit<TaskMetadata, 'completedAt'>> & { updated: number; completedAt?: number | null } = {
-      ...data,
-      updated: Date.now()
-    };
+    const metadataTriviallyEmpty = isMetadataUpdateTriviallyEmpty(data);
+
+    const updateData: RepositoryUpdateTaskData = { ...data };
 
     // Invariant: completedAt exists iff the (post-update) status is 'done'.
     // Use null (not undefined) to clear — undefined is dropped by the repository's
@@ -414,6 +423,17 @@ export class TaskService {
     } else if (effectiveStatus !== 'done' && task.completedAt != null) {
       // Re-opened, or a non-done task carrying a stale timestamp — clear it.
       updateData.completedAt = null;
+    }
+
+    const hasOrdinaryUpdate = data.title !== undefined
+      || data.description !== undefined
+      || data.status !== undefined
+      || data.priority !== undefined
+      || data.dueDate !== undefined
+      || data.assignee !== undefined
+      || data.tags !== undefined;
+    if (!hasOrdinaryUpdate && updateData.completedAt === undefined && metadataTriviallyEmpty) {
+      return;
     }
 
     await this.taskRepo.update(taskId, updateData);
@@ -436,7 +456,7 @@ export class TaskService {
     }
     taskId = task.id;
 
-    const updateData: Partial<TaskMetadata> & { updated: number } = { updated: Date.now() };
+    const updateData: RepositoryUpdateTaskData = {};
 
     if (target.projectId && target.projectId !== task.projectId) {
       const newProject = await this.projectRepo.getById(target.projectId);
