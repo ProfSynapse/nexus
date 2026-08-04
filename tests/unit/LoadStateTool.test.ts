@@ -26,12 +26,13 @@ describe('LoadStateTool', () => {
     return new LoadStateTool(agent);
   }
 
-  it('resolves workspace names before loading states', async () => {
+  it('resolves workspace names and prefers current tags over stale snapshot tags', async () => {
     const matchingState = {
       id: 'state-1',
       name: 'Checkpoint',
       sessionId: 'session-1',
-      workspaceId: 'workspace-uuid'
+      workspaceId: 'workspace-uuid',
+      tags: ['current']
     };
     const loadedState = {
       id: 'state-1',
@@ -48,7 +49,7 @@ describe('LoadStateTool', () => {
       },
       state: {
         metadata: {
-          tags: ['test']
+          tags: ['stale']
         }
       }
     };
@@ -98,8 +99,67 @@ describe('LoadStateTool', () => {
       activeFiles: ['note.md'],
       nextSteps: ['Continue testing'],
       description: 'Checkpoint description',
-      tags: ['test']
+      tags: ['current']
     });
+  });
+
+  it('keeps an empty current tag list instead of restoring stale snapshot tags', async () => {
+    const memoryService = {
+      getStates: jest.fn().mockResolvedValue({
+        items: [{
+          id: 'state-1',
+          name: 'Checkpoint',
+          sessionId: 'session-1',
+          workspaceId: 'workspace-uuid',
+          tags: []
+        }],
+        page: 0,
+        pageSize: 100,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false
+      }),
+      getState: jest.fn().mockResolvedValue({
+        id: 'state-1',
+        name: 'Checkpoint',
+        sessionId: 'session-1',
+        workspaceId: 'workspace-uuid',
+        created: Date.now(),
+        context: {
+          conversationContext: 'Conversation context',
+          activeTask: 'Active task',
+          activeFiles: [],
+          nextSteps: []
+        },
+        state: { metadata: { tags: ['stale'] } }
+      }),
+      getMemoryTraces: jest.fn().mockResolvedValue({ items: [] })
+    };
+    const workspaceService = {
+      getWorkspaceByNameOrId: jest.fn().mockResolvedValue({
+        id: 'workspace-uuid',
+        name: 'Workspace Name'
+      }),
+      getWorkspace: jest.fn().mockResolvedValue({
+        id: 'workspace-uuid',
+        name: 'Workspace Name'
+      })
+    };
+    const tool = createTool(memoryService, workspaceService);
+
+    const result = await tool.execute({
+      context: {
+        workspaceId: 'Workspace Name',
+        sessionId: 'session-1',
+        memory: 'Testing cleared state tags.',
+        goal: 'Verify cleared tags remain empty.'
+      },
+      name: 'Checkpoint'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ tags: [] });
   });
 
   it('returns a clear error when the scoped workspace name cannot be resolved', async () => {
