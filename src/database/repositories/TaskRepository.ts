@@ -43,6 +43,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { resolveMetadataUpdate } from './metadataUpdate';
 
 interface TaskRow extends DatabaseRow {
   id: string;
@@ -180,15 +181,33 @@ export class TaskRepository
   }
 
   async update(id: string, data: UpdateTaskData): Promise<void> {
-    const now = Date.now();
-
     try {
       const existing = await this.getById(id);
       if (!existing) {
         throw new Error(`Task not found: ${id}`);
       }
 
+      const hasFieldUpdate = data.title !== undefined
+        || data.description !== undefined
+        || data.status !== undefined
+        || data.priority !== undefined
+        || data.dueDate !== undefined
+        || data.assignee !== undefined
+        || data.tags !== undefined
+        || data.projectId !== undefined
+        || data.parentTaskId !== undefined
+        || data.completedAt !== undefined;
+      let wrote = false;
+
       await this.transaction(async () => {
+        const resolvedMetadata = await this.resolveMetadataInTransaction(id, data);
+        if (!hasFieldUpdate && resolvedMetadata === undefined) {
+          return;
+        }
+
+        wrote = true;
+        const now = Date.now();
+
         // 1. Build event data
         const eventData: Record<string, unknown> = { updated: now };
         if (data.title !== undefined) eventData.title = data.title;
@@ -201,7 +220,7 @@ export class TaskRepository
         if (data.projectId !== undefined) eventData.projectId = data.projectId;
         if (data.parentTaskId !== undefined) eventData.parentTaskId = data.parentTaskId;
         if (data.completedAt !== undefined) eventData.completedAt = data.completedAt;
-        if (data.metadata !== undefined) eventData.metadataJson = JSON.stringify(data.metadata);
+        if (resolvedMetadata !== undefined) eventData.metadataJson = JSON.stringify(resolvedMetadata);
 
         await this.writeEvent<TaskUpdatedEvent>(
           this.jsonlPath(existing.workspaceId),
@@ -226,7 +245,7 @@ export class TaskRepository
         if (data.projectId !== undefined) { setClauses.push('projectId = ?'); params.push(data.projectId); }
         if (data.parentTaskId !== undefined) { setClauses.push('parentTaskId = ?'); params.push(data.parentTaskId); }
         if (data.completedAt !== undefined) { setClauses.push('completedAt = ?'); params.push(data.completedAt); }
-        if (data.metadata !== undefined) { setClauses.push('metadataJson = ?'); params.push(JSON.stringify(data.metadata)); }
+        if (resolvedMetadata !== undefined) { setClauses.push('metadataJson = ?'); params.push(JSON.stringify(resolvedMetadata)); }
 
         params.push(id);
 
@@ -235,6 +254,10 @@ export class TaskRepository
           params
         );
       });
+
+      if (!wrote) {
+        return;
+      }
 
       // 3. Invalidate cache
       const statusChanged = data.status !== undefined && data.status !== existing.status;
@@ -613,6 +636,37 @@ export class TaskRepository
   // ============================================================================
   // Protected Methods
   // ============================================================================
+
+  private async resolveMetadataInTransaction(
+    id: string,
+    data: UpdateTaskData
+  ): Promise<Record<string, unknown> | undefined> {
+    const hasMetadataOperation = data.metadata !== undefined
+      || data.metadataMode !== undefined
+      || data.removeMetadataKeys !== undefined;
+    if (!hasMetadataOperation) {
+      return undefined;
+    }
+
+    let current: Record<string, unknown> | undefined;
+    if (data.metadataMode !== 'replace') {
+      const row = await this.sqliteCache.queryOne<{ metadataJson?: string | null }>(
+        'SELECT metadataJson FROM tasks WHERE id = ?',
+        [id]
+      );
+      current = parseJsonColumn<Record<string, unknown>>(
+        row?.metadataJson,
+        `TaskRepository.metadata#${id}`
+      );
+    }
+
+    return resolveMetadataUpdate({
+      current,
+      metadata: data.metadata,
+      metadataMode: data.metadataMode,
+      removeMetadataKeys: data.removeMetadataKeys
+    });
+  }
 
   protected rowToEntity(row: DatabaseRow): TaskMetadata {
     const taskRow = row as TaskRow;

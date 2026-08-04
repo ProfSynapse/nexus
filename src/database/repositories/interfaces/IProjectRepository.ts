@@ -13,6 +13,7 @@
 
 import { IRepository } from './IRepository';
 import { PaginatedResult, PaginationParams } from '../../../types/pagination/PaginationTypes';
+import type { MetadataUpdateMode } from '../metadataUpdate';
 
 /**
  * Project metadata as stored in SQLite
@@ -46,12 +47,16 @@ export interface UpdateProjectData {
   description?: string;
   status?: 'active' | 'completed' | 'archived';
   metadata?: Record<string, unknown>;
+  /** Defaults to a shallow key merge. */
+  metadataMode?: MetadataUpdateMode;
+  /** Keys to remove after applying a merge patch. */
+  removeMetadataKeys?: string[];
 }
 
 /**
  * Project repository interface
  */
-export interface IProjectRepository extends IRepository<ProjectMetadata> {
+export interface IProjectRepository extends IRepository<ProjectMetadata, CreateProjectData, UpdateProjectData> {
   /**
    * Get projects for a workspace with optional pagination
    */

@@ -502,7 +502,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
   /**
    * Execute a function within a transaction
-   * Handles concurrent access via lock and nested transactions via depth tracking
+   * Serializes concurrent access through SQLiteTransactionCoordinator.
+   * Nested calls are not supported; callers should keep one transaction boundary
+   * around the complete operation instead of opening a transaction from inside one.
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
     return this.transactionCoordinator.run(

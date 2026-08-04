@@ -9,6 +9,7 @@ import { CommonParameters, CommonResult } from '../../types';
 import type { TaskStatus, TaskPriority, LinkType } from '../../database/repositories/interfaces/ITaskRepository';
 import type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
+import type { MetadataUpdateMode } from '../../database/repositories/metadataUpdate';
 
 // ────────────────────────────────────────────────────────────────
 // Re-exported Entity Types (canonical source: repository interfaces)
@@ -16,6 +17,7 @@ import type { ProjectMetadata } from '../../database/repositories/interfaces/IPr
 
 export type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 export type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
+export type { MetadataUpdateMode } from '../../database/repositories/metadataUpdate';
 
 // Re-export enum-like unions from repository interfaces as canonical source
 export type { TaskStatus, TaskPriority, LinkType } from '../../database/repositories/interfaces/ITaskRepository';
@@ -101,6 +103,8 @@ export interface UpdateProjectData {
   description?: string;
   status?: ProjectStatus;
   metadata?: Record<string, unknown>;
+  metadataMode?: MetadataUpdateMode;
+  removeMetadataKeys?: string[];
 }
 
 export interface CreateTaskData {
@@ -125,6 +129,8 @@ export interface UpdateTaskData {
   assignee?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  metadataMode?: MetadataUpdateMode;
+  removeMetadataKeys?: string[];
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -199,6 +205,8 @@ export interface UpdateProjectParameters extends CommonParameters {
   description?: string;
   status?: ProjectStatus;
   metadata?: Record<string, unknown>;
+  metadataMode?: MetadataUpdateMode;
+  removeMetadataKeys?: string[];
 }
 
 export interface ArchiveProjectParameters extends CommonParameters {
@@ -246,6 +254,8 @@ export interface UpdateTaskParameters extends CommonParameters {
   addNoteLinks?: Array<{ notePath: string; linkType?: LinkType }>;
   removeNoteLinks?: string[];
   metadata?: Record<string, unknown>;
+  metadataMode?: MetadataUpdateMode;
+  removeMetadataKeys?: string[];
 }
 
 export interface MoveTaskParameters extends CommonParameters {

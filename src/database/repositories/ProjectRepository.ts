@@ -32,6 +32,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { resolveMetadataUpdate } from './metadataUpdate';
 
 interface ProjectRow extends DatabaseRow {
   id: string;
@@ -144,8 +145,6 @@ export class ProjectRepository
   }
 
   async update(id: string, data: UpdateProjectData): Promise<void> {
-    const now = Date.now();
-
     try {
       // Look up the project to get workspaceId for JSONL path
       const existing = await this.getById(id);
@@ -153,13 +152,26 @@ export class ProjectRepository
         throw new Error(`Project not found: ${id}`);
       }
 
+      const hasFieldUpdate = data.name !== undefined
+        || data.description !== undefined
+        || data.status !== undefined;
+      let wrote = false;
+
       await this.transaction(async () => {
+        const resolvedMetadata = await this.resolveMetadataInTransaction(id, data);
+        if (!hasFieldUpdate && resolvedMetadata === undefined) {
+          return;
+        }
+
+        wrote = true;
+        const now = Date.now();
+
         // 1. Write event to JSONL
         const eventData: Record<string, unknown> = { updated: now };
         if (data.name !== undefined) eventData.name = data.name;
         if (data.description !== undefined) eventData.description = data.description;
         if (data.status !== undefined) eventData.status = data.status;
-        if (data.metadata !== undefined) eventData.metadataJson = JSON.stringify(data.metadata);
+        if (resolvedMetadata !== undefined) eventData.metadataJson = JSON.stringify(resolvedMetadata);
 
         await this.writeEvent<ProjectUpdatedEvent>(
           this.jsonlPath(existing.workspaceId),
@@ -186,9 +198,9 @@ export class ProjectRepository
           setClauses.push('status = ?');
           params.push(data.status);
         }
-        if (data.metadata !== undefined) {
+        if (resolvedMetadata !== undefined) {
           setClauses.push('metadataJson = ?');
-          params.push(JSON.stringify(data.metadata));
+          params.push(JSON.stringify(resolvedMetadata));
         }
 
         params.push(id);
@@ -198,6 +210,10 @@ export class ProjectRepository
           params
         );
       });
+
+      if (!wrote) {
+        return;
+      }
 
       // 3. Invalidate cache
       const statusChanged = data.status !== undefined && data.status !== existing.status;
@@ -306,6 +322,37 @@ export class ProjectRepository
   // ============================================================================
   // Protected Methods
   // ============================================================================
+
+  private async resolveMetadataInTransaction(
+    id: string,
+    data: UpdateProjectData
+  ): Promise<Record<string, unknown> | undefined> {
+    const hasMetadataOperation = data.metadata !== undefined
+      || data.metadataMode !== undefined
+      || data.removeMetadataKeys !== undefined;
+    if (!hasMetadataOperation) {
+      return undefined;
+    }
+
+    let current: Record<string, unknown> | undefined;
+    if (data.metadataMode !== 'replace') {
+      const row = await this.sqliteCache.queryOne<{ metadataJson?: string | null }>(
+        'SELECT metadataJson FROM projects WHERE id = ?',
+        [id]
+      );
+      current = parseJsonColumn<Record<string, unknown>>(
+        row?.metadataJson,
+        `ProjectRepository.metadata#${id}`
+      );
+    }
+
+    return resolveMetadataUpdate({
+      current,
+      metadata: data.metadata,
+      metadataMode: data.metadataMode,
+      removeMetadataKeys: data.removeMetadataKeys
+    });
+  }
 
   protected rowToEntity(row: DatabaseRow): ProjectMetadata {
     const projectRow = row as ProjectRow;

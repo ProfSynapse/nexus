@@ -123,18 +123,49 @@ describe('SQLiteCacheManager', () => {
       expect(manager.rollback).not.toHaveBeenCalled();
     });
 
-    it('does not open a nested SQL transaction', async () => {
+    it('serializes a transaction that starts after the first body has entered', async () => {
       const manager = createManager();
+      const firstGate = createDeferred<void>();
+      const firstStarted = createDeferred<void>();
+      const order: string[] = [];
 
-      await manager.transaction(async () => {
-        await manager.transaction(async () => {
-          return 'nested';
-        });
-        return 'outer';
+      manager.beginTransaction.mockImplementation(async () => {
+        order.push('begin');
+      });
+      manager.commit.mockImplementation(async () => {
+        order.push('commit');
       });
 
-      expect(manager.beginTransaction).toHaveBeenCalledTimes(1);
-      expect(manager.commit).toHaveBeenCalledTimes(1);
+      const first = manager.transaction(async () => {
+        order.push('first-start');
+        firstStarted.resolve();
+        await firstGate.promise;
+        order.push('first-end');
+      });
+
+      await firstStarted.promise;
+
+      const second = manager.transaction(async () => {
+        order.push('second-start');
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(order).toEqual(['begin', 'first-start']);
+
+      firstGate.resolve();
+      await Promise.all([first, second]);
+
+      expect(order).toEqual([
+        'begin',
+        'first-start',
+        'first-end',
+        'commit',
+        'begin',
+        'second-start',
+        'commit'
+      ]);
+      expect(manager.beginTransaction).toHaveBeenCalledTimes(2);
+      expect(manager.commit).toHaveBeenCalledTimes(2);
       expect(manager.rollback).not.toHaveBeenCalled();
     });
 

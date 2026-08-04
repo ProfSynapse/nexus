@@ -13,6 +13,7 @@
 
 import { IRepository } from './IRepository';
 import { PaginatedResult, PaginationParams } from '../../../types/pagination/PaginationTypes';
+import type { MetadataUpdateMode } from '../metadataUpdate';
 
 /**
  * Task status values. Note: 'blocked' is derived, not stored.
@@ -82,6 +83,10 @@ export interface UpdateTaskData {
   /** number = completion timestamp; null = explicitly clear a stale timestamp; undefined = no change. */
   completedAt?: number | null;
   metadata?: Record<string, unknown>;
+  /** Defaults to a shallow key merge. */
+  metadataMode?: MetadataUpdateMode;
+  /** Keys to remove after applying a merge patch. */
+  removeMetadataKeys?: string[];
 }
 
 /**

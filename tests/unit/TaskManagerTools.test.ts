@@ -268,6 +268,28 @@ describe('TaskManager Tools', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('Not found');
     });
+
+    it('forwards metadata mode and removals and documents them in the schema', async () => {
+      mockService.updateProject.mockResolvedValue();
+
+      await tool.execute({
+        ...baseParams,
+        projectId: 'proj-1',
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      });
+
+      expect(mockService.updateProject).toHaveBeenCalledWith('proj-1', expect.objectContaining({
+        metadata: { added: true },
+        metadataMode: 'merge',
+        removeMetadataKeys: ['stale']
+      }));
+      const properties = tool.getParameterSchema().properties as Record<string, Record<string, unknown>>;
+      expect(properties.metadataMode.enum).toEqual(['merge', 'replace']);
+      expect(properties.removeMetadataKeys.type).toBe('array');
+      expect(properties.metadata.description).toMatch(/Shallow-merged/);
+    });
   });
 
   // ============================================================================
@@ -567,6 +589,24 @@ describe('TaskManager Tools', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('cycle');
+    });
+
+    it('forwards metadata-only operations and documents them in the schema', async () => {
+      mockService.updateTask.mockResolvedValue();
+
+      await tool.execute({
+        ...baseParams,
+        taskId: 'task-1',
+        removeMetadataKeys: ['stale']
+      });
+
+      expect(mockService.updateTask).toHaveBeenCalledWith('task-1', expect.objectContaining({
+        removeMetadataKeys: ['stale']
+      }));
+      const properties = tool.getParameterSchema().properties as Record<string, Record<string, unknown>>;
+      expect(properties.metadataMode.enum).toEqual(['merge', 'replace']);
+      expect(properties.removeMetadataKeys.type).toBe('array');
+      expect(properties.metadata.description).toMatch(/Shallow-merged/);
     });
   });
 

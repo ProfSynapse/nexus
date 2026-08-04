@@ -304,6 +304,81 @@ describe('TaskRepository', () => {
       expect(sqlCall[0]).not.toContain('status = ?');
     });
 
+    it('shallow-merges metadata and writes the complete snapshot to both stores', async () => {
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
+        ...sampleRow,
+        metadataJson: JSON.stringify({ keep: true, nested: { old: true } })
+      });
+
+      await repo.update('task-1', { metadata: { nested: { next: true }, added: 1 } });
+
+      const event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({
+        keep: true,
+        nested: { next: true },
+        added: 1
+      });
+
+      const [sql, params] = (deps.sqliteCache.run as jest.Mock).mock.calls[0];
+      const metadataIndex = (sql as string).split(' WHERE ')[0].split(', ').indexOf('metadataJson = ?');
+      expect(JSON.parse(params[metadataIndex])).toEqual({
+        keep: true,
+        nested: { next: true },
+        added: 1
+      });
+      expect(deps.sqliteCache.queryOne).toHaveBeenCalledWith(
+        'SELECT metadataJson FROM tasks WHERE id = ?',
+        ['task-1']
+      );
+    });
+
+    it('supports explicit replacement, clearing, and key removal', async () => {
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
+        ...sampleRow,
+        metadataJson: JSON.stringify({ keep: true, stale: true })
+      });
+
+      await repo.update('task-1', { removeMetadataKeys: ['stale'] });
+      let event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({ keep: true });
+
+      jest.clearAllMocks();
+      (deps.queryCache.cachedQuery as jest.Mock).mockImplementation(
+        (_key: string, fn: () => Promise<unknown>) => fn()
+      );
+      (deps.sqliteCache.transaction as jest.Mock).mockImplementation(
+        (fn: () => Promise<unknown>) => fn()
+      );
+      (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({ ...sampleRow });
+      await repo.update('task-1', { metadataMode: 'replace', metadata: {} });
+      event = (deps.jsonlWriter.appendEvent as jest.Mock).mock.calls[0][1];
+      expect(JSON.parse(event.data.metadataJson)).toEqual({});
+      expect(deps.sqliteCache.queryOne).not.toHaveBeenCalledWith(
+        'SELECT metadataJson FROM tasks WHERE id = ?',
+        expect.anything()
+      );
+    });
+
+    it('writes nothing for an ineffective metadata-only update', async () => {
+      await repo.update('task-1', { metadata: {} });
+
+      expect(deps.jsonlWriter.appendEvent).not.toHaveBeenCalled();
+      expect(deps.sqliteCache.run).not.toHaveBeenCalled();
+      expect(deps.queryCache.invalidateById).not.toHaveBeenCalled();
+      expect(deps.queryCache.invalidateByType).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid metadata operations before either store is written', async () => {
+      await expect(repo.update('task-1', {
+        metadataMode: 'replace',
+        metadata: {},
+        removeMetadataKeys: ['stale']
+      })).rejects.toThrow(/removeMetadataKeys/);
+
+      expect(deps.jsonlWriter.appendEvent).not.toHaveBeenCalled();
+      expect(deps.sqliteCache.run).not.toHaveBeenCalled();
+    });
+
     it('should handle completedAt update', async () => {
       await repo.update('task-1', { completedAt: 5000 });
 
