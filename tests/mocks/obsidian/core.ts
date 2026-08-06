@@ -190,6 +190,50 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
+/**
+ * Mock of Obsidian's `prepareFuzzySearch`.
+ *
+ * Mirrors the two properties production code actually depends on:
+ *  - it matches a SUBSEQUENCE, so text sharing only scattered characters with
+ *    the query still matches, and
+ *  - the score is a small NEGATIVE number where closer to 0 is a better match.
+ *
+ * The magnitudes matter: real Obsidian returns single/low-double-digit
+ * penalties even for weak scattered hits, which is why `1 + score/100`
+ * compressed nearly every filename hit up near 0.95. Reproducing that scale
+ * is the point of this mock.
+ */
+export function prepareFuzzySearch(query: string): (text: string) => { score: number } | null {
+  const needle = query.toLowerCase().replace(/\s+/g, '');
+
+  return (text: string) => {
+    const haystack = text.toLowerCase();
+    if (needle.length === 0) {
+      return null;
+    }
+
+    let cursor = 0;
+    let breaks = 0;
+
+    for (const char of needle) {
+      const found = haystack.indexOf(char, cursor);
+      if (found === -1) {
+        return null;
+      }
+      if (found !== cursor) {
+        breaks++;
+      }
+      cursor = found + 1;
+    }
+
+    // The penalty is charged per DISCONTIGUITY and stays small, which is the
+    // property that made #309 possible: even a badly scattered match returns a
+    // single-digit penalty, so `1 + score/100` lands just under 1.0 rather than
+    // degrading in proportion to how poor the match is.
+    return { score: -Math.min(breaks, 8) };
+  };
+}
+
 export function parseYaml(yaml: string): unknown {
   return parse(yaml);
 }
