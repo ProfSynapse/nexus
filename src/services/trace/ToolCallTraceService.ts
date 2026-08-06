@@ -36,6 +36,57 @@ function isRetrievalTool(agent: string, mode: string): boolean {
 type ToolCallParams = unknown;
 type ToolCallResponse = unknown;
 
+/**
+ * Pull the workspace name/ID out of a tokenized `memory load-workspace ...`
+ * command.
+ *
+ * The argument is accepted BOTH positionally and as `--workspace <value>`, so
+ * reading token[2] unconditionally captured the literal string "--workspace"
+ * whenever the flag form was used. That handle then became the trace's
+ * workspace, producing a phantom `ws_--workspace` event store and a recurring
+ * "Workspace --workspace not found" on every flag-form call.
+ *
+ * `wasQuoted` distinguishes a real flag from a positional value whose text
+ * merely starts with "--".
+ */
+function extractWorkspaceHandleFromTokens(tokens: { value: string; wasQuoted: boolean }[]): string | undefined {
+  for (let index = 2; index < tokens.length; index++) {
+    const token = tokens[index];
+    const isFlag = !token.wasQuoted && token.value.startsWith('--');
+
+    if (!isFlag) {
+      // Positional form: `memory load-workspace "My Workspace"`.
+      return token.value;
+    }
+
+    const [flagName, inlineValue] = splitFlagToken(token.value);
+    if (flagName !== 'workspace' && flagName !== 'name') {
+      continue;
+    }
+
+    if (inlineValue !== undefined) {
+      return inlineValue;
+    }
+
+    const next = tokens[index + 1];
+    if (next && (next.wasQuoted || !next.value.startsWith('--'))) {
+      return next.value;
+    }
+  }
+
+  return undefined;
+}
+
+/** Split `--flag=value` into its parts; returns [flag] when there is no `=`. */
+function splitFlagToken(raw: string): [string, string | undefined] {
+  const withoutDashes = raw.replace(/^--/, '');
+  const equals = withoutDashes.indexOf('=');
+  if (equals === -1) {
+    return [withoutDashes.toLowerCase(), undefined];
+  }
+  return [withoutDashes.slice(0, equals).toLowerCase(), withoutDashes.slice(equals + 1)];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -236,7 +287,10 @@ export class ToolCallTraceService {
       const tool = tokens[1].value.replace(/[-_\s]/g, '').toLowerCase();
       if ((agent === 'memory' || agent === 'memorymanager') &&
           (tool === 'loadworkspace' || tool === 'createworkspace')) {
-        return tokens[2].value;
+        const handle = extractWorkspaceHandleFromTokens(tokens);
+        if (handle) {
+          return handle;
+        }
       }
     }
 
