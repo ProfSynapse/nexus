@@ -5,7 +5,7 @@ agents (Claude Code, Codex, Cursor…) — with **no MCP configuration**. The CL
 a thin client over the same local socket `connector.js` uses; the plugin server
 is unchanged.
 
-Design & rationale: [`docs/plans/local-cli-agent-bridge-plan.md`](plans/local-cli-agent-bridge-plan.md).
+Design & rationale: [`docs/plans/local-cli-agent-bridge-plan.md`](../docs/plans/local-cli-agent-bridge-plan.md).
 
 ## Install
 

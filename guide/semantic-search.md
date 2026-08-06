@@ -12,13 +12,13 @@ Search your vault by meaning, not just keywords. Nexus runs embeddings locally o
 - **First run** downloads the model (requires internet); subsequent runs are fully offline
 - **Status bar** shows indexing progress — click to pause/resume
 
-Use `searchManager.searchContent` with `semantic: true` to search notes by meaning.
+Use `search content` with `semantic: true` to search notes by meaning.
 
 ---
 
 ## Conversation Memory Search
 
-Use `searchManager.searchMemory` to search across past conversation turns and tool call traces.
+Use `search memory` to search across past conversation turns and tool call traces.
 
 ### Two Modes
 

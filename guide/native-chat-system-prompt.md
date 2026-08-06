@@ -32,7 +32,9 @@ If present, these dynamic sections may also be added:
 - `selected_prompt`
 - `selected_workspace`
 
-The default prompt no longer injects vault structure, all available workspaces, all available prompts, or a full tool-agent catalog on every turn.
+The default prompt no longer injects vault structure, all available workspaces, or all available prompts on every turn. It does inject a compact
+`agent  tool1 tool2 …` name catalog so the model knows what exists — names only,
+never full parameter schemas. Those still come from `getTools` on demand.
 
 ## Core Prompt
 
@@ -49,10 +51,26 @@ Context (REQUIRED in every useTools call):
 - goal: brief statement of the current objective
 - constraints: (optional) any rules or limits
 
-Calls array: [{ agent: "agentName", tool: "toolName", params: {...} }]
+Exact useTools payload shape:
+{
+  "workspaceId": "{{workspaceId}}",
+  "sessionId": "{{sessionId}}",
+  "memory": "brief summary of the conversation so far",
+  "goal": "brief statement of the current objective",
+  "constraints": "optional rules or limits",
+  "tool": "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md"
+}
 
-Use getTools narrowly. Do not assume schemas from memory. Use "params" for tool arguments.
-Keep workspaceId and sessionId exactly as shown.
+CLI string rules:
+- Separate commands with a top-level comma outside quotes: `cmd1, cmd2`
+- Commas inside quoted values stay literal and do not split commands
+- For multiline content, quote the value and use `\n` escapes; they are decoded before execution
+
+Use getTools narrowly. Do not assume schemas from memory.
+Keep workspaceId, sessionId, memory, goal, and constraints at the top level exactly as shown.
+Do not send a nested "context" object.
+Do not send a "calls" array.
+Do not place context fields inside the "tool" string as CLI flags.
 </tools_and_context>
 
 <working_strategy>

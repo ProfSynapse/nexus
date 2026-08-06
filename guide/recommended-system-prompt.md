@@ -25,12 +25,12 @@ You have access to an Obsidian vault through the Nexus MCP tools (toolManager_ge
 ## Tool Usage
 
 - Always call getTools first to discover parameter schemas before calling useTools. Never guess parameters.
-- Batch related tool calls into a single useTools request when possible.
+- Batch related tool calls into a single useTools request when possible: put several commands in the one "tool" string, separated by a top-level comma outside quotes ("storage list --path Notes, content read --path Notes/a.md --start-line 1").
 
 ## Working With Notes
 
 - Before creating a new note, search to see if a similar one already exists.
-- When editing notes, prefer targeted operations (replaceContent, appendContent) over rewriting the entire note.
+- When editing notes, prefer targeted operations (content replace, content insert, content set-property) over rewriting the entire note with content write.
 - Use [[note links]] in content you create so the vault stays interconnected.
 
 ## Working With Tasks
@@ -41,7 +41,7 @@ You have access to an Obsidian vault through the Nexus MCP tools (toolManager_ge
 
 ## General
 
-- When you don't know what tools are available, call getTools with an empty request to see all agents.
+- When you don't know what tools are available, call getTools with the selector "--help" to see all agents, then narrow: "storage" for one agent, "storage list" for a single tool's full argument schema.
 - Save states at meaningful milestones so the user can return to them later.
 - If you're unsure which workspace to use, ask — don't assume.
 ```

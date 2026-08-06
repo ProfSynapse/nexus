@@ -48,13 +48,20 @@ for (const tool of catalog.tools) {
     TOOLS.set(`${agent} ${name}`, tool);
 }
 
-function guidanceFiles(): string[] {
-    const explicit = ['skill/SKILL.md', 'cli/nexus-cli.ts', 'cli/agents-snippet.md', 'guide/nexus-cli.md'];
-    const playbookDir = path.join(REPO_ROOT, 'skill', 'playbooks');
-    const playbooks = fs.existsSync(playbookDir)
-        ? fs.readdirSync(playbookDir).filter((f) => f.endsWith('.md')).map((f) => `skill/playbooks/${f}`)
+function listMarkdown(dir: string, prefix: string): string[] {
+    const abs = path.join(REPO_ROOT, dir);
+    return fs.existsSync(abs)
+        ? fs.readdirSync(abs).filter((f) => f.endsWith('.md')).map((f) => `${prefix}${f}`)
         : [];
-    return [...explicit, ...playbooks].filter((rel) => fs.existsSync(path.join(REPO_ROOT, rel)));
+}
+
+function guidanceFiles(): string[] {
+    const explicit = ['README.md', 'skill/SKILL.md', 'cli/nexus-cli.ts', 'cli/agents-snippet.md'];
+    return [
+        ...explicit,
+        ...listMarkdown('skill/playbooks', 'skill/playbooks/'),
+        ...listMarkdown('guide', 'guide/'),
+    ].filter((rel) => fs.existsSync(path.join(REPO_ROOT, rel)));
 }
 
 /** Split like a POSIX shell would, so the doc's own quoting is what gets tested. */
@@ -83,6 +90,11 @@ function shellSplit(input: string): string[] | null {
 }
 
 interface Sample { file: string; line: number; text: string; complete: boolean }
+
+/** Mirrors ToolCliNormalizer's slug->CLI-name conversion. */
+function toKebab(value: string): string {
+    return value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+}
 
 function stripTrailingNoise(value: string): string {
     return value.trim().replace(/[\\`,.]+$/, '').trim();
@@ -211,6 +223,60 @@ describe('shipped guidance matches the tool catalog', () => {
             }
             return [];
         })).toBe('');
+    });
+
+    it('every tool named in the Apps table is a real registered slug', () => {
+        // Apps are opt-in per vault, so an app the catalog snapshot did not have
+        // enabled is still shippable. Validate against slugs declared in source
+        // instead — that covers every app regardless of the snapshot vault.
+        const declared = new Set<string>();
+        const walk = (dir: string): void => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) walk(full);
+                else if (entry.name.endsWith('.ts')) {
+                    for (const m of fs.readFileSync(full, 'utf8').matchAll(/\bslug:\s*'([^']+)'/g)) {
+                        declared.add(m[1]);
+                        declared.add(toKebab(m[1]));
+                    }
+                }
+            }
+        };
+        walk(path.join(REPO_ROOT, 'src', 'agents'));
+
+        const appsPath = path.join(REPO_ROOT, 'guide', 'apps.md');
+        if (!fs.existsSync(appsPath)) return;
+        const failures: string[] = [];
+        const lines = fs.readFileSync(appsPath, 'utf8').split('\n');
+        lines.forEach((line, index) => {
+            const cells = line.split('|').map((c) => c.trim());
+            // Table body rows only: | **App** | tool, tool | description |
+            if (cells.length < 5 || !/^\*\*/.test(cells[1])) return;
+            for (const name of cells[2].split(',').map((n) => n.trim())) {
+                if (!name || /\s/.test(name)) continue;
+                if (!declared.has(name) && !declared.has(toKebab(name))) {
+                    failures.push(`guide/apps.md:${index + 1} -> "${name}" (${cells[1]}) is not a registered tool slug`);
+                }
+            }
+        });
+        expect(failures.join('\n')).toBe('');
+    });
+
+    it('every relative doc link in shipped guidance resolves', () => {
+        const failures: string[] = [];
+        for (const rel of guidanceFiles()) {
+            if (!rel.endsWith('.md')) continue;
+            const raw = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+            for (const m of raw.matchAll(/\]\(([^)\s]+\.md)(?:#[^)]*)?\)/g)) {
+                const target = m[1];
+                if (/^https?:/.test(target)) continue;
+                const resolved = path.join(REPO_ROOT, path.dirname(rel), target);
+                if (!fs.existsSync(resolved)) {
+                    failures.push(`${rel}:${raw.slice(0, m.index).split('\n').length} -> broken link "${target}"`);
+                }
+            }
+        }
+        expect(failures.join('\n')).toBe('');
     });
 
     it('every embedded --prompts payload satisfies the executePrompts item contract', () => {

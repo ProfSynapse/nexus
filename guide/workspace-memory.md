@@ -61,11 +61,13 @@ When Obsidian was closed during a scheduled run:
 
 ### Triggering Workflows Via Tools
 
-AI agents can trigger workflows programmatically using `memoryManager.runWorkflow`:
+AI agents can trigger workflows programmatically using `memory run`:
 
-- `workspaceId` — target workspace
-- `workflowId` or `workflowName` — which workflow to run
-- `openInChat` (optional) — open the resulting conversation
+- `--workflow-id` or `--workflow-name` — which workflow to run
+- `--open-in-chat` (optional) — open the resulting conversation
+
+The target workspace comes from the call's `workspaceId` context field, not a
+flag on the tool.
 
 Scheduled and manual runs create a fresh chat conversation titled `[workspace - workflow - YYYY-MM-DD HH:mm]`.
 
