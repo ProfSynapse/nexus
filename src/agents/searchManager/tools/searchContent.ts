@@ -19,6 +19,19 @@ interface PluginWithEmbeddings extends Plugin {
 }
 
 /**
+ * How a result was matched.
+ *
+ * - `content` — the query was found in the file body.
+ * - `path`    — only the filename matched; the body does not contain the query.
+ * - `semantic` — surfaced by vector similarity, not by literal matching.
+ *
+ * Callers previously had no way to tell these apart: a filename-only hit was
+ * detectable only by its `content` field falling back to `"File: <path>"`,
+ * which was a side effect of the snippet extractor rather than a contract.
+ */
+export type SearchMatchType = 'content' | 'path' | 'semantic';
+
+/**
  * Internal search result with scoring
  * Used internally for ranking before returning clean results to caller
  */
@@ -26,6 +39,7 @@ interface ScoredSearchResult {
   filePath: string;
   frontmatter?: Record<string, unknown>;
   content?: string;
+  matchType: SearchMatchType;
   _score: number; // Internal property for sorting
 }
 
@@ -44,8 +58,77 @@ export interface ContentSearchResult {
     filePath: string;
     frontmatter?: Record<string, unknown>;
     content?: string;  // Keyword search only
+    matchType: SearchMatchType;
   }>;
   error?: string;
+}
+
+/** Score for a verbatim occurrence of the whole query. */
+const EXACT_PHRASE_SCORE = 0.9;
+/** Ceiling for "every query word is present, but not as a phrase". */
+const ALL_WORDS_SCORE = 0.8;
+/** Floor for "at least one query word is present". */
+const PARTIAL_MATCH_FLOOR = 0.3;
+/**
+ * Ceiling for a fuzzy-only filename hit — a scattered subsequence match on a
+ * name that contains none of the query terms.
+ *
+ * Deliberately below PARTIAL_MATCH_FLOOR. Obsidian's `prepareFuzzySearch`
+ * returns small negative scores even for weak scattered matches, so the old
+ * `1 + score/100` normalization put nearly every filename hit around 0.95 —
+ * above the 0.9 an exact phrase in the body could ever reach. Files containing
+ * none of the query terms therefore outranked files containing it verbatim.
+ *
+ * Fuzzy is kept, because it is the only signal that tolerates typos and
+ * abbreviations, but it now ranks below every deliberate match rather than
+ * above them.
+ */
+const FUZZY_ONLY_CEILING = 0.25;
+
+/**
+ * Score how well `text` matches the query, using one tier ladder.
+ *
+ * Filenames and file bodies are both scored through this function so their
+ * scores are commensurable by construction. Previously the filename was scored
+ * on the fuzzy scale and the body on this tier ladder, and the two were
+ * compared directly despite never having been calibrated against each other.
+ *
+ * Returns `matchIndex`/`matchLength` so callers can extract a snippet without
+ * re-running the search.
+ */
+function scoreTextMatch(
+  normalizedQuery: string,
+  normalizedText: string
+): { found: boolean; exact: boolean; score: number; matchIndex: number; matchLength: number } {
+  const exactIndex = normalizedText.indexOf(normalizedQuery);
+  if (exactIndex !== -1) {
+    return {
+      found: true,
+      exact: true,
+      score: EXACT_PHRASE_SCORE,
+      matchIndex: exactIndex,
+      matchLength: normalizedQuery.length
+    };
+  }
+
+  const queryWords = normalizedQuery.split(/\s+/).filter(word => word.length > 2);
+  const wordMatches = queryWords.filter(word => normalizedText.includes(word));
+
+  if (wordMatches.length === 0) {
+    return { found: false, exact: false, score: 0, matchIndex: -1, matchLength: 0 };
+  }
+
+  const matchRatio = wordMatches.length / queryWords.length;
+  const score = Math.max(PARTIAL_MATCH_FLOOR, matchRatio * ALL_WORDS_SCORE);
+  const firstMatch = wordMatches[0];
+
+  return {
+    found: true,
+    exact: false,
+    score,
+    matchIndex: normalizedText.indexOf(firstMatch),
+    matchLength: firstMatch.length
+  };
 }
 
 /**
@@ -192,7 +275,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       }
 
       // Convert to lean result format (just filePath + frontmatter)
-      const results: Array<{ filePath: string; frontmatter?: Record<string, unknown> }> = [];
+      const results: ContentSearchResult['results'] = [];
       for (const result of filteredResults.slice(0, searchParams.limit)) {
         const file = this.plugin.app.vault.getAbstractFileByPath(result.notePath);
         if (file instanceof TFile) {
@@ -204,8 +287,11 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
             delete frontmatter.position;
           }
 
-          const entry: { filePath: string; frontmatter?: Record<string, unknown> } = {
-            filePath: result.notePath
+          const entry: ContentSearchResult['results'][number] = {
+            filePath: result.notePath,
+            // Vector similarity, not a literal hit — the query may appear
+            // nowhere in the file at all, by design.
+            matchType: 'semantic'
           };
           if (frontmatter && Object.keys(frontmatter).length > 0) {
             entry.frontmatter = frontmatter;
@@ -325,16 +411,23 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     let maxScore = 0;
     let contentSnippet = '';
 
-    // 1. Fuzzy search on filename
+    // 1. Filename match, scored on the SAME tier ladder as the body so the two
+    //    are comparable. A fuzzy hit is a weak fallback for typos and
+    //    abbreviations and is capped below every literal match.
     const filename = file.basename;
-    const fuzzyResult = fuzzySearch(filename);
-    let fuzzyScore = 0;
+    const filenameMatch = scoreTextMatch(normalizedQuery, filename.toLowerCase());
+    let pathScore = filenameMatch.score;
 
-    if (fuzzyResult) {
-      // Normalize fuzzy score (fuzzy scores are negative, closer to 0 is better)
-      fuzzyScore = Math.max(0, Math.min(1, 1 + (fuzzyResult.score / 100)));
-      maxScore = Math.max(maxScore, fuzzyScore);
+    if (!filenameMatch.found) {
+      const fuzzyResult = fuzzySearch(filename);
+      if (fuzzyResult) {
+        // Normalize fuzzy score (fuzzy scores are negative, closer to 0 is better)
+        const normalized = Math.max(0, Math.min(1, 1 + (fuzzyResult.score / 100)));
+        pathScore = normalized * FUZZY_ONLY_CEILING;
+      }
     }
+
+    maxScore = Math.max(maxScore, pathScore);
 
     // 2. Keyword search in file content and extract frontmatter
     let keywordScore = 0;
@@ -378,14 +471,24 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       }
     }
 
-    // 3. Combined scoring for files that match both fuzzy and keyword
-    if (fuzzyScore > 0 && keywordScore > 0) {
-      // Weighted combination: 60% keyword + 40% fuzzy
-      maxScore = (keywordScore * 0.6) + (fuzzyScore * 0.4);
+    // 3. Combined scoring for files that match both on name and in the body.
+    if (pathScore > 0 && keywordScore > 0) {
+      // Weighted combination: 60% keyword + 40% path.
+      //
+      // Guarded by Math.max because the blend alone can DEMOTE: an exact phrase
+      // in the body (0.9) paired with a weak name hit (0.1) blended to 0.58,
+      // ranking that file below an identical file whose name did not match at
+      // all. Matching a second way must never cost a result its position.
+      maxScore = Math.max(maxScore, (keywordScore * 0.6) + (pathScore * 0.4));
     }
 
     // Only include files with matches
     if (maxScore > 0) {
+      // `content` is the honest signal here: it is only non-empty when the body
+      // actually matched. `matchType` states it outright rather than leaving
+      // callers to infer it from the snippet fallback below.
+      const matchType: SearchMatchType = keywordScore > 0 ? 'content' : 'path';
+
       // If no content snippet from keyword search, use file path
       if (!contentSnippet && includeContent) {
         contentSnippet = `File: ${file.path}`;
@@ -394,6 +497,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       const entry: ScoredSearchResult = {
         filePath: file.path,
         content: contentSnippet,
+        matchType,
         _score: maxScore
       };
       if (frontmatter && Object.keys(frontmatter).length > 0) {
@@ -416,36 +520,20 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   ): { found: boolean; score: number; snippet: string } {
     const normalizedContent = content.toLowerCase();
 
-    // Look for exact phrase match first (highest score)
-    const exactIndex = normalizedContent.indexOf(normalizedQuery);
-    if (exactIndex !== -1) {
-      return {
-        found: true,
-        score: 0.9,
-        snippet: this.extractSnippet(content, exactIndex, originalQuery.length, snippetLength)
-      };
-    }
+    // Same tier ladder the filename is scored on — see scoreTextMatch.
+    const match = scoreTextMatch(normalizedQuery, normalizedContent);
 
-    // Look for individual word matches
-    const queryWords = normalizedQuery.split(/\s+/).filter(word => word.length > 2);
-    const wordMatches = queryWords.filter(word => normalizedContent.includes(word));
-
-    if (wordMatches.length === 0) {
+    if (!match.found) {
       return { found: false, score: 0, snippet: '' };
     }
 
-    // Score based on word match ratio
-    const matchRatio = wordMatches.length / queryWords.length;
-    const score = Math.max(0.3, matchRatio * 0.8);
-
-    // Find snippet around first word match
-    const firstMatch = wordMatches[0];
-    const firstMatchIndex = normalizedContent.indexOf(firstMatch);
+    // An exact phrase hit spans the original query; a word hit spans that word.
+    const matchLength = match.exact ? originalQuery.length : match.matchLength;
 
     return {
       found: true,
-      score,
-      snippet: this.extractSnippet(content, firstMatchIndex, firstMatch.length, snippetLength)
+      score: match.score,
+      snippet: this.extractSnippet(content, match.matchIndex, matchLength, snippetLength)
     };
   }
 
@@ -545,9 +633,14 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
               content: {
                 type: 'string',
                 description: 'Content snippet (keyword search only)'
+              },
+              matchType: {
+                type: 'string',
+                enum: ['content', 'path', 'semantic'],
+                description: 'How this file matched. "content" = the query was found in the file body (see the content snippet). "path" = only the filename matched; the body does NOT contain the query, so read the file before relying on it. "semantic" = surfaced by vector similarity, so the query may not appear literally at all.'
               }
             },
-            required: ['filePath']
+            required: ['filePath', 'matchType']
           }
         },
         error: {

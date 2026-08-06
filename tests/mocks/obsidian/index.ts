@@ -21,6 +21,7 @@ export {
   requestUrl,
   __setRequestUrlMock,
   normalizePath,
+  prepareFuzzySearch,
   parseYaml,
   stringifyYaml,
   Events,
