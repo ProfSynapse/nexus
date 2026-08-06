@@ -85,7 +85,17 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     }
 
     lines.push('');
-    lines.push(`Existing workspaces (exact names — never invent one): [default${schemaData.workspaces.length > 0 ? `,${schemaData.workspaces.map(w => w.name).join(',')}` : ''}]`);
+    // Only claim to enumerate workspaces when we actually have them. This
+    // description is built from a boot snapshot that is routinely empty (the
+    // storage adapter is created seconds after agents register), and the old
+    // unconditional "[default]" asserted that default was the ONLY workspace —
+    // a confident falsehood on every vault that had others. That is what sent
+    // agents off inventing a name from the user's phrasing.
+    if (schemaData.workspaces.length > 0) {
+      lines.push(`Existing workspaces (exact names — never invent one): [default,${schemaData.workspaces.map(w => w.name).join(',')}]`);
+    } else {
+      lines.push('Existing workspaces: not listed here. The getTools RESULT carries the live list — read "workspaces" there and pass one of those exact names. Never infer a workspace name from the user\'s wording.');
+    }
 
     if (schemaData.vaultRoot.length > 0) {
       const folders = schemaData.vaultRoot.slice(0, 5);
@@ -119,10 +129,31 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       const workspaces = await this.workspaceProvider();
       const names = workspaces.map(workspace => workspace.name).filter(Boolean);
       this.workspaceCache = { names, fetchedAt: now };
+
+      // Heal the boot snapshot. The description is what MCP clients read from
+      // tools/list, and it cannot be re-fetched on demand — so the first live
+      // lookup writes the real names back into it. Every later tools/list (a
+      // fresh CLI invocation, a reconnecting client) then sees the truth
+      // instead of the empty boot-time list.
+      if (names.length > 0 && !this.sameNames(snapshot, names)) {
+        this.schemaData = {
+          ...this.schemaData,
+          workspaces: workspaces.map(workspace => ({
+            name: workspace.name,
+            description: workspace.description
+          }))
+        };
+        this.description = this.buildDescription(this.schemaData);
+      }
+
       return names;
     } catch {
       return snapshot;
     }
+  }
+
+  private sameNames(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((name, index) => name === b[index]);
   }
 
   async execute(params: GetToolsParams): Promise<GetToolsResult> {

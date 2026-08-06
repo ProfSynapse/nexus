@@ -7,6 +7,16 @@ import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { matchWorkspaces } from '../../memoryManager/services/WorkspaceMatcher';
 
+/**
+ * The slice of NexusPlugin this service needs. Declared structurally to avoid
+ * importing the plugin class (circular) — but unlike an inline cast it names
+ * members that actually exist on the class.
+ */
+interface NexusPluginLike {
+  services?: { workspaceService?: WorkspaceService };
+  getService?<T>(name: string, timeoutMs?: number): Promise<T | null>;
+}
+
 export interface ToolManagerWorkspaceInfo {
   name: string;
   description?: string;
@@ -245,12 +255,18 @@ export class ToolBatchExecutionService {
     }
 
     try {
-      const plugin = getNexusPlugin(this.app);
+      const plugin = getNexusPlugin(this.app) as NexusPluginLike | null;
       if (!plugin) {
         return null;
       }
 
-      const workspaceService = (plugin as { workspaceService?: WorkspaceService }).workspaceService;
+      // NexusPlugin exposes services via the `services` getter and `getService()`
+      // — there is no top-level `plugin.workspaceService`. Reading one silently
+      // yielded undefined here, so this whole validation branch never fired.
+      const workspaceService =
+        plugin.services?.workspaceService
+        ?? (await plugin.getService?.<WorkspaceService>('workspaceService'))
+        ?? null;
       if (!workspaceService) {
         return null;
       }
