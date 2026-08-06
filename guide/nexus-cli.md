@@ -129,3 +129,17 @@ The vault name lives in the socket name, so selection happens at call time:
   pass the tool normally after it; do not nest a quoted command string.
 - **Multiline content is truncated or split** — pipe it with
   `--content-stdin` or pass its local path with `--content-file`.
+- **"Unknown context flag"** — the flag before `--` isn't one of `--memory`,
+  `--goal`, `--workspace`, `--session`, `--constraints`, `--vault`, `--json`,
+  `--dry-run`. Tool flags (`--path`, `--limit`, …) are only recognized *after*
+  the `--` delimiter. camelCase spellings are rejected; use kebab-case.
+- **"is a context flag, so it belongs BEFORE the `--` delimiter"** — a
+  `--memory`/`--goal`/`--vault`/… ended up inside the tool command. Move it left
+  of `--`. Note `--workspace` is exempt: it is also a real flag on
+  `memory load-workspace`, so it is accepted on either side.
+- **"needs an agent AND a tool name"** — the command after `--` lost its agent
+  name. It must read `<agent> <tool>`, e.g. `storage list`, never bare `list`.
+
+Flag ordering relative to the verb does not matter: `nexus --vault V use …` and
+`nexus use --vault V …` are equivalent. Everything after `--` is passed to the
+tool untouched, so context flags there are never consumed as context.
