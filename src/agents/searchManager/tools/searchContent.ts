@@ -65,6 +65,18 @@ export interface ContentSearchResult {
 
 /** Score for a verbatim occurrence of the whole query. */
 const EXACT_PHRASE_SCORE = 0.9;
+/**
+ * Score for a filename that contains the whole query verbatim.
+ *
+ * Above EXACT_PHRASE_SCORE on purpose. In a note-taking vault, "the note is
+ * NAMED this" is a stronger signal than "some note mentions this", so looking
+ * up `2026-08-06 Standup` must return the note called that ahead of a meeting
+ * log that references it in passing.
+ *
+ * Without this, both land on EXACT_PHRASE_SCORE and the winner is decided by
+ * whichever file the vault happened to enumerate first.
+ */
+const TITLE_EXACT_SCORE = 0.95;
 /** Ceiling for "every query word is present, but not as a phrase". */
 const ALL_WORDS_SCORE = 0.8;
 /** Floor for "at least one query word is present". */
@@ -416,7 +428,9 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     //    abbreviations and is capped below every literal match.
     const filename = file.basename;
     const filenameMatch = scoreTextMatch(normalizedQuery, filename.toLowerCase());
-    let pathScore = filenameMatch.score;
+    // A title carrying the query verbatim outranks a body that merely mentions
+    // it; weaker filename tiers stay on the shared ladder.
+    let pathScore = filenameMatch.exact ? TITLE_EXACT_SCORE : filenameMatch.score;
 
     if (!filenameMatch.found) {
       const fuzzyResult = fuzzySearch(filename);
