@@ -98,6 +98,22 @@ const PARTIAL_MATCH_FLOOR = 0.3;
 const FUZZY_ONLY_CEILING = 0.25;
 
 /**
+ * Fold the separators used in filenames into spaces.
+ *
+ * Vault filenames are routinely kebab- or snake-cased (`citation-gap-audit`),
+ * while the query is typed as words (`citation gap audit`). Compared verbatim
+ * the phrase is not a substring of the name, so the note LITERALLY NAMED for
+ * the query fell to the word tier and lost to any body that happened to
+ * contain the phrase — observed at rank 12 in a real vault.
+ *
+ * Applied to the filename side only. Body matching stays byte-exact so the
+ * snippet offsets it returns keep pointing at the real text.
+ */
+function foldSeparators(text: string): string {
+  return text.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Score how well `text` matches the query, using one tier ladder.
  *
  * Filenames and file bodies are both scored through this function so their
@@ -427,7 +443,9 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     //    are comparable. A fuzzy hit is a weak fallback for typos and
     //    abbreviations and is capped below every literal match.
     const filename = file.basename;
-    const filenameMatch = scoreTextMatch(normalizedQuery, filename.toLowerCase());
+    // Both sides folded, so `citation-gap-audit` and `Citation Gap Audit` are
+    // each reachable from either spelling of the query.
+    const filenameMatch = scoreTextMatch(foldSeparators(normalizedQuery), foldSeparators(filename));
     // A title carrying the query verbatim outranks a body that merely mentions
     // it; weaker filename tiers stay on the shared ladder.
     let pathScore = filenameMatch.exact ? TITLE_EXACT_SCORE : filenameMatch.score;

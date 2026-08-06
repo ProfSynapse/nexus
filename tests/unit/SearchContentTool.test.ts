@@ -168,6 +168,46 @@ describe('SearchContentTool — keyword ranking', () => {
   });
 
   /**
+   * Kebab- and snake-cased names are the norm in a vault, and the query is
+   * typed as words. Compared verbatim the phrase is not a substring of the
+   * name, so the note named for the query lost to any body that mentioned it —
+   * observed at rank 12 in a real vault before this was folded.
+   */
+  it('treats a kebab-cased filename as a title match for a spaced query', async () => {
+    const tool = createTool([
+      {
+        path: 'Notes/references.md',
+        content: 'See the citation gap audit for the full table of findings.'
+      },
+      {
+        path: 'Notes/citation-gap-audit.md',
+        content: 'Body text that does not repeat the phrase.'
+      }
+    ]);
+
+    const result = await tool.execute(params({ query: 'citation gap audit' }));
+
+    expect(resultsOf(result)[0].filePath).toBe('Notes/citation-gap-audit.md');
+  });
+
+  it('finds a spaced filename from a kebab-cased query', async () => {
+    const tool = createTool([
+      {
+        path: 'Notes/references.md',
+        content: 'See the citation gap audit for the full table of findings.'
+      },
+      {
+        path: 'Notes/Citation Gap Audit.md',
+        content: 'Body text that does not repeat the phrase.'
+      }
+    ]);
+
+    const result = await tool.execute(params({ query: 'citation-gap-audit' }));
+
+    expect(resultsOf(result)[0].filePath).toBe('Notes/Citation Gap Audit.md');
+  });
+
+  /**
    * The blend used to be assigned unconditionally, so matching a second way
    * could DEMOTE a file below an otherwise identical one that matched once.
    */
