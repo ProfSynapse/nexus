@@ -68,6 +68,11 @@ export interface GetToolsResult extends CommonResult {
   error?: string;
   data?: {
     tools: CliToolSchema[];
+    // Live list of every workspace that exists ("default" first). Echoed on every
+    // discovery call so the model picks a real workspace instead of inventing one
+    // from the user's phrasing.
+    workspaces?: string[];
+    workspacesNote?: string;
     // Present when `tools` are compact (broad discovery) — tells the model how to get
     // full arguments for a specific tool before calling it.
     note?: string;

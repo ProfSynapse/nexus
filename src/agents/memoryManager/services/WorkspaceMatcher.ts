@@ -9,7 +9,7 @@
  * returns nothing on a cold cache, so tool-facing search scores locally over
  * the lightweight workspace index instead.
  *
- * Used by: SearchWorkspacesTool
+ * Used by: SearchWorkspacesTool, LoadWorkspaceTool (miss recovery)
  */
 
 import { WorkspaceMetadata } from '../../../types/storage/StorageTypes';
@@ -168,4 +168,103 @@ export function matchWorkspaces(
 
   const limit = options?.limit;
   return typeof limit === 'number' && limit > 0 ? matches.slice(0, limit) : matches;
+}
+
+/**
+ * Minimum score a lone match must reach before it is auto-resolved on behalf of
+ * the caller.
+ *
+ * Deliberately low, because the invented names this recovers from are usually
+ * LONGER than the real one ("Research Notes" for "Research"), and scoreWorkspace
+ * charges for query tokens the target lacks — that pair scores 0.125, not 0.8.
+ * At 0.1 the floor means "at least ~40% of the query's tokens appear in the
+ * name"; the real guard against a wild match is the name/id requirement in
+ * resolveWorkspaceIdentifier, not this number.
+ */
+export const AUTO_RESOLVE_MIN_SCORE = 0.1;
+
+/** Candidates surfaced when a miss cannot be auto-resolved. */
+export const MAX_SUGGESTED_CANDIDATES = 5;
+
+/**
+ * Words agents append to an invented workspace name that carry no signal here —
+ * everything in this list is a workspace, so "Research Workspace" and
+ * "Research" are the same request. Left out of matchWorkspaces on purpose: this
+ * only applies to recovering a failed lookup, not to what the user typed into
+ * an explicit search.
+ */
+const FILLER_TOKENS = new Set(['workspace', 'workspaces']);
+
+/**
+ * Drop filler words from a failed identifier. Returns the original when
+ * stripping would leave nothing to match on (a workspace really named
+ * "Workspace").
+ */
+function stripFillerTokens(identifier: string): string {
+  const kept = identifier
+    .trim()
+    .split(/\s+/)
+    .filter(word => !FILLER_TOKENS.has(word.toLowerCase().replace(/[^a-z0-9]/gi, '')));
+
+  return kept.length > 0 ? kept.join(' ') : identifier;
+}
+
+export type WorkspaceResolution =
+  /** Exactly one confident match — safe to load without asking. */
+  | { kind: 'auto'; match: WorkspaceMatch }
+  /** Something matched, but not confidently enough to pick for the caller. */
+  | { kind: 'candidates'; candidates: WorkspaceMatch[] }
+  /** Nothing matched at all. */
+  | { kind: 'none' };
+
+/**
+ * Decide what to do with a workspace identifier that failed exact lookup.
+ *
+ * Exact name/id lookup happens upstream (WorkspaceService.getWorkspaceByNameOrId),
+ * so this only ever sees genuine misses — typically a name an agent invented
+ * from the user's phrasing instead of one it actually saw. Rather than dead-end
+ * the call (which is what makes agents retry-loop on guessed names), it either
+ * resolves the obvious single candidate or hands back a ranked shortlist.
+ *
+ * Auto-resolution requires exactly one match that hit on name or id, matching
+ * the `searchWorkspaces --load` contract's strictness. Two plausible workspaces
+ * is a decision for the caller, not a coin flip; and a workspace that matched
+ * only because a query word brushed its description or folder path is neither
+ * evidence the caller meant it NOR grounds to block a clear name match. Such
+ * rows still appear in the shortlist when nothing wins on identity.
+ *
+ * @param workspaces Lightweight workspace index rows
+ * @param identifier The identifier that failed exact lookup
+ * @param options includeArchived (default false)
+ */
+export function resolveWorkspaceIdentifier(
+  workspaces: WorkspaceMetadata[],
+  identifier: string,
+  options?: { includeArchived?: boolean }
+): WorkspaceResolution {
+  const matches = matchWorkspaces(workspaces, stripFillerTokens(identifier), {
+    includeArchived: options?.includeArchived ?? false
+  });
+
+  if (matches.length === 0) {
+    return { kind: 'none' };
+  }
+
+  // Count rivals by the same standard used to qualify a winner: a hit on name
+  // or id. Counting every match instead let a single noise row veto an obvious
+  // resolution — "Blog Testing" matched "Blog Testing Workspace" at 0.8 on the
+  // name, but also brushed an unrelated workspace whose DESCRIPTION ended
+  // "...handle testing" for 0.075, and that was enough to force a shortlist.
+  // Description- and folder-only hits are already declared insufficient to pick
+  // a workspace; they should not be strong enough to block one either.
+  const identityMatches = matches.filter(
+    match => match.matchedOn.includes('name') || match.matchedOn.includes('id')
+  );
+  const only = identityMatches.length === 1 ? identityMatches[0] : null;
+
+  if (only && only.score >= AUTO_RESOLVE_MIN_SCORE) {
+    return { kind: 'auto', match: only };
+  }
+
+  return { kind: 'candidates', candidates: matches.slice(0, MAX_SUGGESTED_CANDIDATES) };
 }

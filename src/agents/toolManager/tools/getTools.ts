@@ -1,11 +1,20 @@
 import { ITool } from '../../interfaces/ITool';
 import { IAgent } from '../../interfaces/IAgent';
 import { getErrorMessage } from '../../../utils/errorUtils';
-import { SchemaData } from '../toolManager';
+import { SchemaData, WorkspaceNameProvider } from '../toolManager';
 import { GetToolsParams, GetToolsResult } from '../types';
 import { ToolCliNormalizer } from '../services/ToolCliNormalizer';
 
 const INTERNAL_ONLY_TOOLS = new Set<string>([]);
+
+/** Cap on workspace names echoed back per discovery call. */
+const MAX_LISTED_WORKSPACES = 40;
+
+/**
+ * How long a live workspace lookup is reused. Discovery is often several calls
+ * in a row; the list does not change between them.
+ */
+const WORKSPACE_CACHE_TTL_MS = 5000;
 
 export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   slug: string;
@@ -16,14 +25,21 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   private agentRegistry: Map<string, IAgent>;
   private cliNormalizer: ToolCliNormalizer;
   private schemaData: SchemaData;
+  private workspaceProvider?: WorkspaceNameProvider;
+  private workspaceCache: { names: string[]; fetchedAt: number } | null = null;
 
-  constructor(agentRegistry: Map<string, IAgent>, schemaData: SchemaData) {
+  constructor(
+    agentRegistry: Map<string, IAgent>,
+    schemaData: SchemaData,
+    workspaceProvider?: WorkspaceNameProvider
+  ) {
     this.slug = 'getTools';
     this.name = 'Get Tools';
     this.version = '1.0.0';
     this.agentRegistry = agentRegistry;
     this.cliNormalizer = new ToolCliNormalizer(agentRegistry);
     this.schemaData = schemaData;
+    this.workspaceProvider = workspaceProvider;
     this.description = this.buildDescription(schemaData);
   }
 
@@ -69,7 +85,17 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     }
 
     lines.push('');
-    lines.push(`Workspaces: [default${schemaData.workspaces.length > 0 ? `,${schemaData.workspaces.map(w => w.name).join(',')}` : ''}]`);
+    // Only claim to enumerate workspaces when we actually have them. This
+    // description is built from a boot snapshot that is routinely empty (the
+    // storage adapter is created seconds after agents register), and the old
+    // unconditional "[default]" asserted that default was the ONLY workspace —
+    // a confident falsehood on every vault that had others. That is what sent
+    // agents off inventing a name from the user's phrasing.
+    if (schemaData.workspaces.length > 0) {
+      lines.push(`Existing workspaces (exact names — never invent one): [default,${schemaData.workspaces.map(w => w.name).join(',')}]`);
+    } else {
+      lines.push('Existing workspaces: not listed here. The getTools RESULT carries the live list — read "workspaces" there and pass one of those exact names. Never infer a workspace name from the user\'s wording.');
+    }
 
     if (schemaData.vaultRoot.length > 0) {
       const folders = schemaData.vaultRoot.slice(0, 5);
@@ -80,7 +106,56 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     return lines.join('\n');
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- implements ITool.execute() async interface
+  /**
+   * Current workspace names, live where possible.
+   *
+   * Falls back to the boot snapshot when no provider is wired or the lookup
+   * fails — a stale list still beats no list, since an empty one is what makes
+   * agents guess names.
+   */
+  private async getWorkspaceNames(): Promise<string[]> {
+    const snapshot = this.schemaData.workspaces.map(workspace => workspace.name);
+
+    if (!this.workspaceProvider) {
+      return snapshot;
+    }
+
+    const now = Date.now();
+    if (this.workspaceCache && now - this.workspaceCache.fetchedAt < WORKSPACE_CACHE_TTL_MS) {
+      return this.workspaceCache.names;
+    }
+
+    try {
+      const workspaces = await this.workspaceProvider();
+      const names = workspaces.map(workspace => workspace.name).filter(Boolean);
+      this.workspaceCache = { names, fetchedAt: now };
+
+      // Heal the boot snapshot. The description is what MCP clients read from
+      // tools/list, and it cannot be re-fetched on demand — so the first live
+      // lookup writes the real names back into it. Every later tools/list (a
+      // fresh CLI invocation, a reconnecting client) then sees the truth
+      // instead of the empty boot-time list.
+      if (names.length > 0 && !this.sameNames(snapshot, names)) {
+        this.schemaData = {
+          ...this.schemaData,
+          workspaces: workspaces.map(workspace => ({
+            name: workspace.name,
+            description: workspace.description
+          }))
+        };
+        this.description = this.buildDescription(this.schemaData);
+      }
+
+      return names;
+    } catch {
+      return snapshot;
+    }
+  }
+
+  private sameNames(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((name, index) => name === b[index]);
+  }
+
   async execute(params: GetToolsParams): Promise<GetToolsResult> {
     try {
       const requests = this.cliNormalizer.normalizeDiscoveryRequests(params);
@@ -124,11 +199,25 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
         }
       }
 
+      // The live workspace list rides along on every discovery call. Workspace
+      // names are the one argument agents habitually invent (they read one out
+      // of the user's phrasing), and discovery is the last step before they
+      // commit to one — so the real names have to be in front of them here,
+      // not just in a description built at boot when the list may still have
+      // been empty.
+      const workspaceNames = await this.getWorkspaceNames();
+      const listedWorkspaces = ['default', ...workspaceNames.slice(0, MAX_LISTED_WORKSPACES)];
+      const workspacesTruncated = workspaceNames.length > MAX_LISTED_WORKSPACES;
+
       return {
         success: true,
         ...(notFound.length > 0 ? { error: `Some items not found: ${notFound.join(', ')}` } : {}),
         data: {
           tools: resultSchemas,
+          workspaces: listedWorkspaces,
+          workspacesNote: workspacesTruncated
+            ? `These are the only workspaces that exist (first ${MAX_LISTED_WORKSPACES} of ${workspaceNames.length}; use "memory search-workspaces" for the rest). Pass one of these exact names — do not infer a workspace name from the user's wording.`
+            : 'These are the only workspaces that exist. Pass one of these exact names — do not infer a workspace name from the user\'s wording.',
           ...(returnedCompact
             ? { note: 'Compact list (command + description). For a tool\'s full arguments and examples, call getTools with a specific "agent tool" selector (e.g. "storage move") before using it.' }
             : {})
@@ -219,6 +308,12 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
                 required: ['agent', 'tool', 'description', 'command']
               }
             },
+            workspaces: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Every workspace that currently exists. These are the only valid values for a workspace name or workspaceId — pass one verbatim, never a name inferred from the user\'s wording.'
+            },
+            workspacesNote: { type: 'string' },
             note: { type: 'string' }
           }
         }

@@ -23,6 +23,8 @@ import {
   IngestManagerAgent
 } from '../../agents';
 import { logger } from '../../utils/logger';
+import { getErrorMessage } from '../../utils/errorUtils';
+import { withTimeout } from '../../utils/withTimeout';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, MemorySettings } from '../../types';
@@ -35,6 +37,13 @@ import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter'
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 import { TaskBoardEvents } from '../task/TaskBoardEvents';
 import type { NexusPluginWithServices } from '../../agents/memoryManager/tools/utils/pluginTypes';
+
+/**
+ * Ceiling on a live workspace lookup during tool discovery. Generous enough
+ * that a cold WorkspaceService still resolves, short enough that a wedged
+ * storage layer degrades discovery instead of hanging the caller.
+ */
+const LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS = 4000;
 
 /**
  * Type guard to check if plugin has Settings
@@ -416,8 +425,16 @@ export class AgentInitializationService {
     // Build schema data for dynamic tool descriptions
     const schemaData = await this.buildSchemaData();
 
-    // Create ToolManagerAgent with the full agent registry and schema data
-    const toolManagerAgent = new ToolManagerAgent(this.app, agentRegistry, schemaData);
+    // Create ToolManagerAgent with the full agent registry and schema data.
+    // The workspace provider is passed separately: schemaData is a snapshot
+    // taken here, and it is empty whenever SQLite was not query-ready yet, so
+    // getTools re-reads the list at call time instead.
+    const toolManagerAgent = new ToolManagerAgent(
+      this.app,
+      agentRegistry,
+      schemaData,
+      () => this.listWorkspaceSummariesLive()
+    );
 
     this.agentManager.registerAgent(toolManagerAgent);
     logger.systemLog(`ToolManager agent initialized successfully with ${agentRegistry.size} agents`);
@@ -437,6 +454,143 @@ export class AgentInitializationService {
       return storageAdapter.isReady();
     }
     return false;
+  }
+
+  /**
+   * List the current workspaces for the BOOT SNAPSHOT only.
+   *
+   * Non-blocking by design: WorkspaceService.listWorkspaces() blocks on
+   * ensureInitialized(), so this returns empty rather than stalling startup
+   * when SQLite is not query-ready. On desktop the storage adapter is only
+   * created ~3s after background init (PluginLifecycleManager), which is after
+   * agents are registered — so at boot this list is routinely empty. That is
+   * acceptable here and NOT acceptable at call time; see
+   * listWorkspaceSummariesLive().
+   */
+  private async listWorkspaceSummaries(): Promise<{ name: string; description?: string }[]> {
+    try {
+      let workspaceService: WorkspaceService | null = null;
+
+      if (this.serviceManager) {
+        workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+      } else if (hasTypedServices(this.plugin)) {
+        workspaceService = this.plugin.services.workspaceService ?? null;
+      }
+
+      // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
+      if (!workspaceService || !this.isSQLiteReady()) {
+        return [];
+      }
+
+      return this.toWorkspaceSummaries(await workspaceService.listWorkspaces());
+    } catch {
+      logger.systemWarn('Failed to fetch workspaces for schema data');
+      return [];
+    }
+  }
+
+  /**
+   * List the current workspaces for a live discovery call.
+   *
+   * Deliberately does NOT reuse the boot snapshot's two gates. Both of them
+   * fail open-ended: getServiceIfReady() only sees services that happen to be
+   * instantiated already, and isSQLiteReady() is false until the deferred WASM
+   * load finishes. An empty list here is the bug we are fixing — it is what
+   * leaves an agent with no real workspace name and makes it invent one from
+   * the user's phrasing.
+   *
+   * By the time discovery runs we are long past startup, so awaiting the
+   * service is correct rather than risky. The timeout exists only so a wedged
+   * storage layer degrades getTools to "no names" instead of hanging it.
+   */
+  private async listWorkspaceSummariesLive(): Promise<{ name: string; description?: string }[]> {
+    try {
+      const workspaceService = await withTimeout(
+        this.resolveWorkspaceService(),
+        LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS,
+        null
+      );
+      if (!workspaceService) {
+        logger.systemWarn('Live workspace lookup: WorkspaceService unavailable');
+        return [];
+      }
+
+      // Only report a list we can claim is COMPLETE. For a few seconds after
+      // load the SQLite cache is still replaying JSONL, and listWorkspaces()
+      // happily returns the partial set — measured live at 1 of 12. Callers
+      // present this list as "these are the only workspaces that exist", so a
+      // partial answer is worse than none: it is the same confident falsehood
+      // that made agents invent names, just with different wording.
+      if (!(await this.waitForQueryReady())) {
+        return [];
+      }
+
+      const workspaces = await withTimeout(
+        workspaceService.listWorkspaces(),
+        LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS,
+        null
+      );
+      if (!workspaces) {
+        logger.systemWarn('Live workspace lookup: listWorkspaces() timed out');
+        return [];
+      }
+
+      return this.toWorkspaceSummaries(workspaces);
+    } catch (error) {
+      logger.systemWarn(`Live workspace lookup failed: ${getErrorMessage(error)}`);
+      return [];
+    }
+  }
+
+  /**
+   * True once the SQLite cache has finished replaying JSONL and its queries
+   * return the complete set. Bounded so a slow rebuild degrades discovery to
+   * "no list" rather than hanging it.
+   */
+  private async waitForQueryReady(): Promise<boolean> {
+    const adapter = this.serviceManager?.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
+    if (!adapter) {
+      return false;
+    }
+
+    if (adapter.isQueryReady?.()) {
+      return true;
+    }
+
+    if (typeof adapter.waitForQueryReady !== 'function') {
+      // No readiness signal to consult — fall back to the coarse ready flag.
+      return adapter.isReady();
+    }
+
+    return withTimeout(adapter.waitForQueryReady(), LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS, false);
+  }
+
+  /**
+   * Resolve WorkspaceService, instantiating it if it has not been created yet.
+   */
+  private async resolveWorkspaceService(): Promise<WorkspaceService | null> {
+    if (this.serviceManager) {
+      const ready = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+      if (ready) return ready;
+      return (await this.serviceManager.getService<WorkspaceService>('workspaceService')) ?? null;
+    }
+
+    if (hasTypedServices(this.plugin)) {
+      return this.plugin.services.workspaceService ?? null;
+    }
+
+    return null;
+  }
+
+  private toWorkspaceSummaries(
+    workspaces: { name: string; description?: string; isArchived?: boolean }[]
+  ): { name: string; description?: string }[] {
+    return workspaces
+      .filter(workspace => !workspace.isArchived)
+      .map(workspace => ({
+        name: workspace.name,
+        description: workspace.description
+      }));
   }
 
   /**
@@ -460,28 +614,7 @@ export class AgentInitializationService {
     };
 
     // Fetch workspaces - NON-BLOCKING: only fetch if SQLite is ready to avoid blocking on ensureInitialized()
-    try {
-      let workspaceService: WorkspaceService | null = null;
-
-      if (this.serviceManager) {
-        workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
-      } else if (hasTypedServices(this.plugin)) {
-        workspaceService = this.plugin.services.workspaceService ?? null;
-      }
-
-      // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
-      // WorkspaceService.listWorkspaces() calls adapter methods that block on ensureInitialized()
-      if (workspaceService && this.isSQLiteReady()) {
-        const workspaces = await workspaceService.listWorkspaces();
-        schemaData.workspaces = workspaces.map(w => ({
-          name: w.name,
-          description: w.description
-        }));
-      }
-      // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch {
-      logger.systemWarn('Failed to fetch workspaces for schema data');
-    }
+    schemaData.workspaces = await this.listWorkspaceSummaries();
 
     // Fetch custom agents - NON-BLOCKING: only fetch if SQLite is ready
     try {

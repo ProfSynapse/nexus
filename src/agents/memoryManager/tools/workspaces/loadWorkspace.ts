@@ -19,7 +19,8 @@ import { labelWithId, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import {
   LoadWorkspaceParameters,
-  LoadWorkspaceResult
+  LoadWorkspaceResult,
+  WorkspaceResolutionReport
 } from '../../../../database/types/workspace/ParameterTypes';
 import { ProjectWorkspace, WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
 import { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
@@ -32,7 +33,13 @@ import { WorkspaceDataFetcher } from '../../services/WorkspaceDataFetcher';
 import { WorkspacePromptResolver } from '../../services/WorkspacePromptResolver';
 import { WorkspaceContextBuilder } from '../../services/WorkspaceContextBuilder';
 import { WorkspaceFileCollector } from '../../services/WorkspaceFileCollector';
+import { resolveWorkspaceIdentifier } from '../../services/WorkspaceMatcher';
 import type { WorkspaceTaskSummary } from '../../../taskManager/types';
+import type { WorkspaceMetadata } from '../../../../types/storage/StorageTypes';
+import type { WorkspaceService } from '../../../../services/WorkspaceService';
+
+/** Workspace names listed back to the caller when nothing matched at all. */
+const MAX_LISTED_WORKSPACES = 25;
 
 /**
  * Mode to load and restore a workspace by ID
@@ -61,8 +68,8 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
     super(
       'loadWorkspace',
       'Load Workspace',
-      'Load a workspace by ID and restore context and state',
-      '2.0.0'
+      'Load a workspace by name or ID and restore its context and state. Pass a name you have actually seen (getTools workspace list, search-workspaces, list-workspaces) — never one inferred from the user\'s wording.',
+      '2.1.0'
     );
     this.agent = agent;
 
@@ -138,10 +145,25 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         );
       }
 
+      // Exact lookup missed. Rather than dead-ending (which is what sends
+      // agents into retry loops on invented names), fall back to fuzzy
+      // resolution: load the obvious single candidate, or hand back a ranked
+      // shortlist so the next call is guaranteed to be a real workspace.
+      let resolution: WorkspaceResolutionReport | undefined;
       if (!workspace) {
-        console.error('[LoadWorkspaceMode] Workspace not found:', params.workspace);
-        return this.createErrorResult(`Workspace '${params.workspace}' not found (searched by both name and ID)`, params);
+        const recovered = await this.recoverFromMiss(workspaceService, params);
+        if (!recovered.workspace) {
+          // Log the reason the CALLER was given, not a fixed "not found".
+          // A miss during the post-load cache rebuild is a different problem
+          // from a workspace that genuinely does not exist, and a console that
+          // reports both identically sends debugging down the wrong path.
+          console.error('[LoadWorkspaceMode] Could not resolve workspace:', recovered.report.note);
+          return this.createErrorResult(recovered.report.note, params, recovered.report);
+        }
+        workspace = recovered.workspace;
+        resolution = recovered.report;
       }
+
       const projectWorkspace = workspace as ProjectWorkspace;
 
       // Update last accessed timestamp (use actual workspace ID, not the identifier)
@@ -255,7 +277,8 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
             hasPreviousPage: statesResult.hasPreviousPage
           }
         },
-        workspaceContext
+        workspaceContext,
+        ...(resolution ? { resolution } : {})
       };
 
       // Add navigation fallback message if workspace path building failed
@@ -284,13 +307,145 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
   }
 
   /**
+   * Turn a failed exact lookup into either a resolved workspace or an
+   * actionable shortlist.
+   *
+   * Every branch returns something the caller can act on immediately — a
+   * loaded workspace, ranked candidates with the exact retry command, or the
+   * full inventory when nothing matched. The one thing it never returns is a
+   * bare "not found", which is the response agents respond to by guessing
+   * again.
+   */
+  private async recoverFromMiss(
+    workspaceService: WorkspaceService,
+    params: LoadWorkspaceParameters
+  ): Promise<{ workspace: IndividualWorkspace | null; report: WorkspaceResolutionReport }> {
+    const requested = params.workspace;
+
+    let workspaces: WorkspaceMetadata[] = [];
+    try {
+      workspaces = await workspaceService.listWorkspaces();
+    } catch (listError) {
+      console.error('[LoadWorkspaceMode] Failed to list workspaces for miss recovery:', listError);
+      return {
+        workspace: null,
+        report: {
+          requested,
+          autoResolved: false,
+          note: `Workspace '${requested}' not found (searched by both name and ID), and the workspace list could not be read to suggest alternatives. Retry with: memory list-workspaces`
+        }
+      };
+    }
+
+    const active = workspaces.filter(workspace => !workspace.isArchived);
+    const resolution = resolveWorkspaceIdentifier(workspaces, requested);
+
+    if (resolution.kind === 'auto') {
+      const target = resolution.match.workspace;
+      const loaded = await workspaceService.getWorkspace(target.id);
+
+      if (loaded) {
+        return {
+          workspace: loaded,
+          report: {
+            requested,
+            autoResolved: true,
+            resolvedTo: { id: target.id, name: target.name },
+            note: `No workspace is named '${requested}'. '${target.name}' was the only close match, so it was loaded instead. Use the name '${target.name}' (or id ${target.id}) from here on.`
+          }
+        };
+      }
+
+      // Index row without a loadable record — treat it as a candidate rather
+      // than silently reporting nothing matched.
+      return {
+        workspace: null,
+        report: {
+          requested,
+          autoResolved: false,
+          candidates: [this.toCandidate(resolution.match.workspace, resolution.match.score)],
+          note: `Workspace '${requested}' not found. Closest match '${target.name}' could not be loaded. Retry with: memory load-workspace --workspace ${target.id}`
+        }
+      };
+    }
+
+    if (resolution.kind === 'candidates') {
+      const candidates = resolution.candidates.map(match =>
+        this.toCandidate(match.workspace, match.score)
+      );
+      return {
+        workspace: null,
+        report: {
+          requested,
+          autoResolved: false,
+          candidates,
+          note: `No workspace is named '${requested}'. ${candidates.length} workspace${candidates.length === 1 ? '' : 's'} partially matched — pick one instead of guessing again: ${candidates.map(candidate => `"${candidate.name}"`).join(', ')}. Load with: memory load-workspace --workspace "${candidates[0].name}"`
+        }
+      };
+    }
+
+    const names = active.slice(0, MAX_LISTED_WORKSPACES).map(workspace => workspace.name);
+
+    if (names.length === 0) {
+      return {
+        workspace: null,
+        report: {
+          requested,
+          autoResolved: false,
+          availableWorkspaces: [],
+          note: `Workspace '${requested}' not found, and no workspaces exist yet. Create one with: memory create-workspace --name "<name>" --rootFolder "<folder>"`
+        }
+      };
+    }
+
+    const truncated = active.length > names.length ? ` (${active.length} total)` : '';
+    const quoted = names.map(name => `"${name}"`).join(', ');
+
+    // Only assert that the list is exhaustive when the cache says it is.
+    // Immediately after a reload the rebuild is still replaying and this list
+    // is partial — claiming "nothing resembles it" then tells the agent a real
+    // workspace does not exist, which is the failure this tool exists to stop.
+    const note = workspaceService.isListComplete()
+      ? `Workspace '${requested}' does not exist and nothing resembles it. These are the workspaces that actually exist${truncated}: ${quoted}. Load one of these by name — do not invent another: memory load-workspace --workspace "${names[0]}"`
+      : `Workspace '${requested}' was not found, but the workspace cache is still rebuilding, so this list is INCOMPLETE — do not conclude the workspace is missing. Known so far${truncated}: ${quoted}. Retry in a few seconds with: memory load-workspace --workspace "${requested}"`;
+
+    return {
+      workspace: null,
+      report: {
+        requested,
+        autoResolved: false,
+        availableWorkspaces: names,
+        note
+      }
+    };
+  }
+
+  private toCandidate(
+    workspace: WorkspaceMetadata,
+    score: number
+  ): NonNullable<WorkspaceResolutionReport['candidates']>[number] {
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      ...(workspace.description ? { description: workspace.description } : {}),
+      rootFolder: workspace.rootFolder || '',
+      score: Number(score.toFixed(3))
+    };
+  }
+
+  /**
    * Create an error result with default data structure
    * Follows DRY principle by consolidating error result creation
    */
-  protected createErrorResult(errorMessage: string, params: LoadWorkspaceParameters): LoadWorkspaceResult {
+  protected createErrorResult(
+    errorMessage: string,
+    params: LoadWorkspaceParameters,
+    resolution?: WorkspaceResolutionReport
+  ): LoadWorkspaceResult {
     return {
       success: false,
       error: errorMessage,
+      ...(resolution ? { resolution } : {}),
       data: {
         context: {
           name: 'Unknown',
@@ -325,7 +480,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       properties: {
         workspace: {
           type: 'string',
-          description: 'Workspace name or ID to load (REQUIRED). Accepts either the workspace name or the unique workspace ID. Using the name returned by create-workspace is fine; you do not need to call list-workspaces just to find the UUID.'
+          description: 'Workspace name or ID to load (REQUIRED). Use a name you have actually seen — from the workspace list in getTools, from search-workspaces/list-workspaces, or from the create-workspace you just made. Do NOT infer a name from how the user phrased the request; "load my research workspace" does not mean a workspace named "Research" exists. If you do not have a confirmed name, run "memory search-workspaces --query <fragment> --load" first: it auto-loads on a single match and lists candidates otherwise. A near-miss here is recovered (single close match auto-loads, otherwise candidates are returned) — but recovery costs a round trip that discovery would have saved.'
         },
         limit: {
           type: 'number',
@@ -566,6 +721,45 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
               description: 'Full path from root workspace'
             }
           }
+        },
+        resolution: {
+          type: 'object',
+          description: 'Present only when the requested name/ID was not an exact match. Read "note" and follow it — either a near-miss was resolved for you (use resolvedTo.name from now on) or the workspaces that actually exist are listed here. Never retry with another guessed name.',
+          properties: {
+            requested: { type: 'string', description: 'The identifier that was asked for' },
+            autoResolved: { type: 'boolean', description: 'True when a single close match was loaded in place of the requested name' },
+            resolvedTo: {
+              type: 'object',
+              description: 'The workspace actually loaded (present when autoResolved is true)',
+              properties: {
+                id: { type: 'string' },
+                name: { type: 'string' }
+              },
+              required: ['id', 'name']
+            },
+            candidates: {
+              type: 'array',
+              description: 'Ranked partial matches to choose between when nothing was auto-resolved',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  description: { type: 'string' },
+                  rootFolder: { type: 'string' },
+                  score: { type: 'number', description: 'Relevance score (higher is better)' }
+                },
+                required: ['id', 'name', 'rootFolder', 'score']
+              }
+            },
+            availableWorkspaces: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Names of every existing workspace, listed when nothing resembled the request'
+            },
+            note: { type: 'string', description: 'What happened and the exact next command to run' }
+          },
+          required: ['requested', 'autoResolved', 'note']
         }
       },
       required: ['success']
