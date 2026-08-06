@@ -285,3 +285,67 @@ describe('resolveWorkspaceIdentifier', () => {
       .toBe('auto');
   });
 });
+
+describe('resolveWorkspaceIdentifier — noise rows must not veto a clear name match', () => {
+  const ws = (
+    id: string,
+    name: string,
+    description?: string
+  ): WorkspaceMetadata => ({
+    id,
+    name,
+    description,
+    rootFolder: '/',
+    lastAccessed: 0
+  } as WorkspaceMetadata);
+
+  it('auto-resolves a strong name match despite a description-only rival', () => {
+    // Live-reproduced case: "Blog Testing" scored 0.8 on the real workspace's
+    // name, while an unrelated workspace scored 0.075 because its description
+    // ended "...handle testing". That noise used to force a shortlist.
+    const workspaces = [
+      ws('a', 'Blog Testing Workspace'),
+      ws('b', 'E2E Workspace Name Handle Test Updated', 'Updated during end-to-end workspace name handle testing.')
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'Blog Testing');
+
+    expect(resolution.kind).toBe('auto');
+    if (resolution.kind === 'auto') {
+      expect(resolution.match.workspace.name).toBe('Blog Testing Workspace');
+    }
+  });
+
+  it('still refuses to pick between two genuine name matches', () => {
+    const workspaces = [
+      ws('a', 'Research Notes'),
+      ws('b', 'Research Archive')
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'Research');
+
+    expect(resolution.kind).toBe('candidates');
+  });
+
+  it('returns candidates — never auto — when only descriptions matched', () => {
+    const workspaces = [
+      ws('a', 'Alpha', 'notes about testing'),
+      ws('b', 'Beta', 'more testing notes')
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'testing');
+
+    expect(resolution.kind).toBe('candidates');
+  });
+
+  it('lists the noise row as a candidate when nothing wins on identity', () => {
+    const workspaces = [ws('b', 'Beta', 'end-to-end testing')];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'testing');
+
+    expect(resolution.kind).toBe('candidates');
+    if (resolution.kind === 'candidates') {
+      expect(resolution.candidates).toHaveLength(1);
+    }
+  });
+});

@@ -371,9 +371,19 @@ export class ToolBatchExecutionService {
 
         const { data, ...extra } = toolResultPayload;
 
+        const hasExtra = Object.keys(extra).length > 0;
+
         if (data !== undefined && data !== null) {
-          result.data = data;
-        } else if (Object.keys(extra).length > 0) {
+          // Keep sibling fields instead of dropping them. A tool that returns
+          // `data` PLUS a top-level field used to lose the latter silently —
+          // which is how loadWorkspace's `resolution` note vanished, leaving
+          // an auto-resolved near-miss looking like a plain successful load
+          // and the caller never learning a different workspace was opened.
+          // `data` is spread last so no existing key can change value.
+          result.data = hasExtra && typeof data === 'object' && !Array.isArray(data)
+            ? { ...extra, ...(data as Record<string, unknown>) }
+            : data;
+        } else if (hasExtra) {
           result.data = extra;
         }
       }

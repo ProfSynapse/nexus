@@ -127,3 +127,80 @@ describe('GetToolsTool live workspace grounding', () => {
     expect(result.data?.workspaces).toEqual(['default']);
   });
 });
+
+/**
+ * A tool may return `data` alongside sibling top-level fields. The batch
+ * formatter used to keep only `data`, which silently discarded
+ * loadWorkspace's `resolution` note — so an auto-resolved near-miss reached
+ * the caller looking like an ordinary successful load, with no indication
+ * that a different workspace had been opened.
+ */
+describe('ToolBatchExecutionService result payload', () => {
+  const { ToolBatchExecutionService } = jest.requireActual(
+    '../../src/agents/toolManager/services/ToolBatchExecutionService'
+  );
+
+  function serviceWith(toolResult: Record<string, unknown>) {
+    const tool = {
+      slug: 'loadWorkspace',
+      name: 'Load Workspace',
+      description: 'Load a workspace',
+      version: '1.0.0',
+      execute: async () => toolResult,
+      getParameterSchema: () => ({ type: 'object', properties: {} }),
+      getResultSchema: () => ({ type: 'object', properties: {} })
+    };
+    const agent = {
+      name: 'memoryManager',
+      description: 'Memory',
+      version: '1.0.0',
+      getTools: () => [tool],
+      getTool: () => tool,
+      executeTool: async () => toolResult
+    };
+    return new ToolBatchExecutionService(
+      {} as never,
+      new Map([['memoryManager', agent]]),
+      []
+    );
+  }
+
+  const context = {
+    workspaceId: 'default',
+    sessionId: 'test',
+    memory: 'testing payload retention',
+    goal: 'verify sibling fields survive'
+  };
+
+  it('keeps sibling top-level fields alongside data', async () => {
+    const service = serviceWith({
+      success: true,
+      data: { context: { name: 'Blog Testing Workspace' } },
+      resolution: { requested: 'Blog Testing', autoResolved: true }
+    });
+
+    const result = await service.execute({
+      context,
+      calls: [{ agent: 'memoryManager', tool: 'loadWorkspace', params: {} }]
+    } as never);
+
+    const payload = JSON.stringify(result);
+    expect(payload).toContain('autoResolved');
+    expect(payload).toContain('Blog Testing Workspace');
+  });
+
+  it('does not let a sibling field overwrite a key inside data', async () => {
+    const service = serviceWith({
+      success: true,
+      data: { note: 'from data' },
+      note: 'from sibling'
+    });
+
+    const result = await service.execute({
+      context,
+      calls: [{ agent: 'memoryManager', tool: 'loadWorkspace', params: {} }]
+    } as never);
+
+    expect(JSON.stringify(result)).toContain('from data');
+  });
+});

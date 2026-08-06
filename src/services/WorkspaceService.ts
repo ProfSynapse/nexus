@@ -96,6 +96,24 @@ export class WorkspaceService {
     return resolveAdapter(this.storageAdapterOrGetter);
   }
 
+  /**
+   * Whether listWorkspaces() results can honestly be described as COMPLETE.
+   *
+   * False during the post-load rebuild, when the SQLite cache is still
+   * replaying JSONL and list queries return a partial set (measured live at 1
+   * of 12 workspaces seconds after a reload). Any caller about to tell an
+   * agent "these are the only workspaces that exist" must check this first —
+   * that claim is what stops agents inventing names, so it must never be made
+   * about a partial list.
+   */
+  isListComplete(): boolean {
+    const adapter = this.getReadyAdapter();
+    if (!adapter) {
+      return false;
+    }
+    return adapter.isQueryReady?.() ?? adapter.isReady();
+  }
+
   private isWorkspaceNameUniqueConstraint(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('UNIQUE constraint failed: workspaces.name');

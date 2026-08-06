@@ -51,6 +51,8 @@ function createTool(options: {
   index?: WorkspaceMetadata[];
   full?: Record<string, ReturnType<typeof makeFullWorkspace>>;
   listWorkspaces?: jest.Mock;
+  /** Whether the cache claims its list is exhaustive. Default: settled. */
+  listComplete?: boolean;
 }) {
   const full = options.full ?? {};
 
@@ -59,6 +61,7 @@ function createTool(options: {
     getWorkspaceByNameOrId: jest.fn().mockResolvedValue(null),
     getWorkspace: jest.fn().mockImplementation((id: string) => Promise.resolve(full[id] ?? null)),
     listWorkspaces: options.listWorkspaces ?? jest.fn().mockResolvedValue(options.index ?? []),
+    isListComplete: jest.fn().mockReturnValue(options.listComplete ?? true),
     updateLastAccessed: jest.fn().mockResolvedValue(undefined)
   };
 
@@ -213,5 +216,47 @@ describe('LoadWorkspaceTool miss recovery', () => {
     expect(result.success).toBe(true);
     expect(result.resolution).toBeUndefined();
     expect(workspaceService.listWorkspaces).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoadWorkspaceTool miss recovery on a rebuilding cache', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('does not claim the workspace is missing while the list is still partial', async () => {
+    // Live-reproduced: seconds after a plugin reload the SQLite cache had
+    // replayed 1 of 12 workspaces, and the tool reported a real workspace as
+    // nonexistent while presenting the partial set as authoritative.
+    const { tool } = createTool({
+      index: [makeIndexRow({ id: 'ws-a', name: 'Default Workspace' })],
+      listComplete: false
+    });
+
+    const result = await tool.execute({ workspace: 'Blog Testing', limit: 5 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('still rebuilding');
+    expect(result.error).toContain('INCOMPLETE');
+    expect(result.error).not.toContain('nothing resembles it');
+    // Steer back to the ORIGINAL name, not the partial list's first entry.
+    expect(result.error).toContain('--workspace "Blog Testing"');
+  });
+
+  it('still asserts the inventory is exhaustive once the cache has settled', async () => {
+    const { tool } = createTool({
+      index: [makeIndexRow({ id: 'ws-a', name: 'Budget' })],
+      listComplete: true
+    });
+
+    const result = await tool.execute({ workspace: 'Totally Invented', limit: 5 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('nothing resembles it');
+    expect(result.error).not.toContain('still rebuilding');
   });
 });

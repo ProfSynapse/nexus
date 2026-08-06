@@ -532,6 +532,16 @@ export class AgentInitializationService {
         return [];
       }
 
+      // Only report a list we can claim is COMPLETE. For a few seconds after
+      // load the SQLite cache is still replaying JSONL, and listWorkspaces()
+      // happily returns the partial set — measured live at 1 of 12. Callers
+      // present this list as "these are the only workspaces that exist", so a
+      // partial answer is worse than none: it is the same confident falsehood
+      // that made agents invent names, just with different wording.
+      if (!(await this.waitForQueryReady())) {
+        return [];
+      }
+
       const workspaces = await withTimeout(
         workspaceService.listWorkspaces(),
         LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS,
@@ -547,6 +557,29 @@ export class AgentInitializationService {
       logger.systemWarn(`Live workspace lookup failed: ${getErrorMessage(error)}`);
       return [];
     }
+  }
+
+  /**
+   * True once the SQLite cache has finished replaying JSONL and its queries
+   * return the complete set. Bounded so a slow rebuild degrades discovery to
+   * "no list" rather than hanging it.
+   */
+  private async waitForQueryReady(): Promise<boolean> {
+    const adapter = this.serviceManager?.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
+    if (!adapter) {
+      return false;
+    }
+
+    if (adapter.isQueryReady?.()) {
+      return true;
+    }
+
+    if (typeof adapter.waitForQueryReady !== 'function') {
+      // No readiness signal to consult — fall back to the coarse ready flag.
+      return adapter.isReady();
+    }
+
+    return withTimeout(adapter.waitForQueryReady(), LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS, false);
   }
 
   /**

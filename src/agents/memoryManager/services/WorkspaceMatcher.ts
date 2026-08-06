@@ -226,11 +226,12 @@ export type WorkspaceResolution =
  * the call (which is what makes agents retry-loop on guessed names), it either
  * resolves the obvious single candidate or hands back a ranked shortlist.
  *
- * Auto-resolution requires a single match that hit on name or id, matching the
- * `searchWorkspaces --load` contract's strictness. Two plausible workspaces is
- * a decision for the caller, not a coin flip; and a workspace that matched only
- * because a query word brushed its description or folder path is not evidence
- * the caller meant it.
+ * Auto-resolution requires exactly one match that hit on name or id, matching
+ * the `searchWorkspaces --load` contract's strictness. Two plausible workspaces
+ * is a decision for the caller, not a coin flip; and a workspace that matched
+ * only because a query word brushed its description or folder path is neither
+ * evidence the caller meant it NOR grounds to block a clear name match. Such
+ * rows still appear in the shortlist when nothing wins on identity.
  *
  * @param workspaces Lightweight workspace index rows
  * @param identifier The identifier that failed exact lookup
@@ -249,12 +250,19 @@ export function resolveWorkspaceIdentifier(
     return { kind: 'none' };
   }
 
-  const only = matches.length === 1 ? matches[0] : null;
-  const matchedIdentity = only
-    ? only.matchedOn.includes('name') || only.matchedOn.includes('id')
-    : false;
+  // Count rivals by the same standard used to qualify a winner: a hit on name
+  // or id. Counting every match instead let a single noise row veto an obvious
+  // resolution — "Blog Testing" matched "Blog Testing Workspace" at 0.8 on the
+  // name, but also brushed an unrelated workspace whose DESCRIPTION ended
+  // "...handle testing" for 0.075, and that was enough to force a shortlist.
+  // Description- and folder-only hits are already declared insufficient to pick
+  // a workspace; they should not be strong enough to block one either.
+  const identityMatches = matches.filter(
+    match => match.matchedOn.includes('name') || match.matchedOn.includes('id')
+  );
+  const only = identityMatches.length === 1 ? identityMatches[0] : null;
 
-  if (only && matchedIdentity && only.score >= AUTO_RESOLVE_MIN_SCORE) {
+  if (only && only.score >= AUTO_RESOLVE_MIN_SCORE) {
     return { kind: 'auto', match: only };
   }
 

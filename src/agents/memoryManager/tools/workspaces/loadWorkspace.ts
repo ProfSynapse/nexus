@@ -375,7 +375,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           requested,
           autoResolved: false,
           candidates,
-          note: `No workspace is named '${requested}'. ${candidates.length} workspace${candidates.length === 1 ? '' : 's'} partially matched — pick one instead of guessing again: ${candidates.map(candidate => `"${candidate.name}"`).join(', ')}. Load with: memory load-workspace --workspace ${candidates[0].name}`
+          note: `No workspace is named '${requested}'. ${candidates.length} workspace${candidates.length === 1 ? '' : 's'} partially matched — pick one instead of guessing again: ${candidates.map(candidate => `"${candidate.name}"`).join(', ')}. Load with: memory load-workspace --workspace "${candidates[0].name}"`
         }
       };
     }
@@ -395,13 +395,23 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
     }
 
     const truncated = active.length > names.length ? ` (${active.length} total)` : '';
+    const quoted = names.map(name => `"${name}"`).join(', ');
+
+    // Only assert that the list is exhaustive when the cache says it is.
+    // Immediately after a reload the rebuild is still replaying and this list
+    // is partial — claiming "nothing resembles it" then tells the agent a real
+    // workspace does not exist, which is the failure this tool exists to stop.
+    const note = workspaceService.isListComplete()
+      ? `Workspace '${requested}' does not exist and nothing resembles it. These are the workspaces that actually exist${truncated}: ${quoted}. Load one of these by name — do not invent another: memory load-workspace --workspace "${names[0]}"`
+      : `Workspace '${requested}' was not found, but the workspace cache is still rebuilding, so this list is INCOMPLETE — do not conclude the workspace is missing. Known so far${truncated}: ${quoted}. Retry in a few seconds with: memory load-workspace --workspace "${requested}"`;
+
     return {
       workspace: null,
       report: {
         requested,
         autoResolved: false,
         availableWorkspaces: names,
-        note: `Workspace '${requested}' does not exist and nothing resembles it. These are the workspaces that actually exist${truncated}: ${names.map(name => `"${name}"`).join(', ')}. Load one of these by name — do not invent another: memory load-workspace --workspace "${names[0]}"`
+        note
       }
     };
   }
