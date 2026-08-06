@@ -1,0 +1,7 @@
+interface:
+  display_name: "Nexus Eval Harness"
+  short_description: "Run parallel provider/model evals"
+  default_prompt: "Use $nexus-eval-harness to compare models in the live Nexus eval harness."
+
+policy:
+  allow_implicit_invocation: true

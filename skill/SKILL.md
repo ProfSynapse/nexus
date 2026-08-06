@@ -54,6 +54,24 @@ The `--` delimiter is canonical: context belongs before it; the tool command
 belongs after it. This avoids nested command-string quoting, especially in
 Windows PowerShell. The legacy one-string form remains supported.
 
+Three rules that cover almost every way this goes wrong:
+
+- **`--` splits the two halves, and only that.** Context flags (`--memory`,
+  `--goal`, `--session`, `--constraints`, `--vault`) go before it; the agent
+  name, tool name, and every tool flag go after it.
+- **Pass a tool's required value positionally.** Write
+  `memory load-workspace "Silicon Zone"`, not
+  `memory load-workspace --workspace "Silicon Zone"`. `--workspace` is also a
+  context flag, so the positional form is the one that can't be misread.
+- **Keep the agent name with the tool name.** The command after `--` is always
+  `<agent> <tool> [flags]` — `storage list`, not `list`.
+- **Context flags may sit before or after the verb.** `nexus --vault V use …`
+  and `nexus use --vault V …` are equivalent.
+
+Malformed commands fail loudly with the corrected command in the error text —
+read it and retry rather than switching syntax forms. Nothing is silently
+dropped, so an error never means a partial write happened.
+
 For multiline Markdown or content containing embedded quotes, keep the body
 out of shell argv. Pipe it with `--content-stdin` or pass a local path with
 `--content-file`; put either flag after the `--` delimiter and do not also pass

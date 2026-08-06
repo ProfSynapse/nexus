@@ -49,6 +49,19 @@ A release often ships user-facing features whose docs were never updated. Before
 
 4. **Confirm the changelog** (`docs/changelog.md`) has an entry for the new version — this one file under `docs/` IS part of the release and is usually already written; verify it exists and is accurate. If a doc update is large or uncertain, surface it to the user rather than guessing.
 
+5. **Run the mechanical check — do not rely on reading alone.** Reviewing prose reliably misses renamed tools and stale flags; this guard parses every shipped example against the real catalog:
+
+   ```bash
+   npx jest tests/unit/shippedGuidanceCommands.test.ts
+   ```
+
+   It covers `README.md`, all of `guide/`, `skill/SKILL.md`, the playbooks, and the `nexus --help` text, checking: agent/tool/flag existence, playbook `tools:` frontmatter selectors, the `guide/apps.md` Apps table, embedded `--prompts` payloads, and relative doc links. A failure prints the file, line, offending command, and reason — **fix the doc, not the test.**
+
+6. **If this release adds, renames, or removes a tool**, refresh the two inventories the check and future agents read, or they validate against stale truth:
+
+   - `cli-first-tool-schemas.json` — regenerate via the `/nexus-tool-schemas` skill (needs a running vault). `tests/unit/ToolManagerCliSyntax.test.ts` carries a drift assertion that fails when this snapshot disagrees with the live registry, so a stale catalog surfaces there.
+   - `CLAUDE.md` — the **Agent Architecture** tool lists and the **Tool Count** line. Write tool names in CLI form (`agent tool-name`, kebab-case) so they match what callers actually type, and confirm each against `src/agents/**` (`slug: '...'`) rather than copying the previous list forward. These lists feed every future agent session, so a stale entry propagates.
+
 Commit doc updates to `main` (separately from, or together with, the version bump) before tagging, so the release reflects current docs.
 
 ## Release Steps
@@ -94,13 +107,16 @@ stat -f "%N %z" main.js manifest.json styles.css   # macOS
 
 ### 4. Commit and Push Main
 
-Stage only the version bump and generated connector content if it changed:
+Stage the version bump plus any generated content that the rebuild changed:
 
 ```bash
-git add package.json manifest.json CLAUDE.md versions.json src/utils/connectorContent.ts
+git add package.json manifest.json CLAUDE.md versions.json \
+        src/utils/connectorContent.ts src/utils/cliAssets.ts
 git commit -m "chore: bump version to X.Y.Z"
 git push origin main
 ```
+
+Both generated files are tracked and easy to miss. `src/utils/cliAssets.ts` embeds the bundled `nexus` CLI, `skill/SKILL.md`, and the playbooks, and is what `LocalCliInstaller` writes to disk — so if it is stale, users installing the CLI get the previous version's binary and guidance even though the release shipped a fix. Run `git status` after the rebuild and stage whatever it regenerated rather than trusting this list.
 
 ### 5. Create and Push the Release Tag
 
@@ -154,3 +170,7 @@ Download `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsidi
 - Manually creating a release in a way that bypasses artifact attestations
 - Shipping new features without updating `README.md` / `guide/` docs
 - Editing docs under `docs/` (developer/internal) — user-facing docs live only in `README.md` and `guide/`
+- Treating the doc review as a read-through instead of running `tests/unit/shippedGuidanceCommands.test.ts` — renamed tools are invisible to skimming
+- Leaving `src/utils/cliAssets.ts` (or `connectorContent.ts`) unstaged after the rebuild, shipping a stale embedded CLI
+- Adding or renaming a tool without refreshing `cli-first-tool-schemas.json` and the `CLAUDE.md` tool lists — both feed later agent sessions
+- Editing a skill under `.claude/skills/`, `.codex/skills/`, or `.cline/skills/` — those are **sync targets**. The source of truth is `.skills/`; edit there and run `npm run sync:skills`, or the next sync silently reverts the change

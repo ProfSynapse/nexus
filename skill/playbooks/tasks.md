@@ -48,7 +48,7 @@ project → capture its `projectId` → create tasks with `--project-id`.
 nexus use \
   --memory "planning the launch" --goal "load the product workspace" \
   --session launch-plan \
-  -- memory load-workspace --workspace product
+  -- memory load-workspace "product"
 
 # 2. create a project — workspace comes from --workspace; capture the projectId
 nexus use \

@@ -15,7 +15,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpLineClient, McpToolResult } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
-import { hydrateToolContentArgv, partitionUseArgv, resolveUseCommand } from './commandLine';
+import {
+    hydrateToolContentArgv,
+    parseOuterArgs,
+    partitionUseArgv,
+    resolveUseCommand,
+    suggestVerb,
+    VERBS,
+} from './commandLine';
 import {
     listVaultSockets,
     NAME_PREFIX,
@@ -67,29 +74,6 @@ function resolveVault(requested?: string): VaultSocket {
         throw new Error('No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.');
     }
     throw new Error(`Multiple vaults open: ${sockets.map((x) => x.name).join(', ')}. Pass --vault <name>.`);
-}
-
-interface ParsedArgs { positionals: string[]; flags: Record<string, string | boolean>; }
-
-function parseArgs(argv: string[]): ParsedArgs {
-    const positionals: string[] = [];
-    const flags: Record<string, string | boolean> = {};
-    for (let i = 0; i < argv.length; i++) {
-        const a = argv[i];
-        if (a.startsWith('--')) {
-            const key = a.slice(2);
-            const next = argv[i + 1];
-            if (next !== undefined && !next.startsWith('--')) {
-                flags[key] = next;
-                i++;
-            } else {
-                flags[key] = true;
-            }
-        } else {
-            positionals.push(a);
-        }
-    }
-    return { positionals, flags };
 }
 
 function printToolResult(result: McpToolResult, asJson: boolean): number {
@@ -178,6 +162,14 @@ CLI SYNTAX
   • Canonical form: context flags first, then \`--\`, then one tool command as normal
     shell arguments. Commands are kebab-case (content set-property, memory load-workspace).
     Multiword values need only one shell quote layer: --workspace "NeuroAI Mapping".
+  • Everything AFTER \`--\` belongs to the tool; everything BEFORE it is context.
+  • A tool's REQUIRED argument is positional — just write the value:
+    \`memory load-workspace "NeuroAI Mapping"\`, not \`--workspace "NeuroAI Mapping"\`.
+    Positional never collides with a context flag of the same name, so prefer it.
+    (\`--workspace\` after \`--\` still parses identically; it is just easy to confuse
+    with the \`--workspace\` context flag, which scopes the call instead.)
+  • Context flags may go before or after the verb — \`nexus --vault V use ...\` and
+    \`nexus use --vault V ...\` are equivalent.
   • The legacy one-string form remains supported. On Windows PowerShell, nested double
     quotes can be consumed before Node receives them; prefer the canonical \`--\` form.
   • For multiline Markdown or text containing embedded quotes, keep the payload out of
@@ -196,11 +188,16 @@ GOTCHAS
   • \`content read\` requires a start line: content read --path X --start-line 1 (1 = top).
   • ALL flags are kebab-case — camelCase (e.g. --newPath, --activeTask) is rejected as
     an unknown flag; use --new-path, --active-task. Get exact flags from \`nexus tools <tool>\`.
-  • Context fields (--workspace/--session/--memory/--goal) go before \`--\`, never
-    after it — e.g. --workspace-id inside the tool command is rejected.
+  • Context fields (--memory/--goal/--session/--constraints/--vault) go before \`--\`.
+    Putting one after it is rejected with a steer. \`--workspace\` is the one exception
+    (it is also a real tool flag) — so pass tool values positionally and it can never
+    be misread as context.
+  • Unknown or camelCase context flags are rejected, not ignored: --workspaceId,
+    --dryRun, and typos like --vualt fail with a suggestion instead of silently
+    doing nothing. Tool flags are only recognized after \`--\`.
   • --memory/--goal are enforced — send real values or the call is rejected.
-  • Media generation is async — \`prompt generate-*\` returns a job; poll
-    \`prompt check-generated-artifact\`.
+  • Media generation is async — \`prompt generate-image\` / \`generate-audio\` /
+    \`generate-video\` return a job; poll \`prompt check-generated-artifact "<job-id>"\`.
   • States: the AI gets archive (reversible), not delete.
   • No open vault → the socket is absent; open Obsidian with Nexus. Multiple open →
     pass --vault <name>.
@@ -217,7 +214,7 @@ EXAMPLES
   nexus tools "content read, search content"
   nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
   nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
-  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace --workspace "NeuroAI Mapping" --limit 1
+  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
   nexus playbook vault-work
 `;
 }
@@ -237,12 +234,31 @@ async function withClient<T>(vaultName: string | undefined, fn: (c: McpLineClien
 async function main(): Promise<number> {
     const argv = process.argv.slice(2);
     const { outerArgv, toolArgv } = partitionUseArgv(argv);
-    const { positionals, flags } = parseArgs(outerArgv);
+
+    // Help must survive a malformed command line — a caller that mistyped a flag
+    // needs the manual more than it needs the error. Checked against outerArgv so
+    // a `--help` inside the tool command isn't mistaken for a request for it.
+    if (outerArgv.length === 0 || outerArgv.includes('--help') || outerArgv.includes('help')) {
+        process.stdout.write(buildUsage());
+        return 0;
+    }
+
+    // Context parsing is strict: every rejection below replaces a former silent
+    // misparse that reached the vault as a different call than the one intended.
+    let positionals: string[];
+    let flags: Record<string, string | boolean>;
+    try {
+        ({ positionals, flags } = parseOuterArgs(outerArgv));
+    } catch (error) {
+        process.stderr.write(`Error: ${(error as Error).message}\n\nRun \`nexus --help\` for the manual.\n`);
+        return 2;
+    }
+
     const cmd = positionals[0];
     const asJson = flags.json === true;
     const vaultFlag = typeof flags.vault === 'string' ? flags.vault : undefined;
 
-    if (!cmd || cmd === 'help' || flags.help === true) {
+    if (!cmd) {
         process.stdout.write(buildUsage());
         return 0;
     }
@@ -374,13 +390,18 @@ async function main(): Promise<number> {
                 });
             command = resolveUseCommand(positionals, hydratedToolArgv);
         } catch (error) {
-            process.stderr.write(`Error: ${(error as Error).message}\n`);
+            process.stderr.write(`Error: ${(error as Error).message}\n\nRun \`nexus --help\` for the manual.\n`);
             return 2;
         }
         const memory = typeof flags.memory === 'string' ? flags.memory : '';
         const goal = typeof flags.goal === 'string' ? flags.goal : '';
-        if (!memory || !goal) {
-            process.stderr.write('Error: --memory and --goal are REQUIRED (Nexus context contract).\n');
+        const missing = [!memory && '--memory', !goal && '--goal'].filter(Boolean) as string[];
+        if (missing.length) {
+            process.stderr.write(
+                `Error: ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} REQUIRED (Nexus context contract). ` +
+                'Pass a genuine running summary and objective — placeholders like "N/A" are rejected by the server.\n' +
+                `Write: nexus use --memory "<what you've done so far>" --goal "<this call's objective>" -- ${command}\n`
+            );
             return 2;
         }
         const args: Record<string, unknown> = {
@@ -402,7 +423,12 @@ async function main(): Promise<number> {
         });
     }
 
-    process.stderr.write(`Unknown command "${cmd}". Run \`nexus --help\`.\n`);
+    const verbSuggestion = suggestVerb(cmd);
+    process.stderr.write(
+        `Unknown command "${cmd}".` +
+        (verbSuggestion ? ` Did you mean \`nexus ${verbSuggestion}\`?` : '') +
+        ` Commands: ${VERBS.join(', ')}. Run \`nexus --help\`.\n`
+    );
     return 2;
 }
 

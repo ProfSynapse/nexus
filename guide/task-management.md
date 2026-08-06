@@ -18,16 +18,17 @@ Workspace-scoped project and task management with DAG dependency tracking.
 
 | Tool | Purpose |
 |------|---------|
-| `createProject` | Create a new project in a workspace |
-| `listProjects` | List projects in a workspace |
-| `updateProject` | Update project name, description, or status |
-| `archiveProject` | Archive a project (restorable) |
-| `createTask` | Create a task with optional dependencies, subtasks, priority, assignee, due date, and linked notes (with link type) |
-| `listTasks` | List tasks in a project with filtering — returns each task's linked notes |
-| `updateTask` | Update any task field, including adding note links |
-| `moveTask` | Move a task between projects |
-| `queryTasks` | Query tasks across projects with filters (status, priority, assignee, tags, due date) — returns each task's linked notes |
-| `linkNote` | Link a vault note to a task with a relationship type |
+| `task create-project` | Create a new project in a workspace |
+| `task list-projects` | List projects in a workspace |
+| `task update-project` | Update project name, description, or status |
+| `task archive-project` | Archive a project (restorable) |
+| `task create` | Create a task with optional dependencies, subtasks, priority, assignee, due date, and linked notes (with link type) |
+| `task list` | List tasks in a project with filtering — returns each task's linked notes |
+| `task update` | Update any task field, including adding note links |
+| `task move` | Move a task between projects, or re-nest it under a different parent task |
+| `task query` | DAG-aware queries on a project's tasks: `nextActions` (ready to start), `blockedTasks` (waiting on dependencies, with blockers), `dependencyTree` (full upstream/downstream graph for one task) |
+| `task link-note` | Link a vault note to a task with a relationship type (reference / output / input) |
+| `task open` | Open the native Task Board view in Obsidian, optionally preselecting a workspace, project, or search query |
 
 ---
 

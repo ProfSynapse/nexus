@@ -71,6 +71,10 @@ nexus use \
 
 **B — saved prompt + note context, write the result back into a note:**
 
+`customPrompt` supplies the **system** prompt; `prompt` is still required and is
+the **user** message. They are different roles, not alternatives — a request with
+`customPrompt` and no `prompt` sends the model no instruction to act on.
+
 ```
 # find the saved prompt's name
 nexus use --workspace research --session prompt-run \
@@ -81,7 +85,7 @@ nexus use --workspace research --session prompt-run \
 nexus use \
   --workspace research --session prompt-run \
   --memory "have the daily notes; running weekly-review" --goal "append a weekly review" \
-  -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
+  -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","prompt":"Write the weekly review from the attached daily notes.","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
 ```
 
 **C — image, saved to the vault:**
@@ -94,7 +98,7 @@ nexus use \
 # then poll:
 nexus use --workspace research --session prompt-run \
   --memory "waiting on the logo" --goal "check image generation status" \
-  -- prompt check-generated-artifact --id <job-id>
+  -- prompt check-generated-artifact "<job-id>"
 ```
 
 ## Pitfalls

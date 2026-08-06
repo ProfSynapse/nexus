@@ -11,7 +11,7 @@ Nexus exposes exactly **2 tools** to MCP clients like Claude Desktop:
 
 ## Why Two Tools?
 
-Traditional MCP servers expose every operation as a separate tool. With 45+ tools, that means ~15,000 tokens of schema just to describe them — before any actual work happens.
+Traditional MCP servers expose every operation as a separate tool. With 60+ tools, that means ~15,000 tokens of schema just to describe them — before any actual work happens.
 
 Nexus collapses that to **~500 tokens** upfront. The AI discovers tool schemas on demand via `getTools`, then calls them through `useTools`.
 
@@ -44,16 +44,40 @@ This context is passed to every tool execution, so agents always know the curren
 
 1. **Discover** — Call `getTools` with the agents/tools you need
 2. **Receive schemas** — Get parameter schemas for just those tools
-3. **Execute** — Call `useTools` with context + a `calls` array of tool invocations
+3. **Execute** — Call `useTools` with the context fields at the top level plus a
+   single `tool` string holding one or more CLI commands
 
 ```
-getTools → get schemas → useTools with context + calls
+getTools → get schemas → useTools with context + tool string
 ```
 
-Multiple tools can be batched in a single `useTools` call.
+```json
+{
+  "workspaceId": "research",
+  "sessionId": "session-name",
+  "memory": "brief summary of the conversation so far",
+  "goal": "brief statement of the current objective",
+  "tool": "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md"
+}
+```
+
+Multiple commands can be batched in one `useTools` call by separating them with a
+top-level comma outside quotes; commas inside a quoted value stay literal.
+
+> The context fields go at the **top level**, never inside a nested `context`
+> object, and never as CLI flags inside the `tool` string. The older
+> `calls: [{ agent, tool, params }]` array was removed in v5.9.0 and is now
+> rejected outright.
 
 ---
 
 ## Full Tool Reference
 
-See [TOOL_REFERENCE.md](../docs/TOOL_REFERENCE.md) for complete parameter schemas for every agent and tool.
+There is no static tool reference to go stale — the authoritative, per-vault
+catalog is always live:
+
+- **From an MCP client:** call `getTools` with a selector — `"--help"` for the
+  agent catalog, `"storage"` for one agent, `"storage list"` for a single tool's
+  full argument schema.
+- **From the shell:** `nexus tools`, `nexus tools storage`, `nexus tools "storage list"`
+  (see [nexus-cli.md](nexus-cli.md)).

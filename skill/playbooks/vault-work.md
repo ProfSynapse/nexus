@@ -36,7 +36,7 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 nexus use \
   --memory "starting: summarize the auth notes" --goal "load the research workspace" \
   --session auth-summary \
-  -- memory load-workspace --workspace research
+  -- memory load-workspace "research"
 
 # 2. find
 nexus use \

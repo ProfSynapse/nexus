@@ -109,7 +109,7 @@ describe('SearchWorkspacesTool', () => {
     expect(result.data.matches.map(m => m.id)).toEqual(['a', 'b']);
     expect(result.data.matches[0]).toMatchObject({ name: 'Research', matchedOn: ['name'] });
     expect(result.data.workspace).toBeUndefined();
-    expect(result.data.nudge).toContain('memory load-workspace --workspace a');
+    expect(result.data.nudge).toContain('memory load-workspace "a"');
     expect(executeTool).not.toHaveBeenCalled();
   });
 
@@ -181,7 +181,7 @@ describe('SearchWorkspacesTool', () => {
     expect(result.success).toBe(true);
     expect(result.data.autoLoaded).toBe(false);
     expect(result.data.nudge).toContain('workspace not found');
-    expect(result.data.nudge).toContain('memory load-workspace --workspace a');
+    expect(result.data.nudge).toContain('memory load-workspace "a"');
   });
 
   it('reports a thrown auto-load as a successful search with a retry nudge', async () => {

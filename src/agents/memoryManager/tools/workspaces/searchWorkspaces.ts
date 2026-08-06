@@ -118,7 +118,7 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
               matches,
               totalMatches,
               autoLoaded: false,
-              nudge: `Auto-load of '${target.name}' failed (${loaded?.error || 'unknown error'}). Retry with: memory load-workspace --workspace ${target.id}`
+              nudge: `Auto-load of '${target.name}' failed (${loaded?.error || 'unknown error'}). Retry with: memory load-workspace "${target.id}"`
             }
           };
         } catch (loadError) {
@@ -129,7 +129,7 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
               matches,
               totalMatches,
               autoLoaded: false,
-              nudge: `Auto-load of '${target.name}' failed (${loadError instanceof Error ? loadError.message : String(loadError)}). Retry with: memory load-workspace --workspace ${target.id}`
+              nudge: `Auto-load of '${target.name}' failed (${loadError instanceof Error ? loadError.message : String(loadError)}). Retry with: memory load-workspace "${target.id}"`
             }
           };
         }
@@ -167,7 +167,7 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
       return `No workspace matched '${query}'. Try a shorter fragment, or run "memory list-workspaces" to see everything available.`;
     }
 
-    const example = `memory load-workspace --workspace ${matches[0].id}`;
+    const example = `memory load-workspace "${matches[0].id}"`;
 
     if (loadRequested && totalMatches > 1) {
       return `${totalMatches} workspaces matched '${query}', so nothing was auto-loaded. These are workspace locations, not contents — pick one and call: ${example}`;

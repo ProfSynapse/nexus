@@ -122,6 +122,42 @@ describe('ToolManager CLI syntax', () => {
       ],
     } as unknown as Parameters<typeof stack.useTools>[0])).rejects.toThrow(/no longer accepts "calls"/i);
   });
+
+  // `cli-first-tool-schemas.json` is a generated snapshot of the catalog, and
+  // tests/unit/shippedGuidanceCommands.test.ts validates all shipped docs
+  // against it. If it drifts from the live registry, that guidance check goes
+  // quietly vacuous for the drifted tools — so pin the overlap here, where a
+  // real registry is already booted.
+  it('the generated tool catalog still matches the live registry', () => {
+    const catalog = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', '..', 'cli-first-tool-schemas.json'), 'utf8')
+    ) as { tools: Array<{ command: string; arguments: Array<{ flag: string }> }> };
+    const catalogByCommand = new Map(catalog.tools.map(t => [t.command, t]));
+    const normalizer = new ToolCliNormalizer(stack.agentRegistry);
+
+    const drift: string[] = [];
+    for (const [agentName, agent] of stack.agentRegistry) {
+      if (agentName === 'toolManager') continue;
+      const alias = normalizer.getAgentAlias(agentName);
+      for (const tool of agent.getTools()) {
+        const schema = normalizer.buildCliSchema(agentName, tool);
+        const entry = catalogByCommand.get(schema.command);
+        if (!entry) {
+          drift.push(`live tool "${schema.command}" (${alias}) is absent from cli-first-tool-schemas.json`);
+          continue;
+        }
+        const live = new Set(schema.arguments.map(a => a.flag));
+        const snapshot = new Set(entry.arguments.map(a => a.flag));
+        for (const flag of live) {
+          if (!snapshot.has(flag)) drift.push(`${schema.command}: live flag ${flag} missing from the catalog`);
+        }
+        for (const flag of snapshot) {
+          if (!live.has(flag)) drift.push(`${schema.command}: catalog flag ${flag} no longer exists live`);
+        }
+      }
+    }
+    expect(drift.join('\n')).toBe('');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -516,6 +552,43 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
           name: 'Renamed Workspace'
         }
       });
+    });
+
+    // `memory load-workspace` is the ONLY tool in the catalog whose flag name
+    // collides with a CLI context flag (`--workspace`). Its required scalar arg
+    // is therefore also positional, and the positional spelling carries no
+    // collision at all — which is why docs, examples, and runtime nudges teach
+    // `memory load-workspace "<name>"` rather than the `--workspace` form.
+    // Both must keep parsing to the same params; this pins that equivalence.
+    it('accepts load-workspace positionally and by flag, identically', () => {
+      const loadWorkspaceTool = makeStubTool('loadWorkspace', {
+        type: 'object',
+        properties: {
+          workspace: { type: 'string', description: 'Workspace name or ID to load' },
+          limit: { type: 'number' },
+          workspaceId: { type: 'string' },
+        },
+        required: ['workspace'],
+      });
+      const normalizer = new ToolCliNormalizer(new Map<string, IAgent>([
+        ['memoryManager', makeStubAgent('memoryManager', [loadWorkspaceTool])]
+      ]));
+
+      const schema = normalizer.buildCliSchema('memoryManager', loadWorkspaceTool);
+      expect(schema.usage).toContain('memory load-workspace <workspace>');
+      expect(schema.arguments.find(arg => arg.name === 'workspace')?.positional).toBe(true);
+
+      const expected = { workspace: 'Silicon Zone', limit: 1 };
+      const [positionalCall] = normalizer.normalizeExecutionCalls({
+        tool: 'memory load-workspace "Silicon Zone" --limit 1'
+      });
+      const [flagCall] = normalizer.normalizeExecutionCalls({
+        tool: 'memory load-workspace --workspace "Silicon Zone" --limit 1'
+      });
+
+      expect(positionalCall).toMatchObject({ agent: 'memoryManager', tool: 'loadWorkspace', params: expected });
+      expect(flagCall).toMatchObject({ agent: 'memoryManager', tool: 'loadWorkspace', params: expected });
+      expect(positionalCall.params).toEqual(flagCall.params);
     });
   });
 
