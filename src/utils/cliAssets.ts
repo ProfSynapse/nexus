@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "bdb18207cea9a990";
+export const NEXUS_CLI_ASSETS_HASH = "a636e1151fe2f4b0";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -630,8 +630,8 @@ GOTCHAS
     --dryRun, and typos like --vualt fail with a suggestion instead of silently
     doing nothing. Tool flags are only recognized after \\\`--\\\`.
   \\u2022 --memory/--goal are enforced \\u2014 send real values or the call is rejected.
-  \\u2022 Media generation is async \\u2014 \\\`prompt generate-*\\\` returns a job; poll
-    \\\`prompt check-generated-artifact\\\`.
+  \\u2022 Media generation is async \\u2014 \\\`prompt generate-image\\\` / \\\`generate-audio\\\` /
+    \\\`generate-video\\\` return a job; poll \\\`prompt check-generated-artifact "<job-id>"\\\`.
   \\u2022 States: the AI gets archive (reversible), not delete.
   \\u2022 No open vault \\u2192 the socket is absent; open Obsidian with Nexus. Multiple open \\u2192
     pass --vault <name>.
@@ -1167,6 +1167,10 @@ nexus use \\
 
 **B — saved prompt + note context, write the result back into a note:**
 
+\`customPrompt\` supplies the **system** prompt; \`prompt\` is still required and is
+the **user** message. They are different roles, not alternatives — a request with
+\`customPrompt\` and no \`prompt\` sends the model no instruction to act on.
+
 \`\`\`
 # find the saved prompt's name
 nexus use --workspace research --session prompt-run \\
@@ -1177,7 +1181,7 @@ nexus use --workspace research --session prompt-run \\
 nexus use \\
   --workspace research --session prompt-run \\
   --memory "have the daily notes; running weekly-review" --goal "append a weekly review" \\
-  -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
+  -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","prompt":"Write the weekly review from the attached daily notes.","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
 \`\`\`
 
 **C — image, saved to the vault:**
@@ -1190,7 +1194,7 @@ nexus use \\
 # then poll:
 nexus use --workspace research --session prompt-run \\
   --memory "waiting on the logo" --goal "check image generation status" \\
-  -- prompt check-generated-artifact --id <job-id>
+  -- prompt check-generated-artifact "<job-id>"
 \`\`\`
 
 ## Pitfalls

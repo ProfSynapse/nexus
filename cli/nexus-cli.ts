@@ -196,8 +196,8 @@ GOTCHAS
     --dryRun, and typos like --vualt fail with a suggestion instead of silently
     doing nothing. Tool flags are only recognized after \`--\`.
   • --memory/--goal are enforced — send real values or the call is rejected.
-  • Media generation is async — \`prompt generate-*\` returns a job; poll
-    \`prompt check-generated-artifact\`.
+  • Media generation is async — \`prompt generate-image\` / \`generate-audio\` /
+    \`generate-video\` return a job; poll \`prompt check-generated-artifact "<job-id>"\`.
   • States: the AI gets archive (reversible), not delete.
   • No open vault → the socket is absent; open Obsidian with Nexus. Multiple open →
     pass --vault <name>.
