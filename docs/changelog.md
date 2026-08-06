@@ -1,5 +1,29 @@
 # Nexus Changelog
 
+## August 2026
+
+**v5.16.2** — Search ranks the note you meant, and CLI agents stop inventing workspaces
+
+**Search returns the note you named**
+- A note *called* what you searched for now comes first, instead of ranking behind notes that merely mention the phrase. Searching `citation gap audit` used to return the note literally named `citation-gap-audit.md` at rank 12.
+- Hyphens and underscores no longer hide a filename from a spaced query. `citation gap audit`, `citation-gap-audit`, and `citation_gap_audit` all find each other now.
+- A filename that happens to share scattered letters with your query no longer outranks a note whose text contains the query verbatim. Those two scores were on different scales, so a coincidental name match could beat a real one ([#309](https://github.com/ProfSynapse/nexus/issues/309)).
+- Every result now carries a `matchType` — `content`, `path`, or `semantic` — so you can tell a body hit from a filename hit without guessing.
+
+**CLI agents work from your real workspaces**
+- `nexus --vault <name> use … -- storage list` reached the vault as `list`, with the agent name silently stripped, whenever `--vault` came before `use`. Fixed, and malformed commands now fail loudly with the corrected form instead of half-parsing.
+- Agents are shown your actual workspace list at the moment they choose one, rather than inferring a name from your phrasing and then retry-looping on the failures.
+- The shipped CLI guidance and playbooks no longer name tools that don't exist, and a test now fails the build if they drift again.
+
+**Fixes**
+- `task update --metadata` and `update-project --metadata` shallow-merge again, as their schemas promise, instead of replacing the stored object. Explicit `metadataMode: "replace"` and `removeMetadataKeys` cover the cases that want the old behavior ([#305](https://github.com/ProfSynapse/nexus/issues/305)).
+- `memory load-state` returns a state's current tags instead of the tags it carried when the snapshot was taken ([#306](https://github.com/ProfSynapse/nexus/issues/306)).
+- Moving or deleting a note while its embedding is queued no longer prints an ENOENT stack trace — twice — to the console. Re-embedding is debounced by ten seconds, so the window was easy to hit; a note that moved is now treated as the routine event it is.
+- The OpenRouter OAuth key label reads "Nexus" rather than the legacy "Claudesidian MCP", and parameters set before authorizing are no longer dropped.
+- The README carries the MCP Toplist rank badge.
+
+---
+
 ## July 2026
 
 **v5.16.1** — Republish of 5.16.0

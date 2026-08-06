@@ -71,7 +71,7 @@ Last Updated: 2026-08-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.16.1
+- **Version**: 5.16.2
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -111,10 +111,11 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.16.1
+**Current Version**: 5.16.2
 Full changelog: `docs/changelog.md`
 
-**Latest** (May 2026):
+**Latest**:
+- **v5.16.2** (2026-08-06) — Search ranking + CLI grounding. `searchContent.ts` tier ladder is now single-scale: `TITLE_EXACT_SCORE 0.95 > EXACT_PHRASE_SCORE 0.9 > ALL_WORDS_SCORE 0.8 > PARTIAL_MATCH_FLOOR 0.3 > FUZZY_ONLY_CEILING 0.25`; filename fuzzy was previously normalized to `1 + score/100` (~0.92–0.95), an incommensurable scale that let a coincidental name beat a verbatim body match (PRs #312/#313/#314, issue #309). `foldSeparators()` folds `-`/`_` to spaces on both sides so a kebab filename matches a spaced query. Results carry `matchType: 'content' | 'path' | 'semantic'`. **Test methodology changed (#315)** — three defects shipped past a green suite, all found by searching the real vault: `tests/unit/SearchContentTool.test.ts` now runs every ranking assertion twice with the vault enumerated in both orders and fails loudly if the order decides it (a tie is not a ranking rule), plus a naming-style × query-style cross-product; `tests/debug/search-ranking-live-smoke.test.ts` (`RUN_SEARCH_SMOKE=1`) drives a live vault through the `nexus` CLI so the real `prepareFuzzySearch` is exercised. The `prepareFuzzySearch` mock in `tests/mocks/obsidian/core.ts` charges a small per-discontiguity penalty **capped at 8** — this reproduces why the bug existed; do not make it proportional or the tests go vacuous. Also: `nexus --vault X use … -- storage list` no longer strips the agent name (#310); `NoteEmbeddingService.embedNote` treats ENOENT as a skip, not an error, and no longer logs-and-rethrows (callers already log) (#316); task metadata shallow-merges (#307, issue #305); `load-state` returns current tags (#308, issue #306).
 - **v5.9.7** — Archive visibility fix for tagged states (PR #218, commit `eae5f507` + version bump `05ce7199`): drops the `stateMeta.tags ? null :` shortcut at `MemoryService.getStates:555` so `adapter.getState` always runs. Pre-fix, the SQLite-metadata fast-path skipped JSONL content fetch for tagged states, and the skeleton return path never surfaced `state.metadata.isArchived` — UI list filter and AI-facing `listStates` filter both saw archived tagged states as active. Surgical 1 LoC + 3 regression tests (`MemoryServiceGetStates.test.ts`). Both UI and AI filters inherit the fix (read from same `getStates` output). Manually verified in Obsidian. Tech-debt follow-up tracked in **issue #219** (denormalize `is_archived` into SQLite metadata, ~80–120 LoC, v13 migration — restores the perf shortcut without correctness cost).
 - **v5.9.6 + #215 / #216** (manually verified, **issue #215 closed**) — state CRUA tools (`updateState` + `archiveState`) added to MemoryManager + states management UI section under workspace settings. Contract: AI gets archive-only (soft, reversible); UI gets archive AND delete (humans can permanently destroy). No `deleteState` MCP tool exists. Storage extension: `state_updated` event mirroring `state_deleted` (~80 LoC across 9 files). 2 remediation cycles during review: Cycle 1 (B1 archiveState skeleton-corruption for tagged states, B2/B3 StateRepository event-fold + archive round-trip tests), Cycle 2 (M1 MemoryService.deleteState latent landmine — routed through `HybridStorageAdapter.deleteState` via `withDualBackend`). Post-merge manual-test surfaced the archive-visibility bug (fixed in v5.9.7 above). Frontend polish F1-F4 still open in **issue #217**.
 - **v5.9.6** — Startup hydration recovery (PR #211, commit `3cf6d3f5` + version bump `f16356ac`): self-healing for stalled startup hydration in `StartupHydrationController`.
