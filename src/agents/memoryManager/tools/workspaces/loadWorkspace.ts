@@ -153,7 +153,11 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       if (!workspace) {
         const recovered = await this.recoverFromMiss(workspaceService, params);
         if (!recovered.workspace) {
-          console.error('[LoadWorkspaceMode] Workspace not found:', params.workspace);
+          // Log the reason the CALLER was given, not a fixed "not found".
+          // A miss during the post-load cache rebuild is a different problem
+          // from a workspace that genuinely does not exist, and a console that
+          // reports both identically sends debugging down the wrong path.
+          console.error('[LoadWorkspaceMode] Could not resolve workspace:', recovered.report.note);
           return this.createErrorResult(recovered.report.note, params, recovered.report);
         }
         workspace = recovered.workspace;
