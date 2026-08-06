@@ -24,6 +24,7 @@ import {
 } from '../../agents';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
+import { withTimeout } from '../../utils/withTimeout';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, MemorySettings } from '../../types';
@@ -43,24 +44,6 @@ import type { NexusPluginWithServices } from '../../agents/memoryManager/tools/u
  * storage layer degrades discovery instead of hanging the caller.
  */
 const LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS = 4000;
-
-/**
- * Resolve `promise`, or `fallback` if it takes longer than `timeoutMs`.
- * A rejection propagates — only slowness is absorbed here.
- */
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  let timer: number | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>(resolve => {
-        timer = window.setTimeout(() => resolve(fallback), timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timer !== undefined) window.clearTimeout(timer);
-  }
-}
 
 /**
  * Type guard to check if plugin has Settings

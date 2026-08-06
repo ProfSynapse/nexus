@@ -18,6 +18,7 @@ import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
 import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
 import { WorkspaceSessionService } from './workspace/WorkspaceSessionService';
 import { WorkspaceStateService } from './workspace/WorkspaceStateService';
+import { withTimeout } from '../utils/withTimeout';
 import {
   SystemGuidesWorkspaceProvider,
   type SystemGuidesWorkspaceSummary,
@@ -27,6 +28,13 @@ import {
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
 const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
+
+/**
+ * Ceiling on waiting for the query cache to finish replaying. Long enough to
+ * cover a normal post-load rebuild, short enough that a stalled one fails the
+ * operation instead of wedging it.
+ */
+const QUERY_READY_WAIT_MS = 5000;
 
 interface WorkspaceServiceOptions {
   vaultOperations?: VaultOperations;
@@ -114,6 +122,24 @@ export class WorkspaceService {
     return adapter.isQueryReady?.() ?? adapter.isReady();
   }
 
+  /**
+   * Block until the query cache has finished replaying, bounded so a stalled
+   * rebuild cannot hang a write path. Returns whether it actually settled.
+   */
+  private async waitForQueryReady(): Promise<boolean> {
+    const adapter = this.getReadyAdapter();
+    if (!adapter) {
+      return false;
+    }
+    if (adapter.isQueryReady?.()) {
+      return true;
+    }
+    if (typeof adapter.waitForQueryReady !== 'function') {
+      return adapter.isReady();
+    }
+    return withTimeout(adapter.waitForQueryReady(), QUERY_READY_WAIT_MS, false);
+  }
+
   private isWorkspaceNameUniqueConstraint(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('UNIQUE constraint failed: workspaces.name');
@@ -122,6 +148,15 @@ export class WorkspaceService {
   private async reuseExistingWorkspaceAfterUniqueError(
     data: Partial<IndividualWorkspace>
   ): Promise<IndividualWorkspace | null> {
+    // The constraint is proof that a row with this name already exists, so a
+    // null lookup here means our view is stale — not that the workspace is
+    // absent. Both lookups below already returned null moments ago (that is
+    // how we reached the INSERT at all), so repeating them against a cache
+    // that is still replaying JSONL fails precisely when this recovery is
+    // needed: observed live as "Failed to persist session" on the first CLI
+    // call after every reload. Let the rebuild settle before looking again.
+    await this.waitForQueryReady();
+
     const existingById = data.id ? await this.getWorkspace(data.id) : null;
     if (existingById) {
       return existingById;
