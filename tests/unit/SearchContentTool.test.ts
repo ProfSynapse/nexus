@@ -5,6 +5,30 @@
  * while an exact phrase in the file BODY capped at 0.9, so a file containing
  * none of the query terms outranked a file containing the query verbatim — and
  * nothing in the response let a caller tell the two apart.
+ *
+ * ## Why this file is shaped the way it is
+ *
+ * Two follow-up defects (#313, #314) shipped past a green version of this
+ * suite and were only caught by searching a real vault. Both had a structural
+ * cause, and both are now structurally covered rather than covered by one more
+ * hand-picked example:
+ *
+ * 1. #313 — two files tied on score and the expected winner happened to be
+ *    first in the fixture array, so stable-sort POSITION carried the
+ *    assertion. Every ranking assertion now goes through `rank()`, which runs
+ *    the same fixtures forwards and backwards and fails if the order differs.
+ *    A tie can no longer masquerade as a ranking rule.
+ *
+ * 2. #314 — every fixture filename was spaced, while real vault notes are
+ *    routinely kebab- or snake-cased. The title-match rule was asserted only
+ *    for the one shape it already handled. `NAME_STYLES` x `QUERY_STYLES` now
+ *    covers the cross-product.
+ *
+ * The fuzzy scorer here is a mock (see tests/mocks/obsidian/core.ts). It
+ * reproduces the SHAPE of Obsidian's scoring — subsequence matching, small
+ * negative penalties — but not its exact magnitudes. Assertions are therefore
+ * ordinal ("A outranks B"), never numeric. For the real engine, see
+ * tests/debug/search-ranking-live-smoke.test.ts.
  */
 
 import { Plugin, TFile } from 'obsidian';
@@ -76,18 +100,72 @@ function resultsOf(result: ContentSearchResult): ContentSearchResult['results'] 
   return nested?.results ?? result.results ?? [];
 }
 
+/**
+ * Rank `files` and return the results, having first proved the ranking is a
+ * property of the SCORES and not of the enumeration order.
+ *
+ * The vault hands files to the tool in whatever order it lists them, and the
+ * sort is stable, so any two entries with equal scores come back in fixture
+ * order. An assertion written against that is vacuous — it passes for almost
+ * any implementation. #313 was exactly this: a title match and a body match
+ * both scored 0.9, and the test passed only because the expected winner was
+ * listed first.
+ *
+ * Running the same fixtures reversed makes ties impossible to hide.
+ */
+async function rank(
+  files: VaultFile[],
+  overrides: Partial<ContentSearchParams> = {}
+): Promise<ContentSearchResult['results']> {
+  const forward = resultsOf(await createTool(files).execute(params(overrides)));
+  const backward = resultsOf(await createTool([...files].reverse()).execute(params(overrides)));
+
+  const forwardPaths = forward.map(entry => entry.filePath);
+  const backwardPaths = backward.map(entry => entry.filePath);
+
+  if (JSON.stringify(forwardPaths) !== JSON.stringify(backwardPaths)) {
+    throw new Error(
+      'Ranking changed when the vault listed the same files in the opposite order, '
+      + 'so it is decided by enumeration order rather than by score — any assertion '
+      + 'on it proves nothing.\n'
+      + `  listed forwards: ${JSON.stringify(forwardPaths, null, 2)}\n`
+      + `  listed backwards: ${JSON.stringify(backwardPaths, null, 2)}\n`
+      + 'Two or more results are tied. Separate them on score, or assert something '
+      + 'other than their relative order.'
+    );
+  }
+
+  return forward;
+}
+
+/** Ways a vault names a note. Applied to the phrase "quarterly revenue report". */
+const NAME_STYLES: Record<string, (phrase: string) => string> = {
+  spaced: phrase => phrase,
+  kebab: phrase => phrase.replace(/ /g, '-'),
+  snake: phrase => phrase.replace(/ /g, '_'),
+  mixed: phrase => phrase.replace(/ /g, '-').replace('-report', '_report'),
+  titleCase: phrase => phrase.replace(/\b\w/g, char => char.toUpperCase()),
+  kebabTitle: phrase => phrase.replace(/\b\w/g, char => char.toUpperCase()).replace(/ /g, '-')
+};
+
+/** Ways a caller types the same phrase. */
+const QUERY_STYLES: Record<string, (phrase: string) => string> = {
+  spaced: phrase => phrase,
+  kebab: phrase => phrase.replace(/ /g, '-'),
+  snake: phrase => phrase.replace(/ /g, '_'),
+  upper: phrase => phrase.toUpperCase()
+};
+
 describe('SearchContentTool — keyword ranking', () => {
   /**
-   * The #309 repro, reduced. "Ha teorias que reconhecem a privacidade" shares
-   * no query TERM with "acordao ministro" but does contain its characters as a
-   * scattered subsequence, which is exactly what the old normalization scored
-   * at ~0.95.
+   * The #309 repro, reduced. The Zettel note shares no query TERM with
+   * "acordao ministro" but does contain its characters as a scattered
+   * subsequence, which is exactly what the old normalization scored at ~0.92.
    */
   const REPRO_VAULT: VaultFile[] = [
     {
       // Contains neither "acordao" nor "ministro" — in the name or the body —
-      // but its name carries the query's characters as a scattered
-      // subsequence, which the old normalization scored at ~0.92.
+      // but its name carries the query's characters as a scattered subsequence.
       path: 'Zettel/A-cronologia-da-reforma-administrativa-e-o-ministerio-do-registro.md',
       content: 'Notas sobre teoria geral. Sem relacao com os termos buscados.'
     },
@@ -99,40 +177,26 @@ describe('SearchContentTool — keyword ranking', () => {
   ];
 
   it('ranks an exact content match above a filename-only fuzzy match', async () => {
-    const tool = createTool(REPRO_VAULT);
+    const results = await rank(REPRO_VAULT);
 
-    const result = await tool.execute(params());
-
-    expect(result.success).toBe(true);
-    expect(resultsOf(result)[0].filePath).toBe('Julgados/STF-ADI-6649.md');
+    expect(results[0].filePath).toBe('Julgados/STF-ADI-6649.md');
   });
 
-  it('does not surface a file whose body and name share no query term above one that does', async () => {
-    const tool = createTool(REPRO_VAULT);
+  it('places every content match above every path-only match', async () => {
+    const results = await rank(REPRO_VAULT);
+    const types = results.map(entry => entry.matchType);
 
-    const result = await tool.execute(params());
+    const lastContent = types.lastIndexOf('content');
+    const firstPath = types.indexOf('path');
 
-    const results = resultsOf(result);
-    const contentMatches = results.filter(entry => entry.matchType === 'content');
-    const pathMatches = results.filter(entry => entry.matchType === 'path');
-
-    expect(contentMatches.map(entry => entry.filePath)).toContain('Julgados/STF-ADI-6649.md');
-
-    // Every content match outranks every path-only match in the returned order.
-    const lastContentIndex = results.map(e => e.matchType).lastIndexOf('content');
-    const firstPathIndex = results.map(e => e.matchType).indexOf('path');
-    if (firstPathIndex !== -1 && lastContentIndex !== -1) {
-      expect(lastContentIndex).toBeLessThan(firstPathIndex);
-    }
-    expect(pathMatches.every(entry => entry.filePath !== 'Julgados/STF-ADI-6649.md')).toBe(true);
+    expect(types).toContain('content');
+    expect(types).toContain('path');
+    expect(lastContent).toBeLessThan(firstPath);
   });
 
   it('reports how each result matched', async () => {
-    const tool = createTool(REPRO_VAULT);
+    const results = await rank(REPRO_VAULT);
 
-    const result = await tool.execute(params());
-
-    const results = resultsOf(result);
     expect(results.length).toBeGreaterThan(0);
     for (const entry of results) {
       expect(['content', 'path', 'semantic']).toContain(entry.matchType);
@@ -140,16 +204,14 @@ describe('SearchContentTool — keyword ranking', () => {
   });
 
   /**
-   * The counterpart risk to the fix: tiering content strictly above filename
-   * would break title lookup, which is a first-class Obsidian use case. A note
-   * NAMED for the query must still win over a note that merely mentions it.
+   * The counterpart risk to the #309 fix: tiering content strictly above
+   * filename would break title lookup, which is first-class in Obsidian. A note
+   * NAMED for the query must beat a note that merely mentions it.
+   *
+   * `rank()` is what makes this real — the two files would otherwise tie.
    */
-  it('still ranks a title match first when the query names a note', async () => {
-    const tool = createTool([
-      // Enumerated FIRST on purpose. Both files match the query verbatim — one
-      // in its body, one in its name — so if they scored the same rung this
-      // would win on position alone and the assertion below would prove
-      // nothing. It has to lose on score.
+  it('ranks a note named for the query above one that merely mentions it', async () => {
+    const results = await rank([
       {
         path: 'Archive/Meeting log.md',
         content: 'Earlier we referenced the 2026-08-06 Standup in passing.'
@@ -158,53 +220,57 @@ describe('SearchContentTool — keyword ranking', () => {
         path: 'Daily/2026-08-06 Standup.md',
         content: 'Unrelated body text about deployment.'
       }
-    ]);
+    ], { query: '2026-08-06 Standup' });
 
-    const result = await tool.execute(params({ query: '2026-08-06 Standup' }));
-
-    expect(result.success).toBe(true);
-    expect(resultsOf(result)[0].filePath).toBe('Daily/2026-08-06 Standup.md');
-    expect(resultsOf(result)[0].matchType).toBe('path');
+    expect(results[0].filePath).toBe('Daily/2026-08-06 Standup.md');
+    expect(results[0].matchType).toBe('path');
   });
 
   /**
-   * Kebab- and snake-cased names are the norm in a vault, and the query is
-   * typed as words. Compared verbatim the phrase is not a substring of the
-   * name, so the note named for the query lost to any body that mentioned it —
-   * observed at rank 12 in a real vault before this was folded.
+   * #314: every fixture above is spaced, but real vault notes are routinely
+   * kebab- or snake-cased, and a caller may type the phrase either way. The
+   * title rule has to hold across the cross-product, not just the one shape
+   * that happened to be tested. Before the fold, `citation-gap-audit.md` sat at
+   * rank 12 for the query `citation gap audit`.
    */
-  it('treats a kebab-cased filename as a title match for a spaced query', async () => {
-    const tool = createTool([
-      {
-        path: 'Notes/references.md',
-        content: 'See the citation gap audit for the full table of findings.'
-      },
-      {
-        path: 'Notes/citation-gap-audit.md',
-        content: 'Body text that does not repeat the phrase.'
+  describe('title matching across naming and query styles', () => {
+    const PHRASE = 'quarterly revenue report';
+
+    for (const [nameStyle, applyName] of Object.entries(NAME_STYLES)) {
+      for (const [queryStyle, applyQuery] of Object.entries(QUERY_STYLES)) {
+        it(`finds a ${nameStyle} filename from a ${queryStyle} query`, async () => {
+          const namedPath = `Notes/${applyName(PHRASE)}.md`;
+
+          const results = await rank([
+            {
+              path: 'Notes/references.md',
+              content: `See the ${PHRASE} for the full table of findings.`
+            },
+            { path: namedPath, content: 'Body text that does not repeat the phrase.' }
+          ], { query: applyQuery(PHRASE) });
+
+          expect(results[0].filePath).toBe(namedPath);
+        });
       }
-    ]);
-
-    const result = await tool.execute(params({ query: 'citation gap audit' }));
-
-    expect(resultsOf(result)[0].filePath).toBe('Notes/citation-gap-audit.md');
+    }
   });
 
-  it('finds a spaced filename from a kebab-cased query', async () => {
-    const tool = createTool([
+  /**
+   * The mirror of the filename fold, on the query side. A caller who types the
+   * phrase the way the vault spells its FILENAMES should still match a body
+   * that spells it as words — otherwise `citation-gap-audit` is a single
+   * unsplittable token and finds no body text at all.
+   */
+  it('matches spaced body text from a separator-joined query', async () => {
+    const results = await rank([
       {
-        path: 'Notes/references.md',
-        content: 'See the citation gap audit for the full table of findings.'
-      },
-      {
-        path: 'Notes/Citation Gap Audit.md',
-        content: 'Body text that does not repeat the phrase.'
+        path: 'Notes/unrelated-name.md',
+        content: 'See the citation gap audit table for the full findings.'
       }
-    ]);
+    ], { query: 'citation-gap-audit' });
 
-    const result = await tool.execute(params({ query: 'citation-gap-audit' }));
-
-    expect(resultsOf(result)[0].filePath).toBe('Notes/Citation Gap Audit.md');
+    expect(results.map(entry => entry.filePath)).toEqual(['Notes/unrelated-name.md']);
+    expect(results[0].matchType).toBe('content');
   });
 
   /**
@@ -212,7 +278,7 @@ describe('SearchContentTool — keyword ranking', () => {
    * could DEMOTE a file below an otherwise identical one that matched once.
    */
   it('does not demote a file for also matching on its name', async () => {
-    const tool = createTool([
+    const results = await rank([
       {
         // Body holds the exact phrase (the strongest content signal), and the
         // NAME is a weak fuzzy-only hit. Blending the two unguarded drags this
@@ -225,32 +291,24 @@ describe('SearchContentTool — keyword ranking', () => {
         path: 'Notes/zzz.md',
         content: 'Revenue was discussed, and the quarterly cadence was set.'
       }
-    ]);
+    ], { query: 'quarterly revenue' });
 
-    const result = await tool.execute(params({ query: 'quarterly revenue' }));
-
-    expect(resultsOf(result)[0].filePath).toBe('Notes/Quiet quarters - early review of the venue.md');
+    expect(results[0].filePath).toBe('Notes/Quiet quarters - early review of the venue.md');
   });
 
   it('labels every result as a path match when bodies are never read', async () => {
-    const tool = createTool(REPRO_VAULT);
-
     // Queried by name: with includeContent=false the tool never reads a body,
     // so it cannot honestly claim a content match for anything.
-    const result = await tool.execute(params({ query: 'STF-ADI-6649', includeContent: false }));
+    const results = await rank(REPRO_VAULT, { query: 'STF-ADI-6649', includeContent: false });
 
-    const results = resultsOf(result);
     expect(results.length).toBeGreaterThan(0);
     expect(results.every(entry => entry.matchType === 'path')).toBe(true);
   });
 
   it('returns an empty list when nothing matches', async () => {
-    const tool = createTool(REPRO_VAULT);
+    const results = await rank(REPRO_VAULT, { query: 'vringlethorp quazzendil mubrifonte' });
 
-    const result = await tool.execute(params({ query: 'vringlethorp quazzendil mubrifonte' }));
-
-    expect(result.success).toBe(true);
-    expect(resultsOf(result)).toEqual([]);
+    expect(results).toEqual([]);
   });
 
   it('documents matchType in the result schema', () => {
@@ -271,5 +329,21 @@ describe('SearchContentTool — keyword ranking', () => {
     expect(items.properties.matchType).toBeDefined();
     expect(items.properties.matchType.enum).toEqual(['content', 'path', 'semantic']);
     expect(items.required).toContain('matchType');
+  });
+});
+
+describe('rank() harness', () => {
+  /**
+   * The harness is the thing standing between this suite and another #313, so
+   * prove it actually reports a tie instead of silently passing one through.
+   */
+  it('fails when two results tie and the order is decided by enumeration', async () => {
+    const tied: VaultFile[] = [
+      { path: 'Notes/first.md', content: 'the shared phrase appears here' },
+      { path: 'Notes/second.md', content: 'the shared phrase appears here' }
+    ];
+
+    await expect(rank(tied, { query: 'shared phrase' }))
+      .rejects.toThrow(/decided by enumeration order/);
   });
 });
