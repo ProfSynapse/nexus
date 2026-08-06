@@ -5,6 +5,7 @@ import { NormalizedUseToolParams, ToolCallParams, ToolCallResult, ToolContext, U
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { WorkspaceService } from '../../../services/WorkspaceService';
+import { matchWorkspaces } from '../../memoryManager/services/WorkspaceMatcher';
 
 export interface ToolManagerWorkspaceInfo {
   name: string;
@@ -260,10 +261,21 @@ export class ToolBatchExecutionService {
         return null;
       }
 
-      const availableNames = this.knownWorkspaces.length > 0
-        ? this.knownWorkspaces.map(workspace => `"${workspace.name}"`).join(', ')
+      // Name the alternatives off the LIVE list, not `knownWorkspaces` — that
+      // snapshot is taken at boot and is empty whenever SQLite was not ready
+      // then, which produced "Available: (none created yet)" on vaults that
+      // had workspaces all along.
+      const active = workspaces.filter(workspace => !workspace.isArchived);
+      const availableNames = active.length > 0
+        ? active.map(workspace => `"${workspace.name}"`).join(', ')
         : '(none created yet)';
-      return `Invalid workspace "${workspaceId}". Available: "default" (global), ${availableNames}`;
+
+      // A wrong workspaceId is usually a near-miss on a real name, so point at
+      // the closest one instead of leaving the caller to guess again.
+      const closest = matchWorkspaces(active, workspaceId, { limit: 1 })[0];
+      const didYouMean = closest ? ` Closest match: "${closest.workspace.name}".` : '';
+
+      return `Invalid workspace "${workspaceId}".${didYouMean} Use one of these exact values — do not infer a workspace name from the user's wording. Available: "default" (global), ${availableNames}`;
     } catch {
       return null;
     }

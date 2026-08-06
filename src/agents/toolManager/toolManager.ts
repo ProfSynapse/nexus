@@ -25,6 +25,16 @@ export interface SchemaData {
 }
 
 /**
+ * Reads the current workspace names on demand.
+ *
+ * SchemaData is a boot-time snapshot, and it is empty whenever SQLite was not
+ * yet query-ready at agent registration. An agent that sees no workspaces at
+ * discovery has nothing to pick from and invents a name instead, so getTools
+ * resolves the list live at call time rather than trusting the snapshot.
+ */
+export type WorkspaceNameProvider = () => Promise<{ name: string; description?: string }[]>;
+
+/**
  * Configuration for ToolManager agent
  */
 export const ToolManagerConfig = {
@@ -51,8 +61,14 @@ export class ToolManagerAgent extends BaseAgent {
    * @param app Obsidian app instance
    * @param agentRegistry Map of all registered agents (excluding toolManager itself)
    * @param schemaData Dynamic data for tool descriptions (workspaces, custom agents, vault structure)
+   * @param workspaceProvider Live workspace-name lookup used by getTools when the snapshot is stale or empty
    */
-  constructor(app: App, agentRegistry: Map<string, IAgent>, schemaData?: SchemaData) {
+  constructor(
+    app: App,
+    agentRegistry: Map<string, IAgent>,
+    schemaData?: SchemaData,
+    workspaceProvider?: WorkspaceNameProvider
+  ) {
     super(
       ToolManagerConfig.name,
       ToolManagerConfig.description,
@@ -68,7 +84,7 @@ export class ToolManagerAgent extends BaseAgent {
     this.toolCliNormalizer = new ToolCliNormalizer(agentRegistry);
 
     // Register the two tools with schema data
-    this.getToolsTool = new GetToolsTool(agentRegistry, data);
+    this.getToolsTool = new GetToolsTool(agentRegistry, data, workspaceProvider);
     this.useToolTool = new UseToolTool(this.toolBatchExecutionService, this.toolCliNormalizer);
     this.registerTool(this.getToolsTool);
     this.registerTool(this.useToolTool);

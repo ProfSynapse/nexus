@@ -134,6 +134,40 @@ export interface LoadWorkspaceResult extends CommonResult {
       hasPreviousPage: boolean;
     };
   };
+  /**
+   * Present only when the requested identifier did not match a workspace
+   * exactly. Either reports the near-miss that was resolved and loaded, or
+   * carries the shortlist to pick from so the caller never has to guess again.
+   */
+  resolution?: WorkspaceResolutionReport;
+}
+
+/**
+ * Miss-recovery report attached to loadWorkspace when the requested workspace
+ * name or ID was not an exact match.
+ */
+export interface WorkspaceResolutionReport {
+  /** The identifier the caller asked for. */
+  requested: string;
+  /** Whether a near-miss was confidently resolved and loaded anyway. */
+  autoResolved: boolean;
+  /** The workspace actually loaded, when autoResolved is true. */
+  resolvedTo?: {
+    id: string;
+    name: string;
+  };
+  /** Ranked alternatives when nothing was auto-resolved. */
+  candidates?: Array<{
+    id: string;
+    name: string;
+    description?: string;
+    rootFolder: string;
+    score: number;
+  }>;
+  /** Every workspace available, listed when nothing matched at all. */
+  availableWorkspaces?: string[];
+  /** Human/agent-readable explanation plus the exact next command to run. */
+  note: string;
 }
 
 /**

@@ -416,8 +416,16 @@ export class AgentInitializationService {
     // Build schema data for dynamic tool descriptions
     const schemaData = await this.buildSchemaData();
 
-    // Create ToolManagerAgent with the full agent registry and schema data
-    const toolManagerAgent = new ToolManagerAgent(this.app, agentRegistry, schemaData);
+    // Create ToolManagerAgent with the full agent registry and schema data.
+    // The workspace provider is passed separately: schemaData is a snapshot
+    // taken here, and it is empty whenever SQLite was not query-ready yet, so
+    // getTools re-reads the list at call time instead.
+    const toolManagerAgent = new ToolManagerAgent(
+      this.app,
+      agentRegistry,
+      schemaData,
+      () => this.listWorkspaceSummaries()
+    );
 
     this.agentManager.registerAgent(toolManagerAgent);
     logger.systemLog(`ToolManager agent initialized successfully with ${agentRegistry.size} agents`);
@@ -437,6 +445,43 @@ export class AgentInitializationService {
       return storageAdapter.isReady();
     }
     return false;
+  }
+
+  /**
+   * List the current workspaces for tool discovery.
+   *
+   * Non-blocking by design: WorkspaceService.listWorkspaces() blocks on
+   * ensureInitialized(), so this returns empty rather than stalling when
+   * SQLite is not query-ready. Callers re-invoke it later — at boot the list
+   * is often empty, and a permanently empty list is what leaves agents with no
+   * real workspace name to pick.
+   */
+  private async listWorkspaceSummaries(): Promise<{ name: string; description?: string }[]> {
+    try {
+      let workspaceService: WorkspaceService | null = null;
+
+      if (this.serviceManager) {
+        workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+      } else if (hasTypedServices(this.plugin)) {
+        workspaceService = this.plugin.services.workspaceService ?? null;
+      }
+
+      // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
+      if (!workspaceService || !this.isSQLiteReady()) {
+        return [];
+      }
+
+      const workspaces = await workspaceService.listWorkspaces();
+      return workspaces
+        .filter(workspace => !workspace.isArchived)
+        .map(workspace => ({
+          name: workspace.name,
+          description: workspace.description
+        }));
+    } catch {
+      logger.systemWarn('Failed to fetch workspaces for schema data');
+      return [];
+    }
   }
 
   /**
@@ -460,28 +505,7 @@ export class AgentInitializationService {
     };
 
     // Fetch workspaces - NON-BLOCKING: only fetch if SQLite is ready to avoid blocking on ensureInitialized()
-    try {
-      let workspaceService: WorkspaceService | null = null;
-
-      if (this.serviceManager) {
-        workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
-      } else if (hasTypedServices(this.plugin)) {
-        workspaceService = this.plugin.services.workspaceService ?? null;
-      }
-
-      // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
-      // WorkspaceService.listWorkspaces() calls adapter methods that block on ensureInitialized()
-      if (workspaceService && this.isSQLiteReady()) {
-        const workspaces = await workspaceService.listWorkspaces();
-        schemaData.workspaces = workspaces.map(w => ({
-          name: w.name,
-          description: w.description
-        }));
-      }
-      // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch {
-      logger.systemWarn('Failed to fetch workspaces for schema data');
-    }
+    schemaData.workspaces = await this.listWorkspaceSummaries();
 
     // Fetch custom agents - NON-BLOCKING: only fetch if SQLite is ready
     try {

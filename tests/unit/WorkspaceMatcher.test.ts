@@ -2,7 +2,10 @@
  * Tests for WorkspaceMatcher - pure scoring for workspace search.
  */
 
-import { matchWorkspaces } from '../../src/agents/memoryManager/services/WorkspaceMatcher';
+import {
+  matchWorkspaces,
+  resolveWorkspaceIdentifier
+} from '../../src/agents/memoryManager/services/WorkspaceMatcher';
 import { WorkspaceMetadata } from '../../src/types/storage/StorageTypes';
 
 function makeWorkspace(overrides: Partial<WorkspaceMetadata> & { id: string; name: string }): WorkspaceMetadata {
@@ -154,5 +157,131 @@ describe('matchWorkspaces', () => {
 
     expect(matches.map(m => m.workspace.id)).toEqual(['both', 'one']);
     expect(matches[0].score).toBeGreaterThan(matches[1].score);
+  });
+});
+
+describe('resolveWorkspaceIdentifier', () => {
+  it('reports none when nothing matches at all', () => {
+    const workspaces = [makeWorkspace({ id: 'a', name: 'Research' })];
+
+    expect(resolveWorkspaceIdentifier(workspaces, 'Quarterly Budget')).toEqual({ kind: 'none' });
+  });
+
+  it('reports none for an empty workspace list', () => {
+    expect(resolveWorkspaceIdentifier([], 'Research')).toEqual({ kind: 'none' });
+  });
+
+  it('auto-resolves a lone confident near-miss', () => {
+    const workspaces = [
+      makeWorkspace({ id: 'research', name: 'Research' }),
+      makeWorkspace({ id: 'budget', name: 'Budget' })
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'Research Notes');
+
+    expect(resolution.kind).toBe('auto');
+    if (resolution.kind === 'auto') {
+      expect(resolution.match.workspace.id).toBe('research');
+    }
+  });
+
+  it('auto-resolves a longer invented name against the real shorter one', () => {
+    // The shape agents actually produce: extra words the real name lacks.
+    const workspaces = [makeWorkspace({ id: 'research', name: 'Research' })];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'Research Notes Workspace');
+
+    expect(resolution.kind).toBe('auto');
+  });
+
+  it('ignores the filler word "workspace" in the requested name', () => {
+    const workspaces = [makeWorkspace({ id: 'research', name: 'Research' })];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'Research Workspace');
+
+    expect(resolution.kind).toBe('auto');
+    if (resolution.kind === 'auto') {
+      // Stripped down to "Research", so this reads as an exact name hit.
+      expect(resolution.match.isExact).toBe(true);
+    }
+  });
+
+  it('still resolves a workspace actually named "Workspace"', () => {
+    const workspaces = [makeWorkspace({ id: 'w', name: 'Workspace', description: 'catch-all' })];
+
+    // Stripping would empty the query, so the original is used instead.
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'workspace');
+
+    expect(resolution.kind).toBe('auto');
+  });
+
+  it('does not auto-resolve a lone description-only match', () => {
+    // Nothing about the name resembles the request, so this is not evidence
+    // the caller meant this workspace.
+    const workspaces = [
+      makeWorkspace({ id: 'a', name: 'Research', description: 'Long term planning notes' })
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'planning');
+
+    expect(resolution.kind).toBe('candidates');
+    if (resolution.kind === 'candidates') {
+      expect(resolution.candidates.map(c => c.workspace.id)).toEqual(['a']);
+    }
+  });
+
+  it('does not auto-resolve a lone rootFolder-only match', () => {
+    const workspaces = [
+      makeWorkspace({ id: 'a', name: 'Alpha', rootFolder: 'Clients/Acme' })
+    ];
+
+    expect(resolveWorkspaceIdentifier(workspaces, 'acme').kind).toBe('candidates');
+  });
+
+  it('does not auto-resolve when barely any of the query matches the name', () => {
+    const workspaces = [makeWorkspace({ id: 'a', name: 'Research' })];
+
+    // One of five tokens hits — too thin to redirect on.
+    const resolution = resolveWorkspaceIdentifier(
+      workspaces,
+      'quarterly client research budget review'
+    );
+
+    expect(resolution.kind).toBe('candidates');
+  });
+
+  it('returns a ranked shortlist rather than picking between two plausible matches', () => {
+    const workspaces = [
+      makeWorkspace({ id: 'hub', name: 'Research Hub' }),
+      makeWorkspace({ id: 'ai', name: 'AI Research' })
+    ];
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'research');
+
+    expect(resolution.kind).toBe('candidates');
+    if (resolution.kind === 'candidates') {
+      expect(resolution.candidates.map(c => c.workspace.id)).toEqual(['hub', 'ai']);
+    }
+  });
+
+  it('caps the shortlist at five candidates', () => {
+    const workspaces = Array.from({ length: 8 }, (_, index) =>
+      makeWorkspace({ id: `ws-${index}`, name: `Research ${index}` })
+    );
+
+    const resolution = resolveWorkspaceIdentifier(workspaces, 'research');
+
+    expect(resolution.kind).toBe('candidates');
+    if (resolution.kind === 'candidates') {
+      expect(resolution.candidates).toHaveLength(5);
+    }
+  });
+
+  it('ignores archived workspaces unless asked for them', () => {
+    const workspaces = [makeWorkspace({ id: 'old', name: 'Research', isArchived: true })];
+
+    expect(resolveWorkspaceIdentifier(workspaces, 'Research Notes')).toEqual({ kind: 'none' });
+    expect(resolveWorkspaceIdentifier(workspaces, 'Research Notes', { includeArchived: true }).kind)
+      .toBe('auto');
   });
 });
