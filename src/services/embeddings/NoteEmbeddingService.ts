@@ -29,6 +29,26 @@ import { EmbeddingAdapter, type QueryAdapter } from './adapter/EmbeddingAdapter'
 
 const asQueryParams = (params: unknown[]): QueryParams => params as unknown as QueryParams;
 
+/**
+ * True when an error means the note is no longer at the path we read.
+ *
+ * `embedNote` already checks the vault index before reading, but the index and
+ * the filesystem disagree for a moment while a file is being moved, so the
+ * guard can pass and the read still fail. Re-embedding is debounced by ten
+ * seconds, which makes that window easy to hit: create a note and move or
+ * delete it shortly after and the timer fires against the old path.
+ *
+ * That is a normal outcome rather than a failure. The vault's rename and
+ * delete handlers own re-pointing and removing the embedding, so there is
+ * nothing here to repair and nothing worth reporting.
+ */
+function isMissingFileError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT') {
+    return true;
+  }
+  return error instanceof Error && /ENOENT|no such file or directory/i.test(error.message);
+}
+
 export interface SimilarNote {
   notePath: string;
   distance: number;
@@ -127,7 +147,14 @@ export class NoteEmbeddingService {
         );
       }
     } catch (error) {
-      console.error(`[NoteEmbeddingService] Failed to embed note ${notePath}:`, error);
+      if (isMissingFileError(error)) {
+        // The note moved or was deleted between scheduling and now.
+        return;
+      }
+
+      // Deliberately not logged here. Every caller — EmbeddingWatcher,
+      // IndexingQueue — already reports failures with its own context, so
+      // logging and rethrowing printed each one twice, with two stacks.
       throw error;
     }
   }
