@@ -407,3 +407,89 @@ describe('ToolCallTraceService', () => {
     });
   });
 });
+
+/**
+ * Traces must never be filed under an identifier that does not resolve.
+ *
+ * The workspace id is used as an event-store key, so writing to one that
+ * does not exist CREATES it: observed live as Nexus/data/workspaces/
+ * ws_--workspace/ and ws_Blog Testing/. The latter came from a near-miss —
+ * the handle is the name the caller REQUESTED, and getWorkspaceByNameOrId is
+ * exact-match, so every guessed name minted its own phantom directory.
+ */
+describe('ToolCallTraceService — unresolvable workspace handles', () => {
+  function build(options: {
+    lookup: jest.Mock;
+    context?: { workspaceId: string } | null;
+  }) {
+    const memoryService = { recordActivityTrace: jest.fn().mockResolvedValue('trace-1') };
+    const sessionContextManager = {
+      getWorkspaceContext: jest.fn().mockReturnValue(options.context ?? null),
+      setWorkspaceContext: jest.fn()
+    };
+    const workspaceService = { getWorkspaceByNameOrId: options.lookup };
+    const service = new ToolCallTraceService(
+      memoryService as never,
+      sessionContextManager as never,
+      workspaceService as never,
+      {} as never
+    );
+    return { service, memoryService };
+  }
+
+  const call = (service: ToolCallTraceService, tool: string) =>
+    service.captureToolCall(
+      'toolManager_useTools',
+      {
+        workspaceId: 'default',
+        sessionId: 'session-1',
+        memory: 'm',
+        goal: 'g',
+        tool
+      },
+      { success: true },
+      true,
+      5
+    );
+
+  it('does not file a trace under a near-miss name that resolves to nothing', async () => {
+    const { service, memoryService } = build({
+      lookup: jest.fn().mockResolvedValue(null)
+    });
+
+    await call(service, 'memory load-workspace --workspace "Blog Testing"');
+
+    expect(memoryService.recordActivityTrace).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'default' })
+    );
+    const recorded = memoryService.recordActivityTrace.mock.calls[0][0];
+    expect(recorded.workspaceId).not.toBe('Blog Testing');
+  });
+
+  it('falls back to the session workspace when it resolves', async () => {
+    const { service, memoryService } = build({
+      lookup: jest.fn().mockImplementation((id: string) =>
+        Promise.resolve(id === 'ctx-uuid' ? { id: 'ctx-uuid', name: 'Ctx' } : null)
+      ),
+      context: { workspaceId: 'ctx-uuid' }
+    });
+
+    await call(service, 'memory load-workspace --workspace "Invented Name"');
+
+    expect(memoryService.recordActivityTrace).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'ctx-uuid' })
+    );
+  });
+
+  it('falls back to default when the lookup throws', async () => {
+    const { service, memoryService } = build({
+      lookup: jest.fn().mockRejectedValue(new Error('cache cold'))
+    });
+
+    await call(service, 'memory load-workspace --workspace "Anything"');
+
+    expect(memoryService.recordActivityTrace).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'default' })
+    );
+  });
+});

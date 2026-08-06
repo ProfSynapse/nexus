@@ -265,10 +265,38 @@ export class ToolCallTraceService {
 
     try {
       const workspace = await this.workspaceService.getWorkspaceByNameOrId(candidate);
-      return workspace?.id || candidate;
+      if (workspace) {
+        return workspace.id;
+      }
     } catch {
-      return candidate;
+      // Fall through to the safe fallback below.
     }
+
+    // Never file a trace under an unvalidated identifier. Writing to a
+    // workspace id that does not exist CREATES it as a phantom event store —
+    // that is how `ws_--workspace/` and `ws_Blog Testing/` appeared, the
+    // latter because the handle is the name the caller REQUESTED and
+    // getWorkspaceByNameOrId is exact-match, so every near-miss minted a new
+    // workspace directory. Fall back to context we know resolves.
+    return this.resolveKnownWorkspaceId(workspaceContext?.workspaceId);
+  }
+
+  /**
+   * Reduce to a workspace id that actually exists, or the global default.
+   */
+  private async resolveKnownWorkspaceId(contextWorkspaceId?: string): Promise<string> {
+    if (contextWorkspaceId) {
+      try {
+        const contextWorkspace = await this.workspaceService.getWorkspaceByNameOrId(contextWorkspaceId);
+        if (contextWorkspace) {
+          return contextWorkspace.id;
+        }
+      } catch {
+        // Ignore and fall back to the global default.
+      }
+    }
+
+    return 'default';
   }
 
   private extractWorkspaceHandleFromUseTools(params: Record<string, unknown>): string | undefined {
