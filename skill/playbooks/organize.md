@@ -37,7 +37,7 @@ Unlike `vault-work` (which edits note *bodies*), this moves and files whole note
 nexus use \
   --memory "tidying old dailies" --goal "load the journal workspace" \
   --session tidy-dailies \
-  -- memory load-workspace --workspace journal
+  -- memory load-workspace "journal"
 
 # 2. map — which dailies are from 2025? (query frontmatter; --describe to see columns first)
 nexus use \

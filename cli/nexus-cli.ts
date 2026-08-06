@@ -162,10 +162,12 @@ CLI SYNTAX
   • Canonical form: context flags first, then \`--\`, then one tool command as normal
     shell arguments. Commands are kebab-case (content set-property, memory load-workspace).
     Multiword values need only one shell quote layer: --workspace "NeuroAI Mapping".
-  • Everything AFTER \`--\` belongs to the tool; everything BEFORE it is context. The
-    same flag name can appear on both sides and means different things — e.g.
-    \`--workspace\` before \`--\` scopes the call, and after \`--\` it is the required
-    argument of \`memory load-workspace\`. Both at once is fine.
+  • Everything AFTER \`--\` belongs to the tool; everything BEFORE it is context.
+  • A tool's REQUIRED argument is positional — just write the value:
+    \`memory load-workspace "NeuroAI Mapping"\`, not \`--workspace "NeuroAI Mapping"\`.
+    Positional never collides with a context flag of the same name, so prefer it.
+    (\`--workspace\` after \`--\` still parses identically; it is just easy to confuse
+    with the \`--workspace\` context flag, which scopes the call instead.)
   • Context flags may go before or after the verb — \`nexus --vault V use ...\` and
     \`nexus use --vault V ...\` are equivalent.
   • The legacy one-string form remains supported. On Windows PowerShell, nested double
@@ -187,8 +189,9 @@ GOTCHAS
   • ALL flags are kebab-case — camelCase (e.g. --newPath, --activeTask) is rejected as
     an unknown flag; use --new-path, --active-task. Get exact flags from \`nexus tools <tool>\`.
   • Context fields (--memory/--goal/--session/--constraints/--vault) go before \`--\`.
-    Putting one after it is rejected with a steer. (\`--workspace\` is the exception:
-    it is also a real tool flag, so it is valid on both sides — see CLI SYNTAX.)
+    Putting one after it is rejected with a steer. \`--workspace\` is the one exception
+    (it is also a real tool flag) — so pass tool values positionally and it can never
+    be misread as context.
   • Unknown or camelCase context flags are rejected, not ignored: --workspaceId,
     --dryRun, and typos like --vualt fail with a suggestion instead of silently
     doing nothing. Tool flags are only recognized after \`--\`.
@@ -211,7 +214,7 @@ EXAMPLES
   nexus tools "content read, search content"
   nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
   nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
-  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace --workspace "NeuroAI Mapping" --limit 1
+  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
   nexus playbook vault-work
 `;
 }

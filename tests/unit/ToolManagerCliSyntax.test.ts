@@ -517,6 +517,43 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
         }
       });
     });
+
+    // `memory load-workspace` is the ONLY tool in the catalog whose flag name
+    // collides with a CLI context flag (`--workspace`). Its required scalar arg
+    // is therefore also positional, and the positional spelling carries no
+    // collision at all — which is why docs, examples, and runtime nudges teach
+    // `memory load-workspace "<name>"` rather than the `--workspace` form.
+    // Both must keep parsing to the same params; this pins that equivalence.
+    it('accepts load-workspace positionally and by flag, identically', () => {
+      const loadWorkspaceTool = makeStubTool('loadWorkspace', {
+        type: 'object',
+        properties: {
+          workspace: { type: 'string', description: 'Workspace name or ID to load' },
+          limit: { type: 'number' },
+          workspaceId: { type: 'string' },
+        },
+        required: ['workspace'],
+      });
+      const normalizer = new ToolCliNormalizer(new Map<string, IAgent>([
+        ['memoryManager', makeStubAgent('memoryManager', [loadWorkspaceTool])]
+      ]));
+
+      const schema = normalizer.buildCliSchema('memoryManager', loadWorkspaceTool);
+      expect(schema.usage).toContain('memory load-workspace <workspace>');
+      expect(schema.arguments.find(arg => arg.name === 'workspace')?.positional).toBe(true);
+
+      const expected = { workspace: 'Silicon Zone', limit: 1 };
+      const [positionalCall] = normalizer.normalizeExecutionCalls({
+        tool: 'memory load-workspace "Silicon Zone" --limit 1'
+      });
+      const [flagCall] = normalizer.normalizeExecutionCalls({
+        tool: 'memory load-workspace --workspace "Silicon Zone" --limit 1'
+      });
+
+      expect(positionalCall).toMatchObject({ agent: 'memoryManager', tool: 'loadWorkspace', params: expected });
+      expect(flagCall).toMatchObject({ agent: 'memoryManager', tool: 'loadWorkspace', params: expected });
+      expect(positionalCall.params).toEqual(flagCall.params);
+    });
   });
 
   // -------------------------------------------------------------------------

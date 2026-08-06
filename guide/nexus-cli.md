@@ -61,7 +61,7 @@ The `--` delimiter separates CLI context from the tool command. Values after it
 are ordinary shell arguments, so a multiword value needs only one quote layer:
 
 ```powershell
-nexus use --memory "resuming research" --goal "load the workspace" -- memory load-workspace --workspace "NeuroAI Mapping" --limit 1
+nexus use --memory "resuming research" --goal "load the workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
 ```
 
 The legacy `nexus use "<command>" ...` form remains supported. If Windows
@@ -135,8 +135,10 @@ The vault name lives in the socket name, so selection happens at call time:
   the `--` delimiter. camelCase spellings are rejected; use kebab-case.
 - **"is a context flag, so it belongs BEFORE the `--` delimiter"** — a
   `--memory`/`--goal`/`--vault`/… ended up inside the tool command. Move it left
-  of `--`. Note `--workspace` is exempt: it is also a real flag on
-  `memory load-workspace`, so it is accepted on either side.
+  of `--`. `--workspace` is exempt from this check because it is also a real flag
+  on `memory load-workspace` — which is exactly why you should pass a tool's
+  required value **positionally** (`memory load-workspace "NeuroAI Mapping"`).
+  Positional values can never be mistaken for context.
 - **"needs an agent AND a tool name"** — the command after `--` lost its agent
   name. It must read `<agent> <tool>`, e.g. `storage list`, never bare `list`.
 
