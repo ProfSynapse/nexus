@@ -146,13 +146,17 @@ describe('SearchContentTool — keyword ranking', () => {
    */
   it('still ranks a title match first when the query names a note', async () => {
     const tool = createTool([
-      {
-        path: 'Daily/2026-08-06 Standup.md',
-        content: 'Unrelated body text about deployment.'
-      },
+      // Enumerated FIRST on purpose. Both files match the query verbatim — one
+      // in its body, one in its name — so if they scored the same rung this
+      // would win on position alone and the assertion below would prove
+      // nothing. It has to lose on score.
       {
         path: 'Archive/Meeting log.md',
         content: 'Earlier we referenced the 2026-08-06 Standup in passing.'
+      },
+      {
+        path: 'Daily/2026-08-06 Standup.md',
+        content: 'Unrelated body text about deployment.'
       }
     ]);
 
@@ -160,6 +164,7 @@ describe('SearchContentTool — keyword ranking', () => {
 
     expect(result.success).toBe(true);
     expect(resultsOf(result)[0].filePath).toBe('Daily/2026-08-06 Standup.md');
+    expect(resultsOf(result)[0].matchType).toBe('path');
   });
 
   /**
