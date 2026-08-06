@@ -139,7 +139,11 @@ function scoreTextMatch(
     };
   }
 
-  const queryWords = normalizedQuery.split(/\s+/).filter(word => word.length > 2);
+  // Split on separators as well as whitespace, so a query typed as
+  // `citation-gap-audit` still decomposes into words and can match a body that
+  // writes them spaced. The exact-phrase branch above stays byte-exact, so the
+  // offsets it reports keep pointing at real text.
+  const queryWords = normalizedQuery.split(/[\s\-_]+/).filter(word => word.length > 2);
   const wordMatches = queryWords.filter(word => normalizedText.includes(word));
 
   if (wordMatches.length === 0) {
