@@ -420,26 +420,44 @@ For substantial UI work, create a mockup before touching production code. This i
    - `useTools`: Execution - unified context-first tool execution
    - *Only these 2 tools are exposed to Codex Desktop. All other agents work internally.*
 
+> Tool names below are the **CLI form** (`agent tool-name`, kebab-case) — what a
+> caller actually types and what `getTools`/`useTools` resolve. Verify against
+> `src/agents/**` (`slug:`) before trusting; the `/nexus-release` skill gates on
+> refreshing this list, and `tests/unit/shippedGuidanceCommands.test.ts` fails
+> when shipped docs name a tool that does not exist.
+
 1. **PromptManager** (`src/agents/promptManager/`) - Custom prompts and LLM integration
-   - Tools: listModels, executePrompts, createPrompt, updatePrompt, deletePrompt, listPrompts, getPrompt, generateImage
+   - `prompt`: execute, create, get, list, update, archive, sub, list-models,
+     generate-image, generate-audio, generate-video, check-generated-artifact
+   - No delete — the AI gets `archive` (reversible). Media generation is async:
+     `generate-*` returns a job, poll `check-generated-artifact <jobId>`.
 
 2. **ContentManager** (`src/agents/contentManager/`) - Note reading/editing operations
-   - Tools: read, write, replace, insert, setProperty
+   - `content`: read, write, replace, insert, set-property
+   - `read` requires `--start-line`. `replace` is pattern-anchored
+     `{path, start, end, content}` — anchor TEXT, not line numbers.
 
 3. **StorageManager** (`src/agents/storageManager/`) - File/folder management
-   - Tools: list, createFolder, move, copy, archive, open
+   - `storage`: list, create-folder, move, copy, archive, open
 
 4. **SearchManager** (`src/agents/searchManager/`) - Advanced search operations
-   - Tools: searchContent, searchDirectory, searchMemory
+   - `search`: content, directory, memory, query-notes
 
-5. **MemoryManager** (`src/agents/memoryManager/`) - Session/workspace/state management
-   - Tools: createSession, loadSession, createWorkspace, createState, etc.
+5. **MemoryManager** (`src/agents/memoryManager/`) - Workspace/state/workflow management
+   - `memory`: create-workspace, list-workspaces, search-workspaces, load-workspace,
+     update-workspace, archive-workspace, create-state, list-states, load-state,
+     update-state, archive-state, run
+   - No session tools — sessions are context fields, not tools. `memory run`
+     triggers a workflow (`--workflow-id`/`--workflow-name`).
 
 6. **CanvasManager** (`src/agents/canvasManager/`) - Obsidian canvas operations
-   - Tools: read, write, update, list
+   - `canvas`: read, write, update, list
 
 7. **TaskManager** (`src/agents/taskManager/`) - Workspace-scoped project/task management with DAG dependencies
-   - Tools: createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote
+   - `task`: create-project, list-projects, update-project, archive-project,
+     create, list, update, move, query, open, link-note
+   - Note the asymmetry: project tools are suffixed (`create-project`), task tools
+     are bare (`create`, `list`, `update`, `move`, `query`).
    - Services: TaskService (business facade), DAGService (pure computation)
    - Auto-loads task summary when workspace loads
 
@@ -574,7 +592,9 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 
 **Context Schema**: `{ workspaceId, sessionId, memory, goal, constraints? }` - all required except constraints.
 
-**Flow**: `getTools` → get schemas → `useTools` with context + calls array
+**Flow**: `getTools` → get schemas → `useTools` with the context fields at the top level plus a single `tool` string.
+
+⚠️ The `calls: [{agent, tool, params}]` array and the nested `context: {...}` object were removed in v5.9.0 and are rejected outright (`Deprecated payload shape`).
 
 **Benefits**: 95% token reduction (~15,000 → ~500), works with small context models.
 
