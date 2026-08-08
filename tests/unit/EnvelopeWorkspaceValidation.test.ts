@@ -22,6 +22,11 @@ import { ToolBatchExecutionService } from '../../src/agents/toolManager/services
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
 import type { ITool } from '../../src/agents/interfaces/ITool';
 
+// Reserved guides workspace — resolvable by the canonical resolver, deliberately
+// absent from listWorkspaces(). See SystemGuidesWorkspaceProvider.
+const SYSTEM_WORKSPACE_ID = '__system_guides__';
+const SYSTEM_WORKSPACE_NAME = 'Assistant guides';
+
 const LIVE_WORKSPACES = [
     { id: 'a8fbad11-7412-49c8-bce0-5690e2c1d197', name: 'Desenvolvedor', isArchived: false },
     { id: 'b1000000-0000-0000-0000-000000000002', name: 'Dev', isArchived: false },
@@ -65,6 +70,16 @@ function createApp(): unknown {
         services: {
             workspaceService: {
                 listWorkspaces: jest.fn().mockResolvedValue(LIVE_WORKSPACES),
+                // Mirrors WorkspaceService.getWorkspaceByNameOrId: it short-circuits
+                // on the reserved guides identifiers BEFORE any table lookup, so it
+                // resolves a workspace that never appears in listWorkspaces().
+                getWorkspaceByNameOrId: jest.fn(async (identifier: string) => {
+                    const id = identifier.toLowerCase();
+                    if (id === SYSTEM_WORKSPACE_ID || id === SYSTEM_WORKSPACE_NAME.toLowerCase()) {
+                        return { id: SYSTEM_WORKSPACE_ID, name: SYSTEM_WORKSPACE_NAME };
+                    }
+                    return LIVE_WORKSPACES.find(w => w.id === identifier || w.name.toLowerCase() === id) ?? null;
+                }),
             },
         },
     };
@@ -169,5 +184,37 @@ describe('envelope workspace validation (issue #317)', () => {
                 }
             }
         }
+    });
+
+    /**
+     * Issue #319. The guard reads `listWorkspaces()`, which omits the reserved
+     * guides workspace BY DESIGN — `WorkspaceService.getWorkspaceByNameOrId`
+     * short-circuits to it before any table lookup, and a repo test pins that it
+     * never appears in listings. So the one workspace the product deliberately
+     * hides is the one the gate cannot accept, by either identifier. Same shape
+     * as #317: the accepting source and the authoritative source differ.
+     */
+    describe('reserved guides workspace (issue #319)', () => {
+        it('accepts the guides workspace by its reserved id', async () => {
+            expect((await runEnvelope('__system_guides__')).error).toBeUndefined();
+        });
+
+        it('accepts the guides workspace by its display name', async () => {
+            expect((await runEnvelope('Assistant guides')).error).toBeUndefined();
+        });
+
+        it('accepts the guides workspace name case-insensitively', async () => {
+            expect((await runEnvelope('assistant guides')).error).toBeUndefined();
+        });
+
+        it('never advertises the hidden workspace in a rejection message', async () => {
+            // Accepting it must not leak it into the alternatives — the suggestion
+            // path stays on listWorkspaces() precisely because it is hidden.
+            const { error } = await runEnvelope('totally-unknown-workspace');
+
+            expect(error).toMatch(/Invalid workspace/);
+            expect(error).not.toMatch(/Assistant guides/);
+            expect(error).not.toMatch(/__system_guides__/);
+        });
     });
 });

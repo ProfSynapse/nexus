@@ -53,9 +53,24 @@ export async function resolveWorkspaceId(
     return { id: rawId, resolvedFromName: false };
   }
 
-  // 2. Try name match (prefer non-archived workspaces)
+  // 2. Try name match (prefer non-archived workspaces).
+  //
+  // Case-insensitive, to agree with the other two resolvers:
+  // `WorkspaceService.getWorkspaceByNameOrId` (the canonical one) and
+  // `ToolBatchExecutionService.validateWorkspaceId` (the envelope guard) both
+  // compare lowercased. This one used `name = ?`, so a name differing only in
+  // case passed the guard and was then rejected here with "not found" — the
+  // gate and the layer behind it disagreeing on the same input (#320).
+  //
+  // `isArchived = 0` is intentionally unchanged: how a name is compared is a
+  // separate decision from which rows are eligible.
+  //
+  // `idx_workspaces_name` is on the raw column and will not serve LOWER(name),
+  // but the table holds single digits to low dozens of rows on real vaults and
+  // this branch is only reached after the id lookup misses, so no expression
+  // index is warranted yet.
   const byName = await sqliteCache.query<{ id: string; lastAccessed: number }>(
-    'SELECT id, lastAccessed FROM workspaces WHERE name = ? AND isArchived = 0',
+    'SELECT id, lastAccessed FROM workspaces WHERE LOWER(name) = LOWER(?) AND isArchived = 0',
     [rawId]
   );
 
