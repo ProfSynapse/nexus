@@ -338,14 +338,6 @@ export class WorkspaceRepository
     };
   }
 
-  async getByName(name: string): Promise<WorkspaceMetadata | null> {
-    const row = await this.sqliteCache.queryOne<WorkspaceRow>(
-      'SELECT * FROM workspaces WHERE name = ?',
-      [name]
-    );
-    return row ? this.rowToEntity(row) : null;
-  }
-
   async updateLastAccessed(id: string): Promise<void> {
     const now = Date.now();
 

@@ -61,14 +61,6 @@ export interface IWorkspaceRepository extends IRepository<WorkspaceMetadata> {
   getWorkspaces(options?: QueryOptions): Promise<PaginatedResult<WorkspaceMetadata>>;
 
   /**
-   * Get a workspace by name
-   *
-   * @param name - Workspace name
-   * @returns Workspace metadata or null if not found
-   */
-  getByName(name: string): Promise<WorkspaceMetadata | null>;
-
-  /**
    * Update the last accessed timestamp for a workspace
    *
    * @param id - Workspace ID

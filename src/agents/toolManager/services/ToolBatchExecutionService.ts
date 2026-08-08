@@ -291,6 +291,19 @@ export class ToolBatchExecutionService {
         return null;
       }
 
+      // Last resort before rejecting: ask the canonical resolver. The reserved
+      // guides workspace is resolvable by either identifier but is deliberately
+      // absent from `listWorkspaces()`, so the list alone cannot see it — the
+      // gate would reject the one workspace the product intentionally hides.
+      // Only the ACCEPT path consults the resolver; the suggestions below stay
+      // on the visible list, so a hidden workspace is never advertised back to
+      // the caller. Reaching this only on an otherwise-certain rejection also
+      // keeps the extra lookup off the common path (#319).
+      const resolved = await workspaceService.getWorkspaceByNameOrId?.(workspaceId);
+      if (resolved) {
+        return null;
+      }
+
       // Name the alternatives off the LIVE list, not `knownWorkspaces` — that
       // snapshot is taken at boot and is empty whenever SQLite was not ready
       // then, which produced "Available: (none created yet)" on vaults that
