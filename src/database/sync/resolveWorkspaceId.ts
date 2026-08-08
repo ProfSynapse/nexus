@@ -27,6 +27,14 @@ export interface ResolveResult {
   warning?: string;
   /** All matching UUIDs when ambiguous (caller can surface these to the user) */
   matchingIds?: string[];
+  /**
+   * All matching workspaces when ambiguous, most-recently-accessed first.
+   *
+   * Carries the NAME alongside the id because the candidates can differ only in
+   * capitalization ("Dev" vs "dev"), and a list of bare UUIDs gives the caller
+   * no way to tell which is which.
+   */
+  matches?: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -69,8 +77,11 @@ export async function resolveWorkspaceId(
   // but the table holds single digits to low dozens of rows on real vaults and
   // this branch is only reached after the id lookup misses, so no expression
   // index is warranted yet.
-  const byName = await sqliteCache.query<{ id: string; lastAccessed: number }>(
-    'SELECT id, lastAccessed FROM workspaces WHERE LOWER(name) = LOWER(?) AND isArchived = 0',
+  // `name` is selected so an ambiguous result can name each candidate, and the
+  // ordering is explicit so the message is deterministic and leads with the
+  // workspace the caller most likely meant.
+  const byName = await sqliteCache.query<{ id: string; name: string; lastAccessed: number }>(
+    'SELECT id, name, lastAccessed FROM workspaces WHERE LOWER(name) = LOWER(?) AND isArchived = 0 ORDER BY lastAccessed DESC, id ASC',
     [rawId]
   );
 
@@ -80,13 +91,23 @@ export async function resolveWorkspaceId(
   }
 
   if (byName.length > 1) {
-    // Multiple matches — return null with nudge listing all UUIDs
-    const ids = byName.map(w => w.id);
+    // Multiple matches. `UNIQUE(name)` on the workspaces table has no
+    // COLLATE NOCASE, so it forbids exact duplicates while permitting
+    // case-variants — which means two rows can only land here by differing in
+    // capitalization, and the message below can say so as fact. It also means a
+    // bare id list is useless: the names look identical to the caller, so each
+    // NAME must be paired with its own id.
+    const matches = byName.map(w => ({ id: w.id, name: w.name }));
+    const listed = matches.map(m => `  - "${m.name}" — ${m.id}`).join('\n');
     return {
       id: null,
       resolvedFromName: false,
-      warning: `Multiple workspaces named "${rawId}" found. Please retry with the specific workspace UUID: [${ids.join(', ')}]`,
-      matchingIds: ids,
+      warning:
+        `Multiple workspaces match the name "${rawId}":\n${listed}\n` +
+        'They differ only in capitalization, so the name is ambiguous. Retry with ' +
+        'workspaceId set to the id of the one you want (copied exactly from above), not the name.',
+      matchingIds: matches.map(m => m.id),
+      matches,
     };
   }
   // 3. No match at all

@@ -53,10 +53,16 @@ function createCache(rows: Row[] = ROWS): ISQLiteCacheManager {
         }),
         query: jest.fn(async (sql: string, params: unknown[]) => {
             if (/FROM workspaces WHERE/i.test(sql)) {
-                return rows.filter(row =>
+                const matched = rows.filter(row =>
                     nameMatches(sql, row.name, String(params[0]))
                     && (!/isArchived = 0/i.test(sql) || row.isArchived === 0)
                 );
+                // Honour the query's own ordering so the message order under test
+                // is the order SQLite would actually produce.
+                if (/ORDER BY\s+lastAccessed\s+DESC/i.test(sql)) {
+                    return [...matched].sort((a, b) => b.lastAccessed - a.lastAccessed || a.id.localeCompare(b.id));
+                }
+                return matched;
             }
             return [];
         }),
@@ -103,17 +109,69 @@ describe('resolveWorkspaceId name matching (issue #320)', () => {
         expect((await resolveWorkspaceId('retired', createCache())).id).toBeNull();
     });
 
-    it('still reports ambiguity when several workspaces share a name', async () => {
+    /**
+     * Case-folding makes `Dev` and `dev` collide where they previously resolved
+     * separately — the schema permits both, since `UNIQUE(name)` on the
+     * workspaces table has no COLLATE NOCASE. So the ambiguity branch is now
+     * reachable in a way it effectively was not before, and it has to be
+     * actionable: listing bare UUIDs is useless when the candidates differ ONLY
+     * in capitalization, because the caller cannot tell which is which.
+     */
+    describe('ambiguous name reporting', () => {
         const duplicates: Row[] = [
-            { id: 'id-one', name: 'Shared', isArchived: 0, lastAccessed: 2 },
-            { id: 'id-two', name: 'shared', isArchived: 0, lastAccessed: 1 },
+            { id: 'b1000000-0000-0000-0000-000000000002', name: 'Dev', isArchived: 0, lastAccessed: 2 },
+            { id: 'e4000000-0000-0000-0000-000000000005', name: 'dev', isArchived: 0, lastAccessed: 9 },
         ];
-        // Case-folding makes these two collide where they previously did not, so
-        // the ambiguity branch must report both rather than silently pick one.
-        const result = await resolveWorkspaceId('SHARED', createCache(duplicates));
 
-        expect(result.id).toBeNull();
-        expect(result.matchingIds).toEqual(['id-one', 'id-two']);
-        expect(result.warning).toMatch(/Multiple workspaces named "SHARED"/);
+        it('reports every match with BOTH its name and its id', async () => {
+            const result = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(result.id).toBeNull();
+            for (const row of duplicates) {
+                expect(result.warning).toContain(row.name);
+                expect(result.warning).toContain(row.id);
+            }
+        });
+
+        it('pairs each name with its own id, not just lists both separately', async () => {
+            // The whole point is telling the two apart, so name and id must be
+            // adjacent in the text rather than in two unrelated lists.
+            const { warning } = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(warning).toMatch(/"Dev"[^\n]*b1000000-0000-0000-0000-000000000002/);
+            expect(warning).toMatch(/"dev"[^\n]*e4000000-0000-0000-0000-000000000005/);
+        });
+
+        it('tells the caller to retry with the id', async () => {
+            const { warning } = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(warning).toMatch(/workspaceId/i);
+            expect(warning).toMatch(/\bid\b/i);
+        });
+
+        it('exposes the matches structurally, not only in prose', async () => {
+            const result = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(result.matches).toEqual([
+                { id: 'e4000000-0000-0000-0000-000000000005', name: 'dev' },
+                { id: 'b1000000-0000-0000-0000-000000000002', name: 'Dev' },
+            ]);
+        });
+
+        it('keeps matchingIds populated for existing callers', async () => {
+            // AgentInitializationService gates on matchingIds.length > 1 to decide
+            // whether to throw, so this stays a supported field.
+            const result = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(result.matchingIds).toHaveLength(2);
+            expect(result.matchingIds).toEqual(expect.arrayContaining(duplicates.map(d => d.id)));
+        });
+
+        it('orders candidates most-recently-accessed first', async () => {
+            // Deterministic, and the likeliest intended workspace leads.
+            const { matches } = await resolveWorkspaceId('DEV', createCache(duplicates));
+
+            expect(matches?.[0].name).toBe('dev');
+        });
     });
 });
