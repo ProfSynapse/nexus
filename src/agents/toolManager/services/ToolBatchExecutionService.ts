@@ -247,6 +247,12 @@ export class ToolBatchExecutionService {
       return null;
     }
 
+    // Fast path over the boot-time snapshot, to skip the async lookup below on
+    // vaults where SQLite WAS query-ready at registration. It may only ACCEPT:
+    // a miss falls through to the live list rather than rejecting, so a stale or
+    // empty snapshot can never reject a real workspace. Do not add a rejection
+    // here — that asymmetry is what keeps this from being a second source of
+    // truth for the guard (#317).
     const byName = this.knownWorkspaces.find(workspace =>
       workspace.name.toLowerCase() === workspaceId.toLowerCase()
     );
@@ -271,9 +277,17 @@ export class ToolBatchExecutionService {
         return null;
       }
 
+      // Accept by id OR name off the LIVE list. Checking the name only against
+      // `knownWorkspaces` (above) rejected real workspaces on any vault whose
+      // boot snapshot was empty, while the message below — already built from
+      // the live list — named that same workspace as the closest match. Both
+      // halves must read the same list or the guard contradicts itself (#317).
       const workspaces = await workspaceService.listWorkspaces();
-      const byUuid = workspaces.find(workspace => workspace.id === workspaceId);
-      if (byUuid) {
+      const target = workspaceId.toLowerCase();
+      const byIdOrName = workspaces.find(workspace =>
+        workspace.id === workspaceId || workspace.name.toLowerCase() === target
+      );
+      if (byIdOrName) {
         return null;
       }
 
