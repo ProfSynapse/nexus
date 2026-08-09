@@ -58,7 +58,7 @@ describe('ShardedJsonlStreamStore', () => {
     );
   });
 
-  it('ignores a larger conflict sibling when selecting the append target', async () => {
+  it('preserves the canonical append target when a conflict sibling shares the same maximum index', async () => {
     const canonical = `${JSON.stringify(makeEvent('evt-canonical'))}\n`;
     const delta = `${JSON.stringify({
       id: 'evt-delta',
@@ -98,7 +98,7 @@ describe('ShardedJsonlStreamStore', () => {
     ]);
   });
 
-  it('ignores a larger conflict sibling when appending multiple events', async () => {
+  it('preserves the canonical batch append target when a conflict sibling shares the same maximum index', async () => {
     const canonical = `${JSON.stringify(makeEvent('evt-canonical'))}\n`;
     const deltaName =
       `shard-000003 (Syncthing Delta sha256-${'b'.repeat(64)}).jsonl`;
@@ -135,6 +135,96 @@ describe('ShardedJsonlStreamStore', () => {
     );
     expect(adapter.write).not.toHaveBeenCalledWith(
       `${base}/shard-000004.jsonl`,
+      expect.any(String)
+    );
+  });
+
+  it('creates shard 6 instead of appending shard 3 when a higher conflict-only shard exists', async () => {
+    const base = 'Assistant data/tasks/tasks_default';
+    const conflictName = `shard-000005 (Syncthing Delta sha256-${'c'.repeat(64)}).jsonl`;
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/shard-000003.jsonl`]: `${JSON.stringify(makeEvent('evt-canonical'))}\n`,
+      [`${base}/${conflictName}`]: `${JSON.stringify(makeEvent('evt-conflict'))}\n`
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data',
+      maxShardBytes: 1024
+    });
+
+    const result = await store.appendEvent('tasks/tasks_default', makeEvent('evt-new'));
+
+    expect(result.shard.fileName).toBe('shard-000006.jsonl');
+    expect(adapter.write).toHaveBeenCalledWith(
+      `${base}/shard-000006.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new'))}\n`
+    );
+    expect(adapter.append).not.toHaveBeenCalledWith(
+      `${base}/shard-000003.jsonl`,
+      expect.any(String)
+    );
+    expect((await store.readEvents('tasks/tasks_default')).map(event => event.id)).toEqual([
+      'evt-canonical', 'evt-conflict', 'evt-new'
+    ]);
+  });
+
+  it('creates shard 6 rather than shard 1 when the stream has only conflict shard 5', async () => {
+    const base = 'Assistant data/tasks/tasks_default';
+    const conflictName = `shard-000005 (Syncthing Delta sha256-${'d'.repeat(64)}).jsonl`;
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/${conflictName}`]: `${JSON.stringify(makeEvent('evt-conflict'))}\n`
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data',
+      maxShardBytes: 1024
+    });
+
+    const result = await store.appendEvent('tasks/tasks_default', makeEvent('evt-new'));
+
+    expect(result.shard.fileName).toBe('shard-000006.jsonl');
+    expect(adapter.write).toHaveBeenCalledWith(
+      `${base}/shard-000006.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new'))}\n`
+    );
+    expect(adapter.write).not.toHaveBeenCalledWith(
+      `${base}/shard-000001.jsonl`,
+      expect.any(String)
+    );
+  });
+
+  it('uses the newly created canonical shard 6 as the cursor for the rest of a batch', async () => {
+    const base = 'Assistant data/tasks/tasks_default';
+    const conflictName = `shard-000005 (Syncthing Delta sha256-${'e'.repeat(64)}).jsonl`;
+    const { app, adapter } = createMockApp({ initialFiles: {
+      [`${base}/shard-000003.jsonl`]: `${JSON.stringify(makeEvent('evt-canonical'))}\n`,
+      [`${base}/${conflictName}`]: `${JSON.stringify(makeEvent('evt-conflict'))}\n`
+    }});
+    const store = new ShardedJsonlStreamStore({
+      app,
+      rootPath: 'Assistant data',
+      maxShardBytes: 1024
+    });
+
+    await store.appendEvents('tasks/tasks_default', [
+      makeEvent('evt-new-1'),
+      makeEvent('evt-new-2')
+    ]);
+
+    expect(adapter.write).toHaveBeenCalledWith(
+      `${base}/shard-000006.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new-1'))}\n`
+    );
+    expect(adapter.append).toHaveBeenCalledWith(
+      `${base}/shard-000006.jsonl`,
+      `${JSON.stringify(makeEvent('evt-new-2'))}\n`
+    );
+    expect(adapter.write).not.toHaveBeenCalledWith(
+      `${base}/shard-000001.jsonl`,
+      expect.any(String)
+    );
+    expect(adapter.append).not.toHaveBeenCalledWith(
+      `${base}/shard-000003.jsonl`,
       expect.any(String)
     );
   });

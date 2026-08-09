@@ -232,17 +232,13 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
     return this.locks.acquire(streamPath, async () => {
       const appended: TEvent[] = [];
       let shards = await this.listShards(relativeStreamPath);
-      let currentShard = latestCanonicalShard(shards);
 
       for (const event of events) {
-        const result = await this.appendEventToLockedStream(relativeStreamPath, event, currentShard);
+        const result = await this.appendEventToLockedStream(relativeStreamPath, event, shards);
         appended.push(result.event);
-        currentShard = result.shard;
-        if (result.createdShard) {
-          shards = [...shards, result.shard];
-        } else {
-          shards = shards.map((shard) => shard.index === result.shard.index ? result.shard : shard);
-        }
+        shards = result.createdShard
+          ? [...shards, result.shard]
+          : shards.map((shard) => shard.fullPath === result.shard.fullPath ? result.shard : shard);
       }
 
       return appended;
@@ -330,10 +326,14 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
   private async appendEventToLockedStream(
     relativeStreamPath: string,
     event: TEvent,
-    currentShardOverride: ShardDescriptor | null = null
+    shardSnapshot?: readonly ShardDescriptor[]
   ): Promise<AppendEventResult<TEvent>> {
-    const shards = currentShardOverride ? [currentShardOverride] : await this.listShards(relativeStreamPath);
+    const shards = shardSnapshot ?? await this.listShards(relativeStreamPath);
     const currentShard = latestCanonicalShard(shards);
+    const maxObservedIndex = shards.reduce(
+      (highestIndex, shard) => Math.max(highestIndex, shard.index),
+      0
+    );
     const serializedEvent = JSON.stringify(event);
     const serializedRecord = `${serializedEvent}\n`;
     const recordBytes = this.getUtf8ByteLength(serializedRecord);
@@ -343,11 +343,12 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
       currentShard.size > 0 &&
       currentShard.size + recordBytes > this.maxShardBytes;
 
+    const canonicalIsAtObservedMaximum = currentShard?.index === maxObservedIndex;
     const targetIndex = currentShard === null
-      ? 1
-      : shouldRotate
-        ? currentShard.index + 1
-        : currentShard.index;
+      ? maxObservedIndex + 1
+      : canonicalIsAtObservedMaximum && !shouldRotate
+        ? currentShard.index
+        : maxObservedIndex + 1;
 
     const targetPath = this.getShardPath(relativeStreamPath, targetIndex);
     const existedBeforeWrite = await this.app.vault.adapter.exists(targetPath);
