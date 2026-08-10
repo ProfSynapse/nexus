@@ -2,6 +2,14 @@
 
 ## August 2026
 
+**v5.16.3** — Workspace names resolve consistently from agent context to task execution
+
+- Workspace names returned by `getTools` are now accepted by `useTools` even when the boot-time workspace snapshot was empty. The validator checks the live workspace list instead of rejecting a real name and then suggesting that same name back ([#318](https://github.com/ProfSynapse/nexus/pull/318)).
+- The reserved **Assistant guides** workspace is accepted by the tool envelope without being exposed in ordinary workspace listings ([#321](https://github.com/ProfSynapse/nexus/pull/321)).
+- Task commands resolve workspace names case-insensitively all the way through. If two workspaces differ only by capitalization, the error now pairs each name with its exact ID so the caller can retry unambiguously ([#321](https://github.com/ProfSynapse/nexus/pull/321)).
+
+---
+
 **v5.16.2** — Search ranks the note you meant, and CLI agents stop inventing workspaces
 
 **Search returns the note you named**
