@@ -32,6 +32,8 @@ const WINDOWS_SKILL_MARKER = '.nexus-managed';
 const WINDOWS_SKILL_MARKER_CONTENT = 'Managed by the Nexus local CLI installer.\n';
 const WINDOWS_SHIM = '@echo off\r\nnode "%~dp0nexus-cli.js" %*\r\n';
 const MINIMUM_NODE_MAJOR = 18;
+/** status() runs on every settings render; a login shell costs ~100ms to spawn. */
+const SHELL_PROBE_TTL_MS = 5_000;
 
 /** The agent providers the CLI can wire into. */
 export type CliProviderId = 'claudeCode' | 'cursor' | 'codex';
@@ -59,6 +61,18 @@ export interface CliInstallPaths {
     codexAgentsPath: string;
 }
 
+/**
+ * The exact edit a POSIX user must make for `nexus` to resolve in their shell.
+ * Nexus never writes to shell profiles itself — these are the user's files, and
+ * a managed block in them is far harder to reason about than one pasted line.
+ */
+export interface CliPathFix {
+    shell: string;
+    profilePath: string;
+    exportLine: string;
+    reloadCommand: string;
+}
+
 export interface CliInstallStatus {
     supported: boolean;
     installed: boolean;
@@ -71,6 +85,8 @@ export interface CliInstallStatus {
     codexLinked: boolean;
     detected: DetectedAgents;
     paths: CliInstallPaths;
+    /** Present only when the CLI is installed but the shell cannot resolve it. */
+    pathFix: CliPathFix | null;
 }
 
 export interface CliInstallResult {
@@ -80,6 +96,8 @@ export interface CliInstallResult {
 }
 
 export class LocalCliInstaller {
+    private shellProbe: { key: string; at: number; resolves: boolean } | null = null;
+
     private fs(): FsModule { return desktopRequire<FsModule>('node:fs'); }
     private os(): OsModule { return desktopRequire<OsModule>('node:os'); }
     private path(): PathModule { return desktopRequire<PathModule>('node:path'); }
@@ -137,6 +155,7 @@ export class LocalCliInstaller {
                 skillLinked: false, cursorLinked: false, codexLinked: false,
                 detected: { claudeCode: false, codex: false, cursor: false },
                 paths: {} as CliInstallPaths,
+                pathFix: null,
             };
         }
         const fs = this.fs();
@@ -156,12 +175,16 @@ export class LocalCliInstaller {
         const pathConfigured = Platform.isWin
             ? fs.existsSync(paths.binPath) && this.dirOnPath(paths.binDir)
             : this.pointsTo(paths.binPath, paths.cliJsPath);
+        // `pathConfigured` only means "our symlink/shim is in place". Whether the
+        // command actually resolves is a separate question on every platform, and
+        // answering it needs the user's shell — not Obsidian's inherited env.
+        const onPath = Platform.isWin
+            ? pathConfigured && this.windowsCommandResolvesTo(paths.binPath)
+            : pathConfigured && this.posixCommandResolvesTo(paths.binPath);
         return {
             supported: true,
             installed,
-            onPath: Platform.isWin
-                ? pathConfigured && this.windowsCommandResolvesTo(paths.binPath)
-                : pathConfigured,
+            onPath,
             pathConfigured,
             runtimeReady: this.nodeRuntimeReady(),
             stale,
@@ -170,6 +193,7 @@ export class LocalCliInstaller {
             codexLinked: this.hasCodexBlock(paths.codexAgentsPath),
             detected: this.detectAgents(),
             paths,
+            pathFix: installed && !onPath ? this.describePathFix() : null,
         };
     }
 
@@ -243,8 +267,12 @@ export class LocalCliInstaller {
         } else {
             fs.mkdirSync(paths.binDir, { recursive: true });
             if (this.linkReplace(paths.binPath, paths.cliJsPath, warnings)) created.push(paths.binPath);
-            if (!this.dirOnPath(paths.binDir)) {
-                warnings.push(`${paths.binDir} is not on your PATH — add it, or call the CLI by full path.`);
+            this.shellProbe = null; // the symlink just changed — re-probe, don't trust a stale answer
+            if (!this.posixCommandResolvesTo(paths.binPath)) {
+                const fix = this.describePathFix();
+                warnings.push(fix
+                    ? `${paths.binDir} is not on your shell PATH — add ${fix.exportLine} to ${fix.profilePath}, then run ${fix.reloadCommand}.`
+                    : `${paths.binDir} is not on your PATH — add it, or call the CLI by full path.`);
             }
         }
 
@@ -327,6 +355,7 @@ export class LocalCliInstaller {
         const paths = this.getPaths();
         const created: string[] = [];
         const warnings: string[] = [];
+        this.shellProbe = null;
 
         // Remove our symlinks only if they still point at us; never clobber user files.
         for (const [link, target] of [
@@ -548,6 +577,102 @@ export class LocalCliInstaller {
             }
             return false;
         } catch { return true; }
+    }
+
+    /**
+     * The exact shell-profile edit that puts our bin dir on PATH, or null on
+     * Windows (where enable() persists the user PATH itself). Returned so the UI
+     * can show a line the user can paste instead of a dead-end "not on PATH".
+     */
+    describePathFix(): CliPathFix | null {
+        if (!this.isSupported() || Platform.isWin) return null;
+        const path = this.path();
+        const home = this.os().homedir();
+        const binDir = this.getPaths().binDir;
+        const shell = path.basename(process.env.SHELL || '/bin/zsh');
+        // Prefer $HOME-relative so the pasted line survives a different username.
+        const relative = path.relative(home, binDir);
+        const binDirExpr = relative && !relative.startsWith('..')
+            ? `$HOME/${relative.split(path.sep).join('/')}`
+            : binDir;
+
+        if (shell === 'fish') {
+            const profilePath = path.join(home, '.config', 'fish', 'config.fish');
+            return {
+                shell,
+                profilePath,
+                exportLine: `fish_add_path ${binDirExpr}`,
+                reloadCommand: `source ${this.tildify(profilePath, home)}`,
+            };
+        }
+        const profileName = shell === 'bash'
+            ? (Platform.isMacOS ? '.bash_profile' : '.bashrc')
+            : shell === 'zsh' ? '.zshrc' : '.profile';
+        const profilePath = path.join(home, profileName);
+        return {
+            shell,
+            profilePath,
+            exportLine: `export PATH="${binDirExpr}:$PATH"`,
+            reloadCommand: `source ${this.tildify(profilePath, home)}`,
+        };
+    }
+
+    private tildify(p: string, home: string): string {
+        const path = this.path();
+        const relative = path.relative(home, p);
+        return relative && !relative.startsWith('..')
+            ? `~/${relative.split(path.sep).join('/')}`
+            : p;
+    }
+
+    /** True only when the user's login shell resolves `nexus` to our symlink. */
+    private posixCommandResolvesTo(expectedPath: string): boolean {
+        if (Platform.isWin) return false;
+        const shell = process.env.SHELL || '/bin/zsh';
+        const key = `${shell} ${expectedPath}`;
+        const now = Date.now();
+        if (this.shellProbe && this.shellProbe.key === key && now - this.shellProbe.at < SHELL_PROBE_TTL_MS) {
+            return this.shellProbe.resolves;
+        }
+        const resolves = this.probeLoginShell(shell, expectedPath);
+        this.shellProbe = { key, at: now, resolves };
+        return resolves;
+    }
+
+    /**
+     * Ask a login shell — the same thing a fresh terminal window starts — whether
+     * `nexus` resolves to us. Obsidian launched from Finder/the Start menu inherits
+     * a minimal PATH, so process.env.PATH answers a different question than "will
+     * this work in the user's terminal?", in both directions. PATH is deliberately
+     * dropped from the child env so the shell's own profiles establish it; keeping
+     * it would let a PATH Obsidian happened to inherit mask a missing profile line.
+     */
+    private probeLoginShell(shell: string, expectedPath: string): boolean {
+        try {
+            const env = { ...process.env };
+            delete env.PATH;
+            const result = this.childProcess().spawnSync(shell, ['-lc', 'command -v nexus'], {
+                encoding: 'utf-8',
+                timeout: 5_000,
+                windowsHide: true,
+                env,
+            });
+            if (result.error || result.status !== 0) return false;
+            const resolved = String(result.stdout || '').trim().split(/\r?\n/)[0]?.trim();
+            return resolved ? this.samePath(resolved, expectedPath) : false;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Path equality that also accepts a link/target pair resolving to one file. */
+    private samePath(a: string, b: string): boolean {
+        try {
+            if (this.path().resolve(a) === this.path().resolve(b)) return true;
+        } catch { /* fall through to realpath */ }
+        try {
+            return this.fs().realpathSync(a) === this.fs().realpathSync(b);
+        } catch { return false; }
     }
 
     private dirOnPath(dir: string): boolean {

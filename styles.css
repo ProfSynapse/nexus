@@ -5084,6 +5084,28 @@ body.is-mobile .message-action-btn.message-branch-next {
     word-break: break-all;
 }
 
+/* Local CLI installed but unresolvable in the user's shell — actionable fix panel */
+.nexus-cli-pathfix {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: var(--radius-s);
+    background-color: var(--background-secondary);
+}
+
+.nexus-cli-pathfix p {
+    margin: 0 0 4px 0;
+}
+
+.nexus-cli-pathfix .nx-inline-path {
+    user-select: all;
+}
+
+.nexus-cli-pathfix button {
+    margin-top: 8px;
+}
+
 /* Reasoning - Compact Inline */
 .nexus-thinking-section {
     margin-top: 12px;
