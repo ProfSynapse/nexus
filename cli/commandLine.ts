@@ -17,8 +17,19 @@ export const CONTEXT_VALUE_FLAGS = new Set([
 /** Context flags that never take a value. */
 export const CONTEXT_BOOLEAN_FLAGS = new Set(['json', 'dry-run', 'help']);
 
-/** CLI-only content transport flags — valid ONLY after the `--` delimiter. */
-export const TOOL_ONLY_FLAGS = new Set(['content-stdin', 'content-file']);
+/**
+ * Transport-flag pattern: `--<flag>-stdin` / `--<flag>-file` for ANY tool flag,
+ * so multiline payloads (create-state's --conversation-context, prompt bodies,
+ * task descriptions — not just content write's --content) can stay out of shell
+ * argv. Collision-safe today: no shipped tool flag ends in `-stdin` or `-file`
+ * (guarded by shippedGuidanceCommands.test.ts).
+ */
+const TRANSPORT_FLAG_RE = /^([a-z0-9][a-z0-9-]*)-(stdin|file)$/;
+
+/** True when a flag key (no leading `--`) is a CLI-only content transport. */
+export function isTransportFlagKey(key: string): boolean {
+    return TRANSPORT_FLAG_RE.test(key);
+}
 
 /**
  * Context flags that are never also a tool flag, so finding one after `--`
@@ -189,10 +200,10 @@ export function parseOuterArgs(argv: string[]): ParsedArgs {
             throw new Error(`Invalid flag "${token}". Context flags look like --memory "...".`);
         }
 
-        if (TOOL_ONLY_FLAGS.has(key)) {
+        if (isTransportFlagKey(key)) {
             throw new Error(
                 `--${key} is a tool-command flag, so it belongs AFTER the \`--\` delimiter: ` +
-                `nexus use --memory "..." --goal "..." -- content write --path Note.md --${key}${key === 'content-file' ? ' note.md' : ''}`
+                `nexus use --memory "..." --goal "..." -- content write --path Note.md --${key}${key.endsWith('-file') ? ' note.md' : ''}`
             );
         }
 
@@ -309,51 +320,72 @@ export function serializeToolArgv(toolArgv: string[]): string {
 }
 
 /**
- * Replace CLI-only content transport flags with the normal tool `--content`
- * flag. This keeps large/multiline payloads out of shell argv, where Windows
- * `.cmd` wrappers and nested quote parsing can otherwise alter them.
+ * Replace CLI-only transport flags (`--<flag>-stdin`, `--<flag>-file <path>`)
+ * with the normal tool flag they stand in for. This keeps large/multiline
+ * payloads out of shell argv, where Windows `.cmd` wrappers and nested quote
+ * parsing can otherwise alter them.
+ *
+ * Works for ANY value-taking tool flag, not just `--content`:
+ *   --content-stdin                → --content <stdin>
+ *   --conversation-context-file f  → --conversation-context <contents of f>
+ *
+ * Rules: at most one `-stdin` transport per command (standard input can only be
+ * read once); several `-file` transports may coexist; a flag may not be given
+ * both directly and via a transport.
  */
 export function hydrateToolContentArgv(toolArgv: string[], readers: ToolContentReaders): string[] {
-    const stdinIndexes: number[] = [];
-    const fileIndexes: number[] = [];
-    const contentIndexes: number[] = [];
+    interface Transport { index: number; base: string; kind: 'stdin' | 'file' }
+    const transports: Transport[] = [];
 
     toolArgv.forEach((token, index) => {
-        if (token === '--content-stdin') stdinIndexes.push(index);
-        if (token === '--content-file') fileIndexes.push(index);
-        if (token === '--content') contentIndexes.push(index);
+        if (!token.startsWith('--')) return;
+        const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
+        if (match) transports.push({ index, base: match[1], kind: match[2] as 'stdin' | 'file' });
     });
 
-    const transportCount = stdinIndexes.length + fileIndexes.length;
-    if (transportCount === 0) return toolArgv;
-    if (transportCount > 1) {
-        throw new Error('Use exactly one of --content-stdin or --content-file.');
-    }
-    if (contentIndexes.length > 0) {
-        throw new Error('Do not combine --content with --content-stdin or --content-file.');
+    if (transports.length === 0) return toolArgv;
+
+    const stdinTransports = transports.filter((t) => t.kind === 'stdin');
+    if (stdinTransports.length > 1) {
+        throw new Error(
+            'Use exactly one --<flag>-stdin transport per command — standard input can only be read once. ' +
+            'Move the other values to --<flag>-file <path> or pass them inline.'
+        );
     }
 
-    if (stdinIndexes.length === 1) {
-        const index = stdinIndexes[0];
-        return [
-            ...toolArgv.slice(0, index),
-            '--content',
-            readers.readStdin(),
-            ...toolArgv.slice(index + 1),
-        ];
+    const seenBases = new Map<string, Transport>();
+    for (const transport of transports) {
+        const prior = seenBases.get(transport.base);
+        if (prior) {
+            throw new Error(`Use exactly one of --${transport.base}-stdin or --${transport.base}-file.`);
+        }
+        seenBases.set(transport.base, transport);
+        if (toolArgv.includes(`--${transport.base}`)) {
+            throw new Error(
+                `Do not combine --${transport.base} with --${transport.base}-stdin or --${transport.base}-file.`
+            );
+        }
     }
 
-    const index = fileIndexes[0];
-    const path = toolArgv[index + 1];
-    if (path === undefined || path.startsWith('--')) {
-        throw new Error('--content-file requires a local file path.');
+    const hydrated: string[] = [];
+    for (let index = 0; index < toolArgv.length; index++) {
+        const transport = transports.find((t) => t.index === index);
+        if (!transport) {
+            hydrated.push(toolArgv[index]);
+            continue;
+        }
+        if (transport.kind === 'stdin') {
+            hydrated.push(`--${transport.base}`, readers.readStdin());
+            continue;
+        }
+        const path = toolArgv[index + 1];
+        if (path === undefined || path.startsWith('--')) {
+            throw new Error(`--${transport.base}-file requires a local file path.`);
+        }
+        hydrated.push(`--${transport.base}`, readers.readFile(path));
+        index++;
     }
-    return [
-        ...toolArgv.slice(0, index),
-        '--content',
-        readers.readFile(path),
-        ...toolArgv.slice(index + 2),
-    ];
+    return hydrated;
 }
 
 /**

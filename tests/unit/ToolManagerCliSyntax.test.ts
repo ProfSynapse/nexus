@@ -1515,6 +1515,66 @@ describe('EC-2: tokenizer throws on unclosed quote at end of input', () => {
   });
 });
 
+describe('multiline steering — errors must not read as "multiline unsupported"', () => {
+  // Multiline values inside quotes ARE supported (see the round-trip tests
+  // above). The two errors a caller actually hits with multiline Markdown are
+  // (a) an unescaped embedded quote desyncing the tokenizer and (b) a value
+  // that lost its quoting exploding into bogus positionals. Both used to read
+  // as if multiline itself were rejected — callers then flattened the content
+  // (reported against memory create-state). Pin the corrective guidance.
+
+  it('multiline value with literal newlines parses through the execution path', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "notes/state.md" "## Original Request\nRefactor the parser.\n\n## Status\n- in progress"',
+    });
+    expect(call.params.content).toBe('## Original Request\nRefactor the parser.\n\n## Status\n- in progress');
+  });
+
+  it('unclosed-quote error explains embedded-quote escaping and defends multiline', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        // One unescaped embedded quote → odd quote count → tokenizer desync.
+        tool: 'content write "x.md" "User said "hi.\nNext line"',
+      })
+    );
+    expect(err.message).toMatch(/Unclosed double quote/);
+    expect(err.message).toMatch(/escape each one/);
+    expect(err.message).toMatch(/do not flatten multiline content/);
+  });
+
+  it('an EVEN number of unescaped embedded quotes desyncs into positionals with the multiline steer', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write "x.md" "User said "make it fast".\nNext line"',
+      })
+    );
+    expect(err.message).toMatch(/Too many positional arguments/);
+    expect(err.message).toMatch(/do not flatten/);
+  });
+
+  it('too-many-positionals on a multiline segment names the real cause', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        // Multiline value that lost its quotes → each word becomes a positional.
+        tool: 'content write x.md ## Original Request\nRefactor the parser',
+      })
+    );
+    expect(err.message).toMatch(/Too many positional arguments/);
+    expect(err.message).toMatch(/multiline text/);
+    expect(err.message).toMatch(/do not flatten/);
+  });
+
+  it('too-many-positionals on a single-line segment keeps the terse message', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write x.md body extra',
+      })
+    );
+    expect(err.message).toMatch(/Too many positional arguments/);
+    expect(err.message).not.toMatch(/multiline text/);
+  });
+});
+
 describe('EC-3: array<X> coerces every element to X', () => {
   // Previously coerceValue's array<...> branch returned string[] for every
   // item type except the all-strings JSON case. So array<integer>/array<number>

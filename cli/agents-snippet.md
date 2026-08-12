@@ -13,8 +13,10 @@ offline and instant, so read it before your first command instead of guessing.
 - **Execute:** `nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>`.
   `--memory`/`--goal` are **required** on every `use`.
 - **Multiline content:** keep Markdown/YAML and embedded quotes out of shell
-  argv. After `--`, use `--content-stdin` with piped input or
-  `--content-file <local-path>` instead of `--content`.
+  argv. After `--`, swap any value-taking flag for its transport form:
+  `--<flag>-stdin` (piped input) or `--<flag>-file <local-path>` — e.g.
+  `--content-stdin`, `--conversation-context-file ctx.md`. Never flatten
+  multiline content to one line to work around quoting.
 - **Task recipes:** `nexus playbook <name>` emits a ready-to-run recipe plus your
   workspaces and preloaded tools in one call (`nexus playbook` lists them).
 - Search/list results are **locations, not contents** — follow a hit with

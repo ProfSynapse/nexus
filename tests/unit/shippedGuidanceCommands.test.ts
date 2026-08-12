@@ -33,8 +33,15 @@ interface CatalogArg {
 }
 interface CatalogTool { command: string; usage: string; arguments: CatalogArg[] }
 
-/** CLI-only transport flags; hydrated into `--content` before the server parses. */
-const CLI_ONLY_FLAGS = new Set(['--content-stdin', '--content-file']);
+/**
+ * CLI-only transport flags: `--<flag>-stdin` / `--<flag>-file` hydrate into
+ * `--<flag>` before the server parses (cli/commandLine.ts TRANSPORT_FLAG_RE).
+ * Returns the base flag they stand in for, or null when not a transport.
+ */
+function transportBaseFlag(flagName: string): string | null {
+    const match = /^--([a-z0-9][a-z0-9-]*)-(stdin|file)$/.exec(flagName);
+    return match ? `--${match[1]}` : null;
+}
 
 const catalog: { tools: CatalogTool[] } = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'cli-first-tool-schemas.json'), 'utf8')
@@ -161,7 +168,13 @@ function problems(sample: Sample): string[] {
         const token = tokens[i];
         if (token.startsWith('--') && token.length > 2) {
             const flagName = token.split('=')[0];
-            if (CLI_ONLY_FLAGS.has(flagName)) { satisfied.add('--content'); continue; }
+            const transportBase = transportBaseFlag(flagName);
+            if (transportBase) {
+                satisfied.add(transportBase);
+                // `--<flag>-file` consumes a path token; skip it like a flag value.
+                if (flagName.endsWith('-file') && i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) i++;
+                continue;
+            }
             const base = flagName.startsWith('--no-') ? `--${flagName.slice(5)}` : flagName;
             const arg = byFlag.get(base);
             if (!arg) {
@@ -208,6 +221,19 @@ describe('shipped guidance matches the tool catalog', () => {
 
     it('every documented command uses a real agent, tool, and flags', () => {
         expect(report(commands, problems)).toBe('');
+    });
+
+    it('no tool flag collides with the CLI transport suffixes (-stdin/-file)', () => {
+        // The CLI treats any `--<flag>-stdin` / `--<flag>-file` after `--` as a
+        // content transport (cli/commandLine.ts). A real tool flag ending in one
+        // of those suffixes would be hijacked and hydrated away before the server
+        // saw it. Rename the tool argument if this ever fires.
+        const colliding = catalog.tools.flatMap((tool) =>
+            tool.arguments
+                .filter((arg) => /-(stdin|file)$/.test(arg.flag))
+                .map((arg) => `${tool.command} ${arg.flag}`)
+        );
+        expect(colliding).toEqual([]);
     });
 
     it('every playbook `tools:` selector resolves to a real tool', () => {

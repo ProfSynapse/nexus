@@ -75,19 +75,25 @@ opening a vault connection or executing a tool.
 On Windows, a `.cmd` wrapper cannot reliably forward a multiline argument
 through `%*`. Embedded quote layers can also be altered before Node receives
 them. For Markdown, YAML frontmatter, wikilinks, or other large text, keep the
-content out of shell arguments with either CLI-only transport flag:
+content out of shell arguments with a CLI-only transport flag. **Any**
+value-taking tool flag has a transport form — `--<flag>-stdin` reads the value
+from standard input, `--<flag>-file <local-path>` reads it from a file:
 
 ```powershell
 Get-Content -Raw .\note.md |
   nexus use --memory "importing a note" --goal "write the note" -- content write --path Notes/Imported.md --content-stdin
 
 nexus use --memory "importing a note" --goal "write the note" -- content write --path Notes/Imported.md --content-file ".\note.md"
+
+nexus use --memory "saving a checkpoint" --goal "save state" -- memory create-state --name "checkpoint" --conversation-context-file .\ctx.md --active-task "refactor" --active-files "a.ts" --next-steps "run tests"
 ```
 
-Both flags must appear after the `--` delimiter. They are converted to the
-tool's normal `--content` value inside the CLI. Use only one, and do not combine
-either with `--content`. `--content-file` reads a local filesystem path; the
-destination passed to the Nexus tool remains vault-relative.
+Transport flags must appear after the `--` delimiter. They are converted to the
+tool's normal flag value inside the CLI. Use at most one `-stdin` transport per
+command (standard input can only be read once); several `-file` transports may
+coexist; do not also pass the same flag directly. `--<flag>-file` reads a local
+filesystem path; the destination passed to the Nexus tool remains
+vault-relative.
 
 ## Choosing a vault
 
@@ -128,7 +134,9 @@ The vault name lives in the socket name, so selection happens at call time:
 - **PowerShell split a legacy command** — move context flags before `--` and
   pass the tool normally after it; do not nest a quoted command string.
 - **Multiline content is truncated or split** — pipe it with
-  `--content-stdin` or pass its local path with `--content-file`.
+  `--<flag>-stdin` or pass its local path with `--<flag>-file` (works for any
+  value flag: `--content-stdin`, `--conversation-context-file`, …). Do not
+  flatten the content to one line.
 - **"Unknown context flag"** — the flag before `--` isn't one of `--memory`,
   `--goal`, `--workspace`, `--session`, `--constraints`, `--vault`, `--json`,
   `--dry-run`. Tool flags (`--path`, `--limit`, …) are only recognized *after*

@@ -26,5 +26,7 @@ flags are kebab-case** — camelCase (e.g. `--activeTask`) is rejected as an unk
 flag; use `--active-task`.
 
 For multiline Markdown/YAML or embedded quotes, keep content out of shell argv:
-after `--`, pipe with `--content-stdin` or pass `--content-file <local-path>`
-instead of `--content`.
+after `--`, swap any value flag for its transport form — pipe with
+`--<flag>-stdin` or pass `--<flag>-file <local-path>` (e.g. `--content-stdin`,
+`--conversation-context-file ctx.md`). Never flatten multiline content to one
+line to dodge quoting.

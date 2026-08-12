@@ -252,7 +252,14 @@ export function tokenizeWithMeta(input: string): QuotedToken[] {
   // commands. Throw loud so the caller sees the malformed input.
   if (quote !== null) {
     const quoteName = quote === '"' ? 'double' : 'single';
-    throw new Error(`Unclosed ${quoteName} quote in segment "${input}".`);
+    // The usual cause is an UNESCAPED quote character inside the value (very
+    // common in multiline Markdown), not truly missing closers. Say so, or the
+    // caller concludes multiline itself is unsupported and flattens the content.
+    throw new Error(
+      `Unclosed ${quoteName} quote in segment "${input}". ` +
+      `If the value itself contains ${quoteName} quotes, escape each one (\\${quote}). ` +
+      'Literal newlines inside a quoted value are supported — do not flatten multiline content.'
+    );
   }
 
   if (hasToken || current.length > 0) {
@@ -1003,7 +1010,13 @@ export class ToolCliNormalizer {
 
       const positional = positionalArgs[positionalIndex];
       if (!positional) {
-        throw new Error(`Too many positional arguments for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
+        // A multiline value that lost its quoting (or had an unescaped quote
+        // inside) explodes into many bogus positional tokens. Name that cause,
+        // or the caller concludes multiline is unsupported and flattens it.
+        const multilineHint = segment.includes('\n')
+          ? ' This command contains multiline text: wrap each multiline value in double quotes and escape any embedded double quotes as \\". Multiline values are supported — do not flatten them.'
+          : '';
+        throw new Error(`Too many positional arguments for ${resolved.agentName}.${resolved.toolSlug}.${multilineHint} Call getTools first to inspect supported flags.`);
       }
 
       params[positional.name] = coerceValue(token.value, positional.type);
