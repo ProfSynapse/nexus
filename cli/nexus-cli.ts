@@ -153,10 +153,13 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
-CONTENT INPUT (CLI-only flags after the \`--\` delimiter)
-  --content-stdin         read the tool's --content value from standard input
-  --content-file <path>   read the tool's --content value from a local file
-                          (use one transport flag; do not also pass --content)
+CONTENT INPUT (CLI-only flags after the \`--\` delimiter; work for ANY tool flag)
+  --<flag>-stdin          read that flag's value from standard input, e.g.
+                          --content-stdin, --conversation-context-stdin
+  --<flag>-file <path>    read that flag's value from a local file, e.g.
+                          --content-file note.md, --description-file body.md
+                          (one -stdin per command; several -file are fine; don't
+                          also pass the flag directly)
 
 CLI SYNTAX
   • Canonical form: context flags first, then \`--\`, then one tool command as normal
@@ -173,8 +176,10 @@ CLI SYNTAX
   • The legacy one-string form remains supported. On Windows PowerShell, nested double
     quotes can be consumed before Node receives them; prefer the canonical \`--\` form.
   • For multiline Markdown or text containing embedded quotes, keep the payload out of
-    shell argv: \`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\`,
-    or pass \`--content-file note.md\`.
+    shell argv with a transport flag — works for ANY tool flag, not just --content:
+    \`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\`,
+    \`nexus use ... -- memory create-state --name "X" --conversation-context-file ctx.md …\`.
+    Multiline argv still parses if you must inline it; quotes around the value are enough.
   • Paths are vault-relative. "..", "~", absolute paths are rejected; a leading "/" is
     stripped. You cannot read or write outside the vault.
   • Arrays: --tags "[work, urgent]". Wikilinks keep brackets: --links "[[[A]], [[B]]]".
@@ -382,7 +387,7 @@ async function main(): Promise<number> {
                 : hydrateToolContentArgv(toolArgv, {
                     readStdin: () => {
                         if (process.stdin.isTTY) {
-                            throw new Error('--content-stdin requires piped or redirected standard input.');
+                            throw new Error('A --<flag>-stdin transport requires piped or redirected standard input.');
                         }
                         return readFileSync(0, 'utf8');
                     },

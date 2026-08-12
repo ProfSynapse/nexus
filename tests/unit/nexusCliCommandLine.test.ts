@@ -103,6 +103,68 @@ describe('Nexus CLI structured use argv', () => {
         ], readers)).toThrow(/requires a local file path/);
     });
 
+    it('hydrates a transport for any tool flag, not just --content', () => {
+        const context = '## Original Request\nUser said "map A, then B".\n\n## Status\nIn progress.';
+        const argv = hydrateToolContentArgv(
+            [
+                'memory', 'create-state',
+                '--name', 'refactor checkpoint',
+                '--conversation-context-stdin',
+                '--active-task', 'refactor',
+                '--active-files', 'a.ts',
+                '--next-steps', 'run tests',
+            ],
+            { readStdin: () => context, readFile: () => '' }
+        );
+
+        expect(argv).toEqual([
+            'memory', 'create-state',
+            '--name', 'refactor checkpoint',
+            '--conversation-context', context,
+            '--active-task', 'refactor',
+            '--active-files', 'a.ts',
+            '--next-steps', 'run tests',
+        ]);
+        // The hydrated value must survive serialization + server tokenization intact.
+        expect(tokenizeWithMeta(serializeToolArgv(argv)).map((token) => token.value)).toEqual(argv);
+    });
+
+    it('allows several -file transports for different flags in one command', () => {
+        const readFile = jest.fn((path: string) => `<${path}>`);
+        const argv = hydrateToolContentArgv(
+            ['memory', 'create-state', '--conversation-context-file', 'ctx.md', '--active-task-file', 'task.md'],
+            { readStdin: () => '', readFile }
+        );
+
+        expect(argv).toEqual([
+            'memory', 'create-state',
+            '--conversation-context', '<ctx.md>',
+            '--active-task', '<task.md>',
+        ]);
+        expect(readFile).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects conflicting generic transports', () => {
+        const readers = { readStdin: () => 'stdin', readFile: () => 'file' };
+
+        // Two stdin transports — stdin can only be read once.
+        expect(() => hydrateToolContentArgv([
+            'memory', 'create-state', '--conversation-context-stdin', '--active-task-stdin',
+        ], readers)).toThrow(/one --<flag>-stdin/);
+        // Same flag both directly and via transport.
+        expect(() => hydrateToolContentArgv([
+            'memory', 'create-state', '--conversation-context', 'inline', '--conversation-context-file', 'ctx.md',
+        ], readers)).toThrow(/Do not combine --conversation-context/);
+        // Same flag via two transports.
+        expect(() => hydrateToolContentArgv([
+            'memory', 'create-state', '--conversation-context-stdin', '--conversation-context-file', 'ctx.md',
+        ], readers)).toThrow(/exactly one of --conversation-context-stdin or --conversation-context-file/);
+        // -file without a path.
+        expect(() => hydrateToolContentArgv([
+            'memory', 'create-state', '--conversation-context-file', '--name', 'x',
+        ], readers)).toThrow(/--conversation-context-file requires a local file path/);
+    });
+
     it('reconstructs the reported multiword workspace command', () => {
         expect(resolveUseCommand(
             ['use'],

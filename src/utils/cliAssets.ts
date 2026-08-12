@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "a636e1151fe2f4b0";
+export const NEXUS_CLI_ASSETS_HASH = "2ab226a6e81da77f";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -175,7 +175,15 @@ var CONTEXT_VALUE_FLAGS = /* @__PURE__ */ new Set([
   "vault"
 ]);
 var CONTEXT_BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["json", "dry-run", "help"]);
-var TOOL_ONLY_FLAGS = /* @__PURE__ */ new Set(["content-stdin", "content-file"]);
+var TRANSPORT_FLAG_RE = /^([a-z0-9][a-z0-9-]*)-(stdin|file)$/;
+function parseTransportFlag(token) {
+  if (!token.startsWith("--")) return null;
+  const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
+  return match ? { base: match[1], kind: match[2] } : null;
+}
+function isTransportFlagKey(key) {
+  return TRANSPORT_FLAG_RE.test(key);
+}
 var MISPLACEABLE_CONTEXT_FLAGS = /* @__PURE__ */ new Set([
   "memory",
   "goal",
@@ -273,9 +281,9 @@ function parseOuterArgs(argv) {
     if (key === "") {
       throw new Error(\`Invalid flag "\${token}". Context flags look like --memory "...".\`);
     }
-    if (TOOL_ONLY_FLAGS.has(key)) {
+    if (isTransportFlagKey(key)) {
       throw new Error(
-        \`--\${key} is a tool-command flag, so it belongs AFTER the \\\`--\\\` delimiter: nexus use --memory "..." --goal "..." -- content write --path Note.md --\${key}\${key === "content-file" ? " note.md" : ""}\`
+        \`--\${key} is a tool-command flag, so it belongs AFTER the \\\`--\\\` delimiter: nexus use --memory "..." --goal "..." -- content write --path Note.md --\${key}\${key.endsWith("-file") ? " note.md" : ""}\`
       );
     }
     if (!CONTEXT_VALUE_FLAGS.has(key) && !CONTEXT_BOOLEAN_FLAGS.has(key)) {
@@ -347,42 +355,49 @@ function serializeToolArgv(toolArgv) {
   return toolArgv.map(quoteToolToken).join(" ");
 }
 function hydrateToolContentArgv(toolArgv, readers) {
-  const stdinIndexes = [];
-  const fileIndexes = [];
-  const contentIndexes = [];
-  toolArgv.forEach((token, index2) => {
-    if (token === "--content-stdin") stdinIndexes.push(index2);
-    if (token === "--content-file") fileIndexes.push(index2);
-    if (token === "--content") contentIndexes.push(index2);
+  const transports = [];
+  toolArgv.forEach((token, index) => {
+    const transport = parseTransportFlag(token);
+    if (transport) transports.push({ ...transport, index });
   });
-  const transportCount = stdinIndexes.length + fileIndexes.length;
-  if (transportCount === 0) return toolArgv;
-  if (transportCount > 1) {
-    throw new Error("Use exactly one of --content-stdin or --content-file.");
+  if (transports.length === 0) return toolArgv;
+  const stdinTransports = transports.filter((t) => t.kind === "stdin");
+  if (stdinTransports.length > 1) {
+    throw new Error(
+      "Use exactly one --<flag>-stdin transport per command \\u2014 standard input can only be read once. Move the other values to --<flag>-file <path> or pass them inline."
+    );
   }
-  if (contentIndexes.length > 0) {
-    throw new Error("Do not combine --content with --content-stdin or --content-file.");
+  const seenBases = /* @__PURE__ */ new Set();
+  for (const transport of transports) {
+    if (seenBases.has(transport.base)) {
+      throw new Error(\`Use exactly one of --\${transport.base}-stdin or --\${transport.base}-file.\`);
+    }
+    seenBases.add(transport.base);
+    if (toolArgv.includes(\`--\${transport.base}\`)) {
+      throw new Error(
+        \`Do not combine --\${transport.base} with --\${transport.base}-stdin or --\${transport.base}-file.\`
+      );
+    }
   }
-  if (stdinIndexes.length === 1) {
-    const index2 = stdinIndexes[0];
-    return [
-      ...toolArgv.slice(0, index2),
-      "--content",
-      readers.readStdin(),
-      ...toolArgv.slice(index2 + 1)
-    ];
+  const hydrated = [];
+  for (let index = 0; index < toolArgv.length; index++) {
+    const transport = transports.find((t) => t.index === index);
+    if (!transport) {
+      hydrated.push(toolArgv[index]);
+      continue;
+    }
+    if (transport.kind === "stdin") {
+      hydrated.push(\`--\${transport.base}\`, readers.readStdin());
+      continue;
+    }
+    const path = toolArgv[index + 1];
+    if (path === void 0 || path.startsWith("--")) {
+      throw new Error(\`--\${transport.base}-file requires a local file path.\`);
+    }
+    hydrated.push(\`--\${transport.base}\`, readers.readFile(path));
+    index++;
   }
-  const index = fileIndexes[0];
-  const path = toolArgv[index + 1];
-  if (path === void 0 || path.startsWith("--")) {
-    throw new Error("--content-file requires a local file path.");
-  }
-  return [
-    ...toolArgv.slice(0, index),
-    "--content",
-    readers.readFile(path),
-    ...toolArgv.slice(index + 2)
-  ];
+  return hydrated;
 }
 function describeFragmentedLegacyCommand(extras, isWindows) {
   const rebuilt = extras.join(" ");
@@ -587,10 +602,13 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
-CONTENT INPUT (CLI-only flags after the \\\`--\\\` delimiter)
-  --content-stdin         read the tool's --content value from standard input
-  --content-file <path>   read the tool's --content value from a local file
-                          (use one transport flag; do not also pass --content)
+CONTENT INPUT (CLI-only flags after the \\\`--\\\` delimiter; work for ANY tool flag)
+  --<flag>-stdin          read that flag's value from standard input, e.g.
+                          --content-stdin, --conversation-context-stdin
+  --<flag>-file <path>    read that flag's value from a local file, e.g.
+                          --content-file note.md, --description-file body.md
+                          (one -stdin per command; several -file are fine; don't
+                          also pass the flag directly)
 
 CLI SYNTAX
   \\u2022 Canonical form: context flags first, then \\\`--\\\`, then one tool command as normal
@@ -607,8 +625,10 @@ CLI SYNTAX
   \\u2022 The legacy one-string form remains supported. On Windows PowerShell, nested double
     quotes can be consumed before Node receives them; prefer the canonical \\\`--\\\` form.
   \\u2022 For multiline Markdown or text containing embedded quotes, keep the payload out of
-    shell argv: \\\`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\\\`,
-    or pass \\\`--content-file note.md\\\`.
+    shell argv with a transport flag \\u2014 works for ANY tool flag, not just --content:
+    \\\`Get-Content -Raw note.md | nexus use ... -- content write --path X.md --content-stdin\\\`,
+    \\\`nexus use ... -- memory create-state --name "X" --conversation-context-file ctx.md \\u2026\\\`.
+    Multiline argv still parses if you must inline it; quotes around the value are enough.
   \\u2022 Paths are vault-relative. "..", "~", absolute paths are rejected; a leading "/" is
     stripped. You cannot read or write outside the vault.
   \\u2022 Arrays: --tags "[work, urgent]". Wikilinks keep brackets: --links "[[[A]], [[B]]]".
@@ -799,7 +819,7 @@ Once a vault is open, preload them with:
       const hydratedToolArgv = toolArgv === null ? null : hydrateToolContentArgv(toolArgv, {
         readStdin: () => {
           if (process.stdin.isTTY) {
-            throw new Error("--content-stdin requires piped or redirected standard input.");
+            throw new Error("A --<flag>-stdin transport requires piped or redirected standard input.");
           }
           return (0, import_node_fs3.readFileSync)(0, "utf8");
         },
@@ -932,9 +952,11 @@ read it and retry rather than switching syntax forms. Nothing is silently
 dropped, so an error never means a partial write happened.
 
 For multiline Markdown or content containing embedded quotes, keep the body
-out of shell argv. Pipe it with \`--content-stdin\` or pass a local path with
-\`--content-file\`; put either flag after the \`--\` delimiter and do not also pass
-\`--content\`:
+out of shell argv. Any value-taking tool flag has a transport form: pipe with
+\`--<flag>-stdin\` or pass a local path with \`--<flag>-file\` (e.g.
+\`--content-stdin\`, \`--conversation-context-file ctx.md\`). Put the transport
+after the \`--\` delimiter and do not also pass the flag directly. Never flatten
+multiline content to one line to dodge quoting:
 
 \`\`\`powershell
 Get-Content -Raw .\\note.md |
@@ -963,8 +985,10 @@ offline and instant, so read it before your first command instead of guessing.
 - **Execute:** \`nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>\`.
   \`--memory\`/\`--goal\` are **required** on every \`use\`.
 - **Multiline content:** keep Markdown/YAML and embedded quotes out of shell
-  argv. After \`--\`, use \`--content-stdin\` with piped input or
-  \`--content-file <local-path>\` instead of \`--content\`.
+  argv. After \`--\`, swap any value-taking flag for its transport form:
+  \`--<flag>-stdin\` (piped input) or \`--<flag>-file <local-path>\` — e.g.
+  \`--content-stdin\`, \`--conversation-context-file ctx.md\`. Never flatten
+  multiline content to one line to work around quoting.
 - **Task recipes:** \`nexus playbook <name>\` emits a ready-to-run recipe plus your
   workspaces and preloaded tools in one call (\`nexus playbook\` lists them).
 - Search/list results are **locations, not contents** — follow a hit with
@@ -1008,8 +1032,10 @@ flags are kebab-case** — camelCase (e.g. \`--activeTask\`) is rejected as an u
 flag; use \`--active-task\`.
 
 For multiline Markdown/YAML or embedded quotes, keep content out of shell argv:
-after \`--\`, pipe with \`--content-stdin\` or pass \`--content-file <local-path>\`
-instead of \`--content\`.
+after \`--\`, swap any value flag for its transport form — pipe with
+\`--<flag>-stdin\` or pass \`--<flag>-file <local-path>\` (e.g. \`--content-stdin\`,
+\`--conversation-context-file ctx.md\`). Never flatten multiline content to one
+line to dodge quoting.
 `,
     "organize.md": `---
 name: organize

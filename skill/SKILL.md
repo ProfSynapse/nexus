@@ -73,9 +73,11 @@ read it and retry rather than switching syntax forms. Nothing is silently
 dropped, so an error never means a partial write happened.
 
 For multiline Markdown or content containing embedded quotes, keep the body
-out of shell argv. Pipe it with `--content-stdin` or pass a local path with
-`--content-file`; put either flag after the `--` delimiter and do not also pass
-`--content`:
+out of shell argv. Any value-taking tool flag has a transport form: pipe with
+`--<flag>-stdin` or pass a local path with `--<flag>-file` (e.g.
+`--content-stdin`, `--conversation-context-file ctx.md`). Put the transport
+after the `--` delimiter and do not also pass the flag directly. Never flatten
+multiline content to one line to dodge quoting:
 
 ```powershell
 Get-Content -Raw .\note.md |

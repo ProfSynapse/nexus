@@ -2,6 +2,13 @@ import { ITool } from '../../interfaces/ITool';
 import { ToolBatchExecutionService } from '../services/ToolBatchExecutionService';
 import { ToolCliNormalizer } from '../services/ToolCliNormalizer';
 import { NormalizedUseToolParams, UseToolParams, UseToolResult } from '../types';
+import {
+  CLI_BATCHING_RULE,
+  CLI_MULTILINE_RULE,
+  CLI_MULTILINE_EXAMPLE,
+  CLI_VALUES_RULE,
+  CLI_VALUES_EXAMPLE
+} from '../guidance';
 
 export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   slug: string;
@@ -15,7 +22,11 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   ) {
     this.slug = 'useTools';
     this.name = 'Use Tools';
-    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. Multiple commands are separated only by a top-level comma outside quotes, so commas inside quoted values are preserved. For multiline text such as note bodies or Markdown, wrap the value in quotes and use escaped newlines like "# Title\\n\\nBody"; the parser decodes them before execution. When you already know several files you want to read, batch them as comma-separated "content read" commands in ONE call with strategy "parallel" — do not issue a separate useTools call per file. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
+    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. '
+      + CLI_BATCHING_RULE + ' '
+      + CLI_MULTILINE_RULE + ' '
+      + CLI_VALUES_RULE + ' Example: ' + CLI_VALUES_EXAMPLE
+      + '. When you already know several files you want to read, batch them as comma-separated "content read" commands in ONE call with strategy "parallel" — do not issue a separate useTools call per file. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
     this.version = '1.0.0';
   }
 
@@ -59,12 +70,21 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         },
         tool: {
           type: 'string',
-          description: 'CLI-style tool command string. Supports one or more commands separated by commas. Only top-level commas split commands; commas inside quoted values stay literal. For multiline content, quote the value and use escaped newlines such as "content write --path note.md --content "# Title\\n\\nBody"". Example: "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md". Reading multiple known files? Batch them here as one comma-separated list (e.g. "content read --path a.md, content read --path b.md, content read --path c.md") instead of separate calls.'
+          description: 'CLI-style tool command string. '
+            + CLI_BATCHING_RULE + ' '
+            + CLI_MULTILINE_RULE + ' Example: ' + CLI_MULTILINE_EXAMPLE
+            + '. Batching example: "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md". Reading multiple known files? Batch them here as one comma-separated list (e.g. "content read --path a.md, content read --path b.md, content read --path c.md") instead of separate calls.'
         },
         strategy: {
           type: 'string',
           enum: ['serial', 'parallel'],
           description: 'Execution strategy for multiple CLI commands. Defaults to serial. Use "parallel" for independent read-only commands (e.g. batched content reads) to avoid wasted round-trips.'
+        },
+        values: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: CLI_VALUES_RULE
+            + ' Keys use letters, digits, "_" or "-". Example: ' + CLI_VALUES_EXAMPLE
         }
       },
       required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool']
