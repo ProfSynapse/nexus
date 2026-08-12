@@ -111,8 +111,12 @@ The vault name lives in the socket name, so selection happens at call time:
 | macOS / Linux | unix socket `/tmp/nexus_mcp_<vault>.sock` | `~/.local/bin/nexus` symlink; `~/.claude/skills/nexus` symlink |
 | Windows | named pipe `\\.\pipe\nexus_mcp_<vault>` | `%LOCALAPPDATA%\nexus\nexus.cmd` (user PATH is updated automatically); skill **copied** (no symlink) |
 
-- On macOS, `~/.local/bin` is often not on PATH by default — the installer warns
-  if so; add it to your shell profile.
+- On macOS, `~/.local/bin` is often not on PATH by default. Nexus checks by asking
+  your login shell to resolve `nexus`, so the settings status reflects what your
+  terminal will actually do — not what Obsidian happened to inherit. When it can't
+  be resolved, settings shows the exact line to add and which profile file it goes
+  in (`~/.zshrc`, `~/.bash_profile`, fish's `config.fish`), with a Copy button.
+  Nexus never edits your shell profile itself.
 - On Windows, the CLI enumerates the local named-pipe namespace through
   PowerShell. If local policy blocks enumeration, pass `--vault <name>` or set
   `NEXUS_VAULT`; direct connections do not require enumeration.
@@ -127,7 +131,10 @@ The vault name lives in the socket name, so selection happens at call time:
   vault, or Nexus isn't loaded. Open it, then retry.
 - **`nexus: command not found`** — restart the terminal after installing. If it
   still fails, PATH doesn't include the install dir (macOS `~/.local/bin`,
-  Windows `%LOCALAPPDATA%\nexus`), or `node` isn't installed.
+  Windows `%LOCALAPPDATA%\nexus`), or `node` isn't installed. Check **Get started
+  -> External agents -> Local CLI**: if it says "not yet on your PATH", it shows
+  the line to paste and where. An account with no shell profile at all is the
+  usual cause on macOS — nothing has ever added `~/.local/bin`.
 - **"Multiple vaults open"** — run `nexus vaults`, then pass `--vault <name>`.
 - **Rejected for missing memory/goal** — every `use` needs `--memory` and
   `--goal`.

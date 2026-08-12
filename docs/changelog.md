@@ -2,6 +2,25 @@
 
 ## August 2026
 
+**v5.16.4** — Multiline and backslash-heavy content survives the trip to any tool, and the CLI stops claiming it's on your PATH
+
+**Multiline content reaches every tool**
+- `--<flag>-stdin` and `--<flag>-file <path>` now hydrate *any* value-taking tool flag, not just `--content`. The shipped guidance had been telling agents to use these transports for things like `--conversation-context`, where they did not exist ([#324](https://github.com/ProfSynapse/nexus/pull/324)).
+- The two errors an unescaped embedded quote produces — "Unclosed double quote" and "Too many positional arguments" — read as if multiline itself were unsupported. Both now name the real cause and state that multiline values are supported and must not be flattened.
+- One `-stdin` per command (stdin reads once), several `-file` transports may coexist, and a flag cannot arrive both directly and through a transport.
+
+**Backslashes arrive as written**
+- `useTools` accepts an optional top-level `values` map. Content is escaped once at the JSON layer and referenced from the tool string as `@key`, with substitution after tokenization and no escape processing — so `C:\temp\notes`, LaTeX `\alpha`, and regex `\d` arrive intact instead of decaying into tabs, newlines, and dropped characters.
+- Quoting the token (`"@key"`) passes the literal text. With no `values` map, `@`-tokens pass through untouched. A missing key, or a declared key the command never references, fails loud rather than silently dropping prepared content.
+
+**The CLI tells the truth about your PATH**
+- On macOS and Linux, settings reported "Installed and on your PATH" whenever the symlink existed — whether or not any shell could resolve `nexus`. It now asks your login shell, so the status matches what your terminal does ([#325](https://github.com/ProfSynapse/nexus/pull/325)).
+- When the shell can't resolve it, settings shows the exact line to add, which profile file it belongs in (`~/.zshrc`, `~/.bash_profile`, fish's `config.fish`), how to reload, and a Copy button. Nexus does not edit your shell profile.
+- A same-named `nexus` earlier on your PATH is now reported as shadowing on every platform, not just Windows.
+- Some existing installs will flip from "on your PATH" to "not yet on your PATH". Those were already unusable from a terminal; the status was wrong, not the install.
+
+---
+
 **v5.16.3** — Workspace names resolve consistently from agent context to task execution
 
 - Workspace names returned by `getTools` are now accepted by `useTools` even when the boot-time workspace snapshot was empty. The validator checks the live workspace list instead of rejecting a real name and then suggesting that same name back ([#318](https://github.com/ProfSynapse/nexus/pull/318)).
