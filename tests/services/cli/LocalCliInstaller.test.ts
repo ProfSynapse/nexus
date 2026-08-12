@@ -12,6 +12,7 @@ import * as realPath from 'path';
 let TEST_HOME = '';
 const ORIGINAL_LOCALAPPDATA = process.env.LOCALAPPDATA;
 const ORIGINAL_PATH = process.env.PATH;
+const ORIGINAL_SHELL = process.env.SHELL;
 const mockSpawnSync = jest.fn();
 const DEFAULT_NODE_PATH = '/resolved/bin/node';
 const mockResolveDesktopBinaryPath = jest.fn(() => DEFAULT_NODE_PATH);
@@ -24,11 +25,19 @@ interface MockSpawnResult {
 }
 
 const nodeOk: MockSpawnResult = { status: 0, stdout: 'v20.19.0\n', stderr: '' };
+const TEST_SHELL = '/bin/zsh';
+/** What the mocked login shell reports for `command -v nexus` (null = not found). */
+let loginShellResolves: string | null = null;
 
 function mockNodeAndPowerShell(...powerShellResults: MockSpawnResult[]): void {
     let powerShellIndex = 0;
     mockSpawnSync.mockImplementation((command: string) => {
         if (command === DEFAULT_NODE_PATH) return nodeOk;
+        if (command === TEST_SHELL) {
+            return loginShellResolves === null
+                ? { status: 1, stdout: '', stderr: '' }
+                : { status: 0, stdout: `${loginShellResolves}\n`, stderr: '' };
+        }
         return powerShellResults[powerShellIndex++] ?? { status: 0, stdout: 'PRESENT\n', stderr: '' };
     });
 }
@@ -80,6 +89,8 @@ describe('LocalCliInstaller', () => {
         else process.env.LOCALAPPDATA = ORIGINAL_LOCALAPPDATA;
         if (ORIGINAL_PATH === undefined) delete process.env.PATH;
         else process.env.PATH = ORIGINAL_PATH;
+        process.env.SHELL = TEST_SHELL;
+        loginShellResolves = null;
         mockSpawnSync.mockReset();
         mockResolveDesktopBinaryPath.mockReset();
         mockResolveDesktopBinaryPath.mockReturnValue(DEFAULT_NODE_PATH);
@@ -98,6 +109,8 @@ describe('LocalCliInstaller', () => {
         else process.env.LOCALAPPDATA = ORIGINAL_LOCALAPPDATA;
         if (ORIGINAL_PATH === undefined) delete process.env.PATH;
         else process.env.PATH = ORIGINAL_PATH;
+        if (ORIGINAL_SHELL === undefined) delete process.env.SHELL;
+        else process.env.SHELL = ORIGINAL_SHELL;
     });
 
     posixIt('enable() writes the CLI, skill, PATH symlink, Claude + Cursor skill links, and Codex block', () => {
@@ -118,13 +131,82 @@ describe('LocalCliInstaller', () => {
 
     posixIt('status() reflects an installed, on-PATH, linked state', () => {
         installer.enable();
-        const s = installer.status();
+        loginShellResolves = installer.getPaths().binPath;
+        const s = new LocalCliInstaller().status();
         expect(s.installed).toBe(true);
         expect(s.onPath).toBe(true);
+        expect(s.pathFix).toBeNull();
         expect(s.stale).toBe(false);
         expect(s.skillLinked).toBe(true);
         expect(s.cursorLinked).toBe(true);
         expect(s.codexLinked).toBe(true);
+    });
+
+    // Regression: onPath used to be a bare symlink check on POSIX, so a correctly
+    // installed CLI that no shell could resolve still reported "on your PATH".
+    posixIt('status() does not claim onPath when the login shell cannot resolve nexus', () => {
+        installer.enable();
+        loginShellResolves = null;
+        const s = new LocalCliInstaller().status();
+
+        expect(s.installed).toBe(true);
+        expect(s.pathConfigured).toBe(true); // our symlink is in place...
+        expect(s.onPath).toBe(false);        // ...but the shell still can't find it
+        expect(s.pathFix).not.toBeNull();
+    });
+
+    posixIt('status() ignores a namesake nexus that resolves ahead of ours', () => {
+        installer.enable();
+        loginShellResolves = '/usr/local/bin/nexus';
+        expect(new LocalCliInstaller().status().onPath).toBe(false);
+    });
+
+    posixIt('probes a login shell rather than trusting the PATH Obsidian inherited', () => {
+        const p = installer.getPaths();
+        process.env.PATH = `${p.binDir}:/usr/bin`; // Obsidian sees it; the shell does not
+        installer.enable();
+        loginShellResolves = null;
+
+        expect(new LocalCliInstaller().status().onPath).toBe(false);
+        const shellCalls = mockSpawnSync.mock.calls.filter((call) => call[0] === TEST_SHELL);
+        expect(shellCalls.length).toBeGreaterThan(0);
+        expect(shellCalls[0][1]).toEqual(['-lc', 'command -v nexus']);
+        // PATH is dropped so the shell's own profiles decide, not Obsidian's env.
+        expect((shellCalls[0][2] as { env: Record<string, string> }).env.PATH).toBeUndefined();
+    });
+
+    posixIt('enable() warns with the exact profile edit when the shell cannot resolve nexus', () => {
+        loginShellResolves = null;
+        const result = installer.enable();
+
+        const warning = result.warnings.find((w) => w.includes('not on your shell PATH'));
+        expect(warning).toBeDefined();
+        expect(warning).toContain('export PATH="$HOME/.local/bin:$PATH"');
+        expect(warning).toContain(realPath.join(TEST_HOME, '.zshrc'));
+    });
+
+    posixIt('enable() stays quiet about PATH when the shell already resolves nexus', () => {
+        loginShellResolves = realPath.join(TEST_HOME, '.local', 'bin', 'nexus');
+        const result = installer.enable();
+        expect(result.warnings.filter((w) => w.toLowerCase().includes('path'))).toEqual([]);
+    });
+
+    posixIt('describePathFix() targets the profile for the running shell', () => {
+        process.env.SHELL = '/bin/bash';
+        expect(new LocalCliInstaller().describePathFix()).toEqual({
+            shell: 'bash',
+            profilePath: realPath.join(TEST_HOME, '.bash_profile'), // isMacOS is true here
+            exportLine: 'export PATH="$HOME/.local/bin:$PATH"',
+            reloadCommand: 'source ~/.bash_profile',
+        });
+
+        process.env.SHELL = '/opt/homebrew/bin/fish';
+        expect(new LocalCliInstaller().describePathFix()).toEqual({
+            shell: 'fish',
+            profilePath: realPath.join(TEST_HOME, '.config', 'fish', 'config.fish'),
+            exportLine: 'fish_add_path $HOME/.local/bin',
+            reloadCommand: 'source ~/.config/fish/config.fish',
+        });
     });
 
     posixIt('accepts Node.js 24 discovered outside Obsidian\'s inherited PATH', () => {
@@ -388,7 +470,10 @@ describe('LocalCliInstaller', () => {
             const otherBin = realPath.join(TEST_HOME, 'other-bin');
             realFs.mkdirSync(otherBin, { recursive: true });
             realFs.writeFileSync(realPath.join(otherBin, 'nexus.cmd'), '@echo other\r\n', 'utf-8');
-            process.env.PATH = `${otherBin};C:\\Windows\\System32`;
+            // Join with the host's delimiter: the code under test splits PATH with
+            // the real path module, so a hardcoded ';' never splits on a POSIX host
+            // and the namesake in otherBin would be invisible to the lookup.
+            process.env.PATH = [otherBin, 'C:\\Windows\\System32'].join(realPath.delimiter);
             mockNodeAndPowerShell({ status: 0, stdout: 'ADDED\n', stderr: '' });
 
             const result = installer.enable({ claudeCode: false, cursor: false, codex: false });

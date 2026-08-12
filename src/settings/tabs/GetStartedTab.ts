@@ -15,7 +15,7 @@ import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 import { CONNECTOR_JS_CONTENT } from '../../utils/connectorContent';
-import { LocalCliInstaller, CliProviderId, CliInstallTargets } from '../../services/cli/LocalCliInstaller';
+import { LocalCliInstaller, CliProviderId, CliInstallTargets, CliPathFix } from '../../services/cli/LocalCliInstaller';
 import {
     appendCodexMcpTomlSnippet,
     buildCodexMcpTomlSnippet,
@@ -720,6 +720,12 @@ export class GetStartedTab {
             }
         }
 
+        // Installed but the shell can't find it — the one failure mode that looks
+        // like nothing is wrong. Show the exact edit rather than a bare warning.
+        if (status.installed && status.runtimeReady && !status.onPath && status.pathFix) {
+            this.renderCliPathFix(block, status.pathFix, installer);
+        }
+
         const details = block.createEl('details', { cls: 'nexus-manual-details' });
         details.createEl('summary', { text: status.installed ? 'What’s installed' : 'What this installs' });
         const disclosureBody = details.createDiv('nexus-manual-body');
@@ -730,6 +736,47 @@ export class GetStartedTab {
             text: 'All paths are outside your vault (nothing is synced), and everything here is reversible with uninstall.',
             cls: 'setting-item-description'
         });
+    }
+
+    /**
+     * The `nexus` command exists but the user's shell cannot resolve it. Nexus does
+     * not edit shell profiles — they are the user's files — so hand over the exact
+     * line, where it goes, and how to reload, with a copy button.
+     */
+    private renderCliPathFix(block: HTMLElement, fix: CliPathFix, installer: LocalCliInstaller): void {
+        const component = this.services.component;
+        const panel = block.createDiv('nexus-cli-pathfix');
+        panel.createEl('p', {
+            text: `The nexus command is installed, but your ${fix.shell} shell can’t find it yet. Add this line to ${fix.profilePath}:`,
+            cls: 'setting-item-description'
+        });
+
+        const row = panel.createDiv('nx-pathrow');
+        row.createSpan({ text: fix.exportLine, cls: 'nx-inline-path' });
+        const copyBtn = row.createEl('button', { text: 'Copy' });
+        if (component) {
+            component.registerDomEvent(copyBtn, 'click', () => {
+                void navigator.clipboard.writeText(fix.exportLine)
+                    .then(() => new Notice('Copied. Paste it into your shell profile.'))
+                    .catch(() => new Notice('Could not copy — select the line and copy it manually.'));
+            });
+        }
+
+        panel.createEl('p', {
+            text: `Then run ${fix.reloadCommand} in any open terminal, or just open a new one.`,
+            cls: 'setting-item-description'
+        });
+
+        const recheckBtn = panel.createEl('button', { text: 'Re-check' });
+        if (component) {
+            component.registerDomEvent(recheckBtn, 'click', () => {
+                const updated = installer.status();
+                new Notice(updated.onPath
+                    ? 'Nexus CLI resolves in your shell now.'
+                    : 'Still not resolving — make sure the line was saved, then open a new terminal.');
+                this.render();
+            });
+        }
     }
 
     private enableLocalCli(installer: LocalCliInstaller, targets?: Partial<CliInstallTargets>): void {
