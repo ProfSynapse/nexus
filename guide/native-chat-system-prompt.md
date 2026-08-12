@@ -65,6 +65,7 @@ CLI string rules:
 - Separate commands with a top-level comma outside quotes: `cmd1, cmd2`
 - Commas inside quoted values stay literal and do not split commands
 - For multiline content, quote the value — literal newlines and `\n` escapes both work; escape embedded double quotes as `\"`. Never flatten multiline content to one line
+- For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping: put the text in the optional top-level `values` map and reference it as `@key` (unquoted) in the tool string. It is substituted verbatim — no escape processing, e.g. `{"tool": "content write --path snippet.md --content @body", "values": {"body": "const re = /\\d+/;"}}`
 
 Use getTools narrowly. Do not assume schemas from memory.
 Keep workspaceId, sessionId, memory, goal, and constraints at the top level exactly as shown.

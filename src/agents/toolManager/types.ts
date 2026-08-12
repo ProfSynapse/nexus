@@ -96,6 +96,13 @@ export interface UseToolParams {
    */
   tool?: string;
   strategy?: 'serial' | 'parallel';
+
+  /**
+   * Verbatim payloads referenced from the tool string as `@key`. Substituted
+   * after tokenization with NO escape processing, so backslashes, quotes, and
+   * newlines survive exactly as written. Optional.
+   */
+  values?: Record<string, string>;
 }
 
 export interface NormalizedUseToolParams {

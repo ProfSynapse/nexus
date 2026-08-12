@@ -510,6 +510,10 @@ export interface CliDisplaySegment {
  * entry per comma-separated segment. Tokens inside a segment are: the
  * agent alias, the tool slug, then `--flag value` pairs or positional
  * values. Flags not followed by a value are treated as boolean-true.
+ *
+ * Verbatim `@key` references are NOT resolved here (the `values` map is not
+ * available during streaming preview) — the placeholder is shown as-is and
+ * post-execution events carry the substituted params.
  */
 export function parseCliForDisplay(toolString: string): CliDisplaySegment[] {
   return splitTopLevelSegments(toolString).flatMap(segment => {
@@ -693,6 +697,45 @@ export function formatContextContractError(violations: ContextContractViolation[
   return `Context incomplete. Fix the following, then re-issue the call:\n${lines}`;
 }
 
+// ---------------------------------------------------------------------------
+// Verbatim values side-channel
+//
+// A model composing the `tool` string escapes content TWICE (once for JSON,
+// once for the CLI quoting contract), and the stacked escaping silently
+// corrupts backslash-heavy content: inside quotes `\t`/`\n`/`\r` decode and
+// any other `\X` drops its backslash, so `C:\temp\notes` arrives as
+// `C:<tab>emp<newline>otes`. The `values` map is the lossless channel: content
+// is escaped once at the JSON layer, referenced from the tool string as
+// `@key`, and substituted AFTER tokenization with no escape processing —
+// the MCP/chat counterpart of the terminal CLI's --<flag>-file/-stdin
+// transports.
+// ---------------------------------------------------------------------------
+
+/** A referenceable key: `@` + this, as its own unquoted token. */
+const VERBATIM_KEY_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+/**
+ * Validate the `values` map shape at the service layer (schema `required`/
+ * `type` is documentation only — see the tool-schema validation rule).
+ * Returns undefined for absent/empty maps so the parser takes the untouched
+ * fast path and pre-`values` behavior is bit-identical.
+ */
+function normalizeVerbatimValues(raw: unknown): Record<string, string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!isRecord(raw)) {
+    throw new Error('"values" must be an object mapping names to strings, e.g. {"ctx": "...content..."}, referenced from the tool string as @ctx.');
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (!VERBATIM_KEY_RE.test(key)) {
+      throw new Error(`values key "${key}" cannot be referenced from the tool string. Use letters, digits, "_" or "-" (e.g. "ctx"), then reference it as @ctx.`);
+    }
+    if (typeof value !== 'string') {
+      throw new Error(`values.${key} must be a string, got ${Array.isArray(value) ? 'array' : typeof value}. JSON-stringify structured data before passing it.`);
+    }
+  }
+  return Object.keys(raw).length > 0 ? (raw as Record<string, string>) : undefined;
+}
+
 export class ToolCliNormalizer {
   constructor(private agentRegistry: Map<string, IAgent>) {}
 
@@ -770,7 +813,23 @@ export class ToolCliNormalizer {
       throw new Error('tool is required. Use a top-level CLI command string such as "content read --path notes/today.md".');
     }
 
-    return splitTopLevelSegments(command).map(segment => this.parseCommandSegment(segment));
+    const values = normalizeVerbatimValues(params.values);
+    const usedKeys = new Set<string>();
+    const calls = splitTopLevelSegments(command).map(segment => this.parseCommandSegment(segment, values, usedKeys));
+
+    // A declared-but-unreferenced value means the content the caller prepared
+    // never reached any tool — silent data loss. Fail loud instead.
+    if (values) {
+      const unused = Object.keys(values).filter(key => !usedKeys.has(key));
+      if (unused.length > 0) {
+        throw new Error(
+          `"values" declares ${unused.map(key => `"${key}"`).join(', ')} but the tool string never references ${unused.length > 1 ? 'them' : 'it'}. ` +
+          `Reference each as @${unused[0]} where the content belongs, or remove it — an unreferenced value is never sent to any tool.`
+        );
+      }
+    }
+
+    return calls;
   }
 
   buildCliSchema(agentName: string, tool: ToolLike, options?: { compact?: boolean }): CliToolSchema {
@@ -875,7 +934,39 @@ export class ToolCliNormalizer {
     return result;
   }
 
-  private parseCommandSegment(segment: string): ToolCallParams {
+  /**
+   * Resolve a value token against the verbatim `values` map. An UNQUOTED token
+   * that is exactly `@key` substitutes to the declared string with no escape
+   * processing; quoting the token (`"@key"`) is the documented way to pass the
+   * literal text `@key`. With no `values` map the token is returned untouched,
+   * so pre-`values` behavior is unchanged. An `@`-shaped token that misses the
+   * map is far more likely a typo than data (the caller opted in by sending
+   * `values`), so it fails loud with the declared keys.
+   */
+  private resolveVerbatimToken(
+    raw: string,
+    wasQuoted: boolean,
+    values: Record<string, string> | undefined,
+    usedKeys: Set<string>
+  ): string {
+    if (!values || wasQuoted || !raw.startsWith('@')) return raw;
+    const key = raw.slice(1);
+    if (!VERBATIM_KEY_RE.test(key)) return raw;
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      usedKeys.add(key);
+      return values[key];
+    }
+    throw new Error(
+      `Unknown verbatim reference "@${key}". "values" declares: ${Object.keys(values).map(k => `@${k}`).join(', ')}. ` +
+      `Declare "${key}" in "values", or quote the token ("@${key}") to pass it as literal text.`
+    );
+  }
+
+  private parseCommandSegment(
+    segment: string,
+    values?: Record<string, string>,
+    usedKeys: Set<string> = new Set()
+  ): ToolCallParams {
     const tokens = tokenizeWithMeta(segment);
     if (tokens.length < 2) {
       throw new Error(`Invalid command "${segment}". Expected "agent tool-name [flags...]"`);
@@ -976,7 +1067,9 @@ export class ToolCliNormalizer {
           if (inlineValue === '') {
             throw new Error(`Flag "${flagSpec}" requires a non-empty value after "=". Use '${flagSpec} ""' if an empty string is intended.`);
           }
-          value = inlineValue;
+          // A flag token is unquoted by construction (looksLikeFlag), so its
+          // inline value is eligible for verbatim substitution.
+          value = this.resolveVerbatimToken(inlineValue, false, values, usedKeys);
         } else {
           const next = tokens[index + 1];
           if (next === undefined) {
@@ -988,7 +1081,7 @@ export class ToolCliNormalizer {
           if (!next.wasQuoted && next.value.startsWith('--')) {
             throw new Error(`Flag "${flagSpec}" requires a value, got flag "${next.value}".`);
           }
-          value = next.value;
+          value = this.resolveVerbatimToken(next.value, next.wasQuoted, values, usedKeys);
           index += 1;
         }
 
@@ -1019,7 +1112,10 @@ export class ToolCliNormalizer {
         throw new Error(`Too many positional arguments for ${resolved.agentName}.${resolved.toolSlug}.${multilineHint} Call getTools first to inspect supported flags.`);
       }
 
-      params[positional.name] = coerceValue(token.value, positional.type);
+      params[positional.name] = coerceValue(
+        this.resolveVerbatimToken(token.value, token.wasQuoted, values, usedKeys),
+        positional.type
+      );
       positionalIndex += 1;
     }
 

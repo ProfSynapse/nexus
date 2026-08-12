@@ -96,6 +96,19 @@ describe('ToolManager CLI syntax', () => {
     expect(written).toBe('# Title\n\n- Item 1\n- Item 2');
   });
 
+  it('writes backslash-heavy content losslessly via the verbatim values channel', async () => {
+    const hostile = 'Path C:\\temp\\notes — regex /\\d+/ — said "hi" — LaTeX \\alpha\n\n## Heading\nline two';
+    const result = await stack.useTools({
+      ...TEST_CONTEXT,
+      tool: 'content write --path notes/verbatim.md --content @body',
+      values: { body: hostile },
+    });
+
+    expect(result.success).toBe(true);
+    const written = fs.readFileSync(path.join(testDir, 'notes/verbatim.md'), 'utf-8');
+    expect(written).toBe(hostile);
+  });
+
   it('decodes escaped unicode sequences in quoted CLI content', async () => {
     const result = await stack.useTools({
       ...TEST_CONTEXT,
@@ -1572,6 +1585,155 @@ describe('multiline steering — errors must not read as "multiline unsupported"
     );
     expect(err.message).toMatch(/Too many positional arguments/);
     expect(err.message).not.toMatch(/multiline text/);
+  });
+});
+
+describe('verbatim values side-channel (@key substitution)', () => {
+  // Content in the `values` map is escaped once, at the JSON layer, and
+  // substituted after tokenization with NO escape processing. This is the
+  // lossless channel for backslash-heavy content that the CLI quoting
+  // contract would otherwise corrupt (C:\temp → C:<tab>emp, \d → d).
+
+  // The exact class of content the escape contract corrupts when inlined.
+  const HOSTILE = 'Path C:\\temp\\notes — regex /\\d+/ — said "hi" — LaTeX \\alpha\n## Heading\nline two';
+
+  it('substitutes a flag value verbatim — backslashes, quotes, newlines survive', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path x.md --content @body',
+      values: { body: HOSTILE },
+    });
+    expect(call.params.content).toBe(HOSTILE);
+  });
+
+  it('the same content INLINED is corrupted by the escape contract (the reason values exists)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: `content write --path x.md --content "${HOSTILE}"`,
+    });
+    // \t decodes to tab, \n to newline, \d and \a drop the backslash, \" decodes.
+    expect(call.params.content).not.toBe(HOSTILE);
+  });
+
+  it('substitutes a positional value', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write x.md @body',
+      values: { body: HOSTILE },
+    });
+    expect(call.params.path).toBe('x.md');
+    expect(call.params.content).toBe(HOSTILE);
+  });
+
+  it('substitutes an inline =value', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path x.md --content=@body',
+      values: { body: HOSTILE },
+    });
+    expect(call.params.content).toBe(HOSTILE);
+  });
+
+  it('a QUOTED "@key" token stays literal — the documented escape hatch', () => {
+    // Quoting suppresses substitution even for a declared key (first command
+    // consumes it unquoted; second passes the literal text "@body"), and also
+    // suppresses the unknown-reference error for undeclared @-tokens.
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path a.md --content @body, content write --path b.md --content "@body"',
+      values: { body: HOSTILE },
+    });
+    expect(calls[0].params.content).toBe(HOSTILE);
+    expect(calls[1].params.content).toBe('@body');
+
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path @p --content "@not-declared"',
+      values: { p: 'x.md' },
+    });
+    expect(call.params.path).toBe('x.md');
+    expect(call.params.content).toBe('@not-declared');
+  });
+
+  it('an unreferenced declared key fails loud instead of silently dropping content', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path x.md --content "inline body"',
+        values: { ctx: 'prepared content that never reaches any tool' },
+      })
+    );
+    expect(err.message).toMatch(/never references/);
+    expect(err.message).toMatch(/"ctx"/);
+  });
+
+  it('an @-shaped token that misses the map fails loud with the declared keys', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path x.md --content @bodyy',
+        values: { body: 'content' },
+      })
+    );
+    expect(err.message).toMatch(/Unknown verbatim reference "@bodyy"/);
+    expect(err.message).toMatch(/@body/);
+    expect(err.message).toMatch(/quote the token/);
+  });
+
+  it('with NO values map, @-tokens pass through untouched (zero behavior change)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path x.md --content @handle',
+    });
+    expect(call.params.content).toBe('@handle');
+  });
+
+  it('rejects a non-object values map and non-string entries', () => {
+    expect(captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path x.md --content @body',
+        values: 'raw string' as unknown as Record<string, string>,
+      })
+    ).message).toMatch(/"values" must be an object/);
+
+    expect(captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path x.md --content @body',
+        values: { body: ['a', 'b'] } as unknown as Record<string, string>,
+      })
+    ).message).toMatch(/values\.body must be a string/);
+  });
+
+  it('rejects a key that cannot be referenced from the tool string', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path x.md --content @body',
+        values: { 'has spaces': 'x', body: 'y' },
+      })
+    );
+    expect(err.message).toMatch(/key "has spaces" cannot be referenced/);
+  });
+
+  it('an empty values map is a no-op, not an opt-in', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path x.md --content @handle',
+      values: {},
+    });
+    expect(call.params.content).toBe('@handle');
+  });
+
+  it('one map serves multiple commands in a batch', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path a.md --content @first, content write --path b.md --content @second',
+      values: { first: 'A\\nB (literal backslash-n)', second: 'said "two"' },
+    });
+    expect(calls[0].params.content).toBe('A\\nB (literal backslash-n)');
+    expect(calls[1].params.content).toBe('said "two"');
+  });
+
+  it('a substituted value still honors the slot type (array CSV, number)', () => {
+    const [archive] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'storage archive --paths @targets',
+      values: { targets: 'a.md,b.md' },
+    });
+    expect(archive.params.paths).toEqual(['a.md', 'b.md']);
+
+    const [convert] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --count @n',
+      values: { n: '5' },
+    });
+    expect(convert.params.count).toBe(5);
   });
 });
 
