@@ -16,6 +16,13 @@ import { MessageEnhancement } from '../components/suggesters/base/SuggesterInter
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
 import { toKebabCase } from '../../../agents/toolManager/services/ToolCliNormalizer';
+import {
+  CLI_BATCHING_RULE,
+  CLI_MULTILINE_RULE,
+  CLI_MULTILINE_EXAMPLE,
+  CLI_VALUES_RULE,
+  CLI_VALUES_EXAMPLE
+} from '../../../agents/toolManager/guidance';
 
 /**
  * Vault structure for system prompt context
@@ -254,12 +261,11 @@ Exact useTools payload shape:
 }
 
 CLI string rules:
-- Separate commands with a top-level comma outside quotes: \`cmd1, cmd2\`
-- Commas inside quoted values stay literal and do not split commands
-- For multiline content, quote the value — literal newlines and \`\\n\` escapes both work; escape embedded double quotes as \`\\"\`. Never flatten multiline content to one line
-- Example: \`content write --path note.md --content "# Title\\n\\nAlpha, beta, gamma"\`
-- For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping: put the text in the optional top-level "values" map and reference it as \`@key\` (unquoted) in the tool string. It is substituted verbatim — no escape processing
-- Example: \`{"tool": "content write --path snippet.md --content @body", "values": {"body": "const re = /\\\\d+/;"}}\`
+- ${CLI_BATCHING_RULE}
+- ${CLI_MULTILINE_RULE}
+- Example: ${CLI_MULTILINE_EXAMPLE}
+- ${CLI_VALUES_RULE}
+- Example: ${CLI_VALUES_EXAMPLE}
 `;
 
     // Inject the live agent→tools catalog so the LLM knows what's available.

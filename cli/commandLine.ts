@@ -26,6 +26,23 @@ export const CONTEXT_BOOLEAN_FLAGS = new Set(['json', 'dry-run', 'help']);
  */
 const TRANSPORT_FLAG_RE = /^([a-z0-9][a-z0-9-]*)-(stdin|file)$/;
 
+export interface TransportFlag {
+    /** The bare tool flag the transport stands in for (no leading `--`). */
+    base: string;
+    kind: 'stdin' | 'file';
+}
+
+/**
+ * Parse a `--<flag>-stdin` / `--<flag>-file` token. Returns null for anything
+ * that is not a transport flag. Single source for the transport syntax —
+ * consumed by the hydrator below and by shippedGuidanceCommands.test.ts.
+ */
+export function parseTransportFlag(token: string): TransportFlag | null {
+    if (!token.startsWith('--')) return null;
+    const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
+    return match ? { base: match[1], kind: match[2] as 'stdin' | 'file' } : null;
+}
+
 /** True when a flag key (no leading `--`) is a CLI-only content transport. */
 export function isTransportFlagKey(key: string): boolean {
     return TRANSPORT_FLAG_RE.test(key);
@@ -334,13 +351,11 @@ export function serializeToolArgv(toolArgv: string[]): string {
  * both directly and via a transport.
  */
 export function hydrateToolContentArgv(toolArgv: string[], readers: ToolContentReaders): string[] {
-    interface Transport { index: number; base: string; kind: 'stdin' | 'file' }
-    const transports: Transport[] = [];
+    const transports: Array<TransportFlag & { index: number }> = [];
 
     toolArgv.forEach((token, index) => {
-        if (!token.startsWith('--')) return;
-        const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
-        if (match) transports.push({ index, base: match[1], kind: match[2] as 'stdin' | 'file' });
+        const transport = parseTransportFlag(token);
+        if (transport) transports.push({ ...transport, index });
     });
 
     if (transports.length === 0) return toolArgv;
@@ -353,13 +368,12 @@ export function hydrateToolContentArgv(toolArgv: string[], readers: ToolContentR
         );
     }
 
-    const seenBases = new Map<string, Transport>();
+    const seenBases = new Set<string>();
     for (const transport of transports) {
-        const prior = seenBases.get(transport.base);
-        if (prior) {
+        if (seenBases.has(transport.base)) {
             throw new Error(`Use exactly one of --${transport.base}-stdin or --${transport.base}-file.`);
         }
-        seenBases.set(transport.base, transport);
+        seenBases.add(transport.base);
         if (toolArgv.includes(`--${transport.base}`)) {
             throw new Error(
                 `Do not combine --${transport.base} with --${transport.base}-stdin or --${transport.base}-file.`

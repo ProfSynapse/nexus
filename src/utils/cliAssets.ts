@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "b5272d4c3af047e3";
+export const NEXUS_CLI_ASSETS_HASH = "2ab226a6e81da77f";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -176,6 +176,11 @@ var CONTEXT_VALUE_FLAGS = /* @__PURE__ */ new Set([
 ]);
 var CONTEXT_BOOLEAN_FLAGS = /* @__PURE__ */ new Set(["json", "dry-run", "help"]);
 var TRANSPORT_FLAG_RE = /^([a-z0-9][a-z0-9-]*)-(stdin|file)$/;
+function parseTransportFlag(token) {
+  if (!token.startsWith("--")) return null;
+  const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
+  return match ? { base: match[1], kind: match[2] } : null;
+}
 function isTransportFlagKey(key) {
   return TRANSPORT_FLAG_RE.test(key);
 }
@@ -352,9 +357,8 @@ function serializeToolArgv(toolArgv) {
 function hydrateToolContentArgv(toolArgv, readers) {
   const transports = [];
   toolArgv.forEach((token, index) => {
-    if (!token.startsWith("--")) return;
-    const match = TRANSPORT_FLAG_RE.exec(token.slice(2));
-    if (match) transports.push({ index, base: match[1], kind: match[2] });
+    const transport = parseTransportFlag(token);
+    if (transport) transports.push({ ...transport, index });
   });
   if (transports.length === 0) return toolArgv;
   const stdinTransports = transports.filter((t) => t.kind === "stdin");
@@ -363,13 +367,12 @@ function hydrateToolContentArgv(toolArgv, readers) {
       "Use exactly one --<flag>-stdin transport per command \\u2014 standard input can only be read once. Move the other values to --<flag>-file <path> or pass them inline."
     );
   }
-  const seenBases = /* @__PURE__ */ new Map();
+  const seenBases = /* @__PURE__ */ new Set();
   for (const transport of transports) {
-    const prior = seenBases.get(transport.base);
-    if (prior) {
+    if (seenBases.has(transport.base)) {
       throw new Error(\`Use exactly one of --\${transport.base}-stdin or --\${transport.base}-file.\`);
     }
-    seenBases.set(transport.base, transport);
+    seenBases.add(transport.base);
     if (toolArgv.includes(\`--\${transport.base}\`)) {
       throw new Error(
         \`Do not combine --\${transport.base} with --\${transport.base}-stdin or --\${transport.base}-file.\`

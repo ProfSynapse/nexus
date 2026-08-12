@@ -21,6 +21,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { parseTransportFlag } from '../../cli/commandLine';
 
 const REPO_ROOT = path.join(__dirname, '..', '..');
 
@@ -33,15 +34,9 @@ interface CatalogArg {
 }
 interface CatalogTool { command: string; usage: string; arguments: CatalogArg[] }
 
-/**
- * CLI-only transport flags: `--<flag>-stdin` / `--<flag>-file` hydrate into
- * `--<flag>` before the server parses (cli/commandLine.ts TRANSPORT_FLAG_RE).
- * Returns the base flag they stand in for, or null when not a transport.
- */
-function transportBaseFlag(flagName: string): string | null {
-    const match = /^--([a-z0-9][a-z0-9-]*)-(stdin|file)$/.exec(flagName);
-    return match ? `--${match[1]}` : null;
-}
+// CLI-only transport flags (`--<flag>-stdin` / `--<flag>-file`) hydrate into
+// `--<flag>` before the server parses; parseTransportFlag is the CLI's own
+// parser for them, imported so this validator can never drift from it.
 
 const catalog: { tools: CatalogTool[] } = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'cli-first-tool-schemas.json'), 'utf8')
@@ -168,11 +163,11 @@ function problems(sample: Sample): string[] {
         const token = tokens[i];
         if (token.startsWith('--') && token.length > 2) {
             const flagName = token.split('=')[0];
-            const transportBase = transportBaseFlag(flagName);
-            if (transportBase) {
-                satisfied.add(transportBase);
+            const transport = parseTransportFlag(flagName);
+            if (transport) {
+                satisfied.add(`--${transport.base}`);
                 // `--<flag>-file` consumes a path token; skip it like a flag value.
-                if (flagName.endsWith('-file') && i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) i++;
+                if (transport.kind === 'file' && i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) i++;
                 continue;
             }
             const base = flagName.startsWith('--no-') ? `--${flagName.slice(5)}` : flagName;
@@ -230,7 +225,7 @@ describe('shipped guidance matches the tool catalog', () => {
         // saw it. Rename the tool argument if this ever fires.
         const colliding = catalog.tools.flatMap((tool) =>
             tool.arguments
-                .filter((arg) => /-(stdin|file)$/.test(arg.flag))
+                .filter((arg) => parseTransportFlag(arg.flag) !== null)
                 .map((arg) => `${tool.command} ${arg.flag}`)
         );
         expect(colliding).toEqual([]);
