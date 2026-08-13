@@ -172,6 +172,31 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    // GA snapshot of DeepSeek V4 Pro (released 2026-08-13). On the direct
+    // DeepSeek API the undated `deepseek-v4-pro` alias already resolves to this
+    // same snapshot; OpenRouter serves the dated id separately from its own
+    // undated `deepseek/deepseek-v4-pro` route, which is priced higher.
+    // Text-only — no image input. maxTokens is capped at 64K rather than the
+    // API's 384K ceiling, matching the DeepSeek direct entries (downstream
+    // buildLLMResponse safety).
+    // Pricing note: DeepSeek switches to peak/off-peak billing on 2026-08-16
+    // 16:00 UTC, with off-peak at half the peak rate. Revisit then.
+    provider: 'openrouter',
+    name: 'DeepSeek V4 Pro 0813',
+    apiName: 'deepseek/deepseek-v4-pro-0813',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.435,
+    outputCostPerMillion: 0.87,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     provider: 'openrouter',
     name: 'GLM 5.1',
     apiName: 'z-ai/glm-5.1',
@@ -268,6 +293,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    provider: 'openrouter',
+    name: 'Gemini 3.6 Flash',
+    apiName: 'google/gemini-3.6-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 1.50,
+    outputCostPerMillion: 7.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     // Google list price for the introductory period (through Dec 31, 2026);
     // doubles to $1.50/$7.50 on Jan 1, 2027. OpenRouter is currently running an
     // additional 50% promo ($0.375/$1.875), so real spend is lower than shown.
@@ -278,22 +319,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 0.75,
     outputCostPerMillion: 3.75,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
-    name: 'Gemini 3.6 Flash',
-    apiName: 'google/gemini-3.6-flash',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 1.50,
-    outputCostPerMillion: 7.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
