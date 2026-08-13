@@ -268,6 +268,25 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    // Google list price for the introductory period (through Dec 31, 2026);
+    // doubles to $1.50/$7.50 on Jan 1, 2027. OpenRouter is currently running an
+    // additional 50% promo ($0.375/$1.875), so real spend is lower than shown.
+    provider: 'openrouter',
+    name: 'Gemini 3.7 Flash',
+    apiName: 'google/gemini-3.7-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 3.75,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     provider: 'openrouter',
     name: 'Gemini 3.6 Flash',
     apiName: 'google/gemini-3.6-flash',

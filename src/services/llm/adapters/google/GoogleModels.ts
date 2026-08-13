@@ -1,11 +1,33 @@
 /**
  * Google Model Specifications
- * Updated July 2026 — added Gemini 3.6 Flash and Gemini 3.5 Flash-Lite.
+ * Updated August 2026 — added Gemini 3.7 Flash.
+ *
+ * Gemini 3.7 Flash pricing is Google's introductory rate ($0.75/$3.75 per 1M)
+ * which holds through December 31, 2026; it doubles to $1.50/$7.50 on
+ * January 1, 2027. Revisit this entry then.
  */
 
 import { ModelSpec } from '../modelTypes';
 
 export const GOOGLE_MODELS: ModelSpec[] = [
+  // Gemini 3.7 models
+  {
+    provider: 'google',
+    name: 'Gemini 3.7 Flash',
+    apiName: 'gemini-3.7-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 3.75,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Gemini 3.6 models
   {
     provider: 'google',
