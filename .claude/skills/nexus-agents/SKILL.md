@@ -95,26 +95,52 @@ so nothing catches drift in this table. Verify against source before trusting it
 | DataAnalysisAgent (desktop) | `data` | run-python, list-capabilities |
 | SkillsAgent | `skills` | list-skills, load-skill, create-skill, update-skill, archive-skill, sync-skills |
 
+\* The four PromptManager media tools are **credential-gated**, not always-on:
+`generate-image` needs a Google or OpenRouter key; `generate-audio` needs OpenAI,
+Google, Mistral, OpenRouter or the ElevenLabs app; `generate-video` and
+`check-generated-artifact` are registered together behind the video check. They
+are registered/unregistered live from `handleSettingsChange`, so a vault without
+keys simply does not expose them.
+
 Non-obvious contracts:
-- `content read` requires `--start-line`.
-- No delete anywhere the AI can reach it — the model gets `archive` (reversible).
-  Permanent delete is UI-only; there is no `deleteState` MCP tool.
-- Media generation is async: `generate-*` returns a job, poll
-  `check-generated-artifact <jobId>`.
+- `content read` requires `--start-line` (declared `required` in `read.ts` and
+  enforced for CLI commands by the normalizer's missing-required-argument check).
+- `prompt sub` is the CLI form of the `subagent` slug. It is discoverable through
+  `getTools`, but only executes when the chat UI has wired a `SubagentExecutor` —
+  otherwise it returns "Execution context not available".
+- No **delete tool** anywhere the AI can reach — the model gets `archive`
+  (reversible). Permanent delete of states/workspaces is UI-only; there is no
+  `deleteState` MCP tool. Destruction is still reachable indirectly: `storage
+  move`/`copy` and `composer compose` trash an existing target when overwriting,
+  and `content replace` deletes the anchored range.
+- Media generation is mostly synchronous. `generate-image`/`generate-audio` write
+  the file and return. `generate-video` runs inline and returns a `jobId` **only**
+  when it exceeds its timeout (default 600000 ms); that is what
+  `check-generated-artifact --job-id <id>` is for.
 - No session tools — sessions are context fields. `memory run` triggers a workflow
-  (`--workflow-id`/`--workflow-name`).
+  (`--workflow-id` or `--workflow-name`; one of the two is required).
 - TaskManager naming is asymmetric: project tools are suffixed (`create-project`),
   task tools are bare (`create`, `list`).
-- ElevenLabs has no text-to-speech tool; TTS runs through `prompt generate-audio`.
+- ElevenLabs has no registered text-to-speech tool (`TextToSpeechTool` exists in
+  the tree but is never registered); TTS runs through `prompt generate-audio`.
 
 ## MCP server configuration
 
-- The server runs locally via `connector.js`
+- The server runs locally via `connector.js` (generated into the plugin folder; the
+  source is `connector.ts` at the repo root)
 - Configured in Claude Desktop's `claude_desktop_config.json`
-- Server identifier: `claudesidian-mcp-[vault-name]`
-- Multiple vault instances are supported simultaneously
-- Shipped agent-facing guidance lives in `src/utils/cliAssets.ts` (single-sourced to
-  both the product and the docs); traces in
+- Server identifier: **`nexus-[sanitized-vault-name]`** — `getPrimaryServerKey()` in
+  `src/constants/branding.ts`, used by `ConfigModal` and `GetStartedTab` when writing
+  the config. `claudesidian-mcp-[vault-name]` is the **legacy** key: still accepted
+  when discovering an existing entry, never written for a new one.
+- Per-vault IPC socket/pipe: `nexus_mcp_<vault>` — multiple vault instances are
+  supported simultaneously
+- `tools/list` returns exactly two MCP tools, `toolManager_getTools` and
+  `toolManager_useTools` (`src/handlers/strategies/ToolListStrategy.ts`)
+- Shipped agent-facing guidance is authored in `skill/SKILL.md`,
+  `cli/agents-snippet.md` and `skill/playbooks/*.md`, then embedded into
+  `src/utils/cliAssets.ts` by `scripts/generate-cli-content.mjs` — that file is
+  auto-generated, never hand-edit it. Traces:
   `src/services/trace/ToolCallTraceService.ts`
 
 ## Adding a new agent
@@ -125,10 +151,21 @@ Two touchpoints. No factory classes, no ServiceDefinitions entry.
 2. Add `safeInitialize('yourAgent', ...)` to a phase in
    `AgentRegistrationService.doInitializeAllAgents()`
 
-Phase 1 is for agents with no dependencies; phase 2 for dependent ones. Capability
-gating is done by passing a flag (see `enableSearchModes` / `enableLLMModes`) or by
-returning early, so an unavailable agent is simply never registered rather than
-registered-but-broken.
+There are four phases: phase 1 for agents with no dependencies (content, storage,
+canvas), phase 2 for dependent ones (prompt, search, memory, task, ingest), phase 3
+for app agents, phase 4 for ToolManager — which **must** stay last, since it
+snapshots the registry of everything else.
+
+⚠️ Do not copy the existing capability flags as a gating pattern — they do not gate.
+`initializeSearchManager(enableSearchModes, …)` passes the flag into
+`SearchManagerAgent`, where it is the ignored legacy parameter `_enableVectorModes`;
+all four search tools register regardless. `initializePromptManager(enableLLMModes)`
+registers PromptManager either way, falling back to a minimal `LLMProviderManager`
+when LLM modes are off. Real gating happens two other ways: an initializer
+`return`s early when a hard dependency is missing (no prompt storage, no settings),
+and individual tools are registered conditionally inside the agent constructor
+(PromptManager's credential-gated media tools). `safeInitialize` catches and logs
+any throw, so a failed agent is absent rather than half-registered.
 
 ## Structure and base classes
 
