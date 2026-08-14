@@ -7,7 +7,7 @@ import { FileSystemService } from '../storage/FileSystemService';
 import { IndexManager } from '../storage/IndexManager';
 import { SessionData } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from '../helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from '../helpers/DualBackendExecutor';
 
 const GLOBAL_WORKSPACE_ID = 'default';
 const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
@@ -188,7 +188,9 @@ export class WorkspaceSessionService {
    * Delete session from workspace
    */
   async deleteSession(workspaceId: string, sessionId: string): Promise<void> {
-    return withDualBackend(
+    // Destructive: must not silently route to the legacy store while the
+    // adapter is still hydrating. See #333 and withWritableBackend.
+    return withWritableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteSession(sessionId);

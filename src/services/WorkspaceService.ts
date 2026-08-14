@@ -13,7 +13,7 @@ import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
 import type { VaultOperations } from '../core/VaultOperations';
 import type { MCPSettings } from '../types/plugin/PluginTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from './helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, resolveWritableAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
 import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
 import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
 import { WorkspaceSessionService } from './workspace/WorkspaceSessionService';
@@ -392,8 +392,11 @@ export class WorkspaceService {
    * Create new workspace (writes file + updates index)
    */
   async createWorkspace(data: Partial<IndividualWorkspace>): Promise<IndividualWorkspace> {
-    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForCreate = this.getReadyAdapter();
+    // Wait for the adapter rather than taking the legacy branch the moment it
+    // is not ready: this notifies 'created' on completion, and a create that
+    // landed only in the legacy store would announce a workspace that vanishes
+    // on the next read — the mirror image of #333.
+    const adapterForCreate = await resolveWritableAdapter(this.storageAdapterOrGetter);
     if (adapterForCreate) {
       // Convert context to HybridTypes format if provided
       const hybridContext = data.context ? {
@@ -475,7 +478,9 @@ export class WorkspaceService {
    */
   async updateWorkspace(id: string, updates: Partial<IndividualWorkspace>): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    await withDualBackend(
+    // Notifies 'updated' on completion, so it must not complete vacuously —
+    // see deleteWorkspace and #333.
+    await withWritableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const hybridUpdates: Partial<HybridTypes.WorkspaceMetadata> = {};
@@ -557,7 +562,13 @@ export class WorkspaceService {
    */
   async deleteWorkspace(id: string): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    await withDualBackend(
+    // withWritableBackend, not withDualBackend: during startup hydration the
+    // adapter is not ready, and the legacy branch deletes an `<id>.json` that
+    // a vault-root install never wrote. The delete reported success, the
+    // notification below told the UI the row was gone, and the workspace came
+    // back on the next read (#333). Now it either lands in the event store or
+    // throws, and the throw skips the notification.
+    await withWritableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteWorkspace(id);

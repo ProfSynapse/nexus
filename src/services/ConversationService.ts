@@ -20,7 +20,7 @@ export type { IndividualConversation, ConversationMessage } from '../types/stora
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import type { ToolCallMessageHistoryOptions } from '../database/repositories/interfaces/IMessageRepository';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from './helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
 
 type ConversationMessageResult = MessageData;
@@ -623,7 +623,9 @@ export class ConversationService {
    * Delete conversation (deletes from adapter or legacy storage)
    */
   async deleteConversation(id: string): Promise<void> {
-    return withDualBackend(
+    // Destructive: must not silently route to the legacy store while the
+    // adapter is still hydrating. See #333 and withWritableBackend.
+    return withWritableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteConversation(id);

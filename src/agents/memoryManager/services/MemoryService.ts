@@ -14,7 +14,7 @@ import {
 import { MemoryTraceData, SessionMetadata, StateMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from '../../../services/helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from '../../../services/helpers/DualBackendExecutor';
 
 /**
  * MemoryService provides agent-specific logic for memory management
@@ -710,7 +710,9 @@ export class MemoryService {
     sessionId: string,
     stateId: string
   ): Promise<void> {
-    return withDualBackend(
+    // Destructive: must not silently route to the legacy store while the
+    // adapter is still hydrating. See #333 and withWritableBackend.
+    return withWritableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteState(stateId);
