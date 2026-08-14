@@ -1,150 +1,140 @@
 ---
 name: nexus-testing
-description: How Nexus is tested — Jest unit lanes, env-gated live smoke tests against a real vault, and the methodology rules that came out of defects which shipped past a green suite. Use when adding tests, when a change touches search ranking or tool discovery, when a mock might be hiding a real behaviour, or when deciding whether a unit test can actually prove something.
+description: How to write a Nexus test that can actually fail, pick the right lane, run the live and eval lanes, and fix a shipped-docs drift failure. Use when adding tests, when a mock might be deciding the outcome, when a change touches search ranking or tool discovery, or when the guidance gate fails.
 ---
 
-# Nexus Testing
+# Testing Nexus
 
-## Lanes
+## Pick the lane
 
-| Lane | How | Scope |
+| Lane | Where | For |
 |---|---|---|
-| Unit | `npm run test` (Jest) — `tests/unit/` holds 315 of the 346 `*.test.ts` files | Core logic and services |
-| Live smoke | env-gated, `--runInBand` | Real vault through the real `nexus` CLI |
-| LLM eval | `RUN_EVAL=1`, skills `nexus-model-eval` / `nexus-eval-harness` | Grades two-tool MCP usage |
-| Integration | `tests/integration/` (Jest, some live-gated) | Cache backend, migrations, tool continuation |
-| Manual | `tests/manual/*.md` — scripts, not Jest | Anything only observable in the running Obsidian app |
+| Unit | `tests/unit/` | Logic that can be proven with fakes |
+| Integration | `tests/integration/` | Cache backend, migrations, tool continuation |
+| Live smoke | `tests/debug/` | Behaviour only the real dependency exhibits |
+| LLM eval | `tests/eval/` | How well a model drives the two-tool protocol |
+| Manual | `tests/manual/*.md` | Scripts for what only the running app shows |
 
-Jest config is `roots: ['<rootDir>/tests']` + `testMatch: ['**/*.test.ts']`, so
-`npm run test` picks up **every** lane; the live smoke tests make themselves inert
-with `describe.skip` and `eval.test.ts` degrades to a single "skips — no API keys
-configured" case unless the gate is set. Other directories under `tests/`:
-`integration` (11), `debug` (5), `eval` (3, of which the executor-recovery and
-`headless/` smoke tests always run), `core` (2), `agents/*` (7), `services/*` (2),
-`perf` (1). `npm run test:coverage` runs Jest with a global 80% threshold.
+Jest is configured with `roots: ['<rootDir>/tests']` and `testMatch: ['**/*.test.ts']`,
+so `npm run test` picks up **every** lane. The live and eval lanes make themselves
+inert when their gate is unset — that is a property of each test file, not of the
+runner, so a new live test must opt out explicitly or it will run in CI.
 
-## The core lesson: a green suite is not proof
+## Write a test that can actually fail
 
-Three search-ranking defects (#309, #313, #314) shipped past a green unit suite.
-Every one was caught by searching a real vault. The suite could only prove the tiers
-were ordered consistently *with a mocked scorer* — it could not know whether real
-filenames look like the fixtures, or whether real Obsidian scores the way the mock
-does.
+Three ranking defects shipped past a green suite. Every one was caught by searching
+a real vault. The suite could only prove the tiers were ordered consistently *with a
+mocked scorer* — it could not know whether real data looks like the fixtures.
 
 Two habits follow.
 
-### Ask what the mock is deciding
+**Ask what the mock is deciding.** If the mock supplies the values your assertion
+depends on, the test proves the mock is self-consistent and nothing more. Before
+writing the assertion, ask: if the real dependency behaved differently, would this
+test notice? If not, the test belongs in a live lane, or the mock needs to reproduce
+the *shape* of the real behaviour — including the part that caused the bug.
 
-If a mock supplies the values the assertion depends on, the test proves the mock is
-self-consistent and nothing more. Two live examples worth knowing:
+**Prove the ordering is not accidental.** Anywhere enumeration order could
+masquerade as ranking, run the assertion twice with the input order reversed and
+fail if the two results differ. `tests/unit/SearchContentTool.test.ts` does this
+through a `rank()` helper that is the only way the tests obtain results, so the
+guarantee cannot be bypassed by adding a case — and a self-test at the bottom
+asserts the helper really does reject a tie. Copy that structure rather than
+remembering to reverse by hand.
 
-- **`prepareFuzzySearch` mock** (`tests/mocks/obsidian/core.ts`) charges a small
-  per-discontiguity penalty **capped at 8**. That cap reproduces the reason the
-  original bug existed. **Do not make it proportional** — the tests go vacuous.
-- **A scenario-scripted `getTools` mock is selector-insensitive** — a scenario's
-  `mockResponses` entry becomes a handler built by `registerStaticResponse`
-  (`tests/eval/EvalToolExecutor.ts`), whose body ignores its `_args` and returns the
-  same blob for every call. A scenario exposing only some agents makes a model
-  conclude discovery is broken and loop `getTools` forever at temperature 0. Expose
-  every agent a scenario could plausibly need. (Only the scripted path is blind: with
-  no scripted mock, `handleGetTools` auto-generates schemas and *does* filter
-  `domainTools` by the requested selectors.)
+## Add a live smoke lane
 
-### Prove the ordering isn't accidental
+Copy `tests/debug/search-ranking-live-smoke.test.ts`. The conventions exist because
+a live lane touches a real vault:
 
-`tests/unit/SearchContentTool.test.ts` routes every ranking assertion through a
-`rank()` helper that executes the tool **twice** — once with the fixtures forwards,
-once with `[...files].reverse()` — and throws if the two result orders differ. A tie
-is not a ranking rule. The helper is the only way the tests obtain results, so the
-guarantee cannot be bypassed by adding a case; a self-test at the bottom of the file
-asserts the helper actually rejects a tie (`/decided by enumeration order/`). Apply
-the same treatment anywhere enumeration order could masquerade as ranking.
+1. **Gate it** — `describe.skip` unless its env var is set, so it is inert by
+   default and never a CI dependency
+2. **`--runInBand`** — live lanes are not safe to parallelise
+3. **Header comment** stating what the mocks cannot cover, so the next person knows
+   why the lane exists
+4. **Confine writes** to a dedicated scratch folder and clean up in `afterAll` —
+   note the existing lane clears its folder with `storage archive`, not delete,
+   because the AI surface has no delete by design
+5. **Touch nothing else in the vault**
 
-## Live smoke lanes
+Run it explicitly:
 
-Pattern to copy — `tests/debug/search-ranking-live-smoke.test.ts`:
-
-```
+```bash
 RUN_SEARCH_SMOKE=1 npx jest tests/debug/search-ranking-live-smoke.test.ts --runInBand --no-coverage
 ```
 
-Conventions: env-gated (`describe.skip` unless `RUN_SEARCH_SMOKE === '1'`) so the
-lane is inert by default and never a CI dependency; `--runInBand`; a header
-explaining what the mocks cannot cover; writes confined to a dedicated scratch folder
-(`_search-ranking-smoke`) which `afterAll` clears with `storage archive` — archive,
-not delete, because the AI surface has no delete by design; never touches anything
-else in the vault. `SEARCH_SMOKE_VAULT=<name>` picks a vault, otherwise the CLI
-default is used.
+Each live lane has its own gate variable — read the file's header rather than
+assuming; several also need provider keys or a fixture path.
 
-Other live lanes and their gates:
+## Run the eval harness
 
-| Test | Gate |
-|---|---|
-| `tests/debug/provider-model-live-smoke.test.ts` | `RUN_MODEL_SMOKE=1` |
-| `tests/debug/video-generation-live-smoke.test.ts` | `RUN_LIVE_VIDEO_SMOKE=1` (+ `RUN_PAID_VIDEO_SMOKE=1` for paid calls) |
-| `tests/debug/codex-live-tool-pingpong.test.ts` | `RUN_CODEX_LIVE_TOOL_PINGPONG=1` + live tokens |
-| `tests/debug/intelligence-curse-repro.test.ts` | presence of a JSONL fixture (`DEBUG_REPRO_JSONL`) |
-| `tests/integration/transcription-live.test.ts` | `RUN_LIVE_TRANSCRIPTION_TESTS=1` + per-provider API keys |
-| `tests/integration/tool-continuation-live.test.ts` | `OPENROUTER_API_KEY` present |
+`RUN_EVAL=1`, plus at least one provider key, or the suite skips. Full guidance is
+in the `nexus-model-eval` and `nexus-eval-harness` skills; the knobs that change
+behaviour rather than scope are `EVAL_SCENARIO_NAMES` (targeted retest),
+`EVAL_CONCURRENCY`, `EVAL_TEMP`, `EVAL_TEST_TIMEOUT_MS` and `EVAL_ENFORCE_CONTEXT`.
 
-## Search ranking invariant
+**Concurrency is per-matrix, not a flat serial.** `resolveConcurrency` returns 1
+only when a local provider (`ollama`, `lmstudio`) is in the matrix; every other
+matrix fans out fully. Local single-slot servers 500-storm under fan-out, which is
+what that special case exists to prevent — so do not "fix" a slow cloud run by
+forcing serial, and do not expect a local run to behave like a cloud one.
 
-`src/agents/searchManager/tools/searchContent.ts` is a **single-scale tier ladder**:
+Results are pushed in as each scenario finishes and `afterAll` saves whatever is
+there, so a mid-run timeout still produces reports. Per-case progress streams to a
+log under the artifacts dir — `tail -f` it during a slow local run rather than
+waiting for the summary.
 
-```
-TITLE_EXACT_SCORE 0.95 > EXACT_PHRASE_SCORE 0.9 > ALL_WORDS_SCORE 0.8
-> PARTIAL_MATCH_FLOOR 0.3 > FUZZY_ONLY_CEILING 0.25
-```
+## Fix a shipped-docs drift failure
 
-**Never reintroduce a second scale.** Filename fuzzy used to be normalized to
-`1 + score/100` (~0.92–0.95), an incommensurable scale that let a coincidental
-filename beat a verbatim body match. `foldSeparators()` lowercases and folds runs of
-`-`/`_` to single spaces, and is applied to **both sides of the filename comparison**
-(the query and the filename) so a kebab filename matches a spaced query — never to
-note bodies, which stay byte-exact so the snippet offsets keep pointing at real text.
-Results carry `matchType`, whose type is
-`export type SearchMatchType = 'content' | 'path' | 'semantic'`; the tool assigns
-`content` when the body scored above zero, otherwise `path`.
+`tests/unit/shippedGuidanceCommands.test.ts` validates every tool command in shipped
+guidance against the repo-root `cli-first-tool-schemas.json`. It fails on an unknown
+agent/tool/flag, a playbook selector resolving to nothing, a missing required
+argument in a complete copy-pasteable example, a broken relative doc link, and an
+embedded `--prompts` payload violating the item contract.
 
-## Eval harness knobs
+When it fails, the fix is in one of two places and it matters which:
 
-`tests/eval/`, plan at `docs/plans/llm-eval-harness-plan.md`.
+- **The docs are wrong** → edit the *source* guidance (`skill/SKILL.md`,
+  `cli/agents-snippet.md`, `skill/playbooks/*.md`, README, `guide/*.md`). Never edit
+  `src/utils/cliAssets.ts` — it is generated from those sources during the build.
+- **The catalog is stale** → refresh it. Regenerating needs a running vault (the
+  `nexus-tool-schemas` skill). `npm run schemas:tools` writes
+  `docs/generated/cli-first-tool-schemas.json` by default, **not** the repo-root file
+  this test reads — pass `--output cli-first-tool-schemas.json`.
 
-| Knob | Effect |
-|---|---|
-| `RUN_EVAL=1` | Required to run at all — and at least one provider must have its key env var set, or the suite still skips |
-| `EVAL_SCENARIO_NAMES=a,b,c` | Targeted retest (comma-separated, overrides `config.scenarioNames`) |
-| `EVAL_CONCURRENCY=N` | Override the dispatch width. **The default is per-matrix, not a flat 1**: `resolveConcurrency` returns `1` only when a local provider (`ollama`, `lmstudio`) is in the matrix, otherwise `Infinity`. Local single-slot servers 500-storm under fan-out |
-| `EVAL_TEMP` | Overrides `defaults.temperature` (per-scenario `temperature:` still wins) |
-| `EVAL_TEST_TIMEOUT_MS` | Jest timeout; the computed default scales the per-case budget by the estimated serial lane count |
-| `EVAL_ENFORCE_CONTEXT=1` | Enforces the context contract globally (a scenario can also opt in with `enforceContextContract: true`) |
+A stale catalog also surfaces as a drift failure in
+`tests/unit/ToolManagerCliSyntax.test.ts`, so two failures with one cause is the
+expected signature.
 
-Per-case progress streams to `<artifactsDir>/eval-progress-<ISO-timestamp>.log`
-(`artifactsDir` defaults to `test-artifacts/`) — `tail -f`-able during a slow local
-run. Results are pushed into `allResults` incrementally as each scenario finishes,
-and `afterAll` saves whatever is there, so a mid-run timeout still produces JSON + MD.
-Scenarios with known fixture bugs can set `excludeFromBoard: true`; the runner stamps
-`excludedFromBoard` on the result and `ReportGenerator` runs and reports them but
-skips them when scoring the board.
+## Gotchas
 
-## Shipped-docs gate
+**"I fixed the docs and the gate still fails."** You regenerated to
+`docs/generated/`. The gate reads the repo-root catalog.
 
-`tests/unit/shippedGuidanceCommands.test.ts` validates every tool command we ship as
-guidance against the generated catalog `cli-first-tool-schemas.json` (repo root). It
-reads `README.md`, `skill/SKILL.md`, `cli/nexus-cli.ts`, `cli/agents-snippet.md`,
-`skill/playbooks/*.md` and `guide/*.md`, and fails on: an unknown agent, tool or
-flag; a playbook `tools:` selector that resolves to nothing; a tool named in the
-`guide/apps.md` Apps table that matches no `slug:` declared under `src/agents/**`
-(apps are opt-in, so those are checked against source rather than the catalog
-snapshot); a missing required argument in a *complete*
-copy-pasteable `nexus use … -- <cmd>` example; a broken relative doc link; and an
-embedded `--prompts` payload that violates the `executePrompts` item contract.
+**"My change to `cliAssets.ts` disappeared."** It is generated during the build.
 
-So if you rename or remove a tool slug, fix the **source** guidance files above —
-`src/utils/cliAssets.ts` is generated from `skill/SKILL.md`, `cli/agents-snippet.md`
-and the playbooks by `scripts/generate-cli-content.mjs` during `npm run build`, and
-must never be hand-edited. Refreshing the catalog needs a running vault (the
-`/nexus-tool-schemas` skill); note `npm run schemas:tools` writes to
-`docs/generated/cli-first-tool-schemas.json` by default, not the repo-root file this
-test reads — pass `--output cli-first-tool-schemas.json` to update that one. A stale
-catalog also surfaces as a drift failure in `tests/unit/ToolManagerCliSyntax.test.ts`.
+**"The eval model looped `getTools` forever."** A *scenario-scripted* mock is
+selector-insensitive: `registerStaticResponse` builds a handler that discards its
+args and returns the same blob for every call. A scenario exposing only some agents
+makes the model conclude discovery is broken. Expose every agent the scenario could
+plausibly need. Only the scripted path is blind — with no scripted mock, discovery
+does filter by the requested selectors, so do not misdiagnose the auto-generated
+path this way.
+
+**"Ranking looks right locally and wrong in the vault."** The fuzzy-search mock
+charges a bounded per-discontiguity penalty, and the bound is what reproduces the
+original bug. Do not make it proportional — the tests go vacuous and stop
+distinguishing the tiers.
+
+**"I added a scoring rule and everything still passes."** Read the tier constants in
+`src/agents/searchManager/tools/searchContent.ts` before adding one. The ladder is a
+**single scale**; the original defect was a second, incommensurable scale for
+filename fuzzy that let a coincidental filename outrank a verbatim body match. Any
+new score must be placed on the existing ladder.
+
+**"My filename normalisation broke snippet offsets."** Separator folding applies to
+both sides of the *filename* comparison only. Note bodies stay byte-exact so snippet
+offsets keep pointing at real text.
+
+**"The live test ran in CI."** Its gate is missing or inverted. Live lanes must be
+inert without their env var.

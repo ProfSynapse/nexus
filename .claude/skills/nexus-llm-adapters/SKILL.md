@@ -1,189 +1,135 @@
 ---
 name: nexus-llm-adapters
-description: Nexus LLM provider adapter invariants — streaming, in-stream error frames, reasoning/thinking rendering, local-model quirks (LM Studio, Ollama), CLI-backed providers, and shared transcription. Use when adding or debugging a provider adapter, working on streaming or reasoning display, or touching chat message/branch plumbing.
+description: How to add or debug a Nexus LLM provider adapter — what every adapter must wire, how to verify it against a live provider, and the failure modes that produce a silently blank chat. Use when adding or changing a provider adapter, debugging streaming or reasoning display, working with local or CLI-backed models, or touching chat branch plumbing.
 ---
 
-# Nexus LLM Adapters
+# Working on LLM Adapters
 
-Providers talk direct HTTP via `ProviderHttpClient`
-(`src/services/llm/adapters/shared/ProviderHttpClient.ts`, reached through
-`BaseAdapter.request()` / `requestStream()`) — there are no vendor LLM SDKs in
-`package.json`. Adapters live in `src/services/llm/adapters/{provider}/`, over
-`BaseAdapter`.
+Providers talk direct HTTP through `ProviderHttpClient`, reached via
+`BaseAdapter.request()` / `requestStream()`. There are no vendor LLM SDKs in
+`package.json` and adding one is a decision to raise, not to make. Adapters live in
+`src/services/llm/adapters/{provider}/` over `BaseAdapter`.
 
-## Streaming: in-stream error frames
+## What every streaming adapter must wire
 
-Some providers (notably LM Studio) return `{"error":{...}}` frames **over HTTP
-200**. Without handling, the stream simply ends empty and the user sees a blank
-bubble with no error.
+**`extractError` on `SSEStreamOptions`.** Some providers return `{"error":{...}}`
+frames **over HTTP 200**. Without an extractor the stream simply ends, the user gets
+a blank bubble, and nothing is logged — the worst failure shape available. With it,
+`processNodeStream` records the message, drains the pump and throws a
+`LLMProviderError` with a stream-error code, so no bogus "complete" chunk is emitted.
 
-`SSEStreamOptions.extractError` (`src/services/llm/streaming/SSEStreamProcessor.ts`)
-+ `BaseAdapter.processNodeStream` turn those frames into
-`LLMProviderError(..., 'PROVIDER_STREAM_ERROR')` — the message is recorded, the pump
-is drained, then the error is thrown (so no bogus "complete" chunk is emitted).
+An empty stream is never an acceptable outcome. If you cannot map a provider's error
+frame, fail loudly rather than returning nothing.
 
-**Any new streaming adapter should wire `extractError`.** An empty stream is not an
-acceptable failure mode.
+**Reasoning goes through the event, not a fake tool call.** Emit `chunk.reasoning`
+and let the existing chain carry it: `onReasoningUpdate(messageId, text, isComplete)`
+on the stream/message events → `ChatView` → `MessageDisplay` → `MessageBubble`,
+which renders a collapsible block that auto-expands while streaming. Do **not**
+reintroduce a synthetic `reasoning`-type tool call — that was the previous mechanism
+and the tool coordinator never rendered it, so reasoning flowed correctly through
+every layer and vanished at the final paint.
 
-## Reasoning / thinking rendering
+## Verify a new or changed adapter
 
-The path is: `chunk.reasoning` → `onReasoningUpdate(messageId, reasoningText, isComplete)`
-on `StreamHandlerEvents`/`MessageManagerEvents` → `ChatView` →
-`MessageDisplay.updateMessageReasoning` → `MessageBubble.updateReasoning` /
-`syncReasoningBlock`, which renders a collapsible
-`<details class="message-reasoning">` block (summary `.message-reasoning-summary`
-"Thinking", body `.message-reasoning-content`) that auto-expands while streaming and
-collapses on completion.
+Unit tests cannot tell you whether a provider actually accepts your request shape.
+The lanes that can:
 
-**Do NOT reintroduce a synthetic `reasoning`-type tool call.** That was the previous
-mechanism; the tool coordinator never rendered it, so reasoning flowed correctly
-through every layer and silently vanished at the final paint.
+- `tests/debug/provider-model-live-smoke.test.ts` — drives real model ids against
+  the real endpoint. Use it when adding a provider or changing model metadata; the
+  `nexus-model-updates` skill wraps this.
+- For a local server, curl it directly before blaming the adapter. Local runtimes
+  return in-stream errors and undocumented behaviours that no fixture will predict.
+
+Check three things explicitly, because they fail independently: the non-streaming
+path, the streaming path, and the streaming **error** path (send something the
+provider will reject mid-stream and confirm you get an error rather than silence).
 
 ## Local models
 
-**LM Studio speculative decoding.** A `draft_model` against a batched-MLX target
-fails. `LMStudioAdapter` detects the failure (HTTP *or* in-stream) before any real
-output (`producedRealOutput` gate), marks the draft incompatible (per `target::draft`
-pair, with a one-time Notice), drops `draft_model`, and retries — so chat always
-produces output. The two rejection causes the code distinguishes: the engine/mode
-doesn't support speculative decoding (batched MLX, vision MLX) or the draft's
-tokenizer doesn't match. Field guidance, not enforced by code: pair a GGUF target
-with a same-family GGUF draft for matching vocab.
+Local runtimes are where the undocumented behaviour lives.
 
-**`ensureModelLoaded` never compares `flash_attention`.** It is passed through when
-configured, but comparing it caused infinite model reloads: it is llama.cpp-only, and
-MLX no-ops it without reporting it back, so the comparison never converged. The
-loaded-instance scan matches on `context_length` only (plus `parallel === 1` when a
-draft is configured). `parallel: 1` goes in the load body **when a draft model is
-configured** — LM Studio honours it despite its absence from the public REST docs,
-and MLX speculative needs a non-batched instance. (The whole pre-load is skipped
-unless a context length is configured; failures fall back to JIT loading.)
+**Speculative decoding can fail per-backend.** A draft model against a batched MLX
+target is rejected — and the rejection may arrive as an in-stream frame rather than
+an HTTP error. `LMStudioAdapter` handles this by detecting the failure before any
+real output, marking the draft incompatible, dropping it and retrying, so chat
+always produces something. Preserve that fallback shape if you touch it. GGUF
+targets have no such restriction; pair one with a same-family GGUF draft so the
+vocab matches.
 
-**Reasoning level for local models is deliberately not wired.** `renderReasoningControls`
-(`src/components/shared/ChatSettingsRenderer.ts`) bails unless
-`staticModelsService.findModel(provider, model)?.capabilities?.supportsThinking` is
-true, and `StaticModelsService.getModelsForProvider` has no `lmstudio`/`ollama` case
-(falls through to `[]`), so the control never renders for local providers. Adapters
-don't send a level either: `OllamaAdapter` sends a top-level `think: <boolean>`
-(`shouldEnableThinking` = explicit `options.enableThinking` ?? `isThinkingModelName`)
-and `LMStudioAdapter` sends no `reasoning_effort` at all;
-`ThinkingEffortMapper` (`src/services/llm/utils/ThinkingEffortMapper.ts`) has entries
-only for anthropic / openai / google / groq / deepseek. **Decision: users set
-reasoning effort in LM Studio's own UI.** Do not build this speculatively.
+**Do not compare `flash_attention` when deciding whether a loaded model is
+reusable.** It is llama.cpp-only, MLX silently no-ops it and does not report it
+back, so the comparison never converges and the adapter reloads the model forever.
+Pass it through; never diff it. The loaded-instance scan matches on context length,
+plus a non-batched instance when a draft is configured.
 
-## CLI-backed providers: Antigravity (`agy`)
+**Reasoning *level* is deliberately not wired for local providers.** The control
+only renders for models whose static metadata advertises thinking support, local
+providers have no such entry, and neither local adapter sends an effort parameter.
+This is a decision, not a gap: users set reasoning effort in LM Studio's own UI. Do
+not build it speculatively.
 
-The `google-gemini-cli` provider id is unchanged for settings compatibility
-(`GoogleGeminiCliAdapter.name`), but the runtime binary resolved on PATH is `agy`
-(`resolveGeminiCliRuntime` in `src/utils/geminiCli.ts`), not the deprecated `gemini`
-CLI. Contract:
+## CLI-backed providers
 
-- Emits **plain text** — `parseAgyOutput` is `stdout.trim()`; no JSON output mode
-- Reports **no token usage** (usage omitted, defaults to zero)
-- Text-completion only — no tool/function calling through this provider
-- `--model` takes human labels and **fails open** on an unknown slug, so
-  `geminiCliModelNormalize.ts` is a **fail-closed allowlist**: it composes
-  `"<Base label> (<Effort>)"` from a known base slug + the effort slider and throws
-  `LLMProviderError` on anything outside `BASE_MODELS` / `KNOWN_AGY_LABELS`. Keep it
-  that way. (Only two bases: Gemini 3.5 Flash — Low/Medium/High; Gemini 3.1 Pro —
-  Low/High, so a requested Medium clamps *up* to High.)
-- Nexus never sets `GEMINI_CLI_SYSTEM_SETTINGS_PATH`; the old temp-settings-file
-  mechanism is gone and a test asserts it is absent from the child env
+One provider shells out to a CLI (`agy`, under the historical `google-gemini-cli`
+provider id, which stays unchanged for settings compatibility). Its contract is
+narrower than an HTTP provider's: plain-text output, no token usage, text completion
+only — no tool calling.
 
-Invocation is `--print --model <label> --print-timeout 60s` with the prompt on stdin,
-plus `--sandbox` **only on macOS** (`shouldUseSandbox()` — the sandbox backend is
-verified only there; it is additive defense-in-depth, not the floor).
-`--print-timeout` takes a Go duration string (`60s`), not milliseconds, and is the
-security-load-bearing kill-switch for a headless tool-permission block (nothing can
-approve a prompt in print mode). Note the adapter's own comment claiming it is the
-*only* bound is now stale: `runCliProcess` also applies a 120s inactivity watchdog
-(`DEFAULT_CLI_IDLE_TIMEOUT_MS`) to every CLI child, agy included.
+**Security constraints, non-negotiable:**
 
-Security constraints, non-negotiable: the auth probe (`GeminiCliAuthService.runAuthProbe`)
-is a **boolean-only** presence check over `~/.gemini/oauth_creds.json` — it reads the
-file to test for a non-empty `access_token` (tolerant: whole-file parse → per-line
-parse → structural regex) and returns only an exitCode; the token value is **never
-captured, logged, or returned**. No persistent `~/.gemini` writes; no
-`--dangerously-skip-permissions`. `buildGeminiCliEnv` also strips
-`GEMINI_API_KEY`/`GOOGLE_*`/`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` from the child env so
-agy can only use its own file-based OAuth.
+- The auth probe is **boolean-only**. It may read the credentials file to test for a
+  non-empty token, and must return only a boolean or exit code. The token value is
+  never captured, logged, or returned.
+- No persistent writes into the user's provider config directory.
+- No permission-skipping flags.
+- Model selection is a **fail-closed allowlist**. The CLI fails *open* on an unknown
+  model — it will happily run something you did not intend — so Nexus must reject
+  anything outside the known set. Keep that direction if you touch the normalizer.
+- Provider API keys are stripped from the child environment so the CLI can only use
+  its own file-based auth.
 
-## Shared transcription
-
-Shared service: `src/services/llm/TranscriptionService.ts`. Types:
-`src/services/llm/types/VoiceTypes.ts`.
-
-Five providers are wired, each with its own adapter under
-`src/services/llm/adapters/{provider}/`:
-
-- **OpenAI** — word timestamps on `whisper-1` only (`verbose_json` +
-  `timestamp_granularities[]=word`). `gpt-4o-transcribe-diarize` uses
-  `diarized_json` (speaker labels, segment timing, **no** word detail); the
-  `gpt-transcribe` generation returns plain JSON with no timing and rejects
-  `verbose_json`.
-- **Groq** — `verbose_json`, word timestamps on request
-- **Mistral** — word timestamps (`timestamp_granularities=word`) + opt-in `diarize`
-- **Deepgram** — `utterances` always on, words parsed, opt-in `diarize`
-- **AssemblyAI** — words parsed, opt-in `speaker_labels`
-
-⚠️ The ingest shim at
-`src/agents/ingestManager/tools/services/TranscriptionService.ts` **strips
-word-level data** — it maps each segment down to `{startSeconds, endSeconds, text}`
-even though it requests word timestamps. Callers needing word timings must use the
-shared service directly.
+Anything shelling out inherits the shared CLI process runner and its idle watchdog;
+do not assume a provider-specific timeout flag is the only bound on a hung process.
 
 ## Chat branches
 
-A branch **is** a conversation with parent metadata:
+A branch **is** a conversation with parent metadata — `parentConversationId`,
+`parentMessageId`, `branchType`.
 
-- `metadata.parentConversationId` — parent conversation
-- `metadata.parentMessageId` — the message it attaches to
-- `metadata.branchType` — stored as `'alternative' | 'subagent'`
-  (`src/types/chat/ChatTypes.ts`, `src/types/storage/StorageTypes.ts`)
+⚠️ **Two vocabularies, don't conflate them.** The *stored* branch type and the
+*view-layer* union are different sets, and the conversion collapses anything that
+is not a subagent into the view's generic value. So a value you stored may not be
+the value the UI reports. Read both the storage types and the view types before
+assuming a mismatch is a bug — it is a layer boundary.
 
-⚠️ **Two vocabularies, don't conflate them.** The *stored* metadata value is
-`'alternative' | 'subagent'`, but the *view-layer* union
-`BranchType` (`src/types/branch/BranchTypes.ts`) is `'human' | 'subagent'`.
-`BranchService.conversationToBranch` (~line 226) collapses the two: anything that
-isn't `'subagent'` becomes `'human'` on the `ConversationBranch.type` it returns —
-so a stored `'alternative'` surfaces as `'human'` in the UI. The same mapping is in
-`ConversationTypeConverters.ts` and `ChatBranchViewCoordinator.ts`. Neither name is
-wrong; they belong to different layers.
+**Subagent tool calls are already executed.** The `chunk.toolCalls` a subagent
+executor sees carry their results; the ping-pong ran inside `LLMService`. Consume
+them for display and status only — re-executing them runs the side effects twice.
 
-Key files: `src/services/chat/BranchService.ts` (facade over ConversationService),
-`src/ui/chat/controllers/SubagentController.ts`,
-`src/ui/chat/services/ContextTracker.ts` (token/cost tracking).
+## Gotchas
 
-Subagents: branch → stream via LLMService → save result
-(`src/services/chat/SubagentExecutor.ts`). The `chunk.toolCalls` the executor sees
-are **already-executed** calls carrying their results (the ping-pong ran inside
-LLMService) — consume them for display/status only, never re-execute them.
+**"The chat bubble is blank and nothing was logged."** The stream ended without
+emitting. Almost always a provider error frame over HTTP 200 with no `extractError`
+wired.
 
-## Chat UI touchpoints
+**"Reasoning is in the payload but never appears in the UI."** Something is emitting
+a synthetic reasoning tool call instead of `onReasoningUpdate`. The tool coordinator
+does not render it.
 
-Chat view is `src/ui/chat/ChatView.ts` — conversations, branching, streaming, tool
-accordion. Suggesters live in `src/ui/chat/components/suggesters/` (a `BaseSuggester`
-with `TextArea*` and ContentEditable variants; `initializeSuggesters.ts` wires the
-four `TextArea*` ones):
+**"The model reloads on every single message."** A load-parameter comparison that
+can never match — check `flash_attention` first.
 
-| Trigger | Regex | Purpose |
-|---|---|---|
-| `/` | `/^\/(\w*)$/` — start of input only | Tool hints (MCP tools) |
-| `@` | `/@(\w*)$/` | Custom prompts |
-| `[[` | `/\[\[([^\]]*?)$/` | Note links |
-| `#` | `/#(\w*)$/` | Workspaces |
+**"Chat produces no output only when speculative decoding is on."** The draft model
+is incompatible with the target backend and the error arrived in-stream. The retry
+path exists; confirm it was not bypassed.
 
-Prompt assembly: `src/ui/chat/services/MessageEnhancer.ts` and
-`src/ui/chat/services/SystemPromptBuilder.ts`.
+**"A tool ran twice."** Something re-executed `chunk.toolCalls` in a subagent path.
 
-**WebLLM / Nexus Quark** (in-browser model — `nexus-quark-q3.0.5`, Qwen3-1.7B,
-4096-token context, native `<tool_call>` format; the adapter also parses
-`[TOOL_CALLS]`): multi-turn tool continuations may crash on Apple Silicon via WebGPU
-(documented at `src/utils/platform.ts` `supportsWebLLM` and in the `WebLLMAdapter`
-header).
+**"The CLI provider accepted a model name I never configured."** The CLI fails open;
+the allowlist is what closes it. Do not relax it into a warning.
 
-## Model definitions
+## Related skills
 
-Adding or changing model metadata (ids, pricing, context windows, capabilities,
-defaults) is the `nexus-model-updates` skill, which includes the live provider
-smoke test. Grading models on tool use is `nexus-model-eval`.
+Model metadata (ids, pricing, context windows, capabilities, defaults) and the live
+provider smoke test: `nexus-model-updates`. Grading models on tool use:
+`nexus-model-eval`.

@@ -50,7 +50,9 @@ npm run dev        # esbuild dev build
 npm run build      # full production build (lint → CLI → tsc → esbuild → connector)
 npm run test       # Jest
 npm run lint       # ESLint
-npm run schemas:tools   # regenerate cli-first-tool-schemas.json
+npm run schemas:tools   # regenerate the tool catalog — writes docs/generated/ by
+                        # default; pass --output cli-first-tool-schemas.json for
+                        # the repo-root file the shipped-docs test reads
 ```
 
 Releases go through the `nexus-release` skill.
