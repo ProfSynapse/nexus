@@ -37,7 +37,7 @@ CATALOG_NAME = "cli-first-tool-schemas.json"
 DEFAULT_OUTPUT_DIR = Path("docs") / "generated"
 REGEN_HINT = (
     "  node scripts/generate-tool-schemas.mjs --output " + CATALOG_NAME + "\n"
-    "  (regeneration needs a running vault -- see the nexus-tool-schemas skill)"
+    "  (regeneration needs npm install, not a running vault -- see the nexus-tool-schemas skill)"
 )
 
 

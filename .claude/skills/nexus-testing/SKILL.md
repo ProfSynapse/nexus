@@ -60,7 +60,7 @@ Jest can prove and what the running plugin does.
 - `nexus-eval-harness` — configuring, extending and debugging the eval harness.
   This skill covers only running it and the two knobs that surprise people.
 - `nexus-model-eval` — grading specific models.
-- `nexus-tool-schemas` — regenerating the tool catalog against a running vault.
+- `nexus-tool-schemas` — regenerating the tool catalog (no running vault needed).
 - `nexus-agents` — the two-tool contract and the `useTools` payload shape a test
   has to build.
 - `nexus-mobile-compat` — the mobile failure class the in-app loop cannot see.
