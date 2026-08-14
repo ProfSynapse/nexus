@@ -1,231 +1,178 @@
 ---
 name: nexus-agents
-description: Nexus agent and tool architecture — the agent/tool inventory, the two-tool MCP contract (getTools/useTools), how to add a new agent, and the base classes. Use when adding or changing an agent or tool, when working out which tool does what, when a tool name or CLI form needs verifying, or when touching the ToolManager MCP payload shape.
+description: How to add, change and verify a Nexus agent or tool, and the contract every tool must satisfy. Use when adding or modifying an agent or tool, when a documented command does not resolve, when wiring registration or capability gating, or when touching the ToolManager payload shape.
 ---
 
-# Nexus Agents & Tools
+# Working on Nexus Agents & Tools
 
-The plugin exposes exactly **two** MCP tools. Everything else is an internal agent
-reached through them.
+## The shape you are working inside
 
-## Two-tool architecture
+MCP exposes exactly **two** tools — `getTools` (discovery) and `useTools`
+(execution). Every other agent is internal and reached through them. Adding an
+agent does not add an MCP tool; it adds something discoverable *through* those two.
 
-| Tool | Role |
-|---|---|
-| `getTools` | Discovery — returns tool schemas for requested agents/tools |
-| `useTools` | Execution — unified context-first tool execution |
+Four invariants your change must not break:
 
-**Context schema:** `{ workspaceId, sessionId, memory, goal, constraints? }` — all
-required except `constraints`, and **enforced at runtime**, not just declared.
-`ToolCliNormalizer.collectContextContractViolations()` / `validateExecutionContext()`
-run first in `useTools.ts:37` and throw a *recoverable steering error* when
-`memory`/`goal` are empty or placeholder. `workspaceId`/`sessionId` keep silent
-defaults and steer only on present-junk. Discovery is exempt. The eval harness
-imports the same validator — single source, don't fork it.
+1. **Context is enforced, not merely declared.** `useTools` validates
+   `{ workspaceId, sessionId, memory, goal, constraints? }` before dispatch and
+   throws a *recoverable steering error* on empty or placeholder `memory`/`goal`.
+   Discovery is exempt. The eval harness imports the same validator — one source,
+   don't fork it.
+2. **The payload is CLI-first.** A `tool` string plus context fields at the top
+   level. The nested `{context, calls}` and `{request}` shapes are gone with no
+   compat shim; they throw `Deprecated payload shape`.
+3. **The AI gets no delete tool.** Destructive operations are exposed as `archive`,
+   which is reversible. Permanent delete is UI-only. If you are adding a tool that
+   destroys something, that is a design decision to raise, not to make quietly.
+4. **Results are `{ success: true, ...data }` or `{ success: false, error }`.**
 
-**Payload shape — CLI-first only.** A `tool` string plus context fields at the top
-level. Optional top-level `strategy: 'serial' | 'parallel'` and `values` map.
+## Find what exists
 
+Never trust a written inventory, including one in a doc like this. Ask the tree:
+
+```bash
+ls src/agents/ src/agents/apps/                   # agents
+grep -n "slug:" src/agents/<agent>/<agent>.ts     # that agent's tool slugs
 ```
-"storage list --path Notes, content read --path a.md --start-line 1"
+
+For the CLI names a caller actually types, regenerate the catalog rather than
+deriving them by hand:
+
+```bash
+npm run schemas:tools -- --output cli-first-tool-schemas.json
+grep '"command"' cli-first-tool-schemas.json
 ```
 
-Batch by separating commands with a top-level comma outside quotes. The comma is a
-separator only when followed by whitespace or end of input — a comma glued to the
-next character (`--paths a,b,c`) stays a CSV value inside the current command.
-Context fields must NOT appear as CLI flags inside the tool string.
+Slugs are not CLI names. `toKebabCase` (`ToolCliNormalizer`) kebab-cases **and
+strips a trailing `Manager`/`Agent`/`Tools`** — which is why `searchManager` is
+`search`, `webTools` is `web`, and the slug `subagent` is typed `prompt sub`. When
+in doubt, run the transform instead of guessing:
 
-⚠️ The legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` shapes
-were removed in v5.9.0 and throw `Deprecated payload shape` at
-`src/agents/toolManager/services/ToolCliNormalizer.ts:757/775/808`. `UseToolParams`
-has no `calls`/`request` fields. There is no compat shim.
+```bash
+node -e 'const f=v=>v.replace(/Manager$/i,"").replace(/Agent$/i,"").replace(/Tools$/i,"").replace(/([a-z0-9])([A-Z])/g,"$1-$2").replace(/[_\s]+/g,"-").replace(/--+/g,"-").toLowerCase();console.log(f("yourSlug"))'
+```
 
-**Verbatim / multiline transports** (never flatten multiline content):
-- MCP/chat: top-level `values` map, referenced as `@key` in the tool string.
-  Substituted *after* tokenization with no escape processing, so backslashes,
-  quotes and newlines survive exactly (`C:\temp`, `\alpha`, `\d`). A missing key,
-  or a declared key the command never references, fails loud.
-- Terminal CLI: `--<flag>-stdin` and `--<flag>-file <path>` hydrate *any*
-  value-taking flag. One `-stdin` per command; several `-file` may coexist; a flag
-  must not arrive both directly and via a transport.
+## Add a tool to an existing agent
 
-**`content replace`** (and `executePrompts.replace`) is pattern-anchored:
-`{path, start, end, content}` where `start`/`end` are TEXT anchors matched as whole
-lines (Unicode-normalized, so straight vs curly quotes compare equal) — never line
-numbers.
+1. Create `tools/<toolName>.ts` extending `BaseTool<Params, Result>`. `execute()`
+   and `getParameterSchema()` are abstract; `getResultSchema()` has a default and
+   is override-only.
+2. Register it in the agent constructor. `registerLazyTool({slug, name,
+   description, version, factory})` is the norm — use eager `registerTool(new X())`
+   only when construction needs dependencies the factory cannot reach.
+3. **Put your validation in `execute()` or the service, not the schema** (see
+   Gotchas). Guard every field you will persist or pass to the filesystem.
+4. If the tool must only exist under some condition (a credential, a platform),
+   register it conditionally in the constructor rather than registering a tool that
+   always fails.
 
-## Tool inventory
+**Verify:**
 
-Names below are the **CLI form** (`agent tool-name`, kebab-case). The source of
-truth is the `slug:` field under `src/agents/**` — camelCase in most agents
-(`webTools` declares kebab slugs directly). The CLI name is `toKebabCase(slug)`
-(`ToolCliNormalizer.ts`), and the agent alias is `toKebabCase(agentName)`; that
-helper **also strips a trailing `Manager`/`Agent`/`Tools`**, which is why
-`searchManager` → `search`, `webTools` → `web`, and the slug `subagent` →
-`prompt sub`.
+```bash
+npm run build                                     # typecheck + bundle
+npm run schemas:tools -- --output cli-first-tool-schemas.json
+grep '"command"' cli-first-tool-schemas.json | grep <your-tool>
+```
 
-Regenerate the machine-readable export with `npm run schemas:tools` — note it
-writes `docs/generated/cli-first-tool-schemas.json` by default; pass
-`--output cli-first-tool-schemas.json` to refresh the repo-root catalog.
-`tests/unit/shippedGuidanceCommands.test.ts` validates that catalog against
-README, `skill/SKILL.md`, `cli/nexus-cli.ts`, `cli/agents-snippet.md`,
-`skill/playbooks/*.md` and `guide/*.md` — it does **not** read `.claude/skills/**`,
-so nothing catches drift in this table. Verify against source before trusting it.
+The command string in that catalog is what a caller must type. If it is not what
+you expected, the kebab transform changed it. Then exercise it for real — through
+`getTools` to confirm discovery, and `useTools` to confirm execution, since
+registration and executability are separate failures.
 
-**Always-on agents (8):**
-
-| Agent | CLI | Tools |
-|---|---|---|
-| PromptManager | `prompt` | execute, sub, create, get, list, update, archive, list-models, generate-image\*, generate-audio\*, generate-video\*, check-generated-artifact\* |
-| ContentManager | `content` | read, write, replace, insert, set-property |
-| StorageManager | `storage` | list, create-folder, move, copy, archive, open |
-| SearchManager | `search` | content, directory, memory, query-notes |
-| MemoryManager | `memory` | create-workspace, list-workspaces, search-workspaces, load-workspace, update-workspace, archive-workspace, create-state, list-states, load-state, update-state, archive-state, run |
-| CanvasManager | `canvas` | read, write, update, list |
-| TaskManager | `task` | create-project, list-projects, update-project, archive-project, create, list, update, move, query, open, link-note |
-| IngestManager | `ingest` | run, capabilities |
-
-**Opt-in app agents (5)** — a vault only exposes the apps it enables:
-
-| Agent | CLI | Tools |
-|---|---|---|
-| WebToolsAgent (desktop) | `web` | open, capture-markdown, capture-png, capture-pdf, links |
-| ComposerAgent | `composer` | compose, list-formats |
-| ElevenLabsAgent | `elevenlabs` | list-voices, sound-effects, generate-music |
-| DataAnalysisAgent (desktop) | `data` | run-python, list-capabilities |
-| SkillsAgent | `skills` | list-skills, load-skill, create-skill, update-skill, archive-skill, sync-skills |
-
-\* The four PromptManager media tools are **credential-gated**, not always-on:
-`generate-image` needs a Google or OpenRouter key; `generate-audio` needs OpenAI,
-Google, Mistral, OpenRouter or the ElevenLabs app; `generate-video` and
-`check-generated-artifact` are registered together behind the video check. They
-are registered/unregistered live from `handleSettingsChange`, so a vault without
-keys simply does not expose them.
-
-Non-obvious contracts:
-- `content read` requires `--start-line` (declared `required` in `read.ts` and
-  enforced for CLI commands by the normalizer's missing-required-argument check).
-- `prompt sub` is the CLI form of the `subagent` slug. It is discoverable through
-  `getTools`, but only executes when the chat UI has wired a `SubagentExecutor` —
-  otherwise it returns "Execution context not available".
-- No **delete tool** anywhere the AI can reach — the model gets `archive`
-  (reversible). Permanent delete of states/workspaces is UI-only; there is no
-  `deleteState` MCP tool. Destruction is still reachable indirectly: `storage
-  move`/`copy` and `composer compose` trash an existing target when overwriting,
-  and `content replace` deletes the anchored range.
-- Media generation is mostly synchronous. `generate-image`/`generate-audio` write
-  the file and return. `generate-video` runs inline and returns a `jobId` **only**
-  when it exceeds its timeout (default 600000 ms); that is what
-  `check-generated-artifact --job-id <id>` is for.
-- No session tools — sessions are context fields. `memory run` triggers a workflow
-  (`--workflow-id` or `--workflow-name`; one of the two is required).
-- TaskManager naming is asymmetric: project tools are suffixed (`create-project`),
-  task tools are bare (`create`, `list`).
-- ElevenLabs has no registered text-to-speech tool (`TextToSpeechTool` exists in
-  the tree but is never registered); TTS runs through `prompt generate-audio`.
-
-## MCP server configuration
-
-- The server runs locally via `connector.js` (generated into the plugin folder; the
-  source is `connector.ts` at the repo root)
-- Configured in Claude Desktop's `claude_desktop_config.json`
-- Server identifier: **`nexus-[sanitized-vault-name]`** — `getPrimaryServerKey()` in
-  `src/constants/branding.ts`, used by `ConfigModal` and `GetStartedTab` when writing
-  the config. `claudesidian-mcp-[vault-name]` is the **legacy** key: still accepted
-  when discovering an existing entry, never written for a new one.
-- Per-vault IPC socket/pipe: `nexus_mcp_<vault>` — multiple vault instances are
-  supported simultaneously
-- `tools/list` returns exactly two MCP tools, `toolManager_getTools` and
-  `toolManager_useTools` (`src/handlers/strategies/ToolListStrategy.ts`)
-- Shipped agent-facing guidance is authored in `skill/SKILL.md`,
-  `cli/agents-snippet.md` and `skill/playbooks/*.md`, then embedded into
-  `src/utils/cliAssets.ts` by `scripts/generate-cli-content.mjs` — that file is
-  auto-generated, never hand-edit it. Traces:
-  `src/services/trace/ToolCallTraceService.ts`
-
-## Adding a new agent
+## Add a new agent
 
 Two touchpoints. No factory classes, no ServiceDefinitions entry.
 
-1. Add `initializeYourAgent()` to `src/services/agent/AgentInitializationService.ts`
-2. Add `safeInitialize('yourAgent', ...)` to a phase in
+1. `initializeYourAgent()` in `src/services/agent/AgentInitializationService.ts`
+2. `safeInitialize('yourAgent', ...)` in a phase of
    `AgentRegistrationService.doInitializeAllAgents()`
 
-There are four phases: phase 1 for agents with no dependencies (content, storage,
-canvas), phase 2 for dependent ones (prompt, search, memory, task, ingest), phase 3
-for app agents, phase 4 for ToolManager — which **must** stay last, since it
+Phase 1 is for agents with no dependencies, phase 2 for dependent ones, phase 3 for
+app agents, and phase 4 is ToolManager — which **must stay last**, because it
 snapshots the registry of everything else.
 
-⚠️ Do not copy the existing capability flags as a gating pattern — they do not gate.
-`initializeSearchManager(enableSearchModes, …)` passes the flag into
-`SearchManagerAgent`, where it is the ignored legacy parameter `_enableVectorModes`;
-all four search tools register regardless. `initializePromptManager(enableLLMModes)`
-registers PromptManager either way, falling back to a minimal `LLMProviderManager`
-when LLM modes are off. Real gating happens two other ways: an initializer
-`return`s early when a hard dependency is missing (no prompt storage, no settings),
-and individual tools are registered conditionally inside the agent constructor
-(PromptManager's credential-gated media tools). `safeInitialize` catches and logs
-any throw, so a failed agent is absent rather than half-registered.
+To make an agent conditional, `return` early from the initializer when a hard
+dependency is missing. `safeInitialize` catches and logs any throw, so a failed
+agent is absent rather than half-registered — absent is the correct outcome, since
+a tool that can only answer "unavailable" wastes a discovery round-trip.
 
-## Structure and base classes
+**Verify:** build, then confirm the agent appears in `getTools` discovery and that
+one of its tools executes through `useTools`.
 
-```
-agents/[agentName]/
-  [agentName].ts     # extends BaseAgent, registers tools in the constructor —
-                     # `registerLazyTool({slug, name, description, version, factory})`
-                     # is the norm; `registerTool(new XTool(...))` for eager ones
-                     # with complex dependencies
-  tools/[toolName].ts
-  tools/services/    # tool-specific services
-  services/          # agent-level shared services
-  types.ts
-  utils/
-```
+## Gotchas
 
-- `BaseAgent` — `src/agents/baseAgent.ts`
-- `BaseTool<Params, Result>` — `src/agents/baseTool.ts`; `execute()` and
-  `getParameterSchema()` are abstract, `getResultSchema()` has a default (the
-  common result schema) and is override-only
-- `IAgent` / `ITool` — `src/agents/interfaces/`
-- App agents also extend `BaseAppAgent` (`src/agents/apps/BaseAppAgent.ts`) and may
-  opt into `AppRuntimeContext` for settings, storage-adapter and session-context
-  access
-- Results: `{ success: true, ...data }` or `{ success: false, error: string }`
+Each of these has bitten. They are listed by the symptom you will actually see.
 
-**App agents that produce files** must have vault access wired through
-`BaseAppAgent`. Use `vault.createBinary()` for binary output (audio, images) and
-`vault.create()` for text, and always ensure parent directories exist before
-writing.
+**"My documented command returns nothing / unknown tool."** The CLI name is not the
+slug — `toKebabCase` strips a trailing `Manager`/`Agent`/`Tools`. A tool whose slug
+ends in `Agent` advertises without it. Check the generated catalog, not the source.
 
-## Schema validation is documentation only
+**"Malformed params reached my service and persisted garbage."** `getParameterSchema()`
+is documentation plus CLI-normalizer hints. There is no ajv behind
+`ToolBatchExecutionService.execute()` — `required`, `oneOf` and `enum` do **not**
+reject anything at runtime. The one place `required` has teeth is a command typed
+as a `tool` string, where the normalizer raises `Missing required argument`; it
+still does not check value shape or `enum` membership. Guards belong in the
+service/normalizer layer. Origin: a `linkedNotes` object missing `notePath`
+silently persisted `notePath: undefined` until `normalizeLinkedNote` guarded it.
 
-`getParameterSchema()` is DOCUMENTATION plus CLI-normalizer hints. There is **no**
-ajv/JSON-schema validation behind `ToolBatchExecutionService.execute(params)`. A
-schema `required`, `oneOf` or `enum` does **not** reject a malformed payload at
-runtime — bad input flows straight to the service. (`ajv` is not even a dependency.)
+**"My comma-separated argument got split into two commands."** A top-level comma
+outside quotes separates batched commands — but only when followed by whitespace or
+end of input. `--paths a,b,c` stays one CSV value; `--paths a, b` does not.
 
-The one place `required` has teeth is the CLI path: `ToolCliNormalizer` derives its
-per-tool argument list from the schema and rejects a parsed command with
-`Missing required argument "<name>"`. That covers commands typed as a `tool` string;
-it does not validate value shape, `oneOf` branches, or `enum` membership, and it
-does nothing for params reaching a tool by any other route.
+**"Deprecated payload shape."** Something is still sending `calls`, `request`, or a
+nested `context` object. Context fields go at the top level, and must not appear as
+CLI flags inside the tool string either.
 
-**Validation guards MUST live in the service/normalizer layer, not the schema.**
-Origin: a `createTask.linkedNotes` oneOf object missing `notePath` silently
-persisted `notePath: undefined` until an explicit guard was added in
-`normalizeLinkedNote` (`src/agents/taskManager/services/TaskService.ts:78`).
+**"My multiline content arrived flattened or mangled."** Use the verbatim
+transports rather than inlining: the top-level `values` map referenced as `@key`
+(substituted after tokenization, no escape processing, so backslashes and newlines
+survive), or `--<flag>-stdin` / `--<flag>-file <path>` on the terminal CLI. One
+`-stdin` per command, and a flag must not arrive both directly and via a transport.
 
-## Dynamic registration limit (issue #174)
+**"I passed a capability flag and the agent registered anyway."** The existing
+`enableSearchModes` / `enableLLMModes` flags are **not** a gating pattern to copy.
+The search flag lands on an ignored legacy parameter and all its tools register
+regardless; PromptManager registers either way behind a fallback provider manager.
+Gate by returning early, or by conditional per-tool registration.
 
-`AgentRegistrationService.syncToolManagerAgent` (`:85`) plus
-`ToolManagerAgent.registerDynamicAgent/unregisterDynamicAgent`
-(`src/agents/toolManager/toolManager.ts:117`) is a callback-wrap bridge keeping
-`getTools` discovery in sync when `AppManager` installs/uninstalls app agents at
-runtime. It works only because `AppManager` is the **only** dynamic registrar and
-**does not compose** for a second one.
+**"My tool is discoverable but returns 'Execution context not available'."**
+Discovery and executability are separate. Some tools need a runtime collaborator
+wired by the chat UI; registration alone does not make them callable.
 
-When a second dynamic registrar lands, refactor to events: add
-`onAgentRegistered`/`onAgentUnregistered` to `AgentManager`, subscribe in
-`ToolManagerAgent`'s constructor, delete the bridge and the
-`instanceof ToolManagerAgent` concrete import. Do **not** do this speculatively —
-wait for the triggering consumer. https://github.com/ProfSynapse/nexus/issues/174
+**"I edited `cliAssets.ts` and my change vanished."** It is generated by
+`scripts/generate-cli-content.mjs` during the build from `skill/SKILL.md`,
+`cli/agents-snippet.md` and `skill/playbooks/*.md`. Edit the sources.
+
+**"`npm run schemas:tools` did not fix the shipped-docs test failure."** It writes
+`docs/generated/cli-first-tool-schemas.json` by default, while
+`tests/unit/shippedGuidanceCommands.test.ts` validates against the **repo-root**
+catalog. Pass `--output cli-first-tool-schemas.json` to refresh the one the gate
+reads.
+
+**"A doc named a tool that does not exist and nothing caught it."** That gate reads
+README, `skill/SKILL.md`, `cli/nexus-cli.ts`, `cli/agents-snippet.md`,
+`skill/playbooks/*.md` and `guide/*.md` — it does **not** read `.claude/skills/**`.
+Anything you write in a skill file is unguarded, which is why this file names
+commands to run rather than listing tools.
+
+**"My new dynamic registrar broke `getTools` discovery."** The
+`syncToolManagerAgent` bridge keeps discovery in sync when `AppManager` installs
+app agents at runtime, and works only because `AppManager` is the *only* dynamic
+registrar. It does not compose for a second one. When one lands, refactor to
+events (`onAgentRegistered`/`onAgentUnregistered` on `AgentManager`, subscribed in
+`ToolManagerAgent`) rather than adding a second bridge — see
+https://github.com/ProfSynapse/nexus/issues/174. Do not do it speculatively.
+
+## Where the details live
+
+- Agent and tool base classes: `src/agents/baseAgent.ts`, `src/agents/baseTool.ts`,
+  interfaces in `src/agents/interfaces/`
+- App agents: `src/agents/apps/BaseAppAgent.ts`, plus `AppRuntimeContext` for
+  settings, storage-adapter and session-context access. App agents that write files
+  use `vault.createBinary()` for binary output and `vault.create()` for text, and
+  must ensure parent directories exist first.
+- Payload normalization and the kebab transform: `ToolCliNormalizer`
+- MCP surface: `src/handlers/strategies/ToolListStrategy.ts` returns the two tools;
+  the server key comes from `getPrimaryServerKey()` in `src/constants/branding.ts`
+- Traces: `src/services/trace/ToolCallTraceService.ts`
