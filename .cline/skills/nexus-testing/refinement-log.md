@@ -12,3 +12,29 @@ is **unrun** — no Obsidian in the authoring container. | Split the router into
 protocols/, references/ and scripts/; added `check_live_lane_gates.py` and
 `check_catalog_target.py`; installed this log and the self-refine protocol. |
 SKILL.md, the protocols, references and scripts folders, and this log.
+
+## 2026-08-14 — the in-app loop was run for the first time
+
+Stood up Obsidian 1.13.7 headless in a Linux container and exercised the loop.
+Added `protocols/headless-obsidian.md` so the setup is not rediscovered.
+
+Learned the hard way, each after a failed attempt:
+
+- `obsidian.md` is blocked by the egress proxy (403 CONNECT); `github.com` is
+  not, so the AppImage comes from the releases repo's assets.
+- Electron needs the full flag set — without `--in-process-gpu` and friends it
+  dies with `GPU process isn't usable. Goodbye.`
+- `"cli": true` in `~/.config/obsidian/obsidian.json` is the CLI toggle, and it
+  must be written while the app is stopped.
+- `pkill -f obsidian.asar` matches only helper processes. The main process
+  survives and keeps answering with the old config, which reads exactly like the
+  setting being ignored.
+- A fresh vault opens in Restricted Mode; `community-plugins.json` alone does
+  not load a plugin. `app.plugins.setEnable(true)` does.
+- `dev:console` is silent until `dev:debug on`.
+
+Payoff on the first run: `dev:errors` surfaced `Database not initialized` from
+`NotesIndexBuilder.startInBackground` — a cold-start ordering bug that leaves the
+notes index silently empty for the whole session. Reproduced on a normal cold
+start, so it was not an artifact of enabling plugins mid-session. No Jest lane
+could see it.

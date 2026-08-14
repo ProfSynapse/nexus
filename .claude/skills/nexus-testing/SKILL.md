@@ -20,6 +20,7 @@ Jest can prove and what the running plugin does.
    |---|---|
    | Add or change a test | `protocols/write-a-test.md` |
    | Prove a change works in the running plugin | `protocols/live-loop.md` |
+   | No Obsidian here (container / cloud session) | `protocols/headless-obsidian.md` |
    | Run a gated live-smoke lane or the eval harness | `protocols/run-gated-lanes.md` |
    | `shippedGuidanceCommands` or `ToolManagerCliSyntax` is red | `protocols/fix-shipped-docs-drift.md` |
    | A symptom you cannot place | `references/troubleshooting.md` |
@@ -46,8 +47,8 @@ Jest can prove and what the running plugin does.
 
 ## Map
 
-- `protocols/` the procedures: write-a-test, live-loop, run-gated-lanes,
-  fix-shipped-docs-drift, self-refine.
+- `protocols/` the procedures: write-a-test, live-loop, headless-obsidian,
+  run-gated-lanes, fix-shipped-docs-drift, self-refine.
 - `references/` read on demand: `lanes.md` (where a test goes and how to find
   what exists), `mock-honesty.md` (the two habits that make a test able to fail),
   `troubleshooting.md` (symptom → cause).
@@ -68,9 +69,12 @@ Jest can prove and what the running plugin does.
 
 ## Status of the in-app loop
 
-`protocols/live-loop.md` ships **documented but unexercised.** It was written
-against the Obsidian CLI's published developer commands and the design plan at
-docs/plans/obsidian-cli-verification-plan.md, in a container with no Obsidian
-installed. Nothing in it has been run end to end. Treat the command shapes as
-unverified until someone runs the loop on a machine with the app and records the
-result in `refinement-log.md`.
+**Exercised 2026-08-14** against Obsidian 1.13.7, headless in a Linux container,
+using `protocols/headless-obsidian.md`. The setup, `dev:errors`, `eval`,
+`dev:screenshot` and `dev:debug` are confirmed working, and the first run found
+a startup ordering bug that every Jest lane was blind to.
+
+Still unconfirmed: `plugin:reload id=nexus` and `vault=<name>` targeting on the
+`dev:*` commands were not exercised in that session. There is no excuse for
+skipping the loop on the grounds that no Obsidian is available — if you are in a
+container, stand one up.
