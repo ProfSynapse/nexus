@@ -8,6 +8,7 @@ import { StartupHydrationController } from '../../src/database/adapters/lifecycl
 import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
 import { ReconciliationCoordinator } from '../../src/database/adapters/lifecycle/ReconciliationCoordinator';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
+import type { App, Plugin } from 'obsidian';
 
 describe('HybridStorageAdapter', () => {
   afterEach(() => {
@@ -475,6 +476,131 @@ describe('HybridStorageAdapter', () => {
 
       await expect(gate).resolves.toBe(true);
       expect((adapter as unknown as HybridStorageAdapter).isQueryReady()).toBe(true);
+    });
+  });
+
+  // Regression: `createSession` took whatever it was handed and passed it
+  // straight to the repository, which derives the JSONL stream path from
+  // `workspaces/ws_${workspaceId}.jsonl`. Passing an object therefore created a
+  // real, permanent `ws_[object Object]` directory in the vault with a shard
+  // inside it. There was no validation anywhere on the adapter boundary.
+  describe('workspace id validation at the adapter boundary', () => {
+    type ValidationHarness = HybridStorageAdapter & {
+      initLifecycle: InitLifecycleController;
+      workspaceRepo: { create: jest.Mock; update: jest.Mock; delete: jest.Mock };
+      sessionRepo: { create: jest.Mock; update: jest.Mock; moveToWorkspace: jest.Mock };
+      stateRepo: { saveState: jest.Mock };
+      traceRepo: { addTrace: jest.Mock };
+    };
+
+    /**
+     * The entity delegates are class fields (arrow functions) assigned during
+     * construction, so a prototype-only harness cannot reach them. Construct
+     * for real against a minimal App/Plugin — the constructor only wires
+     * collaborators — then swap in a *ready* lifecycle and mock repositories.
+     * The ready lifecycle matters: without it `ensureInitialized()` throws
+     * "not initialized" and would mask the missing guard.
+     */
+    async function makeValidationHarness(): Promise<ValidationHarness> {
+      const app = {
+        vault: { configDir: '.obsidian', adapter: {} },
+        loadLocalStorage: jest.fn().mockReturnValue('validation-device-id'),
+        saveLocalStorage: jest.fn()
+      } as unknown as App;
+      const plugin = {
+        manifest: { id: 'claudesidian-mcp', dir: '.obsidian/plugins/claudesidian-mcp' }
+      } as unknown as Plugin;
+
+      const adapter = new HybridStorageAdapter({ app, plugin }) as ValidationHarness;
+      const lifecycle = new InitLifecycleController();
+      await lifecycle.run(async () => undefined, { blocking: true });
+      adapter.initLifecycle = lifecycle;
+      adapter.workspaceRepo = {
+        create: jest.fn().mockResolvedValue('ws-1'),
+        update: jest.fn().mockResolvedValue(undefined),
+        delete: jest.fn().mockResolvedValue(undefined)
+      };
+      adapter.sessionRepo = {
+        create: jest.fn().mockResolvedValue('sess-1'),
+        update: jest.fn().mockResolvedValue(undefined),
+        moveToWorkspace: jest.fn().mockResolvedValue(undefined)
+      };
+      adapter.stateRepo = { saveState: jest.fn().mockResolvedValue('state-1') };
+      adapter.traceRepo = { addTrace: jest.fn().mockResolvedValue('trace-1') };
+      return adapter;
+    }
+
+    // The exact value observed during triage.
+    const objectId = { id: 'workspace-a', name: 'Notes' } as unknown as string;
+
+    it('rejects an object workspace id in createSession without writing anything', async () => {
+      const adapter = await makeValidationHarness();
+
+      await expect(adapter.createSession(objectId, { name: 'S', startTime: 1, isActive: true } as never))
+        .rejects.toThrow(/createSession: workspaceId must be a non-empty string, received an object/);
+
+      // Nothing reached the repository, so no `ws_[object Object]` stream is
+      // created and no shard lands in the vault.
+      expect(adapter.sessionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an empty string', '' as unknown as string, 'an empty string'],
+      ['a whitespace-only string', '   ' as unknown as string, 'an empty string'],
+      ['null', null as unknown as string, 'null'],
+      ['undefined', undefined as unknown as string, 'undefined'],
+      ['a number', 42 as unknown as string, 'a number'],
+      ['an array', ['a'] as unknown as string, 'an array (length 1)']
+    ])('rejects %s as a createSession workspace id', async (_label, value, described) => {
+      const adapter = await makeValidationHarness();
+
+      await expect(adapter.createSession(value, { name: 'S', startTime: 1, isActive: true } as never))
+        .rejects.toThrow(`createSession: workspaceId must be a non-empty string, received ${described}`);
+      expect(adapter.sessionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a normal workspace id', async () => {
+      const adapter = await makeValidationHarness();
+
+      await expect(adapter.createSession('workspace-a', { name: 'S', startTime: 1, isActive: true } as never))
+        .resolves.toBe('sess-1');
+      expect(adapter.sessionRepo.create).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a' }));
+    });
+
+    // The sibling write entry points share the hole: every one of them routes a
+    // JSONL write through `workspaces/ws_${workspaceId}.jsonl`.
+    it('rejects an object workspace id on every workspace-scoped write entry point', async () => {
+      const adapter = await makeValidationHarness();
+
+      await expect(adapter.updateSession(objectId, 'sess-1', { name: 'x' }))
+        .rejects.toThrow(/updateSession: workspaceId must be/);
+      await expect(adapter.moveSessionToWorkspace('sess-1', objectId))
+        .rejects.toThrow(/moveSessionToWorkspace: workspaceId must be/);
+      await expect(adapter.saveState(objectId, 'sess-1', { name: 'x' } as never))
+        .rejects.toThrow(/saveState: workspaceId must be/);
+      await expect(adapter.addTrace(objectId, 'sess-1', { content: 'x' } as never))
+        .rejects.toThrow(/addTrace: workspaceId must be/);
+      await expect(adapter.createWorkspace({ id: objectId, name: 'W' } as never))
+        .rejects.toThrow(/createWorkspace: workspaceId must be/);
+      await expect(adapter.updateWorkspace(objectId, { name: 'W' }))
+        .rejects.toThrow(/updateWorkspace: workspaceId must be/);
+      await expect(adapter.deleteWorkspace(objectId))
+        .rejects.toThrow(/deleteWorkspace: workspaceId must be/);
+
+      expect(adapter.sessionRepo.update).not.toHaveBeenCalled();
+      expect(adapter.sessionRepo.moveToWorkspace).not.toHaveBeenCalled();
+      expect(adapter.stateRepo.saveState).not.toHaveBeenCalled();
+      expect(adapter.traceRepo.addTrace).not.toHaveBeenCalled();
+      expect(adapter.workspaceRepo.create).not.toHaveBeenCalled();
+      expect(adapter.workspaceRepo.update).not.toHaveBeenCalled();
+      expect(adapter.workspaceRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('leaves createWorkspace free to generate its own id when none is supplied', async () => {
+      const adapter = await makeValidationHarness();
+
+      await expect(adapter.createWorkspace({ name: 'W' } as never)).resolves.toBe('ws-1');
+      expect(adapter.workspaceRepo.create).toHaveBeenCalled();
     });
   });
 
