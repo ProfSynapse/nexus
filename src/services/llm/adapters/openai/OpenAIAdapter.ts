@@ -26,6 +26,10 @@ import { OPENAI_MODELS } from './OpenAIModels';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
 import { buildBearerJsonHeaders } from '../shared/OpenAICompatHelpers';
 import { pumpSseEventQueue } from '../shared/SseStreamPump';
+import {
+  createProviderStreamError,
+  extractResponsesApiStreamError
+} from '../../streaming/streamErrorFrames';
 import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 
 interface OpenAIResponsesTool {
@@ -411,6 +415,8 @@ export class OpenAIAdapter extends BaseAdapter {
     let currentReasoningEncryptedContent: string | null = null;
     let isInReasoningPart = false;
     const pumpState = { isCompleted: false };
+    // Fatal error frame over HTTP 200; thrown after the pump drains.
+    let streamError: string | undefined = undefined;
 
     const eventQueue: StreamChunk[] = [];
 
@@ -425,6 +431,16 @@ export class OpenAIAdapter extends BaseAdapter {
       try {
         event = JSON.parse(sseEvent.data) as OpenAIResponsesEvent;
       } catch {
+        return;
+      }
+
+      // The Responses stream reports fatal failures as data frames on an HTTP 200
+      // connection ({"type":"error",...} / {"type":"response.failed",...}). Without
+      // this the stream just ends and the user gets an empty bubble.
+      const errorMessage = extractResponsesApiStreamError(event, 'OpenAI streaming error');
+      if (errorMessage) {
+        streamError = errorMessage;
+        pumpState.isCompleted = true;
         return;
       }
 
@@ -557,11 +573,19 @@ export class OpenAIAdapter extends BaseAdapter {
 
     try {
       yield* pumpSseEventQueue(nodeStream, (text) => parser.feed(text), eventQueue, pumpState, {
-        buildFinalChunk: () => ({ content: '', complete: true, usage })
+        // Never emit a "successful" final chunk when the stream carried a fatal
+        // error frame -- the throw below is the real outcome.
+        buildFinalChunk: () => (streamError
+          ? { content: '', complete: false }
+          : { content: '', complete: true, usage })
       });
     } catch (error) {
       console.error('[OpenAIAdapter] Error processing Responses API stream:', error);
       throw error;
+    }
+
+    if (streamError) {
+      throw createProviderStreamError(streamError, this.name);
     }
   }
 

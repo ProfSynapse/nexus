@@ -33,6 +33,10 @@ import {
   ToolCall
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import {
+  createProviderStreamError,
+  extractResponsesApiStreamError
+} from '../../streaming/streamErrorFrames';
 import { BRAND_NAME } from '../../../../constants/branding';
 
 /** Codex API endpoint (requires ChatGPT subscription) */

@@ -2,6 +2,11 @@ import { BaseAdapter } from '../BaseAdapter';
 import { GenerateOptions, StreamChunk, LLMResponse, ModelInfo, ProviderCapabilities, ModelPricing, Tool, ToolCall } from '../types';
 import { GITHUB_COPILOT_DEFAULT_MODEL } from './GithubCopilotModels';
 import { ProviderHttpClient, ProviderHttpError } from '../shared/ProviderHttpClient';
+import {
+  createProviderStreamError,
+  extractResponsesApiStreamError,
+  extractStreamErrorMessage
+} from '../../streaming/streamErrorFrames';
 
 const COPILOT_API_ENDPOINT = 'https://api.githubcopilot.com/chat/completions';
 const COPILOT_RESPONSES_ENDPOINT = 'https://api.githubcopilot.com/responses';
@@ -531,12 +536,17 @@ export class GithubCopilotAdapter extends BaseAdapter {
         yield nextEvent;
       }
 
-      if (!isCompleted) {
+      // Never claim success when the stream carried a fatal error frame.
+      if (!isCompleted && !streamError) {
         yield { content: '', complete: true };
       }
     } catch (error) {
       console.error('[GithubCopilotAdapter] Error processing Responses stream:', error);
       throw error;
+    }
+
+    if (streamError) {
+      throw createProviderStreamError(streamError, this.name);
     }
   }
 
