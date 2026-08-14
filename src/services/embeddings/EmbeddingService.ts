@@ -117,9 +117,14 @@ export class EmbeddingService {
     return this.noteService.findSimilarNotes(notePath, limit);
   }
 
-  async semanticSearch(query: string, limit = 10): Promise<SimilarNote[]> {
+  /**
+   * @param pathPrefixes - Optional path prefixes confining the candidate scan.
+   *   Omitted searches the whole vault; see NoteEmbeddingService.semanticSearch
+   *   for why the scope has to reach the query rather than the results.
+   */
+  async semanticSearch(query: string, limit = 10, pathPrefixes?: string[]): Promise<SimilarNote[]> {
     if (!this.isEnabled) return [];
-    return this.noteService.semanticSearch(query, limit);
+    return this.noteService.semanticSearch(query, limit, pathPrefixes);
   }
 
   async removeEmbedding(notePath: string): Promise<void> {
