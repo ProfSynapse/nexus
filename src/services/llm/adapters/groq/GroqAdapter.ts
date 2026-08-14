@@ -147,6 +147,16 @@ export class GroqAdapter extends BaseAdapter {
 
           return chunk.choices[0]?.finish_reason ?? null;
         },
+        // Groq answers HTTP 200 and then pushes {"error":{"message":...}} when a
+        // request fails mid-stream; it also nests failures under `x_groq.error`.
+        extractError: (chunk) => {
+          const direct = extractStreamErrorMessage(chunk, 'Groq streaming error');
+          if (direct) {
+            return direct;
+          }
+          const xGroq = (chunk as GroqChatCompletionChunk).x_groq;
+          return xGroq ? extractStreamErrorMessage(xGroq, 'Groq streaming error') : null;
+        },
         extractUsage: (chunk) => {
           if (!chunk || typeof chunk !== 'object') {
             return undefined;

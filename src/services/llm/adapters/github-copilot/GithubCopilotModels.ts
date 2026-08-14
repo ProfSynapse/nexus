@@ -16,27 +16,13 @@ import { ModelSpec } from '../modelTypes';
  *      someone hoped to route to. Over-claiming a window produces requests the
  *      endpoint rejects; under-claiming only produces smaller requests.
  *
- * These are deliberately conservative, long-stable slugs. Refreshing this list
- * to Copilot's current line-up requires reading the live /models response --
- * do not guess slugs here.
+ * KNOWN GAP: every slug below is an older Copilot model. This list has not been
+ * refreshed against Copilot's current line-up, and the current slugs cannot be
+ * derived offline — they have to be read from the live /models response, which
+ * is also what replaces this list as soon as a token is present. Refresh it from
+ * that response rather than guessing slugs here.
  */
 export const GITHUB_COPILOT_MODELS: ModelSpec[] = [
-  {
-    provider: 'github-copilot',
-    name: 'GPT-4o (Copilot)',
-    apiName: 'gpt-4o',
-    contextWindow: 128000,
-    maxTokens: 16384,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
   {
     provider: 'github-copilot',
     name: 'Claude 3.7 Sonnet (Copilot)',
@@ -51,6 +37,22 @@ export const GITHUB_COPILOT_MODELS: ModelSpec[] = [
       supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: true
+    }
+  },
+  {
+    provider: 'github-copilot',
+    name: 'GPT-4o (Copilot)',
+    apiName: 'gpt-4o',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: false
     }
   },
   {
@@ -71,7 +73,10 @@ export const GITHUB_COPILOT_MODELS: ModelSpec[] = [
   }
 ];
 
-// Broadest-availability slug in the fallback list above: every Copilot tier
-// serves it, so a user whose discovery has not run yet still gets a model that
-// resolves. Live discovery replaces this as soon as a token is present.
-export const GITHUB_COPILOT_DEFAULT_MODEL = 'gpt-4o';
+// STOPGAP. The previous value ('gpt-5.4') named no entry here at all, so it
+// resolved to nothing. This is the most capable general-purpose slug currently
+// in the fallback list — it is still an old model, and it is the right default
+// only until the list above is refreshed from the live /models response.
+// Trade-off to be aware of: Claude models require a Copilot plan that includes
+// them, so on a restricted plan the GPT slug is the safer fallback.
+export const GITHUB_COPILOT_DEFAULT_MODEL = 'claude-3.7-sonnet';

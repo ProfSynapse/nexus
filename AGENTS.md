@@ -258,26 +258,19 @@ onCreate(file: TFile) {
 <!-- sync:block:mockup-practice:start -->
 ## Mockup Practice
 
-For substantial UI work, create a mockup before touching production code. This is the default path for new views, modal redesigns, interaction-heavy flows, layout refactors, and any feature where we should review the UX shape before wiring real state.
+Substantial UI work gets a standalone mockup in `docs/mockups/` before any
+production code: new views, panels, modals, settings tabs, chat surfaces, and
+layout refactors. A tweak inside an existing layout does not — say so and
+implement.
 
-**Standard workflow:**
-- Put mockups in `docs/mockups/`
-- Prefer standalone HTML/CSS/JS with no framework or build step
-- Use realistic Nexus copy and representative sample data
-- Reuse the same visual language and constraints we expect in the plugin: Obsidian-like theme tokens, accessible controls, desktop/mobile awareness, and explicit empty/loading/error states when relevant
-- Simulate interactions locally in the mockup when needed, and label simulated persistence clearly as mock-only
-- After the mockup is reviewed, implement the real UI in plugin code and follow all normal Obsidian rules (`styles.css`, `registerDomEvent`, no dynamic `innerHTML`, etc.)
+Do not improvise the process from this note. The `nexus-ui-mockups` skill is the
+source of truth for how a mockup is built, revised, validated and handed off as a
+plan's visual contract — load it before starting, and follow its protocols and
+its `check_mockup.py` validator.
 
-**File shape:**
-- Default to `docs/mockups/<feature-name>.html` with companion `.css` and `.js` files for larger mockups
-- A single self-contained HTML file is acceptable for very small previews
-
-**Reference patterns:**
-- `docs/mockups/task-board-view.html` is the main reference for interactive mockups with separate assets
-- `docs/mockups/compaction-indicator-preview.html` is the reference for compact one-file previews
-
-**Recommended skill:**
-- Use the vault-specific `nexus-ui-mockups` skill for UI mockup work before implementation
+Implementation is a separate job under `src/` and is governed by CLAUDE.md's hard
+rules (`styles.css`, `registerDomEvent`, no dynamic `innerHTML`). Mockup-only
+liberties never travel into plugin code.
 <!-- sync:block:mockup-practice:end -->
 
 ## Recent Milestones

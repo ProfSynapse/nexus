@@ -1,6 +1,7 @@
 import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
 import { SSEStreamOptions } from './SSEStreamProcessor';
+import { createProviderStreamError } from './streamErrorFrames';
 
 interface BufferedUsage {
   prompt_tokens?: number;
@@ -58,6 +59,8 @@ export class BufferedSSEStreamProcessor {
     let isCompleted = false;
     let usage: BufferedUsage | undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
+    // A fatal error frame delivered over HTTP 200; thrown after the queue drains.
+    let streamError: string | undefined = undefined;
     const toolCallsAccumulator: Map<number, BufferedToolCall> = new Map();
 
     const parser = createParser((event: ParseEvent) => {
@@ -81,6 +84,17 @@ export class BufferedSSEStreamProcessor {
 
       try {
         const parsed = JSON.parse(event.data) as BufferedParsedEvent;
+
+        // Fatal in-stream error (HTTP 200, then an {"error": {...}} frame). Stop
+        // consuming; the throw after the drain is the real outcome.
+        if (options.extractError) {
+          const errorMessage = options.extractError(parsed);
+          if (errorMessage) {
+            streamError = errorMessage;
+            isCompleted = true;
+            return;
+          }
+        }
 
         if (options.extractMetadata) {
           metadata = {
@@ -208,6 +222,13 @@ export class BufferedSSEStreamProcessor {
       if (chunk) {
         yield chunk;
       }
+    }
+
+    if (streamError) {
+      throw createProviderStreamError(
+        streamError,
+        options.providerName || options.debugLabel || 'llm'
+      );
     }
   }
 }

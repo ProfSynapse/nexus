@@ -19,10 +19,18 @@ import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
 export interface SubagentToolParams extends CommonParameters {
   /** Clear description of what the subagent should accomplish */
   task: string;
-  /** Optional custom agent/persona name to use */
-  agent?: string;
-  /** Pre-fetched tools: { agentName: [toolSlug1, toolSlug2] } */
-  tools?: Record<string, string[]>;
+  /**
+   * Optional custom agent/persona name to use.
+   *
+   * Named `persona`, not `agent`: `buildCliSchema` derives a flag with
+   * `toKebabCase`, which strips a trailing `Agent`/`Tools`, so `agent` and
+   * `tools` both collapsed to the bare flag `--` — a duplicate the flag lookup
+   * resolved to whichever came first, and a token the terminal CLI rejects
+   * outright as a stray `use` delimiter.
+   */
+  persona?: string;
+  /** Pre-fetched tools: { agentName: [toolSlug1, toolSlug2] }. Named `toolset` for the same reason as `persona`. */
+  toolset?: Record<string, string[]>;
   /** File paths to read - content will be included in the subagent's context */
   contextFiles?: string[];
   /** Maximum iterations before pausing (default: 10) */
@@ -163,8 +171,8 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
         task: params.task,
         parentConversationId: context.conversationId,
         parentMessageId: context.messageId,
-        agent: params.agent,
-        tools: params.tools,
+        agent: params.persona,
+        tools: params.toolset,
         contextFiles: allContextFiles.length > 0 ? allContextFiles : undefined,
         workspaceId: context.workspaceId,
         sessionId: context.sessionId,
@@ -211,11 +219,11 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
           type: 'string',
           description: 'Clear description of what the subagent should accomplish',
         },
-        agent: {
+        persona: {
           type: 'string',
           description: 'Optional custom agent/persona name to use',
         },
-        tools: {
+        toolset: {
           type: 'object',
           additionalProperties: {
             type: 'array',

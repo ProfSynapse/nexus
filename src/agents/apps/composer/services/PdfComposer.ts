@@ -10,8 +10,24 @@
  */
 
 import { Vault } from 'obsidian';
-import { PDFDocument } from 'pdf-lib';
+// pdf-lib is loaded lazily inside compose(). This module IS statically
+// reachable from src/main.ts (SettingsTabManager -> SettingsView -> DefaultsTab
+// -> AppManager -> ComposerAgent -> compose.ts), so a top-level `import
+// { PDFDocument } from 'pdf-lib'` would evaluate the whole of pdf-lib during
+// plugin init on every device, phones included. `import type` is erased at
+// compile time and costs nothing at runtime — keep it that way.
+import type { PDFDocument as PDFDocumentType } from 'pdf-lib';
 import { IFormatComposer, ComposeInput, ComposeOptions, ComposerError } from '../types';
+
+/** Memoized pdf-lib module load, so repeated composes pay the cost once. */
+let pdfLibPromise: Promise<typeof import('pdf-lib')> | null = null;
+
+function loadPdfLib(): Promise<typeof import('pdf-lib')> {
+  if (!pdfLibPromise) {
+    pdfLibPromise = import('pdf-lib');
+  }
+  return pdfLibPromise;
+}
 
 export class PdfComposer implements IFormatComposer {
   readonly supportedExtensions = ['pdf'];
@@ -26,12 +42,14 @@ export class PdfComposer implements IFormatComposer {
       throw new ComposerError('PDF composition only supports concat mode');
     }
 
+    const { PDFDocument } = await loadPdfLib();
+
     const files = input.files;
     const outputPdf = await PDFDocument.create();
 
     for (const file of files) {
       const arrayBuffer = await vault.readBinary(file);
-      let sourcePdf: PDFDocument;
+      let sourcePdf: PDFDocumentType;
 
       try {
         // ignoreEncryption: true handles PDFs with DRM restriction flags

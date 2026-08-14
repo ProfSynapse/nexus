@@ -2,6 +2,7 @@ import type { DataAdapter } from 'obsidian';
 
 import {
   CacheBackendMigration,
+  CONFLICT_COPY_PATTERNS,
   type CacheBackendState,
   type CacheBackendStateAccessor
 } from '../../src/database/migration/CacheBackendMigration';
@@ -252,12 +253,12 @@ describe('CacheBackendMigration.runJanitor', () => {
   //                                underscore — newer iCloud / Synology form)
   //   - /^cache\.db \(Conflict\)$/i  matches OneDrive's `cache.db (Conflict)`
   //
-  // We also pin the Dropbox `cache (User's conflicted copy YYYY-MM-DD).db`
-  // form. backend-coder-3's review note said "the existing greedy regex
-  // covers it" — that's correct (the regex is
-  // /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i and the prefix catches
-  // anything starting with "cache"), but verified-by-inspection is fragile.
-  // A test prevents future regex tightening from silently dropping that form.
+  // We also pin BOTH Dropbox conflict forms. Issue #334: the shipped regex was
+  // /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i, which required `.db`
+  // immediately after the date and therefore never matched the parenthesised
+  // form `cache (User's conflicted copy 2026-01-15).db` — the very example its
+  // own trailing comment cited. The regex now allows an optional `)` before
+  // `.db` so both forms are swept.
   // ---------------------------------------------------------------------------
   it('B.2: cleans cache_2.db / cache_3.db (underscore-numeric pattern)', async () => {
     const filesMap = new Map<string, ArrayBuffer>([
@@ -306,13 +307,8 @@ describe('CacheBackendMigration.runJanitor', () => {
   });
 
   it('B.2: cleans Dropbox `cache <prefix> conflicted copy YYYY-MM-DD.db` regex form (regression pin)', async () => {
-    // The shipped regex is /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i
-    // — `\.db$` requires the literal `.db` suffix WITHOUT a trailing closing
-    // paren. These inputs match. Forms like
-    // `cache (User's conflicted copy 2026-01-15).db` (Dropbox standard, with
-    // a closing paren BEFORE .db) are NOT matched by the current regex; if
-    // a future patch widens the regex to cover that form, it should also
-    // update this test.
+    // The bare (unparenthesised) Dropbox form — `.db` directly after the date.
+    // The parenthesised form is covered by the issue #334 test below.
     const filesMap = new Map<string, ArrayBuffer>([
       ['cache User conflicted copy 2026-01-15.db', new ArrayBuffer(1)],
       ['cache (User) conflicted copy 2026-12-31.db', new ArrayBuffer(1)],
@@ -336,6 +332,67 @@ describe('CacheBackendMigration.runJanitor', () => {
       ].sort()
     );
     expect(files.size).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #334 — the parenthesised Dropbox conflict-copy form.
+  //
+  // Dropbox's standard rename is `cache (Owner's conflicted copy DATE).db`:
+  // the closing paren sits BETWEEN the date and `.db`. The original regex
+  // anchored `\.db$` directly after the date, so that form never matched and
+  // the janitor left the file behind on every boot.
+  // ---------------------------------------------------------------------------
+  describe('issue #334: conflicted-copy regex covers both Dropbox forms', () => {
+    const matches = (name: string): boolean =>
+      CONFLICT_COPY_PATTERNS.some(re => re.test(name));
+
+    it.each([
+      "cache (User's conflicted copy 2026-01-01).db",   // the reported failing form
+      'cache (Pinky conflicted copy 2026-01-15).db',
+      'cache conflicted copy 2026-01-01.db',            // bare form (already worked)
+      'cache Pinky conflicted copy 2026-12-31.db',
+      'CACHE (PINKY CONFLICTED COPY 2026-01-15).DB'     // case-fold
+    ])('matches %s', name => {
+      expect(matches(name)).toBe(true);
+    });
+
+    it.each([
+      'cache-conflicted-copy.db',              // no date — an ordinary user file
+      'cache (conflicted copy).db',            // no date
+      'cache conflicted copy 2026-01.db',      // incomplete date
+      'notcache conflicted copy 2026-01-01.db',// does not start with "cache"
+      'cache (User conflicted copy 2026-01-01).sqlite', // not a .db file
+      'cache-index.db',
+      'unrelated.txt'
+    ])('does NOT match %s', name => {
+      expect(matches(name)).toBe(false);
+    });
+  });
+
+  it('issue #334: janitor removes the parenthesised Dropbox form and spares look-alikes', async () => {
+    const filesMap = new Map<string, ArrayBuffer>([
+      ["cache (User's conflicted copy 2026-01-01).db", new ArrayBuffer(1)],
+      ['cache conflicted copy 2026-01-01.db', new ArrayBuffer(1)],
+      // Must survive: a legitimate cache file with no conflict date stamp.
+      ['cache-conflicted-copy.db', new ArrayBuffer(1)],
+      ['unrelated.txt', new ArrayBuffer(1)]
+    ]);
+    const { adapter, files } = fakeAdapter({ files: filesMap });
+    const { store } = fakeBlobStore();
+    const { accessor } = fakeStateAccessor();
+
+    const migration = new CacheBackendMigration({
+      adapter, legacyDbPath: 'cache.db', pluginDataRoot: '.',
+      blobStore: store, stateAccessor: accessor, isMobile: false, showNotices: false
+    });
+
+    const report = await migration.runJanitor();
+    expect(report.removed.sort()).toEqual(
+      ["cache (User's conflicted copy 2026-01-01).db", 'cache conflicted copy 2026-01-01.db'].sort()
+    );
+    expect(report.failed).toEqual([]);
+    expect(files.has('cache-conflicted-copy.db')).toBe(true);
+    expect(files.has('unrelated.txt')).toBe(true);
   });
 
   it('per-file failure does not abort the sweep', async () => {

@@ -14,6 +14,7 @@ import {
   ModelPricing,
   ToolCall
 } from '../types';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
@@ -224,14 +225,22 @@ export class AnthropicAdapter extends BaseAdapter {
 
           return null;
         },
-        extractFinishReason: (event: AnthropicResponse & { type?: string; error?: { message?: string } }) => {
+        extractFinishReason: (event: AnthropicResponse & { type?: string }) => {
           if (event.type === 'message_stop') {
             return 'stop';
           }
-          if (event.type === 'error' && event.error?.message) {
-            throw new Error(`Anthropic stream error: ${event.error.message}`);
-          }
           return null;
+        },
+        // Anthropic reports a fatal error over HTTP 200 as an `error` event:
+        // {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}.
+        // (This used to throw from extractFinishReason, where the processor's
+        // parse-error guard swallowed it and the stream just ended silently.)
+        extractError: (event: AnthropicResponse & { type?: string; error?: { type?: string; message?: string } }) => {
+          if (event.type !== 'error' && !event.error) {
+            return null;
+          }
+          const message = extractStreamErrorMessage(event, 'Anthropic streaming error');
+          return message ? `Anthropic stream error: ${message}` : 'Anthropic stream error';
         },
         extractUsage: () => usage,
         extractReasoning: (event: AnthropicResponse & { type?: string; index?: number; delta?: { type?: string; thinking?: string } }) => {

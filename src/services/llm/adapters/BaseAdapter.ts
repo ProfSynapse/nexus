@@ -44,6 +44,7 @@ import {
   SSEStreamOptions
 } from '../streaming/SSEStreamProcessor';
 import { pumpSseEventQueue } from './shared/SseStreamPump';
+import { createProviderStreamError } from '../streaming/streamErrorFrames';
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache keys
@@ -92,6 +93,12 @@ interface StreamToolCallAccumulator {
 interface JsonLineParseOptions {
   extractChunk: (parsed: SSEParsedEvent) => StreamChunk | null;
   extractDone: (parsed: SSEParsedEvent) => boolean;
+  /**
+   * Same contract as SSEStreamOptions.extractError: a server can report a fatal
+   * error as an ordinary NDJSON line over HTTP 200 (Ollama's `{"error":"..."}`).
+   * Return the message to throw instead of ending the stream with no output.
+   */
+  extractError?: (parsed: SSEParsedEvent) => string | null;
 }
 
 interface ChunkParseOptions {
@@ -100,6 +107,8 @@ interface ChunkParseOptions {
   extractFinishReason: (chunk: Record<string, unknown>) => string | null;
   extractUsage?: (chunk: Record<string, unknown>) => StreamUsageLike | undefined;
   extractReasoning?: (parsed: Record<string, unknown>) => { text: string; complete: boolean } | null;
+  /** See SSEStreamOptions.extractError -- honoured on both branches of processStream. */
+  extractError?: (chunk: Record<string, unknown>) => string | null;
 }
 
 export abstract class BaseAdapter {
@@ -146,14 +155,19 @@ export abstract class BaseAdapter {
     response: Response,
     options: SSEStreamOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
-    yield* SSEStreamProcessor.processSSEStream(response, options);
+    yield* SSEStreamProcessor.processSSEStream(response, this.withProviderName(options));
   }
 
   protected async* processBufferedSSEText(
     sseText: string,
     options: SSEStreamOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
-    yield* BufferedSSEStreamProcessor.processSSEText(sseText, options);
+    yield* BufferedSSEStreamProcessor.processSSEText(sseText, this.withProviderName(options));
+  }
+
+  /** Stamp this adapter's provider name onto stream options so a thrown stream error names it. */
+  private withProviderName(options: SSEStreamOptions): SSEStreamOptions {
+    return options.providerName ? options : { ...options, providerName: this.name };
   }
 
   /**
@@ -333,7 +347,7 @@ export abstract class BaseAdapter {
     });
 
     if (streamError) {
-      throw new LLMProviderError(streamError, this.name, 'PROVIDER_STREAM_ERROR');
+      throw createProviderStreamError(streamError, this.name);
     }
   }
 
@@ -347,6 +361,8 @@ export abstract class BaseAdapter {
   ): AsyncGenerator<StreamChunk, void, unknown> {
     let buffer = '';
     let isCompleted = false;
+    // A fatal error line delivered over HTTP 200; thrown once parsing stops.
+    let streamError: string | undefined = undefined;
 
     try {
       for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
@@ -364,6 +380,14 @@ export abstract class BaseAdapter {
 
           try {
             const parsed = JSON.parse(line) as SSEParsedEvent;
+            if (options.extractError) {
+              const errorMessage = options.extractError(parsed);
+              if (errorMessage) {
+                streamError = errorMessage;
+                isCompleted = true;
+                break;
+              }
+            }
             if (options.extractDone(parsed)) {
               isCompleted = true;
               const streamChunk = options.extractChunk(parsed);
@@ -379,7 +403,8 @@ export abstract class BaseAdapter {
         }
       }
 
-      if (!isCompleted) {
+      // Never claim success when the stream carried a fatal error line.
+      if (!isCompleted && !streamError) {
         yield { content: '', complete: true };
       }
     } catch (error) {
@@ -387,6 +412,10 @@ export abstract class BaseAdapter {
         yield { content: '', complete: true };
       }
       throw error;
+    }
+
+    if (streamError) {
+      throw createProviderStreamError(streamError, this.name);
     }
   }
 
@@ -432,6 +461,15 @@ export abstract class BaseAdapter {
       let usage: StreamUsageLike | undefined = undefined;
 
       for await (const chunk of stream as AsyncIterable<unknown>) {
+        // A fatal error can arrive as an ordinary chunk over a successful request.
+        // Throw immediately: there is no queue to drain on this path.
+        if (options.extractError) {
+          const errorMessage = options.extractError(chunk as Record<string, unknown>);
+          if (errorMessage) {
+            throw createProviderStreamError(errorMessage, this.name);
+          }
+        }
+
         yield* this.processStreamChunk(chunk, options, toolCallsAccumulator, usage);
 
         // Update usage reference if extracted

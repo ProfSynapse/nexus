@@ -1,4 +1,4 @@
-import { App, TFile, TFolder, setIcon, ButtonComponent, TextComponent, Modal, Component } from 'obsidian';
+import { App, TFile, TFolder, setIcon, ButtonComponent, TextComponent, Modal, Component, normalizePath } from 'obsidian';
 
 const DEBOUNCE_MS = 150;
 
@@ -35,11 +35,26 @@ export class FilePickerRenderer {
     this.selectedFiles = new Set(initialSelection ? [initialSelection] : []);
 
     // Use workspace root folder or vault root
-    this.rootPath = workspaceRootFolder && workspaceRootFolder !== '/'
-      ? workspaceRootFolder
-      : '/';
+    this.rootPath = FilePickerRenderer.normalizeRootPath(workspaceRootFolder);
 
     this.title = title || 'Select Files';
+  }
+
+  /**
+   * Normalize a configured workspace root folder into a vault-relative path.
+   *
+   * Workspace settings store roots in several shapes ('/blog-test', 'blog-test/',
+   * backslashes on Windows). `getAbstractFileByPath()` only accepts a
+   * vault-relative path with no leading or trailing slash, so a stored
+   * '/blog-test' silently resolved to null and the root folder was ignored.
+   * Returns '/' for the vault root (handled separately via `vault.getRoot()`).
+   */
+  private static normalizeRootPath(rootFolder?: string): string {
+    const trimmed = (rootFolder ?? '').trim();
+    if (!trimmed) return '/';
+
+    const normalized = normalizePath(trimmed).replace(/^\/+|\/+$/g, '');
+    return normalized === '' ? '/' : normalized;
   }
 
   /**

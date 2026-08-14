@@ -31,6 +31,7 @@ import {
   TokenUsage
 } from '../types';
 import type { SSEToolCall } from '../../streaming/SSEStreamProcessor';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import {
   DEEPSEEK_MODELS,
   DEEPSEEK_DEFAULT_MODEL,
@@ -148,6 +149,9 @@ export class DeepSeekAdapter extends BaseAdapter {
           if (!isDeepSeekChatCompletionResponse(chunk)) return null;
           return chunk.choices[0]?.finish_reason ?? null;
         },
+        // OpenAI-compatible surface: a fatal error arrives over HTTP 200 as
+        // {"error":{"message":"...","type":"...","code":"..."}}.
+        extractError: (chunk) => extractStreamErrorMessage(chunk, 'DeepSeek streaming error'),
         extractUsage: (chunk) => {
           if (!chunk || typeof chunk !== 'object') return undefined;
           const usage = (chunk as unknown as DeepSeekChatCompletionResponse).usage;

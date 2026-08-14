@@ -1,10 +1,16 @@
 # Protocol: add-provider-registry
 
-Context: a provider is being added and needs a model catalog. The adapter itself
-— transport, streaming, settings registration, platform gating — belongs to
-`nexus-llm-adapters`; this protocol covers only the catalog and the two
-aggregators that read it. A registry that exists but is wired into neither
-aggregator compiles cleanly and is invisible at runtime.
+Context: a provider is being added and needs a model catalog, **or** an existing
+provider turned out to be wired into only one aggregator and needs the other.
+The adapter itself — transport, streaming, settings registration, platform
+gating — belongs to `nexus-llm-adapters`; this protocol covers only the catalog
+and the two aggregators that read it. A registry that exists but is wired into
+neither aggregator compiles cleanly and is invisible at runtime; one wired into
+only a single aggregator is worse, because it works well enough that nobody looks.
+
+For the repair case, skip to the wiring step for whichever aggregator the gate
+named and run the gate again. `references/consumers.md` says what each one drives,
+so you can predict the symptom the repair should make go away.
 
 ## Mission
 A provider whose models appear in the picker, price correctly, and resolve a

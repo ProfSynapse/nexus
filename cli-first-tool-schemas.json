@@ -1,17 +1,19 @@
 {
-  "generatedAt": "2026-07-29T12:49:12.029Z",
+  "generatedAt": "2026-08-14T12:25:51.240Z",
   "selector": "--help",
-  "toolCount": 66,
-  "agentCount": 11,
+  "toolCount": 74,
+  "agentCount": 13,
   "agents": {
     "canvasManager": 4,
     "composer": 2,
     "contentManager": 5,
+    "data": 2,
     "elevenlabs": 3,
     "ingestManager": 2,
     "memoryManager": 12,
     "promptManager": 12,
     "searchManager": 4,
+    "skills": 6,
     "storageManager": 6,
     "taskManager": 11,
     "webTools": 5
@@ -466,6 +468,85 @@
       ],
       "examples": [
         "content write \"path-value\" \"content-value\""
+      ]
+    },
+    {
+      "agent": "data",
+      "tool": "listCapabilities",
+      "description": "List the Python packages and input formats supported by the Data Analysis sandbox.",
+      "command": "data list-capabilities",
+      "usage": "data list-capabilities",
+      "arguments": [],
+      "examples": [
+        "data list-capabilities"
+      ]
+    },
+    {
+      "agent": "data",
+      "tool": "runPython",
+      "description": "Run Python (pandas) against vault CSV/Excel files in an isolated runtime (off-thread, no Node, in-memory filesystem), returning a bounded result. Provide `code` and optional `inputs` (a map of variable name -> vault path); read them in Python via `inputs['name']`, e.g. `pd.read_csv(inputs['budget'])` or `pd.read_excel(inputs['sales'])`. Return a JSON-serializable value (results over 1500 rows are rejected — aggregate or limit). Desktop only. Isolation is best-effort (blocks accidental network/vault access), not a hard sandbox for untrusted code.",
+      "command": "data run-python",
+      "usage": "data run-python <code> [--inputs <inputs>] [--max-rows <maxRows>] [--max-output-bytes <maxOutputBytes>] [--max-input-bytes <maxInputBytes>] [--timeout-ms <timeoutMs>] [--output-path <outputPath>]",
+      "arguments": [
+        {
+          "name": "code",
+          "flag": "--code",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Python source to execute. Read inputs via the injected `inputs` dict, e.g. `pd.read_csv(inputs['budget'])`. The final expression / returned value is sent back (must be JSON-serializable; results over maxRows are rejected). (string)"
+        },
+        {
+          "name": "inputs",
+          "flag": "--inputs",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Map of variable name -> vault-relative file path (.csv/.xlsx). Each file is read by the host and exposed to Python as inputs['name']. (object)"
+        },
+        {
+          "name": "maxRows",
+          "flag": "--max-rows",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject results with more than this many rows (default 1500, hard max 10000). (number)"
+        },
+        {
+          "name": "maxOutputBytes",
+          "flag": "--max-output-bytes",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject results whose serialized JSON exceeds this many bytes (default ~512KB). (number)"
+        },
+        {
+          "name": "maxInputBytes",
+          "flag": "--max-input-bytes",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject input files larger than this many bytes (default ~10MB). (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Wall-clock budget; runaway code is terminated (default 5000, hard max 30000). (number)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional vault path to write the result JSON to after a successful run. (string)"
+        }
+      ],
+      "examples": [
+        "data run-python \"code-value\" --inputs '{\"key\":\"value\"}' --max-rows 1 --max-output-bytes 1 --max-input-bytes 1 --timeout-ms 1 --output-path \"outputPath-value\""
       ]
     },
     {
@@ -984,7 +1065,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Workspace name or ID to load (REQUIRED). Accepts either the workspace name or the unique workspace ID. Using the name returned by create-workspace is fine; you do not need to call list-workspaces just to find the UUID. (string)"
+          "description": "[REQUIRED] Workspace name or ID to load (REQUIRED). Use a name you have actually seen — from the workspace list in getTools, from search-workspaces/list-workspaces, or from the create-workspace you just made. Do NOT infer a name from how the user phrased the request; \"load my research workspace\" does not mean a workspace named \"Research\" exists. If you do not have a confirmed name, run \"memory search-workspaces --query <fragment> --load\" first: it auto-loads on a single match and lists candidates otherwise. A near-miss here is recovered (single close match auto-loads, otherwise candidates are returned) — but recovery costs a round trip that discovery would have saved. (string)"
         },
         {
           "name": "limit",
@@ -1675,7 +1756,7 @@
       "tool": "subagent",
       "description": "Spawn an autonomous subagent to work on a task in the background.\n\nThe subagent runs independently, using tools as needed, until it completes.\nResults appear as a tool result when the subagent finishes.\n\nUse for:\n- Deep research tasks requiring multiple searches\n- Analysis tasks that need file reading and processing\n- Complex operations you want to run in parallel\n\nThe subagent has access to all tools via getTools.\n\nTo continue a subagent that hit max iterations, provide continueBranchId.",
       "command": "prompt sub",
-      "usage": "prompt sub <task> [-- <agent>] [-- <tools>] [--context-files <contextFiles>] [--max-iterations <maxIterations>] [--continue-branch-id <continueBranchId>]",
+      "usage": "prompt sub <task> [--persona <persona>] [--toolset <toolset>] [--context-files <contextFiles>] [--max-iterations <maxIterations>] [--continue-branch-id <continueBranchId>]",
       "arguments": [
         {
           "name": "task",
@@ -1686,16 +1767,16 @@
           "description": "[REQUIRED] Clear description of what the subagent should accomplish (string)"
         },
         {
-          "name": "agent",
-          "flag": "--",
+          "name": "persona",
+          "flag": "--persona",
           "type": "string",
           "required": false,
           "positional": false,
           "description": "[OPTIONAL] Optional custom agent/persona name to use (string)"
         },
         {
-          "name": "tools",
-          "flag": "--",
+          "name": "toolset",
+          "flag": "--toolset",
           "type": "object",
           "required": false,
           "positional": false,
@@ -1727,7 +1808,7 @@
         }
       ],
       "examples": [
-        "prompt sub \"task-value\" -- \"agent-value\" -- '{\"key\":\"value\"}' --context-files \"value-1,value-2\" --max-iterations 1 --continue-branch-id \"continueBranchId-value\""
+        "prompt sub \"task-value\" --persona \"persona-value\" --toolset '{\"key\":\"value\"}' --context-files \"value-1,value-2\" --max-iterations 1 --continue-branch-id \"continueBranchId-value\""
       ]
     },
     {
@@ -2044,6 +2125,246 @@
       ],
       "examples": [
         "search query-notes --sql \"sql-value\" --params \"value-1,value-2\" --max-rows 1"
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "archiveSkill",
+      "description": "Archive a skill (soft, reversible) so it is hidden from listSkills, or restore an archived skill. This is the only \"delete\" available to the model; hard delete is UI-only.",
+      "command": "skills archive-skill",
+      "usage": "skills archive-skill <name> [--source <source>] [--restore]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the skill to archive or restore. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to disambiguate when the name exists across providers. (string)"
+        },
+        {
+          "name": "restore",
+          "flag": "--restore",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, restore (un-archive) the skill instead of archiving it. Default: false (boolean)"
+        }
+      ],
+      "examples": [
+        "skills archive-skill \"name-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "createSkill",
+      "description": "Create a new skill from name/description/body. Validated before writing. Defaults to the vault-native \"nexus\" provider when no source is given.",
+      "command": "skills create-skill",
+      "usage": "skills create-skill <name> <description> <body> [--source <source>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill name — lowercase-hyphenated; becomes the folder name. Must be unique within the provider. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill description — the discovery signal surfaced in listSkills. Non-empty, sane length. (string)"
+        },
+        {
+          "name": "body",
+          "flag": "--body",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] SKILL.md body — the playbook the agent reads back and follows. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id. Default: \"nexus\" (vault-native). (string)"
+        }
+      ],
+      "examples": [
+        "skills create-skill \"name-value\" \"description-value\" \"body-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "listSkills",
+      "description": "List discovered skills, recency-ordered, with name/provider/description. Optionally filter by search query, provider source, or include archived skills.",
+      "command": "skills list-skills",
+      "usage": "skills list-skills [--search <search>] [--source <source>] [--include-archived]",
+      "arguments": [
+        {
+          "name": "search",
+          "flag": "--search",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional case-insensitive query matched against skill name/description. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id (e.g. \"claude\", \"codex\", \"nexus\") to filter by source. (string)"
+        },
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, include archived skills in the result. Default: false (boolean)"
+        }
+      ],
+      "examples": [
+        "skills list-skills --search \"search-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "loadSkill",
+      "description": "Load a skill — returns its SKILL.md body, the skill folder listing, a nudge to open bundled files with the existing `content read` tool, and recent usage history. These are instructions to read and follow — do NOT auto-execute them.",
+      "command": "skills load-skill",
+      "usage": "skills load-skill <name> [--source <source>] [--recursive] [--include-history]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill name (folder name) to load. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id. Required only when the name is ambiguous across providers. (string)"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Show the full recursive file tree (true) or top-level items only (false). Default: false (top-level only, folders marked with a trailing /). (boolean)"
+        },
+        {
+          "name": "includeHistory",
+          "flag": "--include-history",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, include recent usage history with this skill. Default: true (boolean)"
+        }
+      ],
+      "examples": [
+        "skills load-skill \"name-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "syncSkills",
+      "description": "Import provider skills into the vault mirror and/or sync edited skills back to their origin dotfolders. Providers are auto-discovered from the vault-root scan. Cross-platform via vault.adapter.",
+      "command": "skills sync-skills",
+      "usage": "skills sync-skills [--direction <direction>] [--source <source>]",
+      "arguments": [
+        {
+          "name": "direction",
+          "flag": "--direction",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] \"import\" provider → mirror, \"sync-back\" mirror → provider, or \"both\". Default: \"both\" (One of: [\"import\", \"sync-back\", \"both\"])"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to sync. Omit to sync every discovered provider. (string)"
+        }
+      ],
+      "examples": [
+        "skills sync-skills --direction \"direction-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "updateSkill",
+      "description": "Update an existing skill's description and/or body, optionally renaming it. Validated before writing; archives the prior version and syncs back to the origin if provider-sourced.",
+      "command": "skills update-skill",
+      "usage": "skills update-skill <name> [--source <source>] [--description <description>] [--body <body>] [--rename <rename>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the skill to update. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to disambiguate when the name exists across providers. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new description. Validated for non-empty and sane length. (string)"
+        },
+        {
+          "name": "body",
+          "flag": "--body",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new SKILL.md body. (string)"
+        },
+        {
+          "name": "rename",
+          "flag": "--rename",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new name — lowercase-hyphenated. Renames the skill folder. (string)"
+        }
+      ],
+      "examples": [
+        "skills update-skill \"name-value\" --source \"source-value\" --description \"description-value\" --body \"body-value\" --rename \"rename-value\""
       ]
     },
     {
@@ -2663,7 +2984,7 @@
       "tool": "update",
       "description": "Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).",
       "command": "task update",
-      "usage": "task update <taskId> [--title <title>] [--description <description>] [--status <status>] [--priority <priority>] [--due-date <dueDate>] [--assignee <assignee>] [--tags <tags>] [--add-dependencies <addDependencies>] [--remove-dependencies <removeDependencies>] [--add-note-links <addNoteLinks>] [--remove-note-links <removeNoteLinks>] [--metadata <metadata>]",
+      "usage": "task update <taskId> [--title <title>] [--description <description>] [--status <status>] [--priority <priority>] [--due-date <dueDate>] [--assignee <assignee>] [--tags <tags>] [--add-dependencies <addDependencies>] [--remove-dependencies <removeDependencies>] [--add-note-links <addNoteLinks>] [--remove-note-links <removeNoteLinks>] [--metadata <metadata>] [--metadata-mode <metadataMode>] [--remove-metadata-keys <removeMetadataKeys>]",
       "arguments": [
         {
           "name": "taskId",
@@ -2767,11 +3088,27 @@
           "type": "object",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Custom metadata to merge (keys are merged, not replaced) (object)"
+          "description": "[OPTIONAL] Custom metadata. Shallow-merged by default: supplied top-level keys overwrite matching keys and all other stored keys survive. Nested objects are replaced whole. Use metadataMode \"replace\" with {} to clear all metadata. (object)"
+        },
+        {
+          "name": "metadataMode",
+          "flag": "--metadata-mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to apply metadata. \"merge\" is the default. \"replace\" stores exactly the supplied metadata object and requires metadata; it cannot be combined with removeMetadataKeys. (One of: [\"merge\", \"replace\"])"
+        },
+        {
+          "name": "removeMetadataKeys",
+          "flag": "--remove-metadata-keys",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Top-level metadata keys to delete after applying a merge patch. Merge mode only. (Array of a string)"
         }
       ],
       "examples": [
-        "task update \"taskId-value\" --title \"title-value\" --description \"description-value\" --status \"status-value\" --priority \"priority-value\" --due-date 1 --assignee \"assignee-value\" --tags \"value-1,value-2\" --add-dependencies \"value-1,value-2\" --remove-dependencies \"value-1,value-2\" --add-note-links \"value-1,value-2\" --remove-note-links \"value-1,value-2\" --metadata '{\"key\":\"value\"}'"
+        "task update \"taskId-value\" --title \"title-value\" --description \"description-value\" --status \"status-value\" --priority \"priority-value\" --due-date 1 --assignee \"assignee-value\" --tags \"value-1,value-2\" --add-dependencies \"value-1,value-2\" --remove-dependencies \"value-1,value-2\" --add-note-links \"value-1,value-2\" --remove-note-links \"value-1,value-2\" --metadata '{\"key\":\"value\"}' --metadata-mode \"metadataMode-value\" --remove-metadata-keys \"value-1,value-2\""
       ]
     },
     {
@@ -2779,7 +3116,7 @@
       "tool": "updateProject",
       "description": "Update a project's name, description, status (active/completed/archived), or custom metadata. Requires a projectId (from createProject or listProjects).",
       "command": "task update-project",
-      "usage": "task update-project <projectId> [--name <name>] [--description <description>] [--status <status>] [--metadata <metadata>]",
+      "usage": "task update-project <projectId> [--name <name>] [--description <description>] [--status <status>] [--metadata <metadata>] [--metadata-mode <metadataMode>] [--remove-metadata-keys <removeMetadataKeys>]",
       "arguments": [
         {
           "name": "projectId",
@@ -2819,11 +3156,27 @@
           "type": "object",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Custom metadata to merge (object)"
+          "description": "[OPTIONAL] Custom metadata. Shallow-merged by default: supplied top-level keys overwrite matching keys and all other stored keys survive. Nested objects are replaced whole. Use metadataMode \"replace\" with {} to clear all metadata. (object)"
+        },
+        {
+          "name": "metadataMode",
+          "flag": "--metadata-mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to apply metadata. \"merge\" is the default. \"replace\" stores exactly the supplied metadata object and requires metadata; it cannot be combined with removeMetadataKeys. (One of: [\"merge\", \"replace\"])"
+        },
+        {
+          "name": "removeMetadataKeys",
+          "flag": "--remove-metadata-keys",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Top-level metadata keys to delete after applying a merge patch. Merge mode only. (Array of a string)"
         }
       ],
       "examples": [
-        "task update-project \"projectId-value\" --name \"name-value\" --description \"description-value\" --status \"status-value\" --metadata '{\"key\":\"value\"}'"
+        "task update-project \"projectId-value\" --name \"name-value\" --description \"description-value\" --status \"status-value\" --metadata '{\"key\":\"value\"}' --metadata-mode \"metadataMode-value\" --remove-metadata-keys \"value-1,value-2\""
       ]
     },
     {

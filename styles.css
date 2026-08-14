@@ -908,15 +908,12 @@ body.theme-light .message-content {
     height: 14px;
 }
 
-/* Message Bubbles — ported from .mock-device--glass .minimal-user-bubble
-   (mockup CSS line 2231) and .minimal-message-content--assistant (line 2284).
-   Production class structure differs from the mockup's .minimal-* prefix
-   so the values are applied to .message-container.message-* .message-bubble.
+/* Message Bubbles — the glass redesign. Values live on
+   .message-container.message-* .message-bubble.
 
-   Per user clarification: user bubble color follows the active Obsidian
-   theme (var(--interactive-accent)) instead of the mockup's hardcoded
-   --mock-user-bubble purple. The mockup's box-shadow + border-radius +
-   padding are kept verbatim. */
+   The user bubble colour follows the active Obsidian theme
+   (var(--interactive-accent)) rather than a hardcoded purple, so the bubble
+   reads as "the user's colour" in every theme. */
 .message-bubble {
     width: 100%;
     position: relative;
@@ -942,7 +939,7 @@ body.theme-light .message-content {
 
 /* Assistant: NO bubble. The text floats on the chat background flush with
    the same horizontal padding as the user bubble (1.08rem) so the column
-   feels visually consistent. Mockup line 2284-2290. */
+   feels visually consistent. */
 .message-container.message-assistant .message-bubble {
     background: transparent;
     border: none;
@@ -964,10 +961,8 @@ body.theme-light .message-content {
     display: none;
 }
 
-/* Action row — ported from .mock-device--glass .minimal-actions-row
-   (mockup CSS line 2259) + .minimal-actions-row--user (line 2270) +
-   .minimal-actions-row--assistant (line 2292). Always visible, no pill
-   background, free-floating below the message. */
+/* Action row — always visible, no pill background, free-floating below the
+   message. Per-role overrides follow. */
 .message-actions-external {
     display: flex;
     align-items: center;
@@ -985,7 +980,7 @@ body.theme-light .message-content {
 }
 
 /* User row: align self left, full width, padded to match bubble inset,
-   actions pushed to the right edge. Mockup line 2270-2277. */
+   actions pushed to the right edge. */
 .message-container.message-user .message-actions-external {
     align-self: flex-start;
     align-items: flex-start;
@@ -1006,8 +1001,7 @@ body.theme-light .message-content {
    cascade fighting. Currently no declarations; layout spacing lives on the
    parent .message-actions-external via margin-top. */
 
-/* Assistant row: full width, padded to match content inset, left-aligned.
-   Mockup line 2292-2297. */
+/* Assistant row: full width, padded to match content inset, left-aligned. */
 .message-container.message-assistant .message-actions-external {
     width: 100%;
     box-sizing: border-box;
@@ -1015,9 +1009,8 @@ body.theme-light .message-content {
     margin-top: 4px;
 }
 
-/* Action button — ported from .mock-device--glass .minimal-action-btn
-   (mockup CSS line 2315). 28x28 pill, transparent background, muted
-   icons at 16x16 with stroke-width 1.9. */
+/* Action button — 28x28 pill, transparent background, muted icons at 16x16
+   with stroke-width 1.9. */
 .message-action-btn {
     width: 28px;
     height: 28px;
@@ -1097,9 +1090,8 @@ body.theme-light .message-content {
     border-radius: 1.15rem;
 }
 
-/* Message content typography — ported from .mock-device--glass
-   .minimal-message-content (mockup line 2242) and .minimal-message-content
-   p (line 2249). 18px base, 1.52 line-height, 0.38rem paragraph gap. */
+/* Message content typography — 18px base, 1.52 line-height, 0.38rem
+   paragraph gap. */
 .message-reasoning {
     margin: 0 0 0.5rem 0;
     border-left: 2px solid var(--background-modifier-border);
@@ -7575,14 +7567,14 @@ body.is-mobile .nexus-branch-task {
 
 /* CLI status banner (for statusOnly secondary providers like Gemini CLI, Claude Code) */
 .cli-status-banner {
-    margin-bottom: var(--space-sm, 8px);
+    margin-bottom: var(--space-s);
 }
 
 .cli-status-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    padding: var(--space-xs, 4px) var(--space-s);
     border-radius: var(--radius-s);
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
@@ -7602,7 +7594,7 @@ body.is-mobile .nexus-branch-task {
 
 .cli-status-check-btn {
     font-size: var(--font-ui-smaller);
-    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    padding: var(--space-xs, 4px) var(--space-s);
     cursor: pointer;
 }
 
@@ -7613,8 +7605,8 @@ body.is-mobile .nexus-branch-task {
 
 /* Device code inline display */
 .oauth-device-code-container {
-    margin: var(--space-3) 0;
-    padding: var(--space-3);
+    margin: var(--space-m) 0;
+    padding: var(--space-m);
     background: var(--background-secondary);
     border-radius: var(--radius-m);
     border: 1px solid var(--background-modifier-border);
@@ -7627,14 +7619,14 @@ body.is-mobile .nexus-branch-task {
 .oauth-device-code-instruction {
     color: var(--text-muted);
     font-size: 0.85em;
-    margin: 0 0 var(--space-2) 0;
+    margin: 0 0 var(--space-s) 0;
 }
 
 .oauth-device-code-row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
+    gap: var(--space-s);
+    margin-bottom: var(--space-s);
 }
 
 .oauth-device-code-value {
@@ -8179,7 +8171,7 @@ body.is-mobile .nexus-task-board-shell {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--space-3, 12px);
+    gap: var(--space-m);
 }
 
 .nexus-ingest-drop-overlay-icon {
@@ -8211,14 +8203,14 @@ body.is-mobile .nexus-task-board-shell {
 .nexus-ingest-progress-container {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1, 4px);
+    gap: var(--space-xs);
 }
 
 .nexus-ingest-progress-banner {
     display: flex;
     align-items: center;
-    gap: var(--space-2, 8px);
-    padding: var(--space-2, 8px) var(--space-3, 12px);
+    gap: var(--space-s);
+    padding: var(--space-s) var(--space-m);
     background-color: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
     min-height: 44px;
@@ -8326,11 +8318,11 @@ body.is-mobile .nexus-task-board-shell {
 .nexus-ingest-confirm-file-info {
     display: flex;
     align-items: center;
-    gap: var(--space-3, 12px);
-    padding: var(--space-3, 12px);
+    gap: var(--space-m);
+    padding: var(--space-m);
     background-color: var(--background-secondary);
     border-radius: var(--radius-m);
-    margin-bottom: var(--space-4, 16px);
+    margin-bottom: var(--space-l);
 }
 
 .nexus-ingest-confirm-file-icon {
@@ -8363,7 +8355,7 @@ body.is-mobile .nexus-task-board-shell {
 }
 
 .nexus-ingest-confirm-options {
-    margin-bottom: var(--space-4, 16px);
+    margin-bottom: var(--space-l);
 }
 
 .nexus-ingest-confirm-hidden {
@@ -8371,16 +8363,16 @@ body.is-mobile .nexus-task-board-shell {
 }
 
 .nexus-ingest-confirm-vision-settings {
-    padding-left: var(--space-3, 12px);
+    padding-left: var(--space-m);
     border-left: 2px solid var(--background-modifier-border);
-    margin-top: var(--space-2, 8px);
+    margin-top: var(--space-s);
 }
 
 .nexus-ingest-confirm-buttons {
     display: flex;
     justify-content: flex-end;
-    gap: var(--space-2, 8px);
-    padding-top: var(--space-3, 12px);
+    gap: var(--space-s);
+    padding-top: var(--space-m);
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -8577,9 +8569,8 @@ body.is-mobile .nexus-task-board-shell {
   gap: 8px;
 }
 
-/* Status bar action icons — ported from .mock-device--glass
-   .tool-status-{task,inspect,compact}-icon (mockup line 2110) and their
-   svg children (line 2123). 24x24 buttons with 16x16 svgs. */
+/* Status bar action icons — the task/inspect/compact buttons: 24x24 buttons
+   with 16x16 svgs. */
 /* Flat icon buttons — no raised appearance, just the icon as the target.
    Override Obsidian's default button styling (background, border, shadow). */
 .tool-status-row--meta button {
@@ -8621,8 +8612,7 @@ body.is-mobile .nexus-task-board-shell {
   overflow: hidden;
 }
 
-/* Tool status cost readout — ported from .mock-device--glass .tool-status-cost
-   (mockup line 2087). 16px to match the optimized tool-status-bar typography. */
+/* Tool status cost readout — 16px to match the tool-status-bar typography. */
 .tool-status-cost {
   font-size: 16px;
   line-height: 1;
@@ -8630,9 +8620,8 @@ body.is-mobile .nexus-task-board-shell {
   margin-right: 8px;
 }
 
-/* Context Badge — ported from .mock-device--glass .context-badge
-   (mockup line 2098). 16px font, fixed 56px width so the badge has a
-   stable footprint regardless of percentage digit count. */
+/* Context Badge — 16px font, fixed 56px width so the badge has a stable
+   footprint regardless of percentage digit count. */
 .context-badge {
   font-size: 16px;
   font-weight: 600;

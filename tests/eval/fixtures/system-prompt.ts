@@ -11,17 +11,41 @@ import { SystemPromptBuilder } from '../../../src/ui/chat/services/SystemPromptB
 import type { SystemPromptOptions, ToolCatalogEntry } from '../../../src/ui/chat/services/SystemPromptBuilder';
 
 /**
- * Default tool catalog — mirrors what the production agent registry exposes.
- * Source: CLAUDE.md "Available Agents" section + tool slugs from each agent.
+ * Default tool catalog — the agent→tools list the production SystemPromptBuilder
+ * renders into the prompt as "Available agents and tools".
+ *
+ * INVARIANT: every command here must have a matching tool in NEXUS_TOOLS
+ * (fixtures/tools.ts). The prompt is the model's only statement of what exists;
+ * anything advertised here that the executor cannot resolve is scored as a
+ * hallucinated tool call, so the harness punishes a model for obeying its own
+ * instructions. `nexus-model-eval/scripts/check_advertised_tools.py` enforces
+ * the invariant — run it after editing either file.
+ *
+ * Membership rule (both conditions, or the entry does not belong here):
+ *  1. The command exists in the production registry (cli-first-tool-schemas.json).
+ *  2. Some scenario in tests/eval/scenarios/ could plausibly make a well-behaved
+ *     model reach for it — either as the right answer or as a live misroute.
+ *
+ * Deliberately NOT advertised, and why:
+ *  - memoryManager createSession/loadSession — REMOVED from production (see
+ *    src/agents/memoryManager/types.ts). Advertising a tool the app does not
+ *    have can never produce a transferable grade.
+ *  - memoryManager createWorkspace/createState — real, but no scenario asks the
+ *    model to persist workspace or session state, and nothing in the prompt
+ *    tells it to. (`memory` in a useTools payload is the context field, not this
+ *    agent.)
+ *  - canvasManager (read/write/update/list) — real, but no scenario mentions a
+ *    canvas, so a call here is a genuine invention and should grade as one.
+ *  - promptManager (listModels/execute/create/update/list/get/generateImage) —
+ *    real, but no scenario asks for prompt management or media generation.
+ *    `deletePrompt` was never real at all: promptManager has `archive`, because
+ *    the AI never gets a destructive delete.
  */
 export const DEFAULT_TOOL_CATALOG: ToolCatalogEntry[] = [
   { agent: 'contentManager', tools: ['read', 'write', 'replace', 'insert', 'setProperty'] },
   { agent: 'storageManager', tools: ['list', 'createFolder', 'move', 'copy', 'archive', 'open'] },
   { agent: 'searchManager', tools: ['content', 'directory', 'memory'] },
-  { agent: 'memoryManager', tools: ['createSession', 'loadSession', 'createWorkspace', 'createState'] },
-  { agent: 'canvasManager', tools: ['read', 'write', 'update', 'list'] },
   { agent: 'taskManager', tools: ['createProject', 'listProjects', 'create', 'list', 'update'] },
-  { agent: 'promptManager', tools: ['listModels', 'execute', 'create', 'update', 'deletePrompt', 'list', 'get', 'generateImage'] },
 ];
 
 /**

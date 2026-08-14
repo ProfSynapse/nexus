@@ -316,6 +316,8 @@ function instantiateAgents() {
   const { ElevenLabsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'elevenlabs', 'ElevenLabsAgent'));
   const { ComposerAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'composer', 'ComposerAgent'));
   const { WebToolsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'webTools', 'WebToolsAgent'));
+  const { SkillsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'skills', 'SkillsAgent'));
+  const { DataAnalysisAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'dataAnalysis', 'DataAnalysisAgent'));
 
   const { app, plugin } = createRuntime();
   const llmSettings = JSON.parse(JSON.stringify(DEFAULT_LLM_PROVIDER_SETTINGS));
@@ -370,7 +372,11 @@ function instantiateAgents() {
     new IngestManagerAgent(app.vault, () => null),
     new ElevenLabsAgent(),
     new ComposerAgent(),
-    new WebToolsAgent()
+    new WebToolsAgent(),
+    new SkillsAgent(),
+    // Desktop-only in the plugin (AppManager gates it behind isDesktop), but its
+    // tools are part of the advertised catalog, so it is always exported here.
+    new DataAnalysisAgent()
   ];
 
   for (const agent of agents) {

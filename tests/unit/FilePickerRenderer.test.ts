@@ -312,6 +312,66 @@ describe('FilePickerRenderer (PR4 .ws-tree class rename + checkbox preservation)
     });
   });
 
+  describe('workspace root folder resolution (issue #332)', () => {
+    /**
+     * `getAbstractFileByPath()` takes a vault-relative path with NO leading
+     * slash. Workspace settings store roots as '/notes', 'notes/', etc., so the
+     * renderer has to normalize before the lookup — otherwise the configured
+     * root silently resolved to null and rendered "Folder not found".
+     */
+    function renderWithRoot(rootFolder: string): MockElement {
+      const { app } = makeAppWithTree();
+      const renderer = new FilePickerRenderer(
+        app, jest.fn(), jest.fn(), undefined, rootFolder, 'Select Files', new Component()
+      );
+      const container = createMockEl('root');
+      renderer.render(container as unknown as HTMLElement);
+      return container;
+    }
+
+    /** The 'notes' folder holds alpha.md + beta.md — two file rows, no folders. */
+    function expectRenderedNotesFolder(container: MockElement): void {
+      expect(byClass(container, 'nexus-file-picker-empty').length).toBe(0);
+      expect(byClass(container, 'ws-tree-row').length).toBe(2);
+      expect(byClass(container, 'is-file').length).toBe(2);
+      const names = byClass(container, 'ws-tree-name').map(e => e.textContent).sort();
+      expect(names).toEqual(['alpha.md', 'beta.md']);
+    }
+
+    it('resolves a root folder given with a leading slash', () => {
+      expectRenderedNotesFolder(renderWithRoot('/notes'));
+    });
+
+    it('resolves a root folder given with a trailing slash', () => {
+      expectRenderedNotesFolder(renderWithRoot('notes/'));
+    });
+
+    it('resolves a plain vault-relative root folder unchanged', () => {
+      expectRenderedNotesFolder(renderWithRoot('notes'));
+    });
+
+    it('resolves a root folder given with backslashes', () => {
+      expectRenderedNotesFolder(renderWithRoot('\\notes'));
+    });
+
+    it('falls back to the vault root for "/", "" and whitespace', () => {
+      for (const root of ['/', '', '   ']) {
+        const container = renderWithRoot(root);
+        // Vault root holds the notes/ folder + readme.md.
+        expect(byClass(container, 'nexus-file-picker-empty').length).toBe(0);
+        expect(byClass(container, 'ws-tree-row').length).toBe(2);
+        expect(byClass(container, 'is-folder').length).toBe(1);
+      }
+    });
+
+    it('still reports "Folder not found" for a root that does not exist', () => {
+      const container = renderWithRoot('/does-not-exist');
+      const empty = byClass(container, 'nexus-file-picker-empty');
+      expect(empty.length).toBe(1);
+      expect(empty[0].textContent).toBe('Folder not found');
+    });
+  });
+
   describe('empty state', () => {
     it('renders the folder-not-found message when the root folder is missing', () => {
       const app = new App();

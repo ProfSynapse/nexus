@@ -9,6 +9,38 @@ reads last is the one users get.
 Every declaration of this provider's default naming the same model, with the
 tests that pinned the old one updated deliberately.
 
+## Which steps apply
+Not every job enters here wanting to move a provider default. Read the case
+before working the steps:
+- **Moving a provider's default** — all steps.
+- **Repairing one declaration that drifted** (the gate flagged an adapter literal
+  or the shipped settings default, and the registry export is already right) —
+  steps 1, 2, the single step naming the site that drifted, then 6–8. You MUST
+  NOT change the registry export in this case; it is the value the others are
+  being brought back into line with.
+
+## Choosing the incoming model
+A default that resolves is not yet a default that is right. A dangling id and a
+stale id are two separate defects and fixing only the first leaves users on an
+obsolete model. Before you pick:
+
+1. List what the registry actually holds for that provider —
+   `check_model_registry.py --repo-root . --list` names the file; read its
+   entries. Registries get current models added continuously, so what is in there
+   is usually fresher than whichever id you first landed on.
+2. Prefer the most current model that is a sensible general-purpose default:
+   capable enough for everyday use, not a preview or experimental id, not a
+   reasoning-only or task-specialist variant, and not the top-priced tier unless
+   that is what the provider's own default already names.
+3. Prefer the id the provider's registry export already uses when you are setting
+   a *different* site to match it. Picking a "better" model there re-creates the
+   divergence you are fixing.
+4. If the registry holds nothing current for that provider, that is a **separate
+   defect** — the registry needs a current entry. Say so and report it. Add one
+   only if you can verify the id from the provider's own documentation; you MUST
+   NOT invent a slug, and a stale id shipped quietly as "the fix" is worse than a
+   reported gap.
+
 ## Steps
 
 1. **Record the outgoing id before you change anything.** You will grep for it,
@@ -53,10 +85,18 @@ tests that pinned the old one updated deliberately.
    rg -n --fixed-strings "$OLD" src tests docs
    ```
 
-   Expect hits in the unit tests: some assert a provider's default id literally,
-   and some assert the model a request body carries. Those assertions are the
-   point — update them to the new id rather than loosening them, so the next
-   silent drift still fails a test.
+   Sort the hits into two piles before editing anything:
+   - **Assertions on the default** — a test that reads the registry default or
+     the shipped settings and expects a specific id, or that asserts the model a
+     request body carries. These are the point: update them to the new id rather
+     than loosening them, so the next silent drift still fails a test.
+   - **Fixtures that merely use the id** — a test building its own settings
+     object where the chat model is incidental to what it checks (voice, secrets
+     redaction, persistence). These do not read your default and do not break.
+     Leave them; rewriting them is churn that hides the real diff.
+
+   Tell them apart by asking what the test would do if the id were any other
+   valid string. If the answer is "pass identically", it is a fixture.
 
 7. **Run the gate in strict mode.** A default change is exactly the case where
    the warnings matter, so do not run the default mode here.

@@ -17,7 +17,11 @@ export const CONFLICT_COPY_PATTERNS: ReadonlyArray<RegExp> = [
   /^cache_conf\d*\.db$/,                                   // sync helper: cache_conf.db, cache_conf2.db
   /^cache\[Conflict\].*\.db$/,                             // suffix:  cache[Conflict].db
   /^cache\.db \(Conflict\)$/i,                             // OneDrive: cache.db (Conflict)
-  /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i,       // Dropbox: cache (Pinky's conflicted copy 2026-01-15).db
+  // Dropbox writes both `cache (Pinky's conflicted copy 2026-01-15).db` (the
+  // parenthesised form — note the `)` BEFORE `.db`) and the bare
+  // `cache Pinky's conflicted copy 2026-01-15.db`. The optional `\)?` covers
+  // both; the literal date keeps it from swallowing ordinary cache files.
+  /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\)?\.db$/i,
   /^cache \(Case Conflict\)\.db$/i,                        // case-fold: cache (Case Conflict).db
   /^cache\.db\.[a-f0-9]{6,}$/i                             // hash-suffix: cache.db.a1b2c3
 ];

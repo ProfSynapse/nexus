@@ -49,6 +49,7 @@
 
 import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
+import { createProviderStreamError } from './streamErrorFrames';
 
 export interface SSEParsedUsage {
   prompt_tokens?: number;
@@ -83,11 +84,19 @@ export interface SSEStreamOptions {
   // Reasoning/thinking extraction for models that support it
   extractReasoning?: (parsed: SSEParsedEvent) => { text: string; complete: boolean } | null;
   // Some providers deliver a fatal error as an in-stream event (HTTP 200, then an
-  // {"error": {...}} data frame) rather than an HTTP error. Return the message to make
-  // processNodeStream throw it instead of silently ending the stream with no output.
+  // {"error": {...}} data frame) rather than an HTTP error. Return the message and the
+  // processor throws an LLMProviderError carrying PROVIDER_STREAM_ERROR instead of
+  // silently ending the stream with no output. Honoured identically by every processor
+  // that parses provider frames (processNodeStream, processSSEStream,
+  // processBufferedSSEText, processStream) -- see streamErrorFrames.ts.
   extractError?: (parsed: SSEParsedEvent) => string | null;
   onParseError?: (error: Error, rawData: string) => void;
   debugLabel?: string;
+  /**
+   * Provider name stamped onto a thrown stream error. BaseAdapter fills this in from
+   * `this.name`; falls back to `debugLabel` for direct callers of the processors.
+   */
+  providerName?: string;
   // Tool call accumulation settings
   accumulateToolCalls?: boolean;
   toolCallThrottling?: {
@@ -111,6 +120,9 @@ export class SSEStreamProcessor {
 
     let usage: SSEParsedUsage | undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
+    // A fatal error frame delivered over HTTP 200. Recorded here, thrown once the
+    // already-queued events have drained, so partial output is not lost.
+    let streamError: string | undefined = undefined;
 
     // Tool call accumulation system
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
@@ -158,6 +170,17 @@ export class SSEStreamProcessor {
 
       try {
         const parsed = JSON.parse(event.data) as SSEParsedEvent;
+
+        // Fatal in-stream error (HTTP 200, then an {"error": {...}} frame). Stop
+        // consuming; the throw after the drain is the real outcome.
+        if (options.extractError) {
+          const errorMessage = options.extractError(parsed);
+          if (errorMessage) {
+            streamError = errorMessage;
+            isCompleted = true;
+            return;
+          }
+        }
 
         if (options.extractMetadata) {
           metadata = {
@@ -337,8 +360,9 @@ export class SSEStreamProcessor {
         yield event;
       }
 
-      // If we completed without a completion event, yield one
-      if (!isCompleted || (!eventQueue.length && !completionError)) {
+      // If we completed without a completion event, yield one -- but never claim
+      // success when the stream carried a fatal error frame.
+      if (!streamError && (!isCompleted || (!eventQueue.length && !completionError))) {
         yield {
           content: '',
           complete: true,
@@ -348,6 +372,13 @@ export class SSEStreamProcessor {
             totalTokens: usage.total_tokens || 0
           } : undefined
         };
+      }
+
+      if (streamError) {
+        throw createProviderStreamError(
+          streamError,
+          options.providerName || options.debugLabel || 'llm'
+        );
       }
 
     } finally {

@@ -75,11 +75,31 @@ applies. The gate warns on every duplicate id so the pair is a deliberate choice
 rather than an accident.
 
 ## Registries that are fallbacks, not catalogs
-Some adapters query the provider for its current model list and merge or
-overwrite the static array. There, the array only has to be good enough for first
-paint and its ids still have to be slugs the provider accepts today. The gate
-detects this structurally — a provider whose adapter calls a model-listing
-endpoint gets shape problems reported as warnings rather than errors.
+Some adapters query the provider for its current model list and prefer it,
+falling back to the static array only when discovery has not run or has failed —
+before a token is present, offline, or when the endpoint errors. The gate detects
+this structurally: a provider whose adapter calls a model-listing endpoint gets
+shape problems reported as warnings rather than errors.
+
+"Fallback" is not "unimportant". It is what a user sees at precisely the moment
+they cannot check anything, so two rules bind harder here than elsewhere:
+
+- **`name` must describe the model `apiName` actually delivers.** These arrays rot
+  in a characteristic way: someone updates the display names to the current
+  line-up, leaves the slugs at the old ones, and now the picker advertises a
+  model the request will never route to. A name that outruns its slug is worse
+  than an obviously old name, because it is not visibly wrong.
+- **The other fields describe the slug, not the aspiration.** Context windows in
+  particular get copied from the model the name claims. Over-claiming a window
+  produces requests the endpoint rejects; under-claiming only produces smaller
+  requests, so guess low when you must guess.
+
+Refreshing such a list to the provider's current line-up means reading the live
+listing response. You MUST NOT infer those slugs — a gateway's slugs need not
+match the upstream vendor's public ids, so a plausible-looking guess is a 404
+with a confident spelling. If you cannot read the live list, fix what is
+internally inconsistent, leave the slugs alone, and report the list as
+unrefreshed.
 
 ## Lookup
 Field-level questions the type does not answer:
