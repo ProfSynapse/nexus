@@ -88,7 +88,12 @@ describe('startup rebuild large trace-store harness', () => {
 
       expect(adapter.syncCoordinator.fullRebuild).toHaveBeenCalledTimes(1);
       const state = adapter.hydration.getState();
-      expect(state.phase).toBe('running');
+      // `complete`, not `running`. This asserted `running` until the gate fix,
+      // which is the whole of #209: onProgress moves the phase to `running`,
+      // `running` is not query-ready, and nothing used to move it on. A
+      // rebuild that finishes must leave the gate open, or every
+      // waitForQueryReady() caller burns its full idle timeout.
+      expect(state.phase).toBe('complete');
       expect(state.error).toBeUndefined();
     } finally {
       await removeFixture(fixture);

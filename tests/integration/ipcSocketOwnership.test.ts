@@ -68,6 +68,24 @@ function inodeOf(target: string): number | null {
   }
 }
 
+/**
+ * The full identity of the file at `target`, or null if there is nothing there.
+ *
+ * Tests may not assert that two successive files at the same path have
+ * different inode NUMBERS. An inode number is unique only among live inodes;
+ * ext4 returns a freed one to the very next create in that directory, so on
+ * Linux the predecessor and successor sockets here routinely come back with
+ * the identical number. Identity is the number plus the creation instant.
+ */
+function identityOf(target: string): { ino: number; birthtimeMs: number } | null {
+  try {
+    const stats = fs.statSync(target);
+    return { ino: stats.ino, birthtimeMs: stats.birthtimeMs };
+  } catch {
+    return null;
+  }
+}
+
 /** Bind a bare net server, standing in for an unrelated process's socket. */
 function listenDirectly(socketPath: string): Promise<net.Server> {
   return new Promise((resolve, reject) => {
@@ -144,19 +162,68 @@ describeOnPosix('IPC socket ownership across a reload', () => {
 
     const manager = createTransportManager(ipcPath);
     await manager.startTransport();
-    const ownInode = inodeOf(ipcPath);
+    const ownIdentity = identityOf(ipcPath);
     manager.closeListener();
 
     // Someone else takes the path over — same name, different file.
     fs.rmSync(ipcPath, { force: true });
     const foreign = await listenDirectly(ipcPath);
-    const foreignInode = inodeOf(ipcPath);
-    expect(foreignInode).not.toBe(ownInode);
+    const foreignIdentity = identityOf(ipcPath);
+    // Different FILE, which on ext4 can still mean the same inode number —
+    // see identityOf(). Comparing numbers alone made this precondition fail
+    // on Linux before the scenario below ever ran.
+    expect(foreignIdentity).not.toEqual(ownIdentity);
 
     // The identity check has to notice, because the path alone cannot.
     await manager.stopTransport();
 
-    expect(inodeOf(ipcPath)).toBe(foreignInode);
+    expect(identityOf(ipcPath)).toEqual(foreignIdentity);
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
+
+    await closeDirectly(foreign);
+  });
+
+  /**
+   * The guarantee that does not depend on the inode allocator.
+   *
+   * The test above needs the successor's file to look different from the
+   * predecessor's. On ext4 it often does not: the freed inode number comes
+   * straight back, and birthtimeMs is then the only thing separating them —
+   * two files created inside the same timestamp tick would be indistinguishable.
+   * So identity cannot be the last line of defence.
+   *
+   * Here the predecessor's recorded identity is forced to match the successor's
+   * exactly, which is what perfect inode reuse looks like from inside
+   * releaseOwnedSocket(). Nothing may be unlinked, because something is
+   * listening on it.
+   */
+  it('never unlinks a socket that is being listened on, even when identity matches', async () => {
+    const ipcPath = uniqueSocketPath();
+
+    const manager = createTransportManager(ipcPath);
+    await manager.startTransport();
+    manager.closeListener();
+
+    fs.rmSync(ipcPath, { force: true });
+    const foreign = await listenDirectly(ipcPath);
+    const foreignIdentity = identityOf(ipcPath);
+    expect(foreignIdentity).not.toBeNull();
+
+    // Simulate the allocator handing the successor a byte-identical identity.
+    const withOwned = manager as unknown as {
+      ownedSocket: { path: string; dev: number; ino: number; birthtimeMs: number } | null;
+    };
+    const stats = fs.statSync(ipcPath);
+    withOwned.ownedSocket = {
+      path: ipcPath,
+      dev: stats.dev,
+      ino: stats.ino,
+      birthtimeMs: stats.birthtimeMs
+    };
+
+    await manager.stopTransport();
+
+    expect(identityOf(ipcPath)).toEqual(foreignIdentity);
     await expect(canConnect(ipcPath)).resolves.toBe(true);
 
     await closeDirectly(foreign);

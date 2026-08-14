@@ -19,11 +19,26 @@ type Socket = import('net').Socket;
  * dev+ino identify the file itself rather than its name, which is the whole
  * point: the IPC path is derived from the vault name, so it is shared by every
  * instance and cannot tell us whether the file there is still ours.
+ *
+ * dev+ino alone are NOT enough, because an inode number is only unique among
+ * *live* inodes — once a file is unlinked its number goes back in the pool.
+ * ext4 hands the freed number straight back to the next create in the same
+ * directory, which is exactly the delete-then-rebind pattern a plugin reload
+ * produces: measured in a container, predecessor and successor sockets came
+ * back with the identical dev+ino. Every Linux desktop with /tmp on ext4 has
+ * this property. birthtimeMs distinguishes them — same number, different file,
+ * created at a different instant. (APFS never reuses, which is why dev+ino
+ * looked sufficient when this was first written on macOS.)
+ *
+ * Identity is still only the cheap first filter; releaseOwnedSocket() will not
+ * unlink a socket that something is actively listening on, whatever the stat
+ * says.
  */
 interface OwnedSocket {
     path: string;
     dev: number;
     ino: number;
+    birthtimeMs: number;
 }
 
 /**
@@ -457,16 +472,28 @@ export class IPCTransportManager {
             return;
         }
 
-        if (current.dev !== owned.dev || current.ino !== owned.ino) {
+        if (!this.isSameSocketFile(current, owned)) {
             logger.systemLog(`Leaving the socket at ${owned.path} alone — it belongs to another instance now`);
             return;
         }
 
+        // Identity says the file is ours, but identity is reconstructed from a
+        // stat and an inode number can be recycled. Something actively
+        // listening on this path is the one fact that cannot be a coincidence:
+        // our own listener was closed by closeListener() before we got here, so
+        // a live socket is by definition a successor's. This is what makes the
+        // guarantee filesystem-independent rather than a bet on the inode
+        // allocator.
+        if (await this.isSocketLive(owned.path)) {
+            logger.systemLog(`Leaving the socket at ${owned.path} alone — another instance is listening on it`);
+            return;
+        }
+
         try {
-            // A successor could still rebind between the stat above and this
+            // A successor could still rebind between the probe above and this
             // unlink. There is no unlink-by-inode on POSIX, so the window
             // cannot be closed entirely — only reduced from tens of seconds to
-            // a single turn, which is what the identity check buys.
+            // a single turn, which is what the checks above buy.
             const fs = desktopRequire<typeof import('fs')>('fs').promises;
             await fs.unlink(owned.path);
         } catch (error) {
@@ -482,10 +509,29 @@ export class IPCTransportManager {
     private readSocketIdentity(ipcPath: string): OwnedSocket | null {
         try {
             const stats = desktopRequire<typeof import('fs')>('fs').statSync(ipcPath);
-            return { path: ipcPath, dev: stats.dev, ino: stats.ino };
+            return {
+                path: ipcPath,
+                dev: stats.dev,
+                ino: stats.ino,
+                birthtimeMs: stats.birthtimeMs
+            };
         } catch {
             return null;
         }
+    }
+
+    /**
+     * Is this the same file we recorded, or merely the same name?
+     *
+     * Any difference means "not ours", including a missing or unreadable
+     * birthtime, because the whole point of the check is to stop us deleting
+     * someone else's socket. Erring towards "not ours" leaves a stale file
+     * behind at worst, and the next startTransport() clears that.
+     */
+    private isSameSocketFile(a: OwnedSocket, b: OwnedSocket): boolean {
+        return a.dev === b.dev
+            && a.ino === b.ino
+            && a.birthtimeMs === b.birthtimeMs;
     }
 
     /**
