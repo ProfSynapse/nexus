@@ -17,11 +17,12 @@ jest.mock('../../src/utils/platform', () => ({
 }));
 
 import { OllamaAdapter } from '../../src/services/llm/adapters/ollama/OllamaAdapter';
-import { Tool } from '../../src/services/llm/adapters/types';
+import { Tool, LLMProviderError } from '../../src/services/llm/adapters/types';
 import {
   jsonResponse,
   collect,
   concatContent,
+  captureError,
   CapturedRequest
 } from './helpers/llmAdapterTestHarness';
 
@@ -287,6 +288,29 @@ describe('OllamaAdapter', () => {
       await collect(adapter.generateStreamAsync('hi'));
 
       expect(JSON.parse(requests[0].body ?? '{}').think).toBe(false);
+    });
+
+    it('throws on an {"error"} line delivered over HTTP 200 instead of ending an empty stream', async () => {
+      // Ollama reports an unloadable/unknown model as an NDJSON error line on an
+      // otherwise successful stream. Without extractError the loop drained and the
+      // chat bubble stayed empty (issue #336).
+      __setRequestUrlMock(async () => ndjsonResponse(
+        { error: "model 'llama3.1' not found, try pulling it first" }
+      ));
+
+      const adapter = new OllamaAdapter(URL, 'llama3.1');
+      const chunks: unknown[] = [];
+      const error = await captureError((async () => {
+        for await (const chunk of adapter.generateStreamAsync('hi')) {
+          chunks.push(chunk);
+        }
+      })()) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.code).toBe('PROVIDER_STREAM_ERROR');
+      expect(error.provider).toBe('ollama');
+      expect(error.message).toBe("model 'llama3.1' not found, try pulling it first");
+      expect(chunks).toHaveLength(0);
     });
 
     it('honors an explicit enableThinking:false override on a reasoning model', async () => {

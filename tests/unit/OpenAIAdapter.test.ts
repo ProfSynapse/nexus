@@ -175,6 +175,48 @@ describe('OpenAIAdapter', () => {
       }]);
     });
 
+    it('throws on a response.failed event delivered over HTTP 200', async () => {
+      // The Responses stream reports fatal failures as data frames on an already
+      // successful connection. Unhandled, the stream just ended (issue #336).
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'response.output_text.delta', delta: 'partial' },
+        {
+          type: 'response.failed',
+          response: { id: 'resp_1', status: 'failed', error: { code: 'server_error', message: 'The server had an error' } }
+        }
+      )));
+
+      const adapter = new OpenAIAdapter('sk-test');
+      const seen: string[] = [];
+      const error = await captureError((async () => {
+        for await (const chunk of adapter.generateStreamAsync('hi')) {
+          if (chunk.complete) {
+            throw new Error('stream must not report success after an error frame');
+          }
+          seen.push(chunk.content);
+        }
+      })()) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.code).toBe('PROVIDER_STREAM_ERROR');
+      expect(error.provider).toBe('openai');
+      expect(error.message).toBe('The server had an error');
+      expect(seen.join('')).toBe('partial');
+    });
+
+    it('throws on a stream-level error event delivered over HTTP 200', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'error', code: 'rate_limit_exceeded', message: 'Rate limit reached' }
+      )));
+
+      const adapter = new OpenAIAdapter('sk-test');
+      const error = await captureError(collect(adapter.generateStreamAsync('hi'))) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.code).toBe('PROVIDER_STREAM_ERROR');
+      expect(error.message).toBe('Rate limit reached');
+    });
+
     it('maps a streaming 401 to LLMProviderError AUTHENTICATION_ERROR', async () => {
       __setRequestUrlMock(async () => jsonResponse(401, { error: { message: 'Invalid API key' } }));
 

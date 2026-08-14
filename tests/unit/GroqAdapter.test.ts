@@ -167,6 +167,44 @@ describe('GroqAdapter', () => {
       ]);
     });
 
+    it('throws on an error frame delivered over HTTP 200 instead of ending an empty stream', async () => {
+      // OpenAI-compatible providers answer 200 and then push {"error": {...}}.
+      // Without extractError the stream just ended: blank bubble, nothing logged.
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { choices: [{ delta: { content: 'partial' } }] },
+        { error: { message: 'Rate limit reached for model', type: 'rate_limit_exceeded', code: 'rate_limit_exceeded' } }
+      )));
+
+      const adapter = new GroqAdapter('gsk-test');
+      const seen: string[] = [];
+      const error = await captureError((async () => {
+        for await (const chunk of adapter.generateStreamAsync('hi')) {
+          if (chunk.complete) {
+            throw new Error('stream must not report success after an error frame');
+          }
+          seen.push(chunk.content);
+        }
+      })()) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.code).toBe('PROVIDER_STREAM_ERROR');
+      expect(error.provider).toBe('groq');
+      expect(error.message).toBe('Rate limit reached for model');
+      expect(seen.join('')).toBe('partial');
+    });
+
+    it('throws on a failure nested under x_groq', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { id: 'chatcmpl-1', x_groq: { id: 'req_1', error: 'over capacity' } }
+      )));
+
+      const adapter = new GroqAdapter('gsk-test');
+      const error = await captureError(collect(adapter.generateStreamAsync('hi'))) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.message).toBe('over capacity');
+    });
+
     it('rethrows streaming HTTP errors as raw ProviderHttpError (not LLMProviderError)', async () => {
       __setRequestUrlMock(async () => jsonResponse(401, { error: { message: 'Invalid API key' } }));
 

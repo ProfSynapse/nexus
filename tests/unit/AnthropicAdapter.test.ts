@@ -141,6 +141,31 @@ describe('AnthropicAdapter', () => {
       ]);
     });
 
+    it('throws on an error event delivered over HTTP 200 instead of ending an empty stream', async () => {
+      // Anthropic reports overload/invalid-request mid-stream as an `error` event
+      // on an otherwise successful connection. This used to be raised from
+      // extractFinishReason, where the processor's parse-error guard swallowed it,
+      // so the user saw a blank bubble with nothing logged (issue #336).
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'message_start', message: { usage: { input_tokens: 4, output_tokens: 0 } } },
+        { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+      )));
+
+      const adapter = new AnthropicAdapter('ak-test');
+      const chunks: unknown[] = [];
+      const error = await captureError((async () => {
+        for await (const chunk of adapter.generateStreamAsync('hi')) {
+          chunks.push(chunk);
+        }
+      })()) as LLMProviderError;
+
+      expect(error).toBeInstanceOf(LLMProviderError);
+      expect(error.code).toBe('PROVIDER_STREAM_ERROR');
+      expect(error.provider).toBe('anthropic');
+      expect(error.message).toContain('Overloaded');
+      expect(chunks).toHaveLength(0);
+    });
+
     it('rethrows streaming HTTP errors as raw ProviderHttpError (not LLMProviderError)', async () => {
       __setRequestUrlMock(async () => jsonResponse(401, { error: { message: 'invalid x-api-key' } }));
 

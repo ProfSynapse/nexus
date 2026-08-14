@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Check that every Nexus LLM adapter which parses an SSE stream wires `extractError`.
+"""Check that every Nexus LLM adapter which parses provider frames wires error extraction.
 
 The rule: a provider can deliver a fatal error as a data frame over HTTP 200. The
-shared stream processor only turns that into a thrown error when the adapter
-supplies an `extractError` extractor in its stream options. Without one the pump
-drains, the generator ends, the chat bubble stays blank, and nothing is logged.
+stream layer only turns that into a thrown `LLMProviderError` when the adapter says
+how to recognise it. Without that the pump drains, the generator ends, the chat
+bubble stays blank, and nothing is logged.
+
+Every frame-parsing processor now honours the same `extractError` option --
+`processNodeStream`, `processSSEStream`, `processBufferedSSEText`, `processStream`
+and `processNodeStreamJsonLines` alike -- so the option means one thing wherever it
+appears and this check applies uniformly. Adapters that hand-roll their own
+`createParser` loop (the OpenAI Responses family) satisfy the same rule by calling
+a shared extractor from `src/services/llm/streaming/streamErrorFrames.ts`.
 
 This is mechanical and stable, so it is a script rather than a prose reminder. It
 discovers adapters from the tree -- it hardcodes no provider list, so it cannot
@@ -23,7 +30,7 @@ Usage:
 
 Exit codes:
   0  clean / inventory printed
-  1  a checked adapter parses an SSE stream without wiring extractError
+  1  a checked adapter parses provider frames without wiring error extraction
   2  usage error (bad path, no adapters found)
 """
 from __future__ import annotations
@@ -35,14 +42,28 @@ from pathlib import Path
 
 ADAPTERS_SUBDIR = Path("src/services/llm/adapters")
 
-# The incremental SSE path -- the ONLY processor that consults `extractError`.
-# `processSSEStream` / `processBufferedSSEText` accept the option in their type but
-# never read it, and `processStream` uses an option type that does not declare it,
-# so flagging those would demand a fix that cannot be made in the adapter. The
-# trailing `(` keeps `processNodeStreamJsonLines` (a different contract) out.
-SSE_ENTRYPOINTS = re.compile(r"\bprocessNodeStream\s*\(")
-# The extractor being supplied as a stream option.
-EXTRACT_ERROR = re.compile(r"\bextractError\s*:")
+# Every entrypoint that parses provider frames off a streaming HTTP 200 response.
+# All of the BaseAdapter processors honour `extractError`; `createParser(` catches
+# the adapters that hand-roll an eventsource-parser loop of their own. The trailing
+# `(` keeps `processStreamChunk` and friends from matching by prefix.
+FRAME_ENTRYPOINTS = re.compile(
+    r"\b(?:"
+    r"processNodeStream|"
+    r"processNodeStreamJsonLines|"
+    r"processSSEStream|"
+    r"processBufferedSSEText|"
+    r"processStream|"
+    r"createParser"
+    r")\s*\("
+)
+# Evidence that the frame parser can recognise an error frame: the option supplied
+# to a shared processor, or a call to one of the shared extractors from a
+# hand-rolled parser.
+ERROR_WIRING = re.compile(
+    r"\bextractError\s*:"
+    r"|\bextractStreamErrorMessage\s*\("
+    r"|\bextractResponsesApiStreamError\s*\("
+)
 
 # Directories under adapters/ that are shared plumbing, not a provider.
 NON_PROVIDER_DIRS = {"shared"}
@@ -73,21 +94,21 @@ def resolve_target(root: Path, token: str) -> Path | None:
 
 
 def scan(adapter: Path) -> tuple[list[str], list[str]]:
-    """Return (streaming files missing extractError, streaming files with it)."""
+    """Return (frame-parsing files missing error wiring, files that have it)."""
     missing: list[str] = []
     wired: list[str] = []
     for ts in sorted(adapter.rglob("*.ts")):
         text = ts.read_text(encoding="utf-8", errors="replace")
-        if not SSE_ENTRYPOINTS.search(text):
+        if not FRAME_ENTRYPOINTS.search(text):
             continue
-        if EXTRACT_ERROR.search(text):
+        if ERROR_WIRING.search(text):
             wired.append(str(ts))
         else:
             line = next(
                 (
                     i
                     for i, ln in enumerate(text.splitlines(), 1)
-                    if SSE_ENTRYPOINTS.search(ln)
+                    if FRAME_ENTRYPOINTS.search(ln)
                 ),
                 1,
             )
@@ -144,17 +165,17 @@ def main() -> int:
         missing, wired = scan(adapter)
         if not missing and not wired:
             if args.adapters:
-                print(f"{adapter.name}: no SSE stream parsing found -- nothing to check")
+                print(f"{adapter.name}: no provider frame parsing found -- nothing to check")
             continue
         streaming += 1
         if missing:
             for loc in missing:
                 violations.append(
-                    f"{loc}: parses an SSE stream without `extractError` -- a provider "
+                    f"{loc}: parses provider frames without error extraction -- a provider "
                     f"error frame over HTTP 200 will end the stream silently"
                 )
         else:
-            print(f"OK   {adapter.name}: extractError wired")
+            print(f"OK   {adapter.name}: error extraction wired")
 
     for v in violations:
         print(v)
@@ -163,8 +184,9 @@ def main() -> int:
         print(f"\n{len(violations)} unwired stream site(s) across {streaming} streaming adapter(s)")
         if gate:
             print(
-                "Fix: add `extractError` to the stream options. "
-                "See references/streaming-contract.md."
+                "Fix: add `extractError` to the stream options, or call "
+                "extractStreamErrorMessage / extractResponsesApiStreamError from a "
+                "hand-rolled parser. See references/streaming-contract.md."
             )
             return 1
         print(
@@ -174,9 +196,9 @@ def main() -> int:
         return 0
 
     if streaming == 0:
-        print("\nclean: no SSE-streaming adapter in scope, nothing to check")
+        print("\nclean: no streaming adapter in scope, nothing to check")
     else:
-        print(f"\nclean: {streaming} streaming adapter(s) checked, all wire extractError")
+        print(f"\nclean: {streaming} streaming adapter(s) checked, all wire error extraction")
     return 0
 
 
