@@ -37,15 +37,42 @@ export class SQLitePersistenceService {
             : JSON.stringify(integrityResult) ?? 'unknown';
           throw new Error(`Database integrity check failed: ${integrityMessage}`);
         }
-      } catch {
+      } catch (integrityError) {
+        this.reportCacheRebuild('integrity check failed', integrityError, data.byteLength);
         return this.recreateCorruptedDatabase(sqlite3, schemaSql);
       }
 
       return db;
     } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to load from blob store:', error);
+      this.reportCacheRebuild('could not be read or opened', error);
       return this.recreateCorruptedDatabase(sqlite3, schemaSql);
     }
+  }
+
+  /**
+   * Announce a cache rebuild on the console, loudly enough that a user can find
+   * it. This path used to be a bare `catch {}`: the cache was silently
+   * discarded and rebuilt, so the only thing anyone ever saw was the downstream
+   * symptom — an empty or half-populated view — with nothing in the console
+   * tying it back to a corrupt database. Issue #209 stayed undiagnosable for
+   * months for exactly that reason.
+   *
+   * This reports; it does not decide. Recovery itself is unchanged.
+   */
+  private reportCacheRebuild(reason: string, cause: unknown, discardedBytes?: number): void {
+    const causeText = cause instanceof Error ? cause.message : String(cause);
+    const sizeText = discardedBytes === undefined
+      ? ''
+      : ` Discarded cache was ${discardedBytes} bytes.`;
+
+    console.error(
+      `[SQLiteCacheManager] Local cache database ${reason} — rebuilding it from scratch. ` +
+      `Cause: ${causeText}.${sizeText} ` +
+      'No user data is lost by this: the SQLite cache is a rebuildable index, and its contents ' +
+      'are replayed from the JSONL event store, which is the source of truth. ' +
+      'If this repeats on every start, the cache is being corrupted after each rebuild — report it with this line.',
+      cause
+    );
   }
 
   async saveDatabase(sqlite3: SQLiteWasmModule, db: SQLiteDatabaseHandle): Promise<void> {
@@ -71,8 +98,15 @@ export class SQLitePersistenceService {
   async recreateCorruptedDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {
     try {
       await this.blobStore.remove();
-    } catch {
-      void 0;
+    } catch (removeError) {
+      // Non-fatal: the fresh database is written over the old blob below. Still
+      // worth saying, because a remove that keeps failing is the difference
+      // between "corrupted once" and "corruption we can never clear".
+      console.warn(
+        '[SQLiteCacheManager] Could not delete the corrupt cache blob before rebuilding it; ' +
+        'the rebuild continues and will overwrite it.',
+        removeError
+      );
     }
 
     const db = this.createFreshDatabase(sqlite3, schemaSql);
