@@ -30,8 +30,10 @@ level. Optional top-level `strategy: 'serial' | 'parallel'` and `values` map.
 "storage list --path Notes, content read --path a.md --start-line 1"
 ```
 
-Batch by separating commands with a top-level comma outside quotes. Context fields
-must NOT appear as CLI flags inside the tool string.
+Batch by separating commands with a top-level comma outside quotes. The comma is a
+separator only when followed by whitespace or end of input — a comma glued to the
+next character (`--paths a,b,c`) stays a CSV value inside the current command.
+Context fields must NOT appear as CLI flags inside the tool string.
 
 ⚠️ The legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` shapes
 were removed in v5.9.0 and throw `Deprecated payload shape` at
@@ -55,16 +57,26 @@ numbers.
 ## Tool inventory
 
 Names below are the **CLI form** (`agent tool-name`, kebab-case). The source of
-truth is the `slug:` field under `src/agents/**` (camelCase there, kebab-cased for
-CLI). Regenerate the machine-readable export with `npm run schemas:tools`.
-`tests/unit/shippedGuidanceCommands.test.ts` fails when shipped docs name a tool
-that does not exist — verify against source before trusting this table.
+truth is the `slug:` field under `src/agents/**` — camelCase in most agents
+(`webTools` declares kebab slugs directly). The CLI name is `toKebabCase(slug)`
+(`ToolCliNormalizer.ts`), and the agent alias is `toKebabCase(agentName)`; that
+helper **also strips a trailing `Manager`/`Agent`/`Tools`**, which is why
+`searchManager` → `search`, `webTools` → `web`, and the slug `subagent` →
+`prompt sub`.
+
+Regenerate the machine-readable export with `npm run schemas:tools` — note it
+writes `docs/generated/cli-first-tool-schemas.json` by default; pass
+`--output cli-first-tool-schemas.json` to refresh the repo-root catalog.
+`tests/unit/shippedGuidanceCommands.test.ts` validates that catalog against
+README, `skill/SKILL.md`, `cli/nexus-cli.ts`, `cli/agents-snippet.md`,
+`skill/playbooks/*.md` and `guide/*.md` — it does **not** read `.claude/skills/**`,
+so nothing catches drift in this table. Verify against source before trusting it.
 
 **Always-on agents (8):**
 
 | Agent | CLI | Tools |
 |---|---|---|
-| PromptManager | `prompt` | execute, subagent, create, get, list, update, archive, list-models, generate-image, generate-audio, generate-video, check-generated-artifact |
+| PromptManager | `prompt` | execute, sub, create, get, list, update, archive, list-models, generate-image\*, generate-audio\*, generate-video\*, check-generated-artifact\* |
 | ContentManager | `content` | read, write, replace, insert, set-property |
 | StorageManager | `storage` | list, create-folder, move, copy, archive, open |
 | SearchManager | `search` | content, directory, memory, query-notes |
