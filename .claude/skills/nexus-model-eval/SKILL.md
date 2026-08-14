@@ -1,103 +1,68 @@
 ---
 name: nexus-model-eval
-description: Grade LLM models on Nexus tool-use (the two-tool getTools/useTools protocol) with the live eval harness in tests/eval/. Use when asked to grade, benchmark, or evaluate one or more OpenRouter (or other provider) models for how well they drive Nexus tools — e.g. "grade google/gemma-4-31b-it" or "benchmark these models on our harness".
+description: Grade how well a model drives the Nexus two-tool protocol (getTools/useTools) and decide whether a low score is the model's fault or the harness's. Use when asked to grade, benchmark, rank or compare models on Nexus tool use, when picking a default model, or when an eval report needs interpreting.
 ---
 
-# Nexus Model Eval
+# Nexus model eval
 
-Grade how well a model uses the Nexus tools via the eval harness at `tests/eval/`. The harness presents the model the **real two-tool surface** (`getTools`/`useTools`), runs each scenario through the production streaming + tool-continuation path, and grades the captured tool calls (right tool? right args? right sequence?).
+Context: the harness in `tests/eval/` shows a model the same two tools the app
+does — `getTools` for discovery, `useTools` for execution — and grades the calls
+it makes, not the prose it writes. This skill owns the verdict: which models to
+run, and what a FAIL actually means. Running, configuring and extending the
+harness itself belongs to `nexus-eval-harness`. This file routes; detail loads
+when you take the path.
 
-The output is a **binary pass/fail per scenario** and an overall pass rate per model. A scenario passes only if every turn's tool-call assertions pass with zero hallucinated tools.
+## Workflow
+1. Get current truth before running anything. A model cannot be graded on a
+   fixture no model can satisfy, and the fixture set moves:
+   ```bash
+   ls tests/eval/scenarios/ tests/eval/configs/
+   python3 .claude/skills/nexus-eval-harness/scripts/check_scenarios.py
+   python3 .claude/skills/nexus-model-eval/scripts/check_advertised_tools.py
+   ```
+   A non-zero exit from the scenario checker means some scenario can never pass;
+   resolve that first, and the fix belongs to `nexus-eval-harness`, not to this
+   run. The advertised-tools gap is not a defect — it is the list of correct
+   model behaviors this harness punishes, and you will need it in step 3.
+2. Run the grade: `protocols/grade-models.md`. Read it before you start; a
+   summarized procedure is one you will improvise, and a matrix costs one live
+   API call per scenario per model.
+3. You MUST attribute every failure before you report a number:
+   `protocols/attribute-failures.md`. The harness fails models for things the
+   model did not do, so a raw pass rate with unread failures is not a grade.
+   `scripts/summarize_eval.py --labels` refuses to sign off while any failure is
+   unlabelled.
+4. Report both numbers — raw pass rate and the attributed rate that charges only
+   `model-failure` verdicts — plus what the excluded failures actually were. One
+   number alone is either unfair to the model or unfair to the reader.
+5. At the end of a session that used this skill, run `protocols/self-refine.md`.
 
-## What this grades (and what it does not)
+## Map
+- `protocols/` the procedures: `grade-models.md` (target list → run → artifacts),
+  `attribute-failures.md` (FAIL → verdict → defensible grade), `self-refine.md`.
+- `references/` read on demand: `what-is-graded.md` (what makes a scenario pass,
+  what a "turn" counts, how retries and exclusions move the number),
+  `harness-artifacts.md` (symptom → cause → proof for failures the model did not
+  cause — read this before blaming any model).
+- `scripts/` run them, do not reimplement:
+  - `scripts/check_advertised_tools.py` — the commands the eval system prompt
+    tells the model to use that the executor cannot run, so obeying the prompt
+    scores as a hallucination.
+  - `scripts/preflight_models.py` — do these slugs exist, before the run spends
+    money proving they do not.
+  - `scripts/summarize_eval.py` — report JSON → per-model rollup, bucketed
+    failures, and an attribution that is checked rather than asserted.
+- `refinement-log.md` what past sessions changed here and why.
 
-- **Grades:** does the model discover tools via `getTools`, then call `useTools` with the correct CLI command, kebab-case flags, and correct arguments, in the correct order across turns.
-- **Does NOT grade:** whether a tool's backend actually returns useful data. Run in **mock mode** so tool *results* are scripted — we test tool *invocation*, not search relevance or vault state. (Live mode executes real agents but the headless stack can't run Obsidian-only APIs like `prepareFuzzySearch`, which poisons search scenarios. Use mock.)
+## Siblings
+The boundary with `nexus-eval-harness`: **it owns the instrument, this skill owns
+the verdict.** Anything that changes the harness or its inputs — env knobs,
+target syntax, live mode and the headless vault, config YAML, scenario authoring,
+harness code — is that skill's. Anything that changes what you conclude about a
+model is this one's. When a run reveals a fixture defect, hand it over rather
+than fixing it here.
 
-## Steps
-
-### 1. Pre-flight: verify each model slug resolves on OpenRouter
-A full run is expensive; don't burn it on a dead slug. The public models endpoint needs no key:
-
-```bash
-models=$(curl -s https://openrouter.ai/api/v1/models)
-for m in "google/gemma-4-31b-it" "anthropic/claude-sonnet-4.6"; do
-  echo "$models" | grep -q "\"id\":\"$m\"" && echo "FOUND: $m" || echo "NOT FOUND: $m"
-done
-```
-
-The harness reads `OPENROUTER_API_KEY` from the repo-root `.env` (gitignored) on its own — do **not** try to read `.env` yourself (it's deny-listed). Other providers map by `apiKeyEnv` (ANTHROPIC_API_KEY, OPENAI_API_KEY, GROQ_API_KEY, etc.).
-
-### 2. Write a scoped config
-Create `tests/eval/configs/<label>-<date>.yaml`. Use **mock mode**. Template:
-
-```yaml
-mode: mock
-testVaultPath: tests/eval/test-vault/
-
-providers:
-  openrouter:
-    apiKeyEnv: OPENROUTER_API_KEY
-    models:
-      - google/gemma-4-31b-it
-      - google/gemma-4-26b-a4b-it
-    enabled: true
-
-defaults:
-  temperature: 0
-  maxRetries: 1
-  retryDelayMs: 2000
-  timeout: 120000
-  systemPrompt: default
-
-capture:
-  enabled: true
-  dumpOnFailure: true
-  artifactsDir: test-artifacts/
-
-scenarios: tests/eval/scenarios/**/*.eval.yaml
-```
-
-Note: `scenario.toolSet` in the yaml files is **ignored for the model's tool surface** — the harness always presents the two-tool `meta` surface (`tests/eval/eval.test.ts`, `resolveToolSet('meta')`). It only matters as an `EVAL_TOOL_SET` filter key.
-
-### 3. Run
-
-```bash
-mkdir -p test-artifacts
-RUN_EVAL=1 EVAL_CONFIG=tests/eval/configs/<label>-<date>.yaml \
-  npx jest tests/eval/eval.test.ts --runInBand --no-coverage 2>&1 | tail -5
-```
-
-- `RUN_EVAL=1` is required or the suite trivially skips.
-- ~5–30s per scenario (LLM is called live); 19 scenarios × N models.
-- Run it in the background (`run_in_background: true`) — it's long. The reports are the deliverable, not stdout.
-- **jest may report the suite "failed" even on a good run** — a model that loops `getTools` can push one scenario to minutes and brush the test's `testTimeoutMs`, or jest exits non-zero when scenarios fail. **The per-model report files are the source of truth, not jest's exit code.** If a single scenario routinely blows the budget, raise `defaults.timeout` is the wrong lever — raise the test budget in `eval.test.ts` (`testTimeoutMs`) or treat the long-pole scenario as a finding.
-
-### 4. Read the per-model reports
-Saved to `test-artifacts/eval-report-<provider>-<model>-<timestamp>.md`:
-
-```bash
-for f in $(ls -t test-artifacts/eval-report-openrouter-*-<timestamp>.md); do
-  echo "== $f =="
-  grep -E "^- (Total scenarios|Pass|Fail):" "$f"
-  sed -n '/## Results Summary/,/## Failures/p' "$f" | grep "| FAIL |"
-done
-```
-
-Each report has a Results Summary table, a Failures section (per-turn errors + response snippet + actual tool-call args), and a Metrics block with the pass rate.
-
-### 5. Interpret honestly
-For each FAIL, read the actual calls and decide: **genuine model error vs. harness artifact.** A scenario where the model produced the correct final answer and correct `useTools` args but still failed is almost always a harness issue, not the model. Known-good signals after the harness fixes below: correct `getTools`→`useTools` flow, kebab-case flags (`--start-line` not `--startLine` — both are tolerated, the model self-corrects), correct domain args. Common **genuine** failures: not chaining a required second step (search → read), looping `getTools` without converging, asking to clarify instead of acting on a vague prompt.
-
-Report raw pass rate **and** a one-line note on what the residual failures actually are.
-
-## Harness fidelity — fixes already landed
-
-The harness was made app-faithful (2026-06-18). If grades look implausibly low, check these didn't regress:
-
-1. **Two-tool surface always presented** (`eval.test.ts` → `resolveToolSet('meta')`). The model must get `getTools`/`useTools`, never raw domain tools.
-2. **Mock executor parses CLI flags into args** (`EvalToolExecutor.parseCliArgs`). It previously returned `args: {}`, failing every unwrapped domain call on "missing param."
-3. **Synthetic markers excluded from hallucination check** (`assertions.ts` — names wrapped in `__…__` like `__cli_parse_error__` are executor artifacts, not model tool calls).
-4. **Search tool names in scenarios match production slugs** (`content`/`directory`/`memory`, i.e. `searchManager_content` and CLI `search content` — NOT `searchManager_searchContent`/`search search-content`). Real slugs come from each tool's `BaseTool` constructor first arg (`src/agents/searchManager/tools/*.ts`).
-
-If you add a model permanently, also list it in a shared config (e.g. `tests/eval/configs/model-sweep-*.yaml`).
+Also: `nexus-model-updates` owns provider model definitions and whether a model
+ID works at all (grade nothing until it does); `nexus-testing` owns Jest lanes
+and what a mock can prove; `nexus-agents` owns the two-tool contract the harness
+is imitating; `nexus-llm-adapters` owns the adapter a stream error comes from.
