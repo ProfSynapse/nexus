@@ -27,6 +27,7 @@ import { MemoryTraceData } from '../../types/storage/HybridStorageTypes';
 import { TraceAddedEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { DatabaseRow, QueryParams } from './base/BaseRepository';
+import { workspaceStreamPath } from './base/workspaceStreamPath';
 
 interface TraceRow extends DatabaseRow {
   id: string;
@@ -51,7 +52,7 @@ export class TraceRepository
   protected readonly tableName = 'memory_traces';
   protected readonly entityType = 'trace';
   // Traces write to workspace JSONL file
-  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => workspaceStreamPath(workspaceId, this.entityType);
 
   constructor(deps: RepositoryDependencies) {
     super(deps);

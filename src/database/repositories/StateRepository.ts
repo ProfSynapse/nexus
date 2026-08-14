@@ -33,6 +33,7 @@ import {
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryParams } from './base/BaseRepository';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { workspaceStreamPath } from './base/workspaceStreamPath';
 
 interface StateRow extends DatabaseRow {
   id: string;
@@ -57,7 +58,7 @@ export class StateRepository
   protected readonly tableName = 'states';
   protected readonly entityType = 'state';
   // States write to workspace JSONL file
-  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => workspaceStreamPath(workspaceId, this.entityType);
 
   // In-memory cache for full state data (since content not in SQLite)
   private stateContentCache: Map<string, StateData> = new Map();
