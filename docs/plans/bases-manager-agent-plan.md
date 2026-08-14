@@ -242,8 +242,22 @@ when it renders a base **using that view type**.
    storage root, appending a view of type `nexus-analyze` that clones the
    requested view's `filters`/`order`/`groupBy`/`limit`.
 3. Render `![[<scratch>.base#__nexus_analyze]]` via `MarkdownRenderer.render`
-   into a **detached** container element. Base embeds accept a `#View Name`
-   selector, so this executes the query with no leaf, no tab, no flicker.
+   into a container that is **attached to the document but positioned
+   off-screen** (`position:absolute; left:-10000px`, 1×1). Base embeds accept
+   a `#View Name` selector, so this executes the query with no leaf and no
+   tab.
+
+   **A detached container does not work, and this is by design.**
+   `QueryController.runQuery` gates on `viewContainerEl.isShown()`, which is
+   `!!this.offsetParent` — detached means `offsetParent === null`, so it awaits
+   `onNodeInserted` forever, `initialScan` stays true, and `onDataUpdated` is
+   never called. The view is constructed and `onload` fires, which makes the
+   failure look like a timing problem rather than a permanent one.
+   `display:none` fails for the same reason. Anything preserving a layout box
+   works — `visibility:hidden` and off-screen positioning both do.
+   [VERIFIED 2026-08-14, Obsidian 1.13.7: 8 isolated trials; 13 consecutive
+   off-screen 300-row renders produced byte-identical screenshots, so there is
+   no flicker.]
 4. Harvest rows through `entry.getValue(prop)`; summaries through
    `getSummaryValue`.
 5. Unload the `Component`, delete the scratch file in a `finally`.
@@ -288,9 +302,12 @@ answer.
 
 ## 10. Open questions
 
-1. **Does detached rendering kick off a query?** If not, fall back to a
-   background leaf and accept a brief flicker, or inject the temporary view into
-   the original file and restore it in a `finally`.
+1. ~~Does detached rendering kick off a query?~~ **RESOLVED** — no, but
+   off-screen-attached does, in ~85 ms flat regardless of row count. The
+   background-leaf fallback is **worse and should not be used**:
+   `setViewState({active:false})` still pulled the tab to the front, and a
+   collapsed-sidebar leaf created the view without ever running the query —
+   visible when it works, silent when it does not.
 2. **`this` semantics under a scratch copy.** `this` resolves to the base file
    itself, so a copy at a different path changes what `this` means. Affects only
    bases that use `this`; detect and fall back to in-place injection.
@@ -321,7 +338,14 @@ answer.
   presumes the file tools are proven.
 - Runtime enable/disable of the agent (§3).
 
-## 13. Tests
+## 13. Prior art in the Obsidian CLI
+
+`obsidian-cli` already ships a `base:query` command with `json|csv|tsv|md|paths`
+output. It is CLI-surface only, so it does not replace `analyze` for an in-app
+agent — but it is an excellent **differential-test oracle**: run a base through
+both and compare. Use it in the Phase 3 tests rather than hand-asserting rows.
+
+## 14. Tests
 
 - Validator unit tests per rule code, both directions.
 - Round-trip stability: `parseYaml` → mutate → `stringifyYaml` → reparse.
