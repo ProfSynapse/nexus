@@ -63,16 +63,31 @@ This file stays short on purpose. Anything specific or procedural is a skill:
 
 | Skill | Covers |
 |---|---|
-| `nexus-agents` | Agent/tool inventory, the two-tool MCP contract, adding an agent |
-| `nexus-mobile-compat` | Plugin store rules, mobile crash classes, vetting a dependency |
-| `nexus-storage` | Event store, SQLite schema and migrations, path resolution, caches |
-| `nexus-llm-adapters` | Streaming, reasoning rendering, local-model and CLI-provider quirks |
-| `nexus-testing` | Test lanes, live smoke pattern, what a mock can and cannot prove |
-| `nexus-release` | Version bump and GitHub release |
-| `nexus-model-updates` | Provider model definitions and live smoke test |
-| `nexus-model-eval`, `nexus-eval-harness` | Grading models on tool use |
-| `nexus-tool-schemas` | Exporting live CLI tool schemas |
-| `nexus-ui-mockups` | Standalone UI mockups before implementation |
+| `nexus-agents` | Adding a tool or agent, the two-tool MCP contract, why a command won't resolve |
+| `nexus-mobile-compat` | Vetting a dependency, importing without crashing init, confining a vault path |
+| `nexus-storage` | Changing the schema, persisting data, migrating and recovering it |
+| `nexus-llm-adapters` | Adding a provider adapter, streaming and reasoning, local and CLI providers |
+| `nexus-testing` | Picking a lane, writing a test that can fail, the in-app Obsidian CLI loop |
+| `nexus-release` | Cutting a release and recovering when the workflow doesn't fire |
+| `nexus-model-updates` | Registry entries, provider defaults, proving a model id works |
+| `nexus-model-eval` | Grading a model, and whether a low score indicts it or the harness |
+| `nexus-eval-harness` | Authoring scenarios and changing the harness itself |
+| `nexus-tool-schemas` | Exporting the tool catalog and refreshing the committed one |
+| `nexus-ui-mockups` | Mocking up a UI change before writing production code |
+
+### `.skills/` is the source; the agent folders are mirrors
+
+Edit skills in **`.skills/<name>/`**, then run `npm run sync:skills` to copy them
+into `.claude/skills/`, `.codex/skills/` and `.cline/skills/`. Those three are
+generated — a change made directly in one is silently reverted the next time the
+sync runs. `--prune` additionally deletes any mirrored skill with no source
+folder, so a skill that exists only in a mirror is not safe there.
+
+Each skill is a slim router: `SKILL.md` names its `protocols/` (the how) and
+`references/` (the why, read on demand), and most carry a `scripts/` validator
+you can run directly. Prefer the validator over trusting prose — nothing in
+`.claude/skills/**` is covered by the shipped-docs test, so these files have no
+other guard.
 
 ## What does not belong in this file
 
