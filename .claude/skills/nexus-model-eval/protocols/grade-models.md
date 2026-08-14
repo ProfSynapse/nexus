@@ -1,8 +1,9 @@
 # Protocol: grade-models
 
 Context: runs the eval matrix for a named set of models and lands the artifacts
-a grade is computed from. Every job in the matrix is a live billed API call, so
-this protocol front-loads the checks that make a run worth paying for.
+a grade is computed from. Every scenario in the matrix costs live, billed API
+calls — one per exchange, per model, plus a retry when it fails — so this
+protocol front-loads the checks that make a run worth paying for.
 
 ## Mission
 Produce complete, comparable report artifacts for every model the user named —

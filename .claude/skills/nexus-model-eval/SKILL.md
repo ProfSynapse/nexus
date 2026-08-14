@@ -25,8 +25,8 @@ when you take the path.
    run. The advertised-tools gap is not a defect — it is the list of correct
    model behaviors this harness punishes, and you will need it in step 3.
 2. Run the grade: `protocols/grade-models.md`. Read it before you start; a
-   summarized procedure is one you will improvise, and a matrix costs one live
-   API call per scenario per model.
+   summarized procedure is one you will improvise, and every scenario in the
+   matrix costs live, billed API calls.
 3. You MUST attribute every failure before you report a number:
    `protocols/attribute-failures.md`. The harness fails models for things the
    model did not do, so a raw pass rate with unread failures is not a grade.

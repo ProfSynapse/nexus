@@ -56,8 +56,8 @@ Every one of these must come back clean for a turn to pass:
 
 ## Three things that move a number without the model changing
 - **Retries.** A failing scenario is retried up to `maxRetries` — behavioral
-  failures included, not just network ones. Only a turn whose errors are *all*
-  non-retryable stream errors fails fast. So `Retries used > 0` means a scenario
+  failures included, not just network ones. Only a scenario whose errors are
+  *all* non-retryable stream errors fails fast. So `Retries used > 0` means a
   failed at least once and was given another attempt; a pass that needed one is
   an unstable pass at temperature 0, and should be reported as such.
 - **Board exclusions.** A scenario can be flagged to run and report but not count
@@ -66,9 +66,10 @@ Every one of these must come back clean for a turn to pass:
   rates from one run is expected, not a bug. `summarize_eval.py` follows the
   JSON rule and prints the excluded count separately.
 - **A partial matrix.** Results accumulate as each job finishes, so a run that
-  hit the overall test timeout still writes reports for the jobs that completed.
-  A model with noticeably fewer scenarios than its peers was cut short; its rate
-  is not comparable.
+  hit the overall test timeout still leaves a combined report covering the jobs
+  that completed — the per-model reports, written at the end of the matrix, may
+  be missing. A model with noticeably fewer scenarios than its peers was cut
+  short; its rate is not comparable to theirs.
 
 ## Where the evidence is
 Confirm with `ls test-artifacts/` rather than trusting a filename from memory.
