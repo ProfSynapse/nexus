@@ -58,6 +58,7 @@
 	"dependencies": {
 		"@dao-xyz/sqlite3-vec": "^0.0.19",
 		"@modelcontextprotocol/sdk": "^1.29.0",
+		"defuddle": "0.19.2",
 		"diff-match-patch": "^1.0.5",
 		"eventsource-parser": "^1.1.2",
 		"fast-xml-parser": "^5.8.0",

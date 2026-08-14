@@ -10,7 +10,7 @@ const WEB_TOOLS_MANIFEST: AppManifest = {
   id: 'web-tools',
   agentName: 'webTools',
   name: 'Web Tools',
-  description: 'Desktop Web Viewer tools for opening webpages and saving them into the vault as Markdown',
+  description: 'Capture webpages into the vault as Markdown, plus desktop Web Viewer tools for opening, screenshotting and reading links from a page',
   version: '1.0.0',
   author: 'Nexus',
   credentials: [],
@@ -19,7 +19,7 @@ const WEB_TOOLS_MANIFEST: AppManifest = {
   },
   tools: [
     { slug: 'open', description: 'Open a webpage in Obsidian Web Viewer' },
-    { slug: 'capture-markdown', description: 'Save a Web Viewer page into the vault as Markdown' },
+    { slug: 'capture-markdown', description: 'Extract a webpage into the vault as Markdown with metadata frontmatter (works on mobile)' },
     { slug: 'capture-png', description: 'Capture a Web Viewer page as a PNG image' },
     { slug: 'capture-pdf', description: 'Print a Web Viewer page to PDF' },
     { slug: 'links', description: 'Extract links from a Web Viewer page' },

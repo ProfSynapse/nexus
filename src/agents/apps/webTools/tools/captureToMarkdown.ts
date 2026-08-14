@@ -1,4 +1,4 @@
-import { TFile } from 'obsidian';
+import { App, requestUrl, TFile } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
@@ -7,37 +7,63 @@ import { isDesktop, isElectron } from '../../../../utils/platform';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { labelWithUrl, verbs } from '../../../utils/toolStatusLabels';
 import {
+  assertSafeWebUrl,
   ensureParentFolderExists,
-  findCreatedMarkdownFile,
+  getWebViewerContents,
   getWebViewerLeaf,
   getWebViewerState,
-  hasWebViewerSaveCommand,
   openWebViewerUrl,
   resolveUniqueMarkdownPath,
   waitForWebViewerReady,
-  WEB_VIEWER_SAVE_COMMAND_ID,
   WebViewerOpenMode,
 } from '../utils/webViewer';
+import { ExtractedWebPage, WebContentExtractor } from '../services/WebContentExtractor';
+import {
+  buildCaptureNote,
+  isExtractableResponse,
+  looksLikeEmptyShell,
+  readContentType,
+  WebCaptureTransport,
+} from '../services/webCaptureNote';
+import { LIVE_DOM_CAPTURE_SCRIPT, toLiveDomSnapshot } from '../services/liveDomCapture';
+
+type TransportChoice = 'auto' | WebCaptureTransport;
 
 interface CaptureToMarkdownParams extends CommonParameters {
   url?: string;
+  transport?: TransportChoice;
   mode?: WebViewerOpenMode;
   outputPath: string;
+  minWordCount?: number;
   timeoutMs?: number;
   settleMs?: number;
 }
 
+interface TransportOutcome {
+  page: ExtractedWebPage;
+  transport: WebCaptureTransport;
+  sourceUrl: string | null;
+}
+
+const DEFAULT_MIN_WORD_COUNT = 100;
+
 export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, CommonResult> {
   private agent: BaseAppAgent;
+  private extractor: WebContentExtractor;
 
-  constructor(agent: BaseAppAgent) {
+  /**
+   * `extractor` is injectable so transport selection can be tested without a
+   * DOM — Defuddle needs a real one, the selection logic does not.
+   */
+  constructor(agent: BaseAppAgent, extractor: WebContentExtractor = new WebContentExtractor()) {
     super(
       'capture-markdown',
       'Capture To Markdown',
-      'Save the active Web Viewer page to the vault as Markdown using Obsidian Web Viewer. Desktop only.',
-      '1.0.0'
+      'Extract a webpage as Markdown with metadata frontmatter and save it to the vault. Fetches the URL directly (works on mobile); falls back to the desktop Web Viewer for pages that need JavaScript or a signed-in session.',
+      '2.0.0'
     );
     this.agent = agent;
+    this.extractor = extractor;
   }
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
@@ -45,77 +71,50 @@ export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, Com
   }
 
   async execute(params: CaptureToMarkdownParams): Promise<CommonResult> {
-    if (!isDesktop() || !isElectron()) {
-      return this.prepareResult(false, undefined, 'Web Viewer tools are desktop-only.');
-    }
-
     const app = this.agent.getApp();
     if (!app) {
       return this.prepareResult(false, undefined, 'Obsidian app is not available.');
     }
 
-    if (!hasWebViewerSaveCommand(app)) {
-      return this.prepareResult(
-        false,
-        undefined,
-        'Web Viewer Save to vault command is unavailable. Enable the core Web Viewer plugin in Obsidian.'
-      );
+    const transport = params.transport ?? 'auto';
+    if (transport === 'browser' && !browserTransportAvailable()) {
+      return this.prepareResult(false, undefined, 'The browser transport needs the desktop Web Viewer. Use transport "fetch" on mobile.');
     }
 
-    const timeoutMs = params.timeoutMs ?? 20000;
-    const settleMs = params.settleMs ?? 1200;
+    if (transport === 'fetch' && !params.url) {
+      return this.prepareResult(false, undefined, 'A url is required for the fetch transport.');
+    }
+
+    if (!params.url && !browserTransportAvailable()) {
+      return this.prepareResult(false, undefined, 'A url is required. Capturing the open Web Viewer tab is desktop-only.');
+    }
 
     try {
-      const leaf = params.url
-        ? await openWebViewerUrl(app, params.url, params.mode ?? 'tab', true)
-        : getWebViewerLeaf(app);
+      const outcome = await this.capture(app, params, transport);
+      if (!outcome) {
+        return this.prepareResult(false, undefined, 'Could not retrieve the page. It may be unreachable, or may not be HTML.');
+      }
 
-      if (!leaf) {
+      if (!outcome.page.markdown) {
         return this.prepareResult(
           false,
           undefined,
-          'No Web Viewer tab is open. Provide a URL or open a page in Web Viewer first.'
+          `Extracted no readable content from the page via the ${outcome.transport} transport.`
         );
       }
 
-      await app.workspace.revealLeaf(leaf);
-      app.workspace.setActiveLeaf(leaf, { focus: true });
-      await waitForWebViewerReady(leaf, timeoutMs, settleMs);
-
-      const beforePaths = new Set(app.vault.getMarkdownFiles().map((file) => file.path));
-      const startTimeMs = Date.now();
-
-      await app.commands.executeCommandById(WEB_VIEWER_SAVE_COMMAND_ID);
-
-      let createdFile = await this.waitForCreatedFile(beforePaths, startTimeMs, timeoutMs);
-      if (!createdFile) {
-        return this.prepareResult(
-          false,
-          undefined,
-          'Web Viewer did not create a Markdown note. The page may not be readable yet or extraction may have failed.'
-        );
-      }
-
-      let movedFromPath: string | undefined;
-      const targetPath = resolveUniqueMarkdownPath(app.vault, params.outputPath);
-      if (createdFile.path !== targetPath) {
-        await ensureParentFolderExists(app.vault, targetPath);
-        movedFromPath = createdFile.path;
-        await app.vault.rename(createdFile, targetPath);
-        const movedFile = app.vault.getAbstractFileByPath(targetPath);
-        if (movedFile instanceof TFile) {
-          createdFile = movedFile;
-        }
-      }
-
-      const state = getWebViewerState(leaf);
+      const path = await this.writeNote(app, params.outputPath, outcome);
 
       return this.prepareResult(true, {
-        path: createdFile.path,
-        sourceUrl: state?.url ?? params.url ?? null,
-        title: state?.title ?? createdFile.basename,
-        usedBuiltInSaveCommand: true,
-        movedFromPath,
+        path,
+        sourceUrl: outcome.sourceUrl,
+        transport: outcome.transport,
+        title: outcome.page.metadata.title,
+        author: outcome.page.metadata.author,
+        published: outcome.page.metadata.published,
+        site: outcome.page.metadata.site,
+        wordCount: outcome.page.metadata.wordCount,
+        extractorType: outcome.page.extractorType,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -129,26 +128,37 @@ export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, Com
       properties: {
         url: {
           type: 'string',
-          description: 'Optional URL to open in Web Viewer before capturing. If omitted, captures the active Web Viewer tab.',
-        },
-        mode: {
-          type: 'string',
-          enum: ['tab', 'split', 'window', 'current'],
-          description: 'Where to open the Web Viewer tab when url is provided.',
-          default: 'tab',
+          description: 'Page to capture. Required unless transport is "browser", which can capture the already-open Web Viewer tab.',
         },
         outputPath: {
           type: 'string',
           description: 'Destination note path in the vault. Required so the caller explicitly chooses where the Markdown capture is saved.',
         },
+        transport: {
+          type: 'string',
+          enum: ['auto', 'fetch', 'browser'],
+          description: 'How to retrieve the page. "fetch" downloads it directly and is the only option on mobile. "browser" renders it in the desktop Web Viewer, which handles JavaScript-rendered and signed-in pages. "auto" fetches first and falls back to the browser on desktop.',
+          default: 'auto',
+        },
+        mode: {
+          type: 'string',
+          enum: ['tab', 'split', 'window', 'current'],
+          description: 'Where to open the Web Viewer tab when the browser transport is used.',
+          default: 'tab',
+        },
+        minWordCount: {
+          type: 'number',
+          description: 'Under "auto", a fetch result with fewer words than this is treated as a JavaScript-rendered shell and retried in the browser.',
+          default: DEFAULT_MIN_WORD_COUNT,
+        },
         timeoutMs: {
           type: 'number',
-          description: 'Maximum time to wait for page load and note creation.',
+          description: 'Maximum time to wait for the Web Viewer page to load (browser transport only).',
           default: 20000,
         },
         settleMs: {
           type: 'number',
-          description: 'Extra delay after page load before invoking Save to vault.',
+          description: 'Extra delay after page load before reading the DOM (browser transport only).',
           default: 1200,
         },
       },
@@ -156,27 +166,121 @@ export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, Com
     });
   }
 
-  private async waitForCreatedFile(
-    beforePaths: Set<string>,
-    startTimeMs: number,
-    timeoutMs: number
-  ): Promise<TFile | null> {
-    const app = this.agent.getApp();
-    if (!app) {
+  /**
+   * Run the requested transport, or under `auto` try the cheap one first.
+   *
+   * Returns null when no transport produced a page at all; an empty extraction
+   * is reported by the caller, which can name the transport that came up short.
+   */
+  private async capture(
+    app: App,
+    params: CaptureToMarkdownParams,
+    transport: TransportChoice
+  ): Promise<TransportOutcome | null> {
+    if (transport === 'browser') {
+      return this.captureViaBrowser(app, params);
+    }
+
+    const fetched = params.url ? await this.captureViaFetch(params.url) : null;
+
+    if (transport === 'fetch') {
+      return fetched;
+    }
+
+    // auto: keep the fetch result unless it is missing or looks like an SPA shell.
+    const minWordCount = params.minWordCount ?? DEFAULT_MIN_WORD_COUNT;
+    const fetchSufficed = fetched !== null
+      && fetched.page.markdown.length > 0
+      && !looksLikeEmptyShell(fetched.page.metadata.wordCount, minWordCount);
+
+    if (fetchSufficed || !browserTransportAvailable()) {
+      return fetched;
+    }
+
+    try {
+      return await this.captureViaBrowser(app, params);
+    } catch (error) {
+      // The fallback is best-effort: a fetch result that merely looked thin is
+      // better than surfacing a Web Viewer timeout the caller did not ask for.
+      if (fetched) {
+        return fetched;
+      }
+      throw error;
+    }
+  }
+
+  private async captureViaFetch(url: string): Promise<TransportOutcome | null> {
+    assertSafeWebUrl(url);
+
+    const response = await requestUrl({ url, method: 'GET', throw: false });
+    if (!isExtractableResponse(response.status, readContentType(response.headers))) {
       return null;
     }
 
-    const deadline = Date.now() + timeoutMs;
+    const page = await this.extractor.extractFromHtml(response.text, url);
+    return { page, transport: 'fetch', sourceUrl: url };
+  }
 
-    while (Date.now() < deadline) {
-      const file = findCreatedMarkdownFile(app.vault, beforePaths, startTimeMs);
-      if (file) {
-        return file;
-      }
+  private async captureViaBrowser(app: App, params: CaptureToMarkdownParams): Promise<TransportOutcome | null> {
+    const timeoutMs = params.timeoutMs ?? 20000;
+    const settleMs = params.settleMs ?? 1200;
 
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
+    const leaf = params.url
+      ? await openWebViewerUrl(app, params.url, params.mode ?? 'tab', true)
+      : getWebViewerLeaf(app);
+
+    if (!leaf) {
+      throw new Error('No Web Viewer tab is open. Provide a URL or open a page in Web Viewer first.');
     }
 
-    return null;
+    await app.workspace.revealLeaf(leaf);
+    app.workspace.setActiveLeaf(leaf, { focus: true });
+
+    const contents = await waitForWebViewerReady(leaf, timeoutMs, settleMs)
+      ?? getWebViewerContents(leaf);
+    if (!contents?.executeJavaScript) {
+      throw new Error('Web Viewer executeJavaScript() is unavailable in this Obsidian build.');
+    }
+
+    const snapshot = toLiveDomSnapshot(await contents.executeJavaScript<unknown>(LIVE_DOM_CAPTURE_SCRIPT));
+    if (!snapshot) {
+      return null;
+    }
+
+    const sourceUrl = snapshot.url || getWebViewerState(leaf)?.url || params.url || null;
+    const page = await this.extractor.extractFromHtml(snapshot.html, sourceUrl ?? undefined);
+
+    // The live DOM knows the page title even when extraction does not.
+    if (!page.metadata.title && snapshot.title) {
+      page.metadata.title = snapshot.title;
+    }
+
+    return { page, transport: 'browser', sourceUrl };
   }
+
+  private async writeNote(app: App, outputPath: string, outcome: TransportOutcome): Promise<string> {
+    // resolveUniqueMarkdownPath confines the caller-supplied path to the vault
+    // and throws VaultPathError on traversal, which execute() surfaces.
+    const targetPath = resolveUniqueMarkdownPath(app.vault, outputPath);
+    await ensureParentFolderExists(app.vault, targetPath);
+
+    const contents = buildCaptureNote(
+      outcome.page.markdown,
+      outcome.page.metadata,
+      outcome.sourceUrl,
+      new Date().toISOString()
+    );
+
+    const file = await app.vault.create(targetPath, contents);
+    return file instanceof TFile ? file.path : targetPath;
+  }
+}
+
+/**
+ * The Web Viewer is an Electron `<webview>`, so the browser transport exists
+ * only on desktop. The fetch transport has no such constraint — it is the first
+ * webTools capability that runs on mobile.
+ */
+function browserTransportAvailable(): boolean {
+  return isDesktop() && isElectron();
 }
