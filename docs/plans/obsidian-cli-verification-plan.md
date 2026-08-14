@@ -58,14 +58,17 @@ pattern from "our CLI against a real vault" to "our plugin inside the real app":
 use `obsidian eval` to invoke a Nexus tool in-app and assert on the result, then
 `dev:errors` to prove nothing threw.
 
-Highest-value first targets, all currently unautomatable:
+The selection criterion is narrow on purpose: **only things that cannot be
+observed outside the running app**. Anything a unit test can reach should stay a
+unit test. That points at plugin lifecycle (does it load clean on a real vault),
+rendering (does the chat bubble actually paint what the pipeline produced — the
+reasoning-render gap flowed through every layer and was only caught by eye), and
+cold-cache behaviour (the class of race behind the task-board empty-board bug,
+where hydration order decided the result).
 
-- MCP socket connect on an installed build (an open item in the 5.11.1 manual
-  test plan).
-- Secure key storage round-trip (same).
-- Chat view renders a streamed response — the reasoning-render gap shipped
-  through every layer and was only caught by eye.
-- Task board cold-start (the `waitForQueryReady` hydration race behind #267).
+The first scenario should be whichever of those is currently costing the most
+manual checking — worth confirming against what's actually open before writing
+it, rather than picking from an older test plan.
 
 ### 3. A `/nexus-verify` skill
 
@@ -104,5 +107,6 @@ green `dev:mobile` run be read as "mobile-safe".
 
 1. Confirm the local Obsidian is ≥ 1.12.4 and `obsidian help` responds.
 2. Land `verify-in-obsidian.mjs` + npm script; run it by hand once.
-3. Add the smoke test lane with one scenario (MCP socket connect).
+3. Add the smoke test lane with one scenario — pick the check currently costing
+   the most manual effort.
 4. Add `/nexus-verify`; then wire into `/nexus-release`.
