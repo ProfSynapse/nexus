@@ -212,9 +212,15 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       webllmQuantization: 'q4f16'
     }
   },
+  // The provider/model a fresh install starts on. This MUST name a model the
+  // provider's registry actually declares, or the picker cannot match it and
+  // cost calculation returns null for every call. Keep it in step with
+  // OPENAI_DEFAULT_MODEL in adapters/openai/OpenAIModels.ts; nothing in the type
+  // system compares the two, so the check lives in
+  // .skills/nexus-model-updates/scripts/check_model_registry.py.
   defaultModel: {
     provider: 'openai',
-    model: 'gpt-4o'
+    model: 'gpt-5.6-sol'
   },
   defaultImageModel: {
     provider: 'google',

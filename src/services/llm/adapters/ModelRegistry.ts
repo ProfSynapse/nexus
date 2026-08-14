@@ -14,6 +14,7 @@ import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './anthropic/Anthropic
 import { MISTRAL_MODELS, MISTRAL_DEFAULT_MODEL } from './mistral/MistralModels';
 import { OPENROUTER_MODELS, OPENROUTER_DEFAULT_MODEL } from './openrouter/OpenRouterModels';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './requesty/RequestyModels';
+import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './perplexity/PerplexityModels';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './groq/GroqModels';
 import { OPENAI_CODEX_MODELS, OPENAI_CODEX_DEFAULT_MODEL } from './openai-codex/OpenAICodexModels';
 import { ANTHROPIC_CLAUDE_CODE_MODELS, ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './anthropic-claude-code/AnthropicClaudeCodeModels';
@@ -48,6 +49,7 @@ export const AI_MODELS: Record<string, ModelSpec[]> = {
   mistral: MISTRAL_MODELS,
   openrouter: OPENROUTER_MODELS,
   requesty: REQUESTY_MODELS,
+  perplexity: PERPLEXITY_MODELS,
   groq: GROQ_MODELS,
   'github-copilot': GITHUB_COPILOT_MODELS,
   deepseek: DEEPSEEK_MODELS
@@ -206,6 +208,7 @@ export const DEFAULT_MODELS: Record<string, string> = {
   mistral: MISTRAL_DEFAULT_MODEL,
   openrouter: OPENROUTER_DEFAULT_MODEL,
   requesty: REQUESTY_DEFAULT_MODEL,
+  perplexity: PERPLEXITY_DEFAULT_MODEL,
   groq: GROQ_DEFAULT_MODEL,
   'github-copilot': GITHUB_COPILOT_DEFAULT_MODEL,
   deepseek: DEEPSEEK_DEFAULT_MODEL
