@@ -1,0 +1,24 @@
+filters:
+  and:
+    - file.inFolder("Daily Notes")
+    - '/^\d{4}-\d{2}-\d{2}$/.matches(file.basename)'
+
+formulas:
+  word_estimate: '(file.size / 5).round(0)'
+  day_of_week: 'date(file.basename).format("dddd")'
+
+properties:
+  formula.day_of_week:
+    displayName: "Day"
+  formula.word_estimate:
+    displayName: "~Words"
+
+views:
+  - type: table
+    name: "Recent Notes"
+    limit: 30
+    order:
+      - file.name
+      - formula.day_of_week
+      - formula.word_estimate
+      - file.mtime

@@ -200,6 +200,26 @@ export default defineConfig([
         },
     },
 
+    // Bases API (1.10.0) vs minAppVersion (1.8.7) — the ONE file allowed to
+    // name it. `obsidianmd/no-unsupported-api` is right that
+    // `Plugin.registerBasesView` and `BasesView` post-date minAppVersion; this
+    // file is the runtime guard the rule is asking for and exists precisely so
+    // nothing else has to reference those symbols:
+    //   - `registerBasesView` is read once, behind `typeof === 'function'`, and
+    //     bound; on an older app the whole feature (and its agent) is absent.
+    //   - `BasesView` is dereferenced only inside the view factory, which
+    //     Obsidian calls only when the Bases API exists. At module scope it
+    //     would be `class extends undefined` and would take plugin init down.
+    // Inline eslint-disable is blocked for obsidianmd rules (the
+    // obsidian-releases bot rejects it), so this is handled at config level —
+    // the same pattern as the no-nodejs-modules block above.
+    {
+        files: ["src/agents/baseManager/services/basesAvailability.ts"],
+        rules: {
+            "obsidianmd/no-unsupported-api": "off",
+        },
+    },
+
     // ── Mobile-safety import guard for shared UI primitives (issue #221) ─────
     // src/settings/components/** holds the primitives every settings surface
     // composes (BoxedSection, ConfirmModal, row/picker helpers, breakpoint
@@ -377,6 +397,11 @@ export default defineConfig([
             "src/agents/storageManager/utils/FileOperations.ts",
             "src/agents/storageManager/tools/createFolder.ts",
             "src/agents/canvasManager/utils/CanvasOperations.ts",
+            // Twin of CanvasOperations for `.base` files: every write path
+            // resolves through tryResolveVaultPath() first, and the facade
+            // cannot express its create-only semantics (VaultOperations.writeFile
+            // overwrites, while `base write` must fail when the file exists).
+            "src/agents/baseManager/services/BaseFileOperations.ts",
             "src/agents/memoryManager/tools/workspaces/createWorkspace.ts",
             "src/agents/memoryManager/tools/workspaces/updateWorkspace.ts",
             "src/agents/ingestManager/tools/services/IngestionPipelineService.ts",

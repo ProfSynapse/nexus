@@ -310,6 +310,7 @@ function instantiateAgents() {
   const { MemoryManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'memoryManager', 'memoryManager'));
   const { PromptManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'promptManager', 'promptManager'));
   const { CanvasManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'canvasManager', 'canvasManager'));
+  const { BaseManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'baseManager', 'baseManager'));
   const { TaskManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'taskManager', 'taskManager'));
   const { IngestManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'ingestManager', 'ingestManager'));
   const { AgentManager } = require(path.join(projectRoot, 'src', 'services', 'AgentManager'));
@@ -368,6 +369,10 @@ function instantiateAgents() {
     new MemoryManagerAgent(app, plugin, memoryService, workspaceService),
     new PromptManagerAgent(settings, providerManager, agentManager, usageTracker, app, app.vault, null),
     new CanvasManagerAgent(app),
+    // Registered in the plugin only when Bases is enabled in the vault
+    // (AgentInitializationService.initializeBaseManager), but its tools are part
+    // of the advertised catalog, so it is always exported here.
+    new BaseManagerAgent(app),
     new TaskManagerAgent(app, plugin, taskService),
     new IngestManagerAgent(app.vault, () => null),
     new ElevenLabsAgent(),

@@ -174,6 +174,9 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         this.safeInitialize('contentManager', () => this.initializationService.initializeContentManager()),
         this.safeInitialize('storageManager', () => this.initializationService.initializeStorageManager()),
         this.safeInitialize('canvasManager', () => this.initializationService.initializeCanvasManager()),
+        // baseManager registers itself only when Bases is enabled in the vault;
+        // a false return means the agent is absent, not that init failed.
+        this.safeInitialize('baseManager', () => { this.initializationService.initializeBaseManager(); }),
       ]);
 
       // PHASE 2: Initialize dependent agents IN PARALLEL (where possible)

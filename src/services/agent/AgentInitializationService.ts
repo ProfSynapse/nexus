@@ -20,8 +20,10 @@ import {
   PromptManagerAgent,
   ToolManagerAgent,
   CanvasManagerAgent,
+  BaseManagerAgent,
   IngestManagerAgent
 } from '../../agents';
+import { ensureAnalyzeViewRegistered } from '../../agents/baseManager/services/basesAvailability';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { withTimeout } from '../../utils/withTimeout';
@@ -130,6 +132,31 @@ export class AgentInitializationService {
 
     this.agentManager.registerAgent(canvasManagerAgent);
     logger.systemLog('CanvasManager agent initialized successfully');
+  }
+
+  /**
+   * Initialize BaseManager agent (Obsidian Bases, `.base` files).
+   *
+   * Conditional by design: `registerBasesView` returns false when Bases is
+   * disabled in the vault, and that one call is both the availability probe and
+   * the registration Phase 3's `analyze` needs. When it fails, the agent is not
+   * registered at all — `getTools` then never advertises a command that could
+   * only answer "not available" (plan §3).
+   *
+   * Enabling Bases after startup therefore takes effect on the next reload;
+   * runtime toggling is explicitly out of scope (it would need a second dynamic
+   * registrar alongside AppManager — see issue #174).
+   *
+   * @returns whether the agent was registered
+   */
+  initializeBaseManager(): boolean {
+    if (!ensureAnalyzeViewRegistered(this.plugin)) {
+      return false;
+    }
+
+    this.agentManager.registerAgent(new BaseManagerAgent(this.app));
+    logger.systemLog('BaseManager agent initialized successfully');
+    return true;
   }
 
   /**

@@ -1,9 +1,10 @@
 {
-  "generatedAt": "2026-08-14T12:25:51.240Z",
+  "generatedAt": "2026-08-14T16:22:10.402Z",
   "selector": "--help",
-  "toolCount": 74,
-  "agentCount": 13,
+  "toolCount": 78,
+  "agentCount": 14,
   "agents": {
+    "baseManager": 4,
     "canvasManager": 4,
     "composer": 2,
     "contentManager": 5,
@@ -19,6 +20,190 @@
     "webTools": 5
   },
   "tools": [
+    {
+      "agent": "baseManager",
+      "tool": "list",
+      "description": "List base files (.base) in the vault with view and formula counts",
+      "command": "base list",
+      "usage": "base list [--folder <folder>] [--recursive]",
+      "arguments": [
+        {
+          "name": "folder",
+          "flag": "--folder",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Folder to search (default: whole vault). Example: \"projects/dashboards\" (string)"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Search subfolders (default: true) (boolean)"
+        }
+      ],
+      "examples": [
+        "base list --folder \"folder-value\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "read",
+      "description": "Read a base file (.base) and return its parsed config: filters, formulas, properties, summaries and views",
+      "command": "base read",
+      "usage": "base read <path>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the base file (with or without .base extension) (string)"
+        }
+      ],
+      "examples": [
+        "base read \"path-value\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "update",
+      "description": "Modify an EXISTING base file (.base). Replaces ONLY the top-level sections you supply (filters, formulas, properties, summaries, views) and keeps the rest - unlike canvasManager.update, which replaces whole arrays. Fails if the base does not exist - use baseManager.write to create one. The merged config is validated before anything is written.",
+      "command": "base update",
+      "usage": "base update <path> [--config <config>] [--filters <filters>] [--formulas <formulas>] [--properties <properties>] [--summaries <summaries>] [--views <views>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the existing base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "config",
+          "flag": "--config",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sections to replace, as YAML (preferred) or JSON. Only the top-level keys present here are replaced; the rest of the file is kept. (string)"
+        },
+        {
+          "name": "filters",
+          "flag": "--filters",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Global filters applied to every view. Either an expression string ('status == \"done\"') or an object with exactly one of and/or/not holding an array of filters. (object)"
+        },
+        {
+          "name": "formulas",
+          "flag": "--formulas",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Computed properties: { name: \"expression\" }. Reference them elsewhere as formula.<name>. Subtracting two dates yields a Duration - access .days/.hours before rounding. (object)"
+        },
+        {
+          "name": "properties",
+          "flag": "--properties",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Per-property settings: { \"property-id\": { displayName: \"...\" } }. Property ids are bare/note.X (frontmatter), file.X (metadata) or formula.X (computed). (object)"
+        },
+        {
+          "name": "summaries",
+          "flag": "--summaries",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom summary formulas: { name: \"values.mean().round(2)\" }. Views may then use the name alongside the built-ins (Average, Min, Max, Sum, Range, Median, Stddev, Earliest, Latest, Checked, Unchecked, Empty, Filled, Unique). (object)"
+        },
+        {
+          "name": "views",
+          "flag": "--views",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Views to render. Each: { type: table|cards|list|map, name, filters?, groupBy?: { property, direction: ASC|DESC }, order?: [property ids], limit?, summaries?: { property: summaryName } }. (Array of an object)"
+        }
+      ],
+      "examples": [
+        "base update \"path-value\" --config \"config-value\" --filters '{\"key\":\"value\"}' --formulas '{\"key\":\"value\"}' --properties '{\"key\":\"value\"}' --summaries '{\"key\":\"value\"}' --views \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "write",
+      "description": "Create a NEW base file (.base). Fails if the base already exists - use baseManager.update to modify an existing one. The config is validated before anything is written; a rejection lists every problem with its path and code.",
+      "command": "base write",
+      "usage": "base write <path> [--config <config>] [--filters <filters>] [--formulas <formulas>] [--properties <properties>] [--summaries <summaries>] [--views <views>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path for the new base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "config",
+          "flag": "--config",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whole base config as YAML (preferred) or JSON. Top-level keys: filters, formulas, properties, summaries, views. Individual section arguments below override what this contains. Defaults to a single empty table view when nothing is supplied. (string)"
+        },
+        {
+          "name": "filters",
+          "flag": "--filters",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Global filters applied to every view. Either an expression string ('status == \"done\"') or an object with exactly one of and/or/not holding an array of filters. (object)"
+        },
+        {
+          "name": "formulas",
+          "flag": "--formulas",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Computed properties: { name: \"expression\" }. Reference them elsewhere as formula.<name>. Subtracting two dates yields a Duration - access .days/.hours before rounding. (object)"
+        },
+        {
+          "name": "properties",
+          "flag": "--properties",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Per-property settings: { \"property-id\": { displayName: \"...\" } }. Property ids are bare/note.X (frontmatter), file.X (metadata) or formula.X (computed). (object)"
+        },
+        {
+          "name": "summaries",
+          "flag": "--summaries",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom summary formulas: { name: \"values.mean().round(2)\" }. Views may then use the name alongside the built-ins (Average, Min, Max, Sum, Range, Median, Stddev, Earliest, Latest, Checked, Unchecked, Empty, Filled, Unique). (object)"
+        },
+        {
+          "name": "views",
+          "flag": "--views",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Views to render. Each: { type: table|cards|list|map, name, filters?, groupBy?: { property, direction: ASC|DESC }, order?: [property ids], limit?, summaries?: { property: summaryName } }. (Array of an object)"
+        }
+      ],
+      "examples": [
+        "base write \"path-value\" --config \"config-value\" --filters '{\"key\":\"value\"}' --formulas '{\"key\":\"value\"}' --properties '{\"key\":\"value\"}' --summaries '{\"key\":\"value\"}' --views \"value-1,value-2\""
+      ]
+    },
     {
       "agent": "canvasManager",
       "tool": "list",

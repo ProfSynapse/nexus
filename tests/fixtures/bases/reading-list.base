@@ -1,0 +1,40 @@
+filters:
+  or:
+    - file.hasTag("book")
+    - file.hasTag("article")
+
+formulas:
+  reading_time: 'if(pages, (pages * 2).toString() + " min", "")'
+  status_icon: 'if(status == "reading", "📖", if(status == "done", "✅", "📚"))'
+  year_read: 'if(finished_date, date(finished_date).year, "")'
+
+properties:
+  author:
+    displayName: Author
+  formula.status_icon:
+    displayName: ""
+  formula.reading_time:
+    displayName: "Est. Time"
+
+views:
+  - type: cards
+    name: "Library"
+    order:
+      - cover
+      - file.name
+      - author
+      - formula.status_icon
+    filters:
+      not:
+        - 'status == "dropped"'
+
+  - type: table
+    name: "Reading List"
+    filters:
+      and:
+        - 'status == "to-read"'
+    order:
+      - file.name
+      - author
+      - pages
+      - formula.reading_time
