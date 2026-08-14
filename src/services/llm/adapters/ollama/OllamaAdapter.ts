@@ -18,6 +18,7 @@ import {
   Tool
 } from '../types';
 import { ToolCallContentParser } from '../shared/ToolCallContentParser';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
 import { isThinkingModelName } from '../shared/thinkingModels';
 
@@ -195,6 +196,10 @@ export class OllamaAdapter extends BaseAdapter {
           }
           return null;
         },
+        // Ollama answers HTTP 200 and then writes {"error":"..."} as an NDJSON line
+        // (unknown model, failed to load, out of memory) instead of a chat response.
+        // Without this the loop simply ends and the chat bubble stays empty.
+        extractError: (parsed) => extractStreamErrorMessage(parsed, 'Ollama streaming error'),
         extractDone: (parsed) => !!(parsed as OllamaChatResponse).done
       })) {
         if (chunk.content) {

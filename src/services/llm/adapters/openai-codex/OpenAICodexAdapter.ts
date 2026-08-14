@@ -429,6 +429,8 @@ export class OpenAICodexAdapter extends BaseAdapter {
     const toolCallsMap = new Map<number, ToolCall>();
     let currentResponseId: string | null = null;
     let isCompleted = false;
+    // Fatal error frame over HTTP 200; thrown after the queue drains.
+    let streamError: string | undefined = undefined;
     const textSeenByOutputIndex = new Set<number>();
     const finalizedTextItemIds = new Set<string>();
 
@@ -443,6 +445,14 @@ export class OpenAICodexAdapter extends BaseAdapter {
       try {
         event = JSON.parse(sseEvent.data) as CodexResponsesEvent;
       } catch {
+        return;
+      }
+
+      // Responses API failures arrive as data frames on an HTTP 200 stream.
+      const errorMessage = extractResponsesApiStreamError(event, 'Codex streaming error');
+      if (errorMessage) {
+        streamError = errorMessage;
+        isCompleted = true;
         return;
       }
 
@@ -575,12 +585,17 @@ export class OpenAICodexAdapter extends BaseAdapter {
         yield evt;
       }
 
-      if (!isCompleted) {
+      // Never claim success when the stream carried a fatal error frame.
+      if (!isCompleted && !streamError) {
         yield { content: '', complete: true };
       }
     } catch (error) {
       console.error('[OpenAICodexAdapter] Error processing Codex stream:', error);
       throw error;
+    }
+
+    if (streamError) {
+      throw createProviderStreamError(streamError, this.name);
     }
   }
 

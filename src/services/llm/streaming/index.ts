@@ -9,3 +9,9 @@ export { SSEStreamProcessor } from './SSEStreamProcessor';
 export type { SSEStreamOptions } from './SSEStreamProcessor';
 export { StreamChunkProcessor } from './StreamChunkProcessor';
 export type { StreamChunkOptions } from './StreamChunkProcessor';
+export {
+  PROVIDER_STREAM_ERROR_CODE,
+  createProviderStreamError,
+  extractStreamErrorMessage,
+  extractResponsesApiStreamError
+} from './streamErrorFrames';
