@@ -306,9 +306,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
         await this.runReconcile('task', () => this.reconcileMissingTasks());
       }
 
-      if (shouldBlockStartupHydration && this.hydration.getState().phase !== 'error') {
-        this.hydration.complete();
-      }
+      // NOTE: the hydration phase is terminated by runStartupFullRebuild itself
+      // (it is what moves the phase to `running` via onProgress), so both the
+      // blocking and the background rebuild leave a query-ready phase behind.
+      // The incremental-sync branch never leaves `idle`, which is already
+      // query-ready.
 
       // Watch the plugin data folder for JSONL changes landed by Obsidian
       // Sync (or external tools). When something changes, reconcile SQLite
@@ -354,6 +356,18 @@ export class HybridStorageAdapter implements IStorageAdapter {
         const message = `Local chat index rebuild failed: ${summary}`;
         this.hydration.fail(message);
         throw new Error(message);
+      }
+
+      // Close the phase this rebuild opened. `onProgress` moves the controller
+      // to `running`, and `running` is NOT query-ready — so a rebuild that
+      // reported progress and then finished without this transition leaves
+      // `isQueryReady()` false forever, and every `waitForQueryReady()` caller
+      // (notes index, task board, workspaces, agent init) burns its full idle
+      // timeout and then resolves false. That happens on the background
+      // rebuild too, not just the blocking one, so completion cannot be gated
+      // on `isBlockingHydration`.
+      if (this.hydration.getState().phase === 'running') {
+        this.hydration.complete();
       }
     } catch (rebuildError) {
       console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);

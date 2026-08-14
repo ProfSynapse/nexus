@@ -183,9 +183,36 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const { NotesIndexBuilder } = await import('../../database/services/notesIndex/NotesIndexBuilder');
 
             const adapter = await context.serviceManager.getService<IStorageAdapter>('hybridStorageAdapter');
-            const readyable = adapter as unknown as { waitForQueryReady?: () => Promise<boolean> };
+            if (!adapter) {
+                throw new Error('notesIndex: storage adapter unavailable');
+            }
+
+            // Hydration gate. `ensureSchema()` issues SQL on the adapter's shared
+            // connection, so it must not run before that connection exists —
+            // otherwise SQLiteCacheManager throws "Database not initialized" out
+            // of a background promise and the index stays empty all session.
+            const readyable = adapter as unknown as {
+                waitForQueryReady?: () => Promise<boolean>;
+                getInitError?: () => Error | null;
+            };
             if (typeof readyable.waitForQueryReady === 'function') {
-                await readyable.waitForQueryReady();
+                // The answer matters: `false` means the adapter never reached a
+                // query-ready state (init failed, or hydration failed/stalled).
+                const queryReady = await readyable.waitForQueryReady();
+                if (!queryReady && !adapter.isReady()) {
+                    // Storage itself is unusable — report the real cause instead
+                    // of letting the first statement fail with the generic
+                    // "Database not initialized".
+                    const cause = readyable.getInitError?.()?.message ?? 'storage adapter is not ready';
+                    throw new Error(`notesIndex: storage adapter failed to initialize (${cause})`);
+                }
+                if (!queryReady) {
+                    // The connection is open but hydration degraded. The notes
+                    // index is derived from the vault, not from hydrated data,
+                    // so it can still build correctly — say so rather than
+                    // failing silently either way.
+                    console.warn('[NotesIndex] storage hydration did not reach query-ready; building the notes index anyway (its data comes from the vault, not the cache).');
+                }
             }
 
             const provider = adapter as unknown as { getSqliteCache?: () => import('../../database/storage/SQLiteCacheManager').SQLiteCacheManager };
@@ -199,7 +226,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const builder = new NotesIndexBuilder(context.plugin.app, service, {
                 maxNotes: Platform.isMobile ? 50_000 : 250_000,
             });
-            void builder.startInBackground();
+            // Awaited (not `void`ed): startInBackground only awaits the schema
+            // and event wiring — the vault walk backgrounds itself — so a schema
+            // failure surfaces through this service's own rejection path
+            // (ServiceRegistrar logs it) instead of as an unhandled rejection.
+            await builder.startInBackground();
             return builder;
         })
     },
