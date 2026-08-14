@@ -126,6 +126,57 @@ def table_has_column(body: str, column: str) -> bool:
     return re.search(rf"(^|[(,\s]){re.escape(column)}\s", body) is not None
 
 
+
+def strip_comments(src: str) -> str:
+    """Blank out /* */ and // comments so DDL inside documentation is not read
+    as real DDL. IStorageBackend.ts carries a `CREATE TABLE users` in an
+    @example block; treating that as a schema defect would be a false alarm
+    nobody could silence."""
+    src = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), src, flags=re.S)
+    return re.sub(r"//[^\n]*", "", src)
+
+
+def stray_table_definitions(repo: Path, schema_sql: str) -> list[str]:
+    """Every CREATE TABLE outside src/database/schema/ must name a table the
+    schema also declares.
+
+    A mirrored copy is tolerated -- NotesIndexService keeps one, and a parity
+    test pins it to SCHEMA_SQL. What is not tolerated is a table that exists
+    ONLY outside the schema, because every database-creating path other than
+    that one code path will lack it. That is exactly how `notes` and
+    `note_properties` came to be destroyed by `rebuildCache()`: the service
+    issued its own DDL once at start-up, the rebuild recreated the database
+    from SCHEMA_SQL alone, and the builder went on writing to tables that were
+    no longer there.
+    """
+    known = set(schema_tables(schema_sql))
+    problems: list[str] = []
+    src_root = repo / "src"
+    if not src_root.is_dir():
+        return problems
+    for path in sorted(src_root.rglob("*.ts")):
+        if "database/schema/" in path.as_posix():
+            continue
+        try:
+            text = strip_comments(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        for m in re.finditer(
+            r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"\[]?(\w+)", text, re.I
+        ):
+            table = m.group(1)
+            if table not in known:
+                rel = path.relative_to(repo).as_posix()
+                line = text[: m.start()].count("\n") + 1
+                problems.append(
+                    f"{rel}:{line}: creates table '{table}', which SCHEMA_SQL does not "
+                    f"declare. A table the schema does not own is dropped by any "
+                    f"rebuild -- add it to SCHEMA_SQL and a migration "
+                    f"(protocols/change-schema.md)"
+                )
+    return problems
+
+
 def check(repo: Path) -> tuple[list[str], list[str]]:
     """Return (errors, warnings)."""
     errors: list[str] = []
@@ -240,6 +291,9 @@ def check(repo: Path) -> tuple[list[str], list[str]]:
                     f"{MIGRATOR_REL}: migration v{version} creates index '{m.group(3)}' "
                     f"without IF NOT EXISTS -- not idempotent"
                 )
+
+    # --- 5. no table may live outside the schema ------------------------------
+    errors.extend(stray_table_definitions(repo, schema_sql))
 
     return errors, warnings
 
