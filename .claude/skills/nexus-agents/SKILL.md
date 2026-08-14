@@ -202,7 +202,13 @@ writing.
 `getParameterSchema()` is DOCUMENTATION plus CLI-normalizer hints. There is **no**
 ajv/JSON-schema validation behind `ToolBatchExecutionService.execute(params)`. A
 schema `required`, `oneOf` or `enum` does **not** reject a malformed payload at
-runtime — bad input flows straight to the service.
+runtime — bad input flows straight to the service. (`ajv` is not even a dependency.)
+
+The one place `required` has teeth is the CLI path: `ToolCliNormalizer` derives its
+per-tool argument list from the schema and rejects a parsed command with
+`Missing required argument "<name>"`. That covers commands typed as a `tool` string;
+it does not validate value shape, `oneOf` branches, or `enum` membership, and it
+does nothing for params reaching a tool by any other route.
 
 **Validation guards MUST live in the service/normalizer layer, not the schema.**
 Origin: a `createTask.linkedNotes` oneOf object missing `notePath` silently
