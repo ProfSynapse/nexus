@@ -1,4 +1,4 @@
-import { App, normalizePath, TFile, TFolder, Vault, View, WorkspaceLeaf } from 'obsidian';
+import { App, normalizePath, TFolder, Vault, View, WorkspaceLeaf } from 'obsidian';
 import { sanitizeName } from '../../../../utils/pathUtils';
 import { resolveVaultPath } from '../../../../core/vaultPath';
 
@@ -28,7 +28,6 @@ interface WebViewerLikeView extends View {
 }
 
 export const WEB_VIEWER_VIEW_TYPE = 'webviewer';
-export const WEB_VIEWER_SAVE_COMMAND_ID = 'webviewer:save-to-vault';
 
 export function getLeafForMode(app: App, mode: WebViewerOpenMode): WorkspaceLeaf {
   switch (mode) {
@@ -172,18 +171,6 @@ export async function ensureParentFolderExists(vault: Vault, path: string): Prom
   }
 }
 
-export function findCreatedMarkdownFile(
-  vault: Vault,
-  beforePaths: Set<string>,
-  startTimeMs: number
-): TFile | null {
-  const candidates = vault.getMarkdownFiles()
-    .filter((file) => !beforePaths.has(file.path) && file.stat.mtime >= startTimeMs - 5000)
-    .sort((a, b) => b.stat.mtime - a.stat.mtime);
-
-  return candidates[0] ?? null;
-}
-
 export function resolveUniqueMarkdownPath(vault: Vault, outputPath: string): string {
   return resolveUniqueFilePath(vault, outputPath, 'md');
 }
@@ -210,10 +197,6 @@ export function resolveUniqueFilePath(vault: Vault, outputPath: string, extensio
   }
 
   return candidate;
-}
-
-export function hasWebViewerSaveCommand(app: App): boolean {
-  return Boolean(app.commands.commands[WEB_VIEWER_SAVE_COMMAND_ID]);
 }
 
 export function buildDefaultWebCapturePath(

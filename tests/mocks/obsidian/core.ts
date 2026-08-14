@@ -191,6 +191,21 @@ export function normalizePath(path: string): string {
 }
 
 /**
+ * Mock of Obsidian's `htmlToMarkdown`.
+ *
+ * Obsidian's real converter is a full HTML parse; there is no DOM in this test
+ * environment to reproduce it. This stub only strips tags and collapses
+ * whitespace, which is enough to prove that callers pass the cleaned HTML
+ * through and trim the result — it proves nothing about conversion fidelity, so
+ * do not assert on markdown formatting here. Real conversion is exercised by
+ * `tests/manual/web-capture-bakeoff.md`.
+ */
+export function htmlToMarkdown(html: string | { innerHTML?: string }): string {
+  const source = typeof html === 'string' ? html : (html.innerHTML ?? '');
+  return source.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Mock of Obsidian's `prepareFuzzySearch`.
  *
  * Mirrors the two properties production code actually depends on:

@@ -3182,9 +3182,9 @@
     {
       "agent": "webTools",
       "tool": "capture-markdown",
-      "description": "Save the active Web Viewer page to the vault as Markdown using Obsidian Web Viewer. Desktop only.",
+      "description": "Extract a webpage as Markdown with metadata frontmatter and save it to the vault. Fetches the URL directly (works on mobile); falls back to the desktop Web Viewer for pages that need JavaScript or a signed-in session.",
       "command": "web capture-markdown",
-      "usage": "web capture-markdown [--url <url>] [--mode <mode>] <outputPath> [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "usage": "web capture-markdown [--url <url>] <outputPath> [--transport <transport>] [--mode <mode>] [--min-word-count <minWordCount>] [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
       "arguments": [
         {
           "name": "url",
@@ -3192,15 +3192,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional URL to open in Web Viewer before capturing. If omitted, captures the active Web Viewer tab. (string)"
-        },
-        {
-          "name": "mode",
-          "flag": "--mode",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Where to open the Web Viewer tab when url is provided. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+          "description": "[OPTIONAL] Page to capture. Required unless transport is \"browser\", which can capture the already-open Web Viewer tab. (string)"
         },
         {
           "name": "outputPath",
@@ -3211,12 +3203,36 @@
           "description": "[REQUIRED] Destination note path in the vault. Required so the caller explicitly chooses where the Markdown capture is saved. (string)"
         },
         {
+          "name": "transport",
+          "flag": "--transport",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to retrieve the page. \"fetch\" downloads it directly and is the only option on mobile. \"browser\" renders it in the desktop Web Viewer, which handles JavaScript-rendered and signed-in pages. \"auto\" fetches first and falls back to the browser on desktop. (One of: [\"auto\", \"fetch\", \"browser\"])"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab when the browser transport is used. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "minWordCount",
+          "flag": "--min-word-count",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Under \"auto\", a fetch result with fewer words than this is treated as a JavaScript-rendered shell and retried in the browser. (number)"
+        },
+        {
           "name": "timeoutMs",
           "flag": "--timeout-ms",
           "type": "number",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Maximum time to wait for page load and note creation. (number)"
+          "description": "[OPTIONAL] Maximum time to wait for the Web Viewer page to load (browser transport only). (number)"
         },
         {
           "name": "settleMs",
@@ -3224,11 +3240,11 @@
           "type": "number",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Extra delay after page load before invoking Save to vault. (number)"
+          "description": "[OPTIONAL] Extra delay after page load before reading the DOM (browser transport only). (number)"
         }
       ],
       "examples": [
-        "web capture-markdown --url \"url-value\" --mode \"mode-value\" \"outputPath-value\" --timeout-ms 1 --settle-ms 1"
+        "web capture-markdown --url \"url-value\" \"outputPath-value\" --transport \"transport-value\" --mode \"mode-value\" --min-word-count 1 --timeout-ms 1 --settle-ms 1"
       ]
     },
     {

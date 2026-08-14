@@ -1,6 +1,7 @@
 # Web Capture via Defuddle — Design Plan
 
-**Status:** Design / pre-architecture
+**Status:** Implemented (2026-08-14) — see §13 for the Phase 4 bake-off that
+gated deleting the legacy route
 **Date:** 2026-08-14
 **Author:** design discussion (ProfSynapse + Claude)
 **Prompted by:** review of `kepano/obsidian-skills` (`skills/defuddle`)
@@ -53,6 +54,14 @@ Neither is reachable from the `.` or `/full` entries — verified
 
 So the browser entries violate none of the CLAUDE.md mobile rules. We still
 `await import()` them inside the tool rather than at module top level, per rule 2.
+
+Installing it adds **27 entries to `package-lock.json`** for one dependency, which
+looks alarming and is not. `defuddle` declares one real dependency (`commander`)
+and four *optional* ones — `linkedom` (its `./node` entry), plus `turndown`,
+`temml` and `mathml-to-latex` (its `./full` entry). npm installs optional deps by
+default, so they land in `node_modules` and the lockfile, but we import neither
+entry point, so none of them reach `main.js`: the measured bundle delta is
++92 KB gzip, which is the core entry alone (§4.3).
 
 ### 4.2 Detached-document safety
 
@@ -194,3 +203,41 @@ the Bases plan.
 - Rendering/screenshotting — `capture-png`/`capture-pdf` stay browser-bound.
 - A crawler. One URL per call; link following is `web links` plus the caller's own loop.
 - Bundling a second markdown converter (§5).
+
+## 13. Phase 4 bake-off result (2026-08-14)
+
+Run against a live vault through the `nexus` CLI, comparing the shipped default
+(`--transport auto`) against the legacy Web Viewer save-to-vault route
+(`--transport legacy`, kept temporarily as the comparison instrument).
+
+| Page | Kind | `auto` words / headings / links / frontmatter keys | `legacy` |
+|---|---|---|---|
+| Wikipedia — Markdown | article | 2862 / 8 / 208 / 7 | 3030 / **2** / 246 / **0** |
+| MDN — Content-Type | docs | 716 / 8 / 24 / 7 | **failed** |
+| Python docs — json | docs | 3818 / 11 / 95 / 7 | **failed** |
+| overreacted.io — useEffect | blog | 10486 / 22 / 65 / 8 | **failed** |
+| Wikipedia — Fourier transform | math-heavy | 20886 / 64 / 468 / 8 | **failed** |
+| github.com — nexus | readme | 760 / 8 / 52 / 8 | **failed** |
+| react.dev — Thinking in React | SPA | 2894 / 10 / 17 / 7 | **failed** |
+
+Three further URLs (a BBC article, an HN thread, an NYT article) were dropped
+from the set: both routes failed because the URLs themselves returned 404, 429
+and 403. They are evidence about the URLs, not about either implementation.
+
+**Verdict: no regression, and a structural improvement.** `auto` succeeded on
+7/7 reachable pages; `legacy` succeeded on 1/6 attempted. On the one page where
+both produced a note, legacy was 5.9% wordier but emitted **2 headings against
+8** — its extra words are Wikipedia's infobox table, the "From Wikipedia" preamble
+and the external-links list, while it flattens the document's heading structure
+and carries no metadata at all.
+
+Two caveats worth recording. Legacy's failure rate is measured *under
+automation*: it depends on a core-plugin command, a load timeout and a
+filesystem hunt, and it may fare better when driven by hand. That it is not
+reliably automatable is itself the finding, since this tool exists to be driven
+by an agent. Second, the legacy runs eventually wedged the plugin's MCP server,
+which is why the tenth page was never attempted.
+
+The legacy route and its three helpers (`findCreatedMarkdownFile`,
+`hasWebViewerSaveCommand`, `WEB_VIEWER_SAVE_COMMAND_ID`) were deleted on the
+strength of this. Open question 1 in §10 is resolved as "delete".
