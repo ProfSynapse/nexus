@@ -131,16 +131,29 @@ def split_commands(tokens: list[str]) -> list[list[str]]:
     return [c for c in commands if c]
 
 
-def extract(line: str) -> list[tuple[str, list[str]]]:
-    """Return (kind, tokens) for each nexus invocation on the line."""
-    if not NEXUS_LINE.search(line):
-        return []
-    cleaned = line.strip().lstrip("`$ ").replace("`", " ")
-    index = cleaned.find("nexus ")
-    if index == -1:
-        return []
+def invocations(line: str) -> list[str]:
+    """Return each `nexus …` command text on the line, prose trimmed off.
+
+    Docs put commands inline in backticks and in help tables where two or more
+    spaces start a comment column. Cutting at the closing backtick and at the
+    first run of two spaces keeps the surrounding prose from being parsed as
+    arguments.
+    """
+    found: list[str] = []
+    for match in NEXUS_LINE.finditer(line):
+        segment = line[match.start():].lstrip("`$ ")
+        segment = segment.split("`", 1)[0]
+        segment = re.split(r"\s{2,}", segment)[0]
+        segment = segment.split(" #", 1)[0].rstrip(".;:")
+        if segment.startswith("nexus"):
+            found.append(segment)
+    return found
+
+
+def extract(command_text: str) -> list[tuple[str, list[str]]]:
+    """Return (kind, tokens) for one nexus invocation."""
     try:
-        tokens = shlex.split(cleaned[index:], comments=True)
+        tokens = shlex.split(command_text, comments=True)
     except ValueError:
         return []
     if not tokens or tokens[0] != "nexus":
