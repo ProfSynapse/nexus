@@ -13,6 +13,7 @@ import {
   ProviderCapabilities,
   ModelPricing
 } from '../types';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
 import { mapOpenAiCompatFinishReason, buildMessagesWithConversationHistory } from '../shared/OpenAICompatHelpers';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
@@ -141,6 +142,9 @@ export class RequestyAdapter extends BaseAdapter {
           const event = parsed as RequestySSEParsedEvent;
           return event.choices?.[0]?.finish_reason || null;
         },
+        // The router is OpenAI-compatible and forwards upstream failures as an
+        // {"error":{...}} frame over HTTP 200.
+        extractError: (parsed) => extractStreamErrorMessage(parsed, 'Requesty streaming error'),
         extractUsage: (parsed) => {
           const event = parsed as RequestySSEParsedEvent;
           return event.usage;

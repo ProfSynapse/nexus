@@ -16,6 +16,7 @@ import {
   TokenUsage
 } from '../types';
 import type { SSEToolCall } from '../../streaming/SSEStreamProcessor';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
 import {
   buildBearerJsonHeaders,

@@ -24,6 +24,7 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 import { SSEToolCall } from '../../streaming/SSEStreamProcessor';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 
 type JsonObject = Record<string, unknown>;
@@ -434,6 +435,11 @@ export class OpenRouterAdapter extends BaseAdapter {
           }
           return null;
         },
+
+        // OpenRouter documents mid-stream failures as an {"error":{"code":..,
+        // "message":..}} frame delivered over an already-200 response (the upstream
+        // provider failed after routing succeeded).
+        extractError: (parsed) => extractStreamErrorMessage(parsed, 'OpenRouter streaming error'),
 
         extractFinishReason: (parsed) => {
           const response = parsed as OpenRouterResponse;

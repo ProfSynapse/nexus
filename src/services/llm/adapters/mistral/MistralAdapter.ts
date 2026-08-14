@@ -13,6 +13,7 @@ import {
   ModelPricing,
   TokenUsage,
 } from '../types';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { MISTRAL_MODELS, MISTRAL_DEFAULT_MODEL } from './MistralModels';
 import {
   buildBearerJsonHeaders,
@@ -141,6 +142,9 @@ export class MistralAdapter extends BaseAdapter {
         extractContent: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.delta?.content || null,
         extractToolCalls: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.delta?.tool_calls || null,
         extractFinishReason: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.finish_reason || null,
+        // Mistral reports failures both as {"error":{...}} and as its own
+        // {"object":"error","message":"..."} body -- the shared extractor covers both.
+        extractError: (chunk) => extractStreamErrorMessage(chunk, 'Mistral streaming error'),
         extractUsage: (chunk) => (chunk as MistralStreamChunk).usage,
         accumulateToolCalls: true,
         toolCallThrottling: {

@@ -15,6 +15,7 @@ import {
   TokenUsage,
   SearchResult
 } from '../types';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { mapOpenAiCompatFinishReason } from '../shared/OpenAICompatHelpers';
@@ -131,6 +132,9 @@ export class PerplexityAdapter extends BaseAdapter {
         extractContent: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.delta?.content || null,
         extractToolCalls: () => null,
         extractFinishReason: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.finish_reason || null,
+        // OpenAI-compatible surface: a mid-stream failure arrives over HTTP 200 as
+        // {"error":{"message":"...","type":"..."}}.
+        extractError: (parsed) => extractStreamErrorMessage(parsed, 'Perplexity streaming error'),
         extractUsage: (parsed) => (parsed as PerplexityStreamChunk).usage,
         extractMetadata: (parsed) => this.extractResponseMetadata(parsed as PerplexityStreamChunk) || null
       });
