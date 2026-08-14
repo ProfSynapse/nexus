@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-08-14T16:22:10.402Z",
+  "generatedAt": "2026-08-14T17:01:08.718Z",
   "selector": "--help",
-  "toolCount": 78,
+  "toolCount": 79,
   "agentCount": 14,
   "agents": {
-    "baseManager": 4,
+    "baseManager": 5,
     "canvasManager": 4,
     "composer": 2,
     "contentManager": 5,
@@ -20,6 +20,42 @@
     "webTools": 5
   },
   "tools": [
+    {
+      "agent": "baseManager",
+      "tool": "analyze",
+      "description": "Execute a base file (.base) and return the rows it produces - filters applied, formulas evaluated, exactly what the base shows in Obsidian. Returns rowCount vs returned with a truncated flag; raise limit to see more.",
+      "command": "base analyze",
+      "usage": "base analyze <path> [--view <view>] [--limit <limit>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "view",
+          "flag": "--view",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Name of the view to execute (default: the first view in the file). Use baseManager.read to see the view names. (string)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum rows to return (default: 25, max: 1000). rowCount always reports how many rows matched, so a truncated answer still says what it left out. (number)"
+        }
+      ],
+      "examples": [
+        "base analyze \"path-value\" --view \"view-value\" --limit 1"
+      ]
+    },
     {
       "agent": "baseManager",
       "tool": "list",

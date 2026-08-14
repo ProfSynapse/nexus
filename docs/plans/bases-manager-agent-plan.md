@@ -238,10 +238,17 @@ when it renders a base **using that view type**.
 1. At init (§3), register `nexus-analyze`: a `BasesView` subclass that renders
    nothing and resolves a pending promise inside `onDataUpdated()` with a
    snapshot of `data`.
-2. On `analyze`, copy the target `.base` to a scratch path under the resolved
-   storage root, appending a view of type `nexus-analyze` that clones the
-   requested view's `filters`/`order`/`groupBy`/`limit`.
-3. Render `![[<scratch>.base#__nexus_analyze]]` via `MarkdownRenderer.render`
+2. On `analyze`, copy the target `.base` to a scratch path **beside the source
+   base** (not under the storage root), whose single view is of type
+   `nexus-analyze` and clones the requested view. [BUILT 2026-08-14, Phase 3:
+   the storage root is configurable and may be a dot-folder, which `app.vault`
+   does not index at all — the embed would then silently resolve to nothing. A
+   sibling also keeps `file.folder` semantics identical. The scratch file is
+   prefixed `__nexus-analyze-`, hidden from `base list`, excluded from its own
+   results, deleted in a `finally` via `adapter.remove` (NOT trashed — it would
+   drop a file in the user's trash on every call), and any leftover is swept on
+   the next call.]
+3. Render `![[<scratch>.base#<generated view name>]]` via `MarkdownRenderer.render`
    into a container that is **attached to the document but positioned
    off-screen** (`position:absolute; left:-10000px`, 1×1). Base embeds accept
    a `#View Name` selector, so this executes the query with no leaf and no
@@ -258,8 +265,15 @@ when it renders a base **using that view type**.
    [VERIFIED 2026-08-14, Obsidian 1.13.7: 8 isolated trials; 13 consecutive
    off-screen 300-row renders produced byte-identical screenshots, so there is
    no flicker.]
+   The `sourcePath` passed to `MarkdownRenderer.render` is the **original**
+   base, not the scratch copy — that is what `this` and links resolve against.
 4. Harvest rows through `entry.getValue(prop)`; summaries through
-   `getSummaryValue`.
+   `getSummaryValue`. The registered view hands the whole live view to the
+   runner and does no serialising itself: Obsidian keeps the FIRST registration
+   for the life of the app process, so the view's code may belong to an older
+   build of Nexus than the runner's. That makes the view↔runner handover a
+   versioned wire protocol (`ANALYZE_PROTOCOL_VERSION`), and lets `analyze` say
+   "restart Obsidian" instead of hanging when it meets a pre-Phase-3 view.
 5. Unload the `Component`, delete the scratch file in a `finally`.
 
 **Serialisation.** `Value` subclasses (`StringValue`, `NumberValue`, `DateValue`,
@@ -268,8 +282,28 @@ preserved as a wikilink so results stay actionable — a returned row should be
 something the model can immediately `content read`.
 
 **Bounding.** A base over a large vault is thousands of entries and this output
-lands in a model's context. Default `limit`, always report `rowCount` vs
-`returned` and a `truncated` flag; never silently drop rows.
+lands in a model's context. Default `limit` (25), always report `rowCount` vs
+`returned` and a `truncated` flag; never silently drop rows. [MEASURED
+2026-08-14: 300 rows execute in 75 ms and return 25 with `truncated: true`.]
+
+**A broken filter is undetectable, and `analyze` says so.** The plan assumed the
+rendered container would carry the failure. It does not. [VERIFIED 2026-08-14,
+Obsidian 1.13.7: a view filtering on an undefined function and a view whose
+filter simply matches nothing produce byte-identical rendered HTML (4975 bytes,
+modulo the generated view name), log nothing to the console, raise nothing, and
+both return `[]` from Obsidian's own `base:query`.] The only text in the
+container is the Bases toolbar chrome, present on every run. So zero rows is
+returned as an empty result set carrying a warning that empty has two meanings —
+failing the call instead would make every legitimately empty base look broken.
+
+**Serialisation, verified.** `Value.type` on an INSTANCE is a getter returning
+the constructor; calling it re-runs the constructor over the live value. The
+class-level `static type` is read off the prototype instead, and its values are
+CAPITALISED in the shipped app (`'String'`, `'Number'`, `'Null'`, `'List'`,
+`'Link'`, `'Date'`) — matching them lowercase silently disables every typed
+branch, which is how a missing property first came back as the *string* `"null"`
+(`NullValue.toString()` is the four characters `null`). `constructor.name` is
+useless: the app is minified and every `Value` class is named `t`.
 
 **Layering.** The harvesting code must not know how the controller was obtained.
 If Obsidian later exposes a "run this config" entry point, steps 2–3 and 5
@@ -293,7 +327,7 @@ proves unreliable there, gate `analyze` alone rather than the agent.
 | 0 | **Spike `analyze` step 3** — does detached embed rendering execute the query? | Decides §7; do this first |
 | 1 | Agent scaffold + availability probe (§3) + `read`/`list` | Tools appear only when Bases is on |
 | 2 | `BaseValidator` (§6) + `write`/`update` with automatic validation | kepano fixtures validate clean |
-| 3 | `analyze` (§7) | Rows match what the app shows for the same base |
+| 3 | `analyze` (§7) | Rows match what the app shows for the same base — **done 2026-08-14**, differentially verified against `base:query` on 5 views + a 300-row base, 0 cell mismatches |
 | 4 | Docs: CLAUDE.md agent list + tool counts, `cli-first-tool-schemas.json` | `shippedGuidanceCommands.test.ts` green |
 
 Phase 0 first is the point of the phasing: it is the only part that can fail
@@ -308,9 +342,16 @@ answer.
    `setViewState({active:false})` still pulled the tab to the front, and a
    collapsed-sidebar leaf created the view without ever running the query —
    visible when it works, silent when it does not.
-2. **`this` semantics under a scratch copy.** `this` resolves to the base file
-   itself, so a copy at a different path changes what `this` means. Affects only
-   bases that use `this`; detect and fall back to in-place injection.
+2. ~~**`this` semantics under a scratch copy.**~~ **RESOLVED** — no fallback
+   needed. Obsidian resolves `this` against the `sourcePath` handed to
+   `MarkdownRenderer.render`, and the runner passes the ORIGINAL base path. A
+   formula `this.file.name` therefore returns the source base's name, not the
+   scratch copy's [VERIFIED 2026-08-14, Obsidian 1.13.7], which is exactly the
+   binding the base gets when opened in a tab. `analyze` still warns when a base
+   uses `this`, because a base the user normally EMBEDS in a note binds `this`
+   to that note. Note that Obsidian's `base:query` CLI returns 0 rows for such a
+   base, so `analyze` is strictly better here — and the differential oracle
+   cannot be used on `this`-bearing bases.
 3. **Do `storage list` / file-facing tools filter to `.md`?** If so a model can
    create a base and then not find it. Check before shipping.
 4. **Should `analyze` accept an inline config** (execute without a file)? Would

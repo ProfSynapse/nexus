@@ -20,6 +20,13 @@ import type { BaseFileSummary, BasesConfigFile } from '../types';
 
 export const BASE_EXTENSION = 'base';
 
+/**
+ * Prefix on every scratch `.base` written by `analyze`. Two jobs: a leaked one
+ * is identifiable and sweepable, and `base list` can hide them so a caller
+ * never sees a file that exists for ~90 ms.
+ */
+export const SCRATCH_PREFIX = '__nexus-analyze-';
+
 export class BaseFileOperations {
   /** Ensure the `.base` extension. */
   static normalizePath(path: string): string {
@@ -126,9 +133,66 @@ export class BaseFileOperations {
     }
   }
 
-  /** Every `.base` file in the vault, optionally scoped to a folder. */
-  static getBaseFiles(app: App, folder?: string, recursive = true): TFile[] {
-    const baseFiles = app.vault.getFiles().filter(file => file.extension === BASE_EXTENSION);
+  /**
+   * Create the transient `.base` that `analyze` renders.
+   *
+   * Separate from {@link writeBase} on purpose: this path is code-controlled
+   * (the caller builds the name), must overwrite nothing, and must not carry
+   * `writeBase`'s "use update instead" advice into an internal failure.
+   */
+  static async createScratchFile(app: App, path: string, contents: string): Promise<TFile> {
+    if (!this.isScratchPath(path)) {
+      throw new Error(`Refusing to create a scratch base at ${path}: name must start with ${SCRATCH_PREFIX}`);
+    }
+    return app.vault.create(path, contents);
+  }
+
+  /**
+   * Delete a scratch file permanently.
+   *
+   * Deliberately NOT `fileManager.trashFile()`, which is right for user data and
+   * wrong here: a scratch file lived for ~90 ms and was never the user's, so
+   * trashing it would drop a fresh file into their trash on every single
+   * `analyze` call. The adapter is used rather than `vault.delete` because the
+   * plugin guidelines forbid the latter outright, and this is the one deletion
+   * in the plugin with no user-visible file behind it. Best-effort by design:
+   * cleanup must never be the reason a query fails.
+   */
+  static async removeScratchFile(app: App, path: string): Promise<boolean> {
+    if (!this.isScratchPath(path)) {
+      throw new Error(`Refusing to remove ${path}: not a scratch base`);
+    }
+
+    try {
+      if (await app.vault.adapter.exists(path)) {
+        await app.vault.adapter.remove(path);
+        return true;
+      }
+    } catch {
+      // A scratch file we cannot remove is swept by the next call.
+      return false;
+    }
+
+    return false;
+  }
+
+  /** True for a path whose file name marks it as an `analyze` scratch file. */
+  static isScratchPath(path: string): boolean {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    return name.startsWith(SCRATCH_PREFIX) && name.endsWith(`.${BASE_EXTENSION}`);
+  }
+
+  /**
+   * Every `.base` file in the vault, optionally scoped to a folder.
+   *
+   * Scratch files are excluded unless asked for: they are an implementation
+   * detail of `analyze`, and a `base list` that raced one would otherwise
+   * report a file that no longer exists by the time anyone reads the result.
+   */
+  static getBaseFiles(app: App, folder?: string, recursive = true, includeScratch = false): TFile[] {
+    const baseFiles = app.vault
+      .getFiles()
+      .filter(file => file.extension === BASE_EXTENSION && (includeScratch || !this.isScratchPath(file.path)));
     if (!folder) return baseFiles;
 
     const normalizedFolder = folder.replace(/^\/+|\/+$/g, '');

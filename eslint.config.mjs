@@ -213,8 +213,19 @@ export default defineConfig([
     // Inline eslint-disable is blocked for obsidianmd rules (the
     // obsidian-releases bot rejects it), so this is handled at config level —
     // the same pattern as the no-nodejs-modules block above.
+    //
+    // `baseResultHarvester.ts` is exempt for the same reason, one step further
+    // out: it reads `BasesQueryResult` / `BasesEntry` / `BasesEntryGroup` off a
+    // live view. The only thing that ever calls it is the analyze runner, which
+    // only runs once Obsidian has constructed a `nexus-analyze` view — which
+    // requires the Bases API to exist AND the agent to have been registered,
+    // which `ensureAnalyzeViewRegistered` gates. On an app without Bases the
+    // whole agent is absent, so there is no reachable path to these symbols.
     {
-        files: ["src/agents/baseManager/services/basesAvailability.ts"],
+        files: [
+            "src/agents/baseManager/services/basesAvailability.ts",
+            "src/agents/baseManager/services/baseResultHarvester.ts",
+        ],
         rules: {
             "obsidianmd/no-unsupported-api": "off",
         },

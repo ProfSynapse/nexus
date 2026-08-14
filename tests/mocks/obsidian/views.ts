@@ -183,3 +183,24 @@ export class MenuItem {
     return this;
   }
 }
+
+/**
+ * MarkdownRenderer mock.
+ *
+ * Only `render` exists, because that is the whole surface the plugin uses (the
+ * `analyze` runner renders a base embed into an off-screen host). It is inert
+ * by default — a test that needs the render to DO something replaces the
+ * implementation with `(MarkdownRenderer.render as jest.Mock).mockImplementation(...)`,
+ * which is how the base-analyze lane drives Obsidian's side of the rendezvous.
+ */
+export class MarkdownRenderer {
+  static render = jest.fn(
+    async (
+      _app: unknown,
+      _markdown: string,
+      _el: unknown,
+      _sourcePath: string,
+      _component: unknown
+    ): Promise<void> => undefined
+  );
+}

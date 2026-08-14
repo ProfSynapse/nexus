@@ -154,7 +154,7 @@ export class AgentInitializationService {
       return false;
     }
 
-    this.agentManager.registerAgent(new BaseManagerAgent(this.app));
+    this.agentManager.registerAgent(new BaseManagerAgent(this.app, this.plugin));
     logger.systemLog('BaseManager agent initialized successfully');
     return true;
   }

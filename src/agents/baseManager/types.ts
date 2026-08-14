@@ -138,3 +138,50 @@ export interface ListBaseResult extends CommonResult {
     total: number;
   };
 }
+
+// 5. Analyze (execute the query)
+export interface AnalyzeBaseParams extends CommonParameters {
+  /** Path to the base file (with or without the `.base` extension). */
+  path: string;
+  /** View to execute (default: the first view in the file). */
+  view?: string;
+  /** Maximum rows to return (default: `DEFAULT_ANALYZE_LIMIT`). */
+  limit?: number;
+}
+
+/** One row: property id → value, always including `file.path`. */
+export type BaseAnalyzeRow = Record<string, string | number | boolean | null | (string | number | boolean | null)[]>;
+
+export interface BaseAnalyzeGroup {
+  /** Display value of the groupBy key, or null for the "no value" group. */
+  key: string | null;
+  rowCount: number;
+  rows: BaseAnalyzeRow[];
+}
+
+export interface AnalyzeBaseResult extends CommonResult {
+  data?: {
+    path: string;
+    view: { name: string; type: string };
+    /** Property ids in column order — the keys of every row. */
+    properties: string[];
+    /** `view` when the base declares its columns; `allProperties` when it does not. */
+    propertiesSource: 'view' | 'allProperties';
+    /** Rows the query matched, before `limit`. */
+    rowCount: number;
+    /** Rows actually returned. */
+    returned: number;
+    truncated: boolean;
+    limit: number;
+    grouped: boolean;
+    /** Present when the view does not group. */
+    rows?: BaseAnalyzeRow[];
+    /** Present when the view groups; rows live inside the groups. */
+    groups?: BaseAnalyzeGroup[];
+    /** Footer aggregates: property id → { summary name → value }. */
+    summaries?: Record<string, Record<string, unknown>>;
+    /** Non-blocking caveats about this specific run. */
+    warnings?: string[];
+    elapsedMs: number;
+  };
+}

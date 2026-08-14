@@ -1,16 +1,17 @@
-import { App } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { ReadBaseTool, WriteBaseTool, UpdateBaseTool, ListBaseTool } from './tools';
+import { ReadBaseTool, WriteBaseTool, UpdateBaseTool, ListBaseTool, AnalyzeBaseTool } from './tools';
 
 /**
  * Agent for Obsidian Bases — `.base` files, the saved database-style query over
  * the vault that renders as a table, cards, list or map.
  *
- * Tools (4 today; `analyze` lands in Phase 3):
- * - read:   parsed config of a base file
- * - write:  create a NEW base (validated first)
- * - update: modify an EXISTING base, replacing only the sections supplied
- * - list:   enumerate .base files with view/formula counts
+ * Tools:
+ * - read:    parsed config of a base file
+ * - write:   create a NEW base (validated first)
+ * - update:  modify an EXISTING base, replacing only the sections supplied
+ * - list:    enumerate .base files with view/formula counts
+ * - analyze: execute a base and return the rows it produces
  *
  * ## Naming: why `baseManager` and not `basesManager`
  *
@@ -33,7 +34,12 @@ import { ReadBaseTool, WriteBaseTool, UpdateBaseTool, ListBaseTool } from './too
 export class BaseManagerAgent extends BaseAgent {
   protected app: App;
 
-  constructor(app: App) {
+  /**
+   * @param plugin needed by `analyze` alone: it re-registers the headless view
+   * when a Bases off→on toggle has wiped Obsidian's registration table, and
+   * `registerBasesView` is a `Plugin` method with no route through `App`.
+   */
+  constructor(app: App, plugin: Plugin) {
     super(
       'baseManager',
       'Obsidian Bases operations for .base files - the saved query that renders as a table, cards, list or map view. Read, create and modify bases with filters, formulas, properties, summaries and views. Configs are validated before they are written.',
@@ -69,6 +75,13 @@ export class BaseManagerAgent extends BaseAgent {
       description: 'List base files (.base) in the vault with view and formula counts',
       version: '1.0.0',
       factory: () => new ListBaseTool(app)
+    });
+    this.registerLazyTool({
+      slug: 'analyze',
+      name: 'Analyze Base',
+      description: 'Execute a base file (.base) and return the rows it produces - filters applied, formulas evaluated, exactly what the base shows in Obsidian. Returns rowCount vs returned with a truncated flag; raise limit to see more.',
+      version: '1.0.0',
+      factory: () => new AnalyzeBaseTool(app, plugin)
     });
   }
 }

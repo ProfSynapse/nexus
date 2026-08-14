@@ -9511,3 +9511,22 @@ body.is-mobile .nexus-task-board-shell {
     color: var(--text-muted);
     font-size: 13px;
 }
+
+/* ── baseManager: the off-screen host `base analyze` renders into ────────────
+   Executing a .base means letting Obsidian render it, and Obsidian's
+   QueryController refuses to run a query whose container is not shown — it
+   gates on isShown(), i.e. !!offsetParent, and otherwise waits for insertion
+   forever. A detached container, or display:none, therefore hangs rather than
+   producing rows. Anything that keeps a layout box works, so the host is a 1x1
+   box parked off-screen: laid out (so the query runs), invisible (so nothing
+   flickers), and inert (so it cannot receive input). It exists for ~90 ms per
+   call and is removed in a finally. */
+.nexus-base-analyze-host {
+    position: absolute;
+    left: -10000px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    pointer-events: none;
+}

@@ -1,7 +1,8 @@
 /**
  * tests/unit/baseManagerTools.test.ts
  *
- * The four Phase 1/2 tools of the baseManager agent, against a fake vault.
+ * The file-facing tools of the baseManager agent, against a fake vault.
+ * (`analyze` needs a rendering Obsidian and lives in baseAnalyze.test.ts.)
  *
  * The behaviours that matter here are the ones a green build cannot show:
  *   - `update` replaces ONLY the sections supplied (a model editing one view
@@ -80,11 +81,11 @@ const TASK_BASE = stringifyYaml({
 });
 
 describe('BaseManagerAgent registration', () => {
-    it('registers four tools under the slugs the catalog advertises', () => {
+    it('registers its tools under the slugs the catalog advertises', () => {
         const { app } = makeApp();
-        const agent = new BaseManagerAgent(app);
+        const agent = new BaseManagerAgent(app, {} as unknown as import('obsidian').Plugin);
         expect(agent.name).toBe('baseManager');
-        expect(agent.getTools().map((tool) => tool.slug).sort()).toEqual(['list', 'read', 'update', 'write']);
+        expect(agent.getTools().map((tool) => tool.slug).sort()).toEqual(['analyze', 'list', 'read', 'update', 'write']);
     });
 });
 
@@ -120,6 +121,18 @@ describe('base read', () => {
         const result = await new ReadBaseTool(app).execute({ path: 'Odd.base' } as never);
         expect(result.success).toBe(true);
         expect(result.data?.errors?.[0].code).toBe('unknown-key');
+    });
+});
+
+describe('base list scratch hiding', () => {
+    it('hides the transient analyze scratch file from listings', async () => {
+        // The scratch base exists for ~90 ms during `base analyze`. A `list`
+        // that raced one would report a file that is gone by the time anyone
+        // reads the answer.
+        const { app } = makeApp({ 'Tasks.base': TASK_BASE, '__nexus-analyze-abc.base': TASK_BASE });
+        const result = await new ListBaseTool(app).execute({} as never);
+
+        expect(result.data?.bases.map((base) => base.path)).toEqual(['Tasks.base']);
     });
 });
 
