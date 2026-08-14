@@ -379,6 +379,20 @@ export class PluginLifecycleManager {
                 await stateManager.saveState();
             }
 
+            // Detach the notes index BEFORE the database it writes through is
+            // closed. Its metadataCache/vault subscriptions are raw `on()`
+            // registrations that survive unload, and a bulk import keeps them
+            // firing for tens of seconds — every one of those flushes lands on
+            // a closed connection as "Database not initialized".
+            const notesIndex = this.config.serviceManager?.getServiceIfReady<{ cleanup?: () => void }>('notesIndex');
+            if (notesIndex && typeof notesIndex.cleanup === 'function') {
+                try {
+                    notesIndex.cleanup();
+                } catch (error) {
+                    void error;
+                }
+            }
+
             // Close HybridStorageAdapter to properly shut down SQLite
             const storageAdapter = this.config.serviceManager?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
             if (storageAdapter && typeof storageAdapter.close === 'function') {

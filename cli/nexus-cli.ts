@@ -204,11 +204,18 @@ GOTCHAS
   • Media generation is async — \`prompt generate-image\` / \`generate-audio\` /
     \`generate-video\` return a job; poll \`prompt check-generated-artifact "<job-id>"\`.
   • States: the AI gets archive (reversible), not delete.
+  • A \`.base\` is a saved query, not a note: \`base read\`/\`base write\`/\`base update\`
+    handle the file (write creates, update modifies, both validate and reject with the
+    list of errors before touching disk); \`base analyze\` runs it and returns the rows
+    a user would see.
   • No open vault → the socket is absent; open Obsidian with Nexus. Multiple open →
     pass --vault <name>.
 
 TOOL CATALOG
   Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
+  Vault-gated: base — reads and writes \`.base\` files (Obsidian Bases) and runs them.
+  Present only when Bases is enabled in that vault, so confirm with \`nexus tools\`
+  before offering it; enabling it takes a plugin reload.
   Apps (opt-in, per vault): composer, data, elevenlabs, skills, web — appear only when
   enabled. The live, authoritative catalog for THIS vault is always: nexus tools
 
@@ -220,6 +227,7 @@ EXAMPLES
   nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
   nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
   nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
+  nexus use --memory "reviewing saved views" --goal "see what the Tasks base returns" -- base analyze "Bases/Tasks.base" --limit 20
   nexus playbook vault-work
 `;
 }

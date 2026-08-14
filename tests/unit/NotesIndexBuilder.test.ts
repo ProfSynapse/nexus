@@ -50,6 +50,53 @@ function makeApp(entries: Array<{ f: FakeFile; cache: { frontmatter?: unknown } 
   return { app, handlers };
 }
 
+/**
+ * A fake with REAL emitter semantics: `on` returns a distinct ref, `offref`
+ * only removes refs belonging to that emitter, and `emit` fires whatever is
+ * still subscribed. `makeApp` above cannot show a teardown bug — its `offref`
+ * is a no-op and its handler map keeps only the last registration, so a leaked
+ * listener is invisible.
+ */
+function makeLiveApp(entries: Array<{ f: FakeFile; cache: { frontmatter?: unknown } }> = []) {
+  const byPath = new Map(entries.map((e) => [e.f.path, e]));
+
+  function emitter(tag: string) {
+    const listeners: Array<{ name: string; cb: (...args: unknown[]) => void; ref: object }> = [];
+    return {
+      tag,
+      listeners,
+      on(name: string, cb: (...args: unknown[]) => void) {
+        const ref = { tag, name };
+        listeners.push({ name, cb, ref });
+        return ref;
+      },
+      offref(ref: object) {
+        const i = listeners.findIndex((l) => l.ref === ref);
+        if (i >= 0) listeners.splice(i, 1);
+      },
+      emit(name: string, ...args: unknown[]) {
+        for (const l of [...listeners]) if (l.name === name) l.cb(...args);
+      },
+      count(name: string) {
+        return listeners.filter((l) => l.name === name).length;
+      },
+    };
+  }
+
+  const vault = emitter('vault');
+  const metadataCache = emitter('metadataCache');
+  const app = {
+    vault: Object.assign(vault, {
+      getMarkdownFiles: () => entries.map((e) => e.f),
+      getAbstractFileByPath: (p: string) => byPath.get(p)?.f ?? null,
+    }),
+    metadataCache: Object.assign(metadataCache, {
+      getFileCache: (f: FakeFile) => byPath.get(f.path)?.cache ?? {},
+    }),
+  };
+  return { app, vault, metadataCache };
+}
+
 function mockService(existing: Map<string, string> = new Map()) {
   return {
     ensureSchema: jest.fn().mockResolvedValue(undefined),
@@ -147,5 +194,106 @@ describe('NotesIndexBuilder', () => {
 
     expect(service.deleteNote).not.toHaveBeenCalled();
     builder.stop();
+  });
+});
+
+/**
+ * Teardown. The builder writes through the plugin's SQLite connection, which
+ * `close()` nulls at unload — so a builder that keeps listening after unload
+ * keeps issuing statements against a dead handle and every one of them raises
+ * "Database not initialized" out of an event handler nobody awaits. Reproduced
+ * in Obsidian 1.13.7: 301 files dropped into the vault, plugin reloaded, 9-19
+ * uncaught errors per reload and one extra leaked `changed` listener each time.
+ */
+describe('NotesIndexBuilder teardown', () => {
+  it('removes every subscription on cleanup, so a later vault event writes nothing', async () => {
+    const entries = [file('Projects/a.md', { status: 'active' })];
+    const { app, vault, metadataCache } = makeLiveApp(entries);
+    const service = mockService();
+    const builder = new NotesIndexBuilder(app as never, service as unknown as NotesIndexService, { debounceMs: 0 });
+
+    await builder.start();
+    expect(metadataCache.count('changed')).toBe(1);
+    expect(vault.count('delete')).toBe(1);
+    service.upsertNote.mockClear();
+    service.deleteNote.mockClear();
+
+    // What the plugin's cleanup path actually calls (ServiceContainer.clear()
+    // invokes `cleanup`, not `stop`).
+    builder.cleanup();
+
+    expect(metadataCache.count('changed')).toBe(0);
+    expect(vault.count('delete')).toBe(0);
+    expect(vault.count('rename')).toBe(0);
+
+    metadataCache.emit('changed', makeFile('Projects/a.md'));
+    vault.emit('delete', makeFile('Projects/a.md'));
+    await tick();
+
+    expect(service.upsertNote).not.toHaveBeenCalled();
+    expect(service.deleteNote).not.toHaveBeenCalled();
+  });
+
+  it('hands every subscription to the plugin so unload detaches it even without cleanup', async () => {
+    const { app } = makeLiveApp([]);
+    const service = mockService();
+    const plugin = { registerEvent: jest.fn() };
+    const builder = new NotesIndexBuilder(app as never, service as unknown as NotesIndexService, { plugin });
+
+    await builder.start();
+
+    expect(plugin.registerEvent).toHaveBeenCalledTimes(3);
+    builder.cleanup();
+  });
+
+  it('does not reject when the database closes under an already-scheduled flush', async () => {
+    const entries = [file('Projects/a.md', { status: 'active' })];
+    const { app, metadataCache } = makeLiveApp(entries);
+    const service = mockService();
+    const builder = new NotesIndexBuilder(app as never, service as unknown as NotesIndexService, { debounceMs: 0 });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await builder.start();
+      // The connection goes away after the builder is up and listening — the
+      // shape of an unload landing between a scheduled flush and its writes.
+      service.upsertNote.mockClear();
+      service.upsertNote.mockRejectedValue(new Error('Database not initialized'));
+      metadataCache.emit('changed', makeFile('Projects/a.md'));
+      await tick();
+      await tick();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      builder.cleanup();
+    }
+    // Read the spy before restoring it — mockRestore() also clears its history.
+    const warned = warn.mock.calls.length;
+    warn.mockRestore();
+
+    expect(service.upsertNote).toHaveBeenCalled();
+    expect(unhandled).toEqual([]);
+    expect(warned).toBeGreaterThan(0);
+  });
+
+  it('abandons the background walk once stopped instead of writing on', async () => {
+    const entries = Array.from({ length: 6 }, (_, i) => file(`Projects/n${i}.md`));
+    const { app } = makeLiveApp(entries);
+    const service = mockService();
+    const builder = new NotesIndexBuilder(app as never, service as unknown as NotesIndexService, { batchSize: 1 });
+
+    // Stop as soon as the first note has been written; the walk yields between
+    // batches, which is exactly where an unload lands.
+    service.upsertNote.mockImplementation(async () => {
+      builder.cleanup();
+    });
+
+    await builder.buildAll();
+
+    expect(service.upsertNote).toHaveBeenCalledTimes(1);
+    expect(service.pruneMissing).not.toHaveBeenCalled();
+    expect(builder.isReady()).toBe(false);
   });
 });

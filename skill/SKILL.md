@@ -2,7 +2,7 @@
 name: nexus
 description: >-
   Read, search, and edit the user's Obsidian vault (notes, folders, canvas,
-  tasks, memory/workspaces, saved prompts) from the shell via the `nexus` CLI —
+  bases, tasks, memory/workspaces, saved prompts) from the shell via the `nexus` CLI —
   no MCP connection needed. Use whenever the user refers to their vault, notes,
   daily notes, second brain, or Obsidian, or asks you to find/read/change
   something stored there and the `nexus` command is on PATH. Do not use it to

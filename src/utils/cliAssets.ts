@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "2ab226a6e81da77f";
+export const NEXUS_CLI_ASSETS_HASH = "c095e1097b9c3b8c";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -653,11 +653,18 @@ GOTCHAS
   \\u2022 Media generation is async \\u2014 \\\`prompt generate-image\\\` / \\\`generate-audio\\\` /
     \\\`generate-video\\\` return a job; poll \\\`prompt check-generated-artifact "<job-id>"\\\`.
   \\u2022 States: the AI gets archive (reversible), not delete.
+  \\u2022 A \\\`.base\\\` is a saved query, not a note: \\\`base read\\\`/\\\`base write\\\`/\\\`base update\\\`
+    handle the file (write creates, update modifies, both validate and reject with the
+    list of errors before touching disk); \\\`base analyze\\\` runs it and returns the rows
+    a user would see.
   \\u2022 No open vault \\u2192 the socket is absent; open Obsidian with Nexus. Multiple open \\u2192
     pass --vault <name>.
 
 TOOL CATALOG
   Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
+  Vault-gated: base \\u2014 reads and writes \\\`.base\\\` files (Obsidian Bases) and runs them.
+  Present only when Bases is enabled in that vault, so confirm with \\\`nexus tools\\\`
+  before offering it; enabling it takes a plugin reload.
   Apps (opt-in, per vault): composer, data, elevenlabs, skills, web \\u2014 appear only when
   enabled. The live, authoritative catalog for THIS vault is always: nexus tools
 
@@ -669,6 +676,7 @@ EXAMPLES
   nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
   nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
   nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
+  nexus use --memory "reviewing saved views" --goal "see what the Tasks base returns" -- base analyze "Bases/Tasks.base" --limit 20
   nexus playbook vault-work
 \`;
 }
@@ -881,7 +889,7 @@ export const NEXUS_SKILL_MD = `---
 name: nexus
 description: >-
   Read, search, and edit the user's Obsidian vault (notes, folders, canvas,
-  tasks, memory/workspaces, saved prompts) from the shell via the \`nexus\` CLI —
+  bases, tasks, memory/workspaces, saved prompts) from the shell via the \`nexus\` CLI —
   no MCP connection needed. Use whenever the user refers to their vault, notes,
   daily notes, second brain, or Obsidian, or asks you to find/read/change
   something stored there and the \`nexus\` command is on PATH. Do not use it to
@@ -973,7 +981,7 @@ they're always current.
 export const NEXUS_AGENTS_MD = `## Nexus vault access
 
 This machine runs Nexus (Obsidian). To read, search, or edit the user's vault —
-notes, folders, canvas, tasks, memory/workspaces, saved prompts — use the
+notes, folders, canvas, bases, tasks, memory/workspaces, saved prompts — use the
 \`nexus\` CLI. No MCP connection is needed.
 
 **Run \`nexus --help\` first.** It's the authoritative, always-current manual

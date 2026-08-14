@@ -24,6 +24,14 @@ export interface NotesIndexBuilderOptions {
   debounceMs?: number;
   /** Notes processed between cooperative yields during the full build. */
   batchSize?: number;
+  /**
+   * The owning plugin, so every subscription is also handed to
+   * `registerEvent` and Obsidian removes it at unload no matter what happens
+   * to this object. Belt and braces with `stop()`: `stop()` is only reached if
+   * the service was registered and the cleanup path ran, and neither is
+   * guaranteed when a reload lands mid-initialization.
+   */
+  plugin?: { registerEvent(ref: EventRef): void };
 }
 
 const DEFAULT_MAX_NOTES = 250_000;
@@ -35,18 +43,33 @@ export class NotesIndexBuilder {
   private readonly debounceMs: number;
   private readonly batchSize: number;
 
-  private eventRefs: EventRef[] = [];
+  /**
+   * Subscriptions, tagged with the emitter that owns them. `offref` only
+   * removes a ref from the emitter it was registered on, so the tag is not
+   * bookkeeping — handing a metadataCache ref to `vault.offref` is a silent
+   * no-op and the listener survives.
+   */
+  private eventRefs: Array<{ target: 'metadataCache' | 'vault'; ref: EventRef }> = [];
   private dirtyPaths = new Set<string>();
   private flushTimer: number | null = null;
 
   private ready = false;
   private degraded = false;
+  /**
+   * Set by `stop()`/`cleanup()`. Every write path checks it, because this
+   * builder outlives nothing: at plugin unload the SQLite connection it writes
+   * through is closed, and anything still walking or flushing afterwards hits
+   * "Database not initialized".
+   */
+  private stopped = false;
+  private readonly plugin?: { registerEvent(ref: EventRef): void };
 
   constructor(
     private readonly app: App,
     private readonly service: NotesIndexService,
     options: NotesIndexBuilderOptions = {}
   ) {
+    this.plugin = options.plugin;
     this.maxNotes = options.maxNotes ?? DEFAULT_MAX_NOTES;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
     this.batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
@@ -96,6 +119,9 @@ export class NotesIndexBuilder {
    * event handler.
    */
   async rebuildAfterCacheReset(): Promise<void> {
+    if (this.stopped) {
+      return;
+    }
     try {
       await this.service.ensureSchema();
       await this.buildAll();
@@ -124,6 +150,11 @@ export class NotesIndexBuilder {
 
     let processed = 0;
     for (const file of files) {
+      // The walk yields between batches, so a plugin unload can land in the
+      // middle of it. Continuing would write through a closed connection.
+      if (this.stopped) {
+        return;
+      }
       const input = this.noteFromFile(file);
       present.add(input.path);
       if (existing.get(input.path) !== input.contentHash) {
@@ -134,54 +165,89 @@ export class NotesIndexBuilder {
       }
     }
 
+    if (this.stopped) {
+      return;
+    }
     await this.service.pruneMissing(present);
     this.ready = true;
   }
 
-  /** Tear down timers + event listeners. */
+  /**
+   * Tear down timers + event listeners, and refuse any further writes.
+   *
+   * MUST run at plugin unload. These subscriptions are raw `app.metadataCache.on`
+   * / `app.vault.on` registrations, not `plugin.registerEvent`, so nothing
+   * removes them on their own: a builder that is not stopped keeps receiving
+   * every vault event for the rest of the Obsidian session and keeps writing
+   * through a `SQLiteCacheManager` whose handle `close()` already nulled. Each
+   * reload adds another one, so the "Database not initialized" burst grows with
+   * the reload count and with how many files are being re-scanned.
+   */
   stop(): void {
+    this.stopped = true;
     if (this.flushTimer !== null) {
       window.clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    for (const ref of this.eventRefs) {
-      if (ref) {
+    for (const { target, ref } of this.eventRefs) {
+      if (!ref) continue;
+      if (target === 'metadataCache') {
         this.app.metadataCache.offref(ref);
+      } else {
         this.app.vault.offref(ref);
       }
     }
     this.eventRefs = [];
     this.dirtyPaths.clear();
+    this.ready = false;
+  }
+
+  /**
+   * `ServiceContainer.clear()` calls `cleanup()` on any service that has one —
+   * that is the only teardown hook services get. `stop()` alone was never
+   * reached because the container does not know the name.
+   */
+  cleanup(): void {
+    this.stop();
   }
 
   // -- freshness -------------------------------------------------------------
 
   private subscribe(): void {
-    this.eventRefs.push(
-      this.app.metadataCache.on('changed', (file: TFile) => {
-        this.markDirty(file.path);
-      })
-    );
-    this.eventRefs.push(
-      this.app.vault.on('delete', (file: TAbstractFile) => {
-        if (isMarkdown(file)) {
-          this.dirtyPaths.delete(file.path);
-          void this.service.deleteNote(file.path);
-        }
-      })
-    );
-    this.eventRefs.push(
-      this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-        if (isMarkdown(file)) {
-          void this.service.deleteNote(oldPath);
-          this.markDirty(file.path);
-        }
-      })
-    );
+    this.track('metadataCache', this.app.metadataCache.on('changed', (file: TFile) => {
+      this.markDirty(file.path);
+    }));
+    this.track('vault', this.app.vault.on('delete', (file: TAbstractFile) => {
+      if (this.stopped || !isMarkdown(file)) return;
+      this.dirtyPaths.delete(file.path);
+      this.detached(this.service.deleteNote(file.path), `delete ${file.path}`);
+    }));
+    this.track('vault', this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+      if (this.stopped || !isMarkdown(file)) return;
+      this.detached(this.service.deleteNote(oldPath), `rename ${oldPath}`);
+      this.markDirty(file.path);
+    }));
+  }
+
+  /** Record a subscription for `stop()`, and hand it to the plugin's own teardown. */
+  private track(target: 'metadataCache' | 'vault', ref: EventRef): void {
+    this.eventRefs.push({ target, ref });
+    this.plugin?.registerEvent(ref);
+  }
+
+  /**
+   * Absorb the rejection of a write nobody awaits. Obsidian event handlers are
+   * sync, so an unhandled rejection here surfaces as a top-level error with a
+   * storage stack and no hint of which subsystem raised it.
+   */
+  private detached(work: Promise<unknown>, what: string): void {
+    void work.catch((error) => {
+      console.warn(`[NotesIndex] ${what} did not reach the index:`, error);
+    });
   }
 
   private markDirty(path: string): void {
-    if (this.degraded) {
+    if (this.degraded || this.stopped) {
       return;
     }
     this.dirtyPaths.add(path);
@@ -190,19 +256,35 @@ export class NotesIndexBuilder {
     }
   }
 
-  /** Reconcile the dirty set: re-upsert existing notes, delete vanished ones. */
+  /**
+   * Reconcile the dirty set: re-upsert existing notes, delete vanished ones.
+   *
+   * Never rejects. It is invoked from a `setTimeout`, so a rejection is an
+   * unhandled one — and the realistic failure is the database closing under a
+   * flush that was already scheduled, which is a shutdown detail and not
+   * something to report as a plugin error.
+   */
   private async flush(): Promise<void> {
     this.flushTimer = null;
+    if (this.stopped) {
+      this.dirtyPaths.clear();
+      return;
+    }
     const paths = Array.from(this.dirtyPaths);
     this.dirtyPaths.clear();
 
-    for (const path of paths) {
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (file && isMarkdown(file)) {
-        await this.service.upsertNote(this.noteFromFile(file));
-      } else {
-        await this.service.deleteNote(path);
+    try {
+      for (const path of paths) {
+        if (this.stopped) return;
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (file && isMarkdown(file)) {
+          await this.service.upsertNote(this.noteFromFile(file));
+        } else {
+          await this.service.deleteNote(path);
+        }
       }
+    } catch (error) {
+      console.warn('[NotesIndex] freshness flush aborted; those notes stay stale until the next change or rebuild:', error);
     }
   }
 

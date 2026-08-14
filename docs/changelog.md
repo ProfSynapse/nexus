@@ -2,6 +2,31 @@
 
 ## August 2026
 
+**Unreleased** — Your agent can read, write and run Obsidian Bases
+
+**Bases are part of the vault your agent can work with**
+- A new `base` agent covers `.base` files end to end: `base read` returns the saved
+  config, `base write` creates one, `base update` changes an existing one, `base list`
+  finds them, and `base analyze` runs the base and returns the rows you would see if
+  you opened it — filters applied and formulas evaluated by Obsidian itself, not
+  re-implemented ([#330](https://github.com/ProfSynapse/nexus/issues/330)).
+- `write` and `update` validate before anything reaches disk and reject with every
+  problem listed at once — an undefined formula referenced by a view's order, a filter
+  group with two operators — so a broken base is never written and then discovered
+  later in the UI.
+- The tools appear only in vaults where Bases is enabled. If you turn Bases on, they
+  show up after the next plugin reload; they are never offered as tools that can only
+  answer "not available".
+
+**Fixes**
+- Adding a few hundred notes at once and then reloading no longer fills the console
+  with `Database not initialized`. The note index kept listening for vault changes
+  after the plugin unloaded and went on writing to a database that had already closed
+  — one leftover listener per reload, so the noise grew with every reload of the
+  session.
+
+---
+
 **v5.16.4** — Multiline and backslash-heavy content survives the trip to any tool, and the CLI stops claiming it's on your PATH
 
 **Multiline content reaches every tool**

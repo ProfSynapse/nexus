@@ -1,6 +1,9 @@
 # BasesManager Agent (`.base` files) — Design Plan
 
-**Status:** Design / pre-architecture
+**Status:** EXECUTED — all four phases shipped 2026-08-14. The agent exists
+(`basesManager`, CLI slug `base`, five tools); the catalog carries 79 tools
+across 14 agents. This document is kept as the design record, not a to-do list;
+what the code does now lives in the code.
 **Date:** 2026-08-14
 **Author:** design discussion (ProfSynapse + Claude)
 **Prompted by:** review of `kepano/obsidian-skills` (`skills/obsidian-bases`)
@@ -324,15 +327,25 @@ proves unreliable there, gate `analyze` alone rather than the agent.
 
 | Phase | Content | Gate |
 |---|---|---|
-| 0 | **Spike `analyze` step 3** — does detached embed rendering execute the query? | Decides §7; do this first |
-| 1 | Agent scaffold + availability probe (§3) + `read`/`list` | Tools appear only when Bases is on |
-| 2 | `BaseValidator` (§6) + `write`/`update` with automatic validation | kepano fixtures validate clean |
-| 3 | `analyze` (§7) | Rows match what the app shows for the same base — **done 2026-08-14**, differentially verified against `base:query` on 5 views + a 300-row base, 0 cell mismatches |
-| 4 | Docs: CLAUDE.md agent list + tool counts, `cli-first-tool-schemas.json` | `shippedGuidanceCommands.test.ts` green |
+| 0 | **Spike `analyze` step 3** — does detached embed rendering execute the query? | Decides §7; do this first — **DONE 2026-08-14**, results folded into §7 and open question 1 |
+| 1 | Agent scaffold + availability probe (§3) + `read`/`list` | Tools appear only when Bases is on — **DONE 2026-08-14** |
+| 2 | `BaseValidator` (§6) + `write`/`update` with automatic validation | kepano fixtures validate clean — **DONE 2026-08-14** |
+| 3 | `analyze` (§7) | Rows match what the app shows for the same base — **DONE 2026-08-14**, differentially verified against `base:query` on 5 views + a 300-row base, 0 cell mismatches |
+| 4 | Shipped guidance + `cli-first-tool-schemas.json` | `shippedGuidanceCommands.test.ts` green — **DONE 2026-08-14** |
 
 Phase 0 first is the point of the phasing: it is the only part that can fail
 outright, and everything else is ordinary file work that does not depend on the
 answer.
+
+**Phase 4 as planned is obsolete.** It said "CLAUDE.md agent list + tool counts";
+CLAUDE.md and the skills deliberately carry no inventories any more (#335) and the
+catalog is generated. What Phase 4 actually delivered: `base` in the three places
+that describe the tool surface to a caller — the `nexus --help` catalog (as a
+vault-gated agent, with a worked `base analyze` example and a gotcha separating
+file work from execution), and the `.base` file type in the two prose surfaces
+(`skill/SKILL.md`, `cli/agents-snippet.md`) — plus the regenerated
+`cli-first-tool-schemas.json`, a changelog entry, and this record. The user-facing
+guides carry no agent inventory at all, by design, so nothing there needed a row.
 
 ## 10. Open questions
 
@@ -352,10 +365,16 @@ answer.
    to that note. Note that Obsidian's `base:query` CLI returns 0 rows for such a
    base, so `analyze` is strictly better here — and the differential oracle
    cannot be used on `this`-bearing bases.
-3. **Do `storage list` / file-facing tools filter to `.md`?** If so a model can
-   create a base and then not find it. Check before shipping.
-4. **Should `analyze` accept an inline config** (execute without a file)? Would
-   make bases a general query interface. Attractive, out of v1 scope.
+3. ~~**Do `storage list` / file-facing tools filter to `.md`?**~~ **RESOLVED —
+   no filter.** `list.ts` collects every `TFile` child and applies only the
+   caller's optional name filter, so a base is discoverable the moment it is
+   written. Verified live in Obsidian 1.13.7 [2026-08-14]: `storage list
+   --path NexusBases` returns `NexusBases/Tasks.base`. No change was needed.
+4. **Should `analyze` accept an inline config** (execute without a file)?
+   **DEFERRED, not resolved** — deliberately out of v1 and still out. It stays
+   attractive for the same reason it stays risky: it turns bases into a general
+   query interface with no file to validate against. Revisit as its own issue if
+   callers ask for it; nothing shipped in phases 1-4 forecloses it.
 
 ## 11. Implementation reuse map (DRY)
 
@@ -396,5 +415,6 @@ both and compare. Use it in the Phase 3 tests rather than hand-asserting rows.
   customer for the Obsidian CLI smoke lane
   (`docs/plans/obsidian-cli-verification-plan.md`).
 - `tests/unit/shippedGuidanceCommands.test.ts` gates shipped docs against real
-  tool slugs, so the CLAUDE.md agent inventory and tool counts must move in the
-  same change.
+  tool slugs, so every `base` command written into guidance must resolve against
+  the regenerated catalog. (It gates commands, not inventories — the CLAUDE.md
+  agent list this line originally pointed at no longer exists.)

@@ -23,3 +23,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   references and a schema-consistency script that checks the version stamp
   mechanically. | SKILL.md, all of protocols/ and references/, and
   scripts/check_schema_consistency.py.
+
+- 2026-08-14 | A bulk import (301 files) plus a reload produced 12+ uncaught
+  "Database not initialized" errors, and `diagnose-storage.md` had no entry for
+  storage errors raised *by a dead plugin instance* — its bisection assumes the
+  data is missing, not that the writer is a ghost. Two session-costing details
+  were absent: `ServiceContainer.clear()` only calls `cleanup()` (a `stop()`
+  method is dead code), and an instance-level patch on the cache manager records
+  nothing because the failing caller holds the previous instance. | Added the
+  symptom entry with both survivor shapes, the listener-count probe, and the
+  prototype-patch attribution trick. | references/failure-modes.md.

@@ -132,3 +132,43 @@ signal and rebuild, or the index silently answers "nothing" until the next load.
 
 Reproduce it in the running app — no Jest lane covers this seam:
 `adapter.rebuildCache()`, then touch a note, then read `dev:errors`.
+
+## "Database not initialized", in a burst, after a reload
+
+The database is *fine*. Something that belongs to the PREVIOUS plugin instance is
+still writing to it. `close()` nulls the handle at unload, so every statement a
+survivor issues afterwards throws `Database not initialized` out of
+`getDbOrThrow()` — with a four-frame storage stack that names no subsystem,
+because the async chain was broken by the event handler that scheduled the work.
+
+Two survivor shapes, both real:
+
+- **A subscription that outlives unload.** `app.metadataCache.on(...)` /
+  `app.vault.on(...)` are NOT torn down by the plugin unless the ref goes through
+  `plugin.registerEvent(ref)` or the service's teardown removes it. Note that
+  `ServiceContainer.clear()` calls **`cleanup()`** — a service whose teardown is
+  named `stop()`, `dispose()` or anything else is never called at all. One leak
+  per load, so the burst grows with the session's reload count.
+- **A long walk mid-flight.** Anything that yields between batches (a vault
+  index build) resumes after the unload that closed the database unless it checks
+  a stopped flag.
+
+The bulk-import shape is the diagnostic: a few hundred files dropped into the
+vault keep `changed` events flowing for tens of seconds, which is exactly the
+window a reload lands in.
+
+Confirm the leak in the running app — the count should be 1, and stay 1:
+
+```js
+app.metadataCache._['changed'].filter(l => String(l.fn).includes('<handlerFragment>')).length
+```
+
+To attribute the throw, patch the *prototype*, not the instance
+(`Object.getPrototypeOf(sqliteCache).transaction = …` recording `new Error().stack`):
+the failing calls come from an object the current plugin instance no longer
+exposes, so an instance patch records nothing.
+
+Fixing teardown is necessary but not sufficient: a write scheduled before the
+close still has to fail safely. Give the detached paths (`void this.flush()`,
+`void service.deleteNote(...)`) a `catch`, or the shutdown detail is reported as
+a plugin error.

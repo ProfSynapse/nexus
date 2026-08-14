@@ -86,7 +86,11 @@ function makeContext(adapter: unknown): ServiceCreationContext {
   };
 
   return {
-    plugin: { app } as unknown as ServiceCreationContext['plugin'],
+    // `registerEvent` is not decoration: the definition hands the plugin to
+    // NotesIndexBuilder so Obsidian detaches its vault subscriptions at unload.
+    // A builder that outlives the plugin keeps writing into the SQLite handle
+    // `close()` already nulled.
+    plugin: { app, registerEvent: jest.fn() } as unknown as ServiceCreationContext['plugin'],
     app: app as unknown as ServiceCreationContext['app'],
     settings: {} as ServiceCreationContext['settings'],
     manifest: {} as ServiceCreationContext['manifest'],

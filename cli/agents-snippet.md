@@ -1,7 +1,7 @@
 ## Nexus vault access
 
 This machine runs Nexus (Obsidian). To read, search, or edit the user's vault —
-notes, folders, canvas, tasks, memory/workspaces, saved prompts — use the
+notes, folders, canvas, bases, tasks, memory/workspaces, saved prompts — use the
 `nexus` CLI. No MCP connection is needed.
 
 **Run `nexus --help` first.** It's the authoritative, always-current manual

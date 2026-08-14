@@ -225,6 +225,10 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             // Lower the degrade cap on mobile (tighter memory) than desktop.
             const builder = new NotesIndexBuilder(context.plugin.app, service, {
                 maxNotes: Platform.isMobile ? 50_000 : 250_000,
+                // So the vault subscriptions die with the plugin. Without this
+                // every reload leaves a builder writing into the SQLite handle
+                // the previous unload closed — see NotesIndexBuilder.stop().
+                plugin: context.plugin,
             });
             // Awaited (not `void`ed): startInBackground only awaits the schema
             // and event wiring — the vault walk backgrounds itself — so a schema
