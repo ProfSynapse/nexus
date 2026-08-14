@@ -20,6 +20,7 @@ Do not apply the transform in your head:
 
 ```bash
 python3 .claude/skills/nexus-agents/scripts/cli_name.py subagent --agent promptManager
+nexus tools "prompt sub"       # resolves — "prompt subagent" does not exist
 ```
 
 That script reads the suffix list out of the live `toKebabCase` body, so it

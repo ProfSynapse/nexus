@@ -45,6 +45,11 @@ not silently rotting any document that names it.
              -- <agent> <tool> --flag value
    nexus use --dry-run --memory "…" --goal "…" -- <agent> <tool>   # reconstruct, do not connect
    ```
+   A concrete read-only pair to copy, before substituting your own tool:
+   ```bash
+   nexus tools "storage list"
+   nexus use --memory "added a tool and rebuilt" --goal "prove execution reaches an agent" -- storage list
+   ```
    This step needs a machine with Obsidian installed and `npm install` already
    run. If you are somewhere that has neither, say the step was not run — do not
    report it as passed.
