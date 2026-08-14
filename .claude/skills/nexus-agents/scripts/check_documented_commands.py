@@ -43,7 +43,7 @@ REGEN = "npm run schemas:tools -- --output cli-first-tool-schemas.json"
 # Flags that take no value, per cli/commandLine.ts CONTEXT_BOOLEAN_FLAGS.
 BOOLEAN_FLAGS = {"--json", "--dry-run", "--help", "--recursive"}
 SUBCOMMANDS = {"tools", "use", "doctor", "vaults", "playbook", "install", "uninstall"}
-PLACEHOLDER = re.compile(r"[<>{}$]|\.\.\.|…")
+PLACEHOLDER = re.compile(r"[<>{}$\[\]]|\.\.\.|…")
 NEXUS_LINE = re.compile(r"(?:^|[\s`(])nexus\s")
 
 
@@ -184,43 +184,53 @@ def extract(command_text: str) -> list[tuple[str, list[str]]]:
     return [(kind, command) for command in split_commands(remainder)]
 
 
+def check_command(
+    where: str, kind: str, tokens: list[str], commands: set[str], aliases: set[str]
+) -> tuple[str | None, bool]:
+    """Return (violation or None, counted) for one parsed command."""
+    if not tokens or PLACEHOLDER.search(" ".join(tokens)):
+        return None, False
+    agent = tokens[0]
+    if agent == "--help":
+        return None, False
+    tool = tokens[1] if len(tokens) > 1 and not tokens[1].startswith("-") else None
+
+    if agent not in aliases:
+        close = difflib.get_close_matches(agent, sorted(aliases), n=2)
+        suggestion = " or ".join(f"'{c}'" for c in close)
+        hint = f" Did you mean {suggestion}?" if close else ""
+        return f"{where}: unknown agent alias '{agent}'.{hint}", True
+    if tool is None:
+        if kind == "use":
+            return f"{where}: 'nexus use -- {agent}' names no tool", True
+        return None, True
+
+    full = f"{agent} {tool}"
+    if full not in commands:
+        close = difflib.get_close_matches(
+            full, sorted(c for c in commands if c.startswith(agent + " ")), n=2
+        )
+        suggestion = " or ".join(f"'{c}'" for c in close)
+        hint = f" Did you mean {suggestion}?" if close else ""
+        return f"{where}: no such command '{full}'.{hint}", True
+    return None, True
+
+
 def check_file(path: Path, commands: set[str], aliases: set[str]) -> tuple[list[str], int, int]:
     violations: list[str] = []
     checked = skipped = 0
     for number, line in logical_lines(path.read_text(encoding="utf-8")):
-        for kind, tokens in extract(line):
-            if not tokens:
-                continue
-            raw = " ".join(tokens)
-            if PLACEHOLDER.search(raw):
-                skipped += 1
-                continue
-            agent = tokens[0]
-            tool = tokens[1] if len(tokens) > 1 and not tokens[1].startswith("-") else None
-            if agent == "--help":
-                continue
-            checked += 1
-            if agent not in aliases:
-                close = difflib.get_close_matches(agent, sorted(aliases), n=2)
-                hint = f" Did you mean {' or '.join(close)}?" if close else ""
-                violations.append(
-                    f"{path}:{number}: unknown agent alias '{agent}'.{hint}"
+        for command_text in invocations(line):
+            for kind, tokens in extract(command_text):
+                violation, counted = check_command(
+                    f"{path}:{number}", kind, tokens, commands, aliases
                 )
-                continue
-            if tool is None:
-                if kind == "use":
-                    violations.append(
-                        f"{path}:{number}: 'nexus use -- {agent}' names no tool"
-                    )
-                continue
-            full = f"{agent} {tool}"
-            if full not in commands:
-                close = difflib.get_close_matches(
-                    full, sorted(c for c in commands if c.startswith(agent + " ")), n=2
-                )
-                suggestion = " or ".join(f"'{c}'" for c in close)
-                hint = f" Did you mean {suggestion}?" if close else ""
-                violations.append(f"{path}:{number}: no such command '{full}'.{hint}")
+                if counted:
+                    checked += 1
+                elif tokens:
+                    skipped += 1
+                if violation:
+                    violations.append(violation)
     return violations, checked, skipped
 
 
