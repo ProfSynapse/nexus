@@ -7,17 +7,36 @@ classes of defect live only past that line — a plugin that fails to initialise
 on an installed build, a value that flowed through every layer and never
 painted, a view that read its data source before hydration finished.
 
-**Status: documented, never run.** These commands were written from the Obsidian
-CLI's published developer commands and the design plan at
-docs/plans/obsidian-cli-verification-plan.md, on a machine with no Obsidian
-installed. No step below has been executed end to end. The first person to run
-it MUST correct what is wrong here and log the correction in
-`../refinement-log.md`.
+**Status: run end to end.** First executed 2026-08-14 against Obsidian 1.13.7,
+headless in a Linux container (`headless-obsidian.md`), where it immediately
+surfaced a cold-start ordering bug no Jest lane could see. Corrections to these
+command shapes go in `../refinement-log.md` — several already have.
+
+## The packaged form: `npm run verify:obsidian`
+
+Steps 2, 3, 6 and 8's first exit condition are automated in
+`<repo>/scripts/verify-in-obsidian.mjs`: build → `plugin:reload` →
+`dev:errors` (fails if non-empty) → `dev:screenshot` into `test-artifacts/`.
+
+```bash
+npm run verify:obsidian -- --vault <name>              # full loop
+npm run verify:obsidian -- --vault <name> --skip-build # reuse the bundle on disk
+```
+
+Use it as the outer gate — the release protocol does — and use this protocol
+for everything it deliberately does not do: driving the change (step 5),
+escalating past a reload (step 4), and diagnosing what `dev:errors` reported.
+
+It exits 0 both when it verified and when Obsidian is unavailable, so **read its
+last line, not just its exit code**: `VERIFIED in the running app` versus
+`SKIPPED — …`. Pass `--require-obsidian` on a machine that is supposed to have
+Obsidian (the headless container) to turn a skip into a failure.
 
 ## Preconditions
 
-- Obsidian **≥ 1.12.4** (the CLI is generally available from that version) with
-  `obsidian` on PATH. Desktop only.
+- Obsidian **≥ 1.12.4** (the CLI is generally available from that version) on
+  PATH. The binary is `obsidian` on some installs and `obsidian-cli` on others —
+  check both before concluding it is missing. Desktop only.
 - The `nexus` command, if you intend to drive tools from the shell. It is
   installed from the plugin's own settings: Get started → External agents →
   Local CLI.

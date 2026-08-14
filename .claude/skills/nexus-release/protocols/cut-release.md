@@ -100,6 +100,35 @@ npx jest tests/unit/shippedGuidanceCommands.test.ts   # always
 npm test                                              # for anything non-trivial
 ```
 
+Then verify the built artifact **in a running Obsidian**, which no Jest lane can
+do — every lane resolves `obsidian` to a hand-written mock, so a green suite says
+nothing about whether the plugin still loads in the app:
+
+```bash
+npm run verify:obsidian -- --skip-build --vault <your test vault>
+```
+
+`--skip-build` reuses the bundle step 6 just produced. It reloads the plugin,
+fails on a non-empty `dev:errors`, and drops a screenshot in `test-artifacts/`.
+
+Read its last line before moving on. It exits **0 in two different situations**,
+and they are not the same result:
+
+| Output | Meaning |
+|---|---|
+| `VERIFIED in the running app` | the plugin loaded and `dev:errors` was clean |
+| `SKIPPED — …` | no Obsidian here (or too old, or not running). **Nothing was verified.** |
+
+A `SKIPPED` is not a blocker — releasing from a machine without Obsidian is
+still fine, which is why this step cannot fail for you — but it does mean this
+class of defect is unguarded for that release, and a startup defect is exactly
+what has shipped past a green suite before. If you have Obsidian, make it say
+VERIFIED.
+
+The vault it reloads is whatever build is installed in that vault's
+`.obsidian/plugins/nexus/`. Unless that folder is a symlink to this checkout, run
+your deploy step first or you have verified an older bundle.
+
 ### 9. Commit and push
 ```bash
 git add <the files from step 7>
@@ -156,6 +185,9 @@ Anything wrong → `recover.md`.
   by editing the release afterwards.
 - Anti-pattern: treating a green `npm run build` as proof the suite passes. The
   build does not run Jest and neither does the workflow.
+- Anti-pattern: reading only the exit code of `npm run verify:obsidian`. It exits
+  0 both when it verified the app and when it found no Obsidian to verify
+  against; only the last line distinguishes them.
 
 ## Next
 Release verified → `self-refine.md`. Release broken → `recover.md`.

@@ -112,6 +112,20 @@ and then misbehaves on a real vault at startup.
 Phase 2's gate matters more than it sounds: a smoke test that has never failed
 has not been shown to work.
 
+### 5.1 Implementation status (2026-08-14)
+
+| Deliverable | State |
+|---|---|
+| §4.1 `scripts/verify-in-obsidian.mjs` + `npm run verify:obsidian` | **Built.** Preconditions covered by `tests/unit/verifyInObsidianScript.test.ts` |
+| §4.2 `tests/debug/obsidian-live-smoke.test.ts` | Not built |
+| §4.3 `/nexus-verify` skill | Not built — the manual loop lives in `nexus-testing`'s `live-loop.md`, and `headless-obsidian.md` covers standing up an instance where there is none |
+| §4.4 Pre-release gate | **Built.** `nexus-release`'s `cut-release.md` step 8 calls it before the tag |
+
+Phase 0 turned out not to be a hard prerequisite: the script treats a missing,
+too-old or unreachable Obsidian as a *skip* (exit 0 with a notice), so it is safe
+in CI and on a contributor's machine without the app. Only `--require-obsidian`
+turns those into failures.
+
 ## 6. Honest limitation — this does NOT cover mobile crashes
 
 `dev:mobile on` emulates the mobile *environment*: `Platform.isMobile`, touch,
