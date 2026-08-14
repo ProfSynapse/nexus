@@ -2,7 +2,7 @@ import { Plugin, TFile, prepareFuzzySearch } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
-import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUtils';
+import { isGlobPattern, globToRegex, normalizePath, isWithinPathScope } from '../../../utils/pathUtils';
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
 import { CommonParameters } from '../../../types';
@@ -372,11 +372,8 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           .map(p => normalizePath(p));
 
         filteredResults = semanticResults.filter(result => {
-          const matchesLiteral = literalPaths.some(path => {
-            // Empty path (from "/") matches everything
-            if (path === '') return true;
-            return result.notePath.startsWith(path);
-          });
+          // Anchored to a folder boundary: `_Base` must not admit `_Baseball/`.
+          const matchesLiteral = literalPaths.some(path => isWithinPathScope(result.notePath, path));
           const matchesGlob = globPatterns.some(regex => regex.test(result.notePath));
           return matchesLiteral || matchesGlob;
         });
@@ -441,11 +438,8 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         .map(p => normalizePath(p));
 
       allFiles = allFiles.filter(file => {
-        const matchesLiteral = literalPaths.some(path => {
-          // Empty path (from "/") matches everything
-          if (path === '') return true;
-          return file.path.startsWith(path);
-        });
+        // Anchored to a folder boundary: `_Base` must not admit `_Baseball/`.
+        const matchesLiteral = literalPaths.some(path => isWithinPathScope(file.path, path));
         const matchesGlob = globPatterns.some(regex => regex.test(file.path));
         return matchesLiteral || matchesGlob;
       });

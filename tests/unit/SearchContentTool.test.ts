@@ -311,6 +311,50 @@ describe('SearchContentTool — keyword ranking', () => {
     expect(results).toEqual([]);
   });
 
+  /**
+   * The `paths` filter compared with a bare `startsWith`, which is a string
+   * test rather than a folder test: scoping to `_Base` also pulled in every
+   * sibling folder whose name begins the same way, and the extra results look
+   * exactly like legitimate ones.
+   *
+   * The two fixtures score differently on purpose so `rank()` is asserting the
+   * scope rather than tripping its own tie guard.
+   */
+  describe('literal path scopes are anchored to a folder boundary', () => {
+    const NEIGHBOURS: VaultFile[] = [
+      {
+        path: '_Base/quarterly report.md',
+        content: 'The quarterly revenue figures are attached in full.'
+      },
+      {
+        path: '_Baseball/roster.md',
+        content: 'Revenue from ticket sales was up.'
+      }
+    ];
+
+    it('excludes a sibling folder whose name merely starts with the scope', async () => {
+      const results = await rank(NEIGHBOURS, { query: 'quarterly revenue', paths: ['_Base'] });
+
+      expect(results.map(entry => entry.filePath)).toEqual(['_Base/quarterly report.md']);
+    });
+
+    it('accepts the same scope written with a trailing slash', async () => {
+      const withSlash = await rank(NEIGHBOURS, { query: 'quarterly revenue', paths: ['_Base/'] });
+      const withoutSlash = await rank(NEIGHBOURS, { query: 'quarterly revenue', paths: ['_Base'] });
+
+      expect(withoutSlash.map(entry => entry.filePath)).toEqual(withSlash.map(entry => entry.filePath));
+    });
+
+    it('still searches the whole vault for the root scope', async () => {
+      const results = await rank(NEIGHBOURS, { query: 'quarterly revenue', paths: ['/'] });
+
+      expect(results.map(entry => entry.filePath).sort()).toEqual([
+        '_Base/quarterly report.md',
+        '_Baseball/roster.md'
+      ]);
+    });
+  });
+
   it('documents matchType in the result schema', () => {
     const tool = createTool([]);
 

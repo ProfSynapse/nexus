@@ -40,6 +40,7 @@
 import { Plugin, TFile } from 'obsidian';
 import { SearchContentTool, ContentSearchParams, ContentSearchResult } from '../../src/agents/searchManager/tools/searchContent';
 import { EmbeddingService } from '../../src/services/embeddings/EmbeddingService';
+import { isWithinPathScope } from '../../src/utils/pathUtils';
 
 const BASE_CONTEXT = {
   workspaceId: 'default',
@@ -367,5 +368,54 @@ describe('SearchContentTool — semantic search scoping (#323)', () => {
 
     expect(raw.success).toBe(true);
     expect(results).toEqual([]);
+  });
+});
+
+/**
+ * A separate defect in the same filter: the literal-path branch compared with a
+ * bare `startsWith`, which is not a folder test. Scoping to `_Base` also
+ * admitted `_Baseball/`, and the extra results are indistinguishable from
+ * legitimate hits.
+ *
+ * `_Baseball/roster.md` outranks every note under `_Base/` in the fixture, so a
+ * leak shows up at the top of the list rather than somewhere in the tail.
+ */
+describe('SearchContentTool — literal path scopes are anchored to a folder boundary', () => {
+  it('excludes a sibling folder whose name merely starts with the scope', async () => {
+    const { paths } = await search({ paths: ['_Base'] });
+
+    expect(paths).not.toContain('_Baseball/roster.md');
+    expect(paths).toEqual([
+      '_Base/finance-notes.md',
+      '_Base/deep/ledger.md',
+      '_Base/summary.md'
+    ]);
+  });
+
+  it('accepts the same scope written with a trailing slash', async () => {
+    const withSlash = await search({ paths: ['_Base/'] });
+    const withoutSlash = await search({ paths: ['_Base'] });
+
+    expect(withoutSlash.paths).toEqual(withSlash.paths);
+  });
+
+  it('still admits the neighbouring folder when it is the scope', async () => {
+    const { paths } = await search({ paths: ['_Baseball'] });
+
+    expect(paths).toEqual(['_Baseball/roster.md']);
+  });
+});
+
+describe('isWithinPathScope', () => {
+  it.each([
+    ['_Base/notes.md', '_Base', true],
+    ['_Base/notes.md', '_Base/', true],
+    ['_Base', '_Base', true],
+    ['_Baseball/roster.md', '_Base', false],
+    ['_Basement.md', '_Base', false],
+    ['Other/note.md', '_Base', false],
+    ['anything/at/all.md', '', true]
+  ])('%s within %s -> %s', (path, scope, expected) => {
+    expect(isWithinPathScope(path, scope)).toBe(expected);
   });
 });
