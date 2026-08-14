@@ -38,6 +38,27 @@ A read raced startup hydration. Await `waitForQueryReady()` (optional on
 with `typeof adapter.waitForQueryReady === 'function'`. TaskBoardDataController,
 TaskService, DualBackendExecutor and ProjectsManagerView all do this correctly.
 
+## "I awaited `waitForQueryReady()` and it still raced / hung for two minutes"
+
+Awaiting the gate is only half of it. Two ways it still bites:
+
+- **The gate never opens.** `isQueryReady()` is false while the hydration phase is
+  `running`, and `onProgress` is what puts it there. A rebuild path that reports
+  progress must also end the phase (`complete()`), or every waiter burns
+  `DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS` (120s) and resolves **false** for the
+  rest of the session. This shipped once: only the blocking rebuild completed the
+  phase, so the background one — the fresh-vault path — left the adapter
+  permanently not-query-ready.
+- **The boolean is discarded.** `waitForQueryReady()` returns false on timeout and
+  on a failed init. `await adapter.waitForQueryReady()` with the result thrown away
+  reads as a gate but is a sleep. Branch on it: if `isReady()` is also false the
+  connection does not exist, so report `getInitError()` rather than letting the
+  first statement fail with the generic "Database not initialized".
+
+Verify with a real cold start, not a plugin reload: delete the cache
+(`indexedDB` database `nexus-cache-blob-store` on desktop) so init takes the
+full-rebuild branch, then restart.
+
 ## "A filter silently misses records that obviously match"
 
 The query filtered on a column while the field it needs lives only in JSON content,

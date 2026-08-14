@@ -1,9 +1,10 @@
 # Protocol: verify mobile safety
 
 Context: a change is ready and touched imports, the startup path, DOM, paths or
-dependencies. This is the gate before it lands. Nothing else in CI catches the
-init-crash class, so skipping this means the first report comes from a user's
-phone.
+dependencies. This is the gate before it lands. `npm run build` now runs the
+reachability checker for you (via `npm run lint` → `lint:mobile`), so a violation
+cannot reach a release build — but the build is the last line, not the first.
+Working the steps below is how you find it before the build does.
 
 ## Mission
 Prove the change did not put anything on the mobile init path that mobile cannot
@@ -14,6 +15,8 @@ run, and did not break a store rule.
 1. **Run the reachability checker. It MUST exit 0.**
    ```bash
    python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+   # or, identically, the wired-in form the build uses:
+   npm run lint:mobile
    ```
    A violation prints the offending file and line plus the import chain from
    `src/main.ts` that made it reachable. Fix it with
@@ -38,7 +41,9 @@ run, and did not break a store rule.
    a guarantee.
 
 4. **Run lint.** It carries the store rules that are mechanical, including the
-   direct-mutation tripwire, and `npm run build` runs it first anyway.
+   direct-mutation tripwire and the `src/settings/components/**` import
+   blocklist, and then re-runs step 1 as `lint:mobile`. `npm run build` runs it
+   first anyway.
    ```bash
    npm run lint
    ```

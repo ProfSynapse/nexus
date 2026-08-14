@@ -6,10 +6,15 @@ description: Keep Nexus loading on mobile and compliant with the Obsidian plugin
 # Nexus mobile & plugin-store safety
 
 Nexus ships `isDesktopOnly: false`, so `main.js` runs on phones with no Node.js.
-The defect this skill exists to prevent has no compiler, no type, and no CI gate
-behind it: a static import executes during module init, *before* any
-`Platform.isDesktop` check, so one import on the startup path takes the plugin
-down at launch on every phone — from a diff that looks unrelated.
+The defect this skill exists to prevent has no compiler and no type behind it: a
+static import executes during module init, *before* any `Platform.isDesktop`
+check, so one import on the startup path takes the plugin down at launch on every
+phone — from a diff that looks unrelated.
+
+The reachability checker below is now wired into the repo's own gate: `npm run
+lint` runs `lint:obsidian` (ESLint) then `lint:mobile` (this checker), and `npm
+run build` runs `npm run lint` first. A violation fails the build. Run the
+checker directly anyway while you work — the gate is the floor, not the loop.
 
 ## Workflow
 
@@ -30,14 +35,27 @@ this page; each protocol carries the steps and the checks.
    the change done — it is the only guard for this defect class:
    ```bash
    python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+   # same check, the way the build invokes it (finds a Python 3 for you):
+   npm run lint:mobile
    ```
+   `scripts/check-mobile-imports.mjs` in the repo is a launcher, not a second
+   implementation — it locates a Python 3 and runs this exact script, preferring
+   the `.skills/` copy. There is one checker; edit it here.
+
    It walks static imports from `src/main.ts`, follows no `await import()`, and
    exits non-zero when a Node built-in is reachable from init. Run
    `--help` for `--trace <file>` (is this module on the startup path, and via
    what chain) and `--packages` (which npm packages init loads).
-3. `npm run lint` catches the store rules that are mechanical, and `npm run
-   build` runs it first. A green lint says nothing about reachability, and a
-   green checker says nothing about the store rules. Run both.
+3. `npm run lint` now runs both halves: ESLint for the store rules that are
+   mechanical, then the reachability checker. A green ESLint says nothing about
+   reachability, and a green checker says nothing about the store rules — which
+   is why the composed script runs both, and why `npm run build` calls it.
+   ESLint additionally hard-errors on Node built-in and Node-dependent package
+   imports under `src/settings/components/**` (issue #221): those shared UI
+   primitives are reachable from init today, but the per-file ban holds even if
+   the import graph shifts. The blocklists are the `MOBILE_BANNED_*` arrays at
+   the top of `eslint.config.mjs`; widen the guard by adding a glob to that
+   block's `files`.
 4. NEVER treat `obsidian dev:mobile on` as evidence of mobile safety. It emulates
    `Platform.isMobile`, touch and layout inside Electron, where `require('fs')`
    still resolves — this crash class cannot reproduce there. See
