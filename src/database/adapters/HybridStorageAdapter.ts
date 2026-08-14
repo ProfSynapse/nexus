@@ -696,6 +696,20 @@ export class HybridStorageAdapter implements IStorageAdapter {
   }
 
   /**
+   * Subscribe to "the cache database was thrown away and rebuilt", fired at the
+   * end of a successful `rebuildCache()`. Derived indexes that the JSONL replay
+   * does not restore (the notes query index) rebuild themselves from here.
+   */
+  onCacheRebuilt(callback: () => void): EventRef {
+    return this.maintenance.onCacheRebuilt(callback);
+  }
+
+  /** Remove a subscription previously added via `onCacheRebuilt`. */
+  offCacheRebuilt(ref: EventRef): void {
+    this.maintenance.offCacheRebuilt(ref);
+  }
+
+  /**
    * Start the JSONL vault watcher. Idempotent. The watcher handle stays
    * adapter-owned (`jsonlVaultWatcher`); the service operates through
    * accessor callbacks.

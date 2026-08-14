@@ -231,6 +231,19 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             // failure surfaces through this service's own rejection path
             // (ServiceRegistrar logs it) instead of as an unhandled rejection.
             await builder.startInBackground();
+
+            // "Nexus: Rebuild cache" closes the connection, deletes the cache
+            // blob and reopens an empty database. The JSONL replay restores
+            // workspaces/conversations/tasks but knows nothing about the notes
+            // index, whose source is the vault — so it has to rebuild itself or
+            // it answers "no notes" for the rest of the session.
+            const rebuildable = adapter as unknown as { onCacheRebuilt?: (cb: () => void) => unknown };
+            if (typeof rebuildable.onCacheRebuilt === 'function') {
+                rebuildable.onCacheRebuilt(() => {
+                    void builder.rebuildAfterCacheReset();
+                });
+            }
+
             return builder;
         })
     },

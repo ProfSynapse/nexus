@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 13
+ * Current Version: 14
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -461,7 +461,55 @@ CREATE TABLE IF NOT EXISTS skills (
 
 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
 
+-- ==================== NOTES QUERY INDEX ====================
+-- Derived, rebuildable index of the vault's markdown notes and their frontmatter.
+-- The vault is the source of truth; NotesIndexBuilder walks it at startup and
+-- keeps these rows fresh from metadataCache/vault events.
+--
+-- These tables are owned by the schema (not created ad hoc) because every path
+-- that creates a database must produce them: "Nexus: Rebuild cache" reopens from
+-- SCHEMA_SQL alone, and a database without them fails every subsequent note write
+-- with "no such table: notes".
+--
+-- FK enforcement is OFF on the shared connection (SQLite's per-connection
+-- default), so the note_properties -> notes relationship is documented but NOT
+-- cascaded. deleteNote() removes property rows explicitly before the note row.
+-- See docs/plans/notes-query-index-plan.md §5 / §6.
+
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY,
+  path TEXT NOT NULL UNIQUE,
+  basename TEXT NOT NULL,
+  folder TEXT NOT NULL,
+  ext TEXT NOT NULL,
+  title TEXT,
+  ctime INTEGER NOT NULL,
+  mtime INTEGER NOT NULL,
+  size INTEGER NOT NULL,
+  tags_json TEXT,
+  links_json TEXT,
+  frontmatter_json TEXT,
+  content_hash TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder);
+CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime);
+
+CREATE TABLE IF NOT EXISTS note_properties (
+  note_id INTEGER NOT NULL REFERENCES notes(id),
+  key TEXT NOT NULL,
+  key_raw TEXT NOT NULL,
+  value_text TEXT,
+  value_num REAL,
+  value_type TEXT NOT NULL,
+  position INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_np_key_text ON note_properties(key, value_text);
+CREATE INDEX IF NOT EXISTS idx_np_key_num ON note_properties(key, value_num);
+CREATE INDEX IF NOT EXISTS idx_np_note ON note_properties(note_id);
+
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (13, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (14, strftime('%s', 'now') * 1000);
 `;

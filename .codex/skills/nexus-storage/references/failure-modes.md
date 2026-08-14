@@ -104,3 +104,31 @@ Two user-facing commands, both in src/core/commands/MaintenanceCommandManager.ts
 answer when a vault finishes syncing after init), and **Nexus: Rebuild cache**
 wipes and replays it. Prefer refresh first; rebuild is the bigger hammer and is
 safe, because everything it destroys is rebuildable by definition.
+
+## "no such table: <something>" after a cache rebuild
+
+**Nexus: Rebuild cache is a fresh-install path, not a data-clearing path.**
+`StorageMaintenanceService.rebuildCache()` calls `close()`, deletes the cache blob,
+then `initialize()` — which creates a **brand-new database from `SCHEMA_SQL`**.
+Anything not defined there is gone: not its rows, the table itself.
+
+A table created ad hoc by a service (`exec(SOME_DDL)` at startup) therefore
+survives exactly until the first rebuild, after which every write to it throws
+`SQLite3Error: no such table: …` for the rest of the session — the service holds
+the same `SQLiteCacheManager` object, so nothing looks disconnected, and a
+still-subscribed event handler keeps writing. This shipped once: the notes query
+index kept the DDL to itself on the "it's rebuildable, it doesn't need a
+migration" reasoning (fixed in migration v14; see docs/plans/notes-query-index-plan.md §5).
+
+Rebuildable describes where the *data* comes from. It says nothing about who owns
+the *table*. If any code issues SQL against a table, that table belongs in
+`schema.ts` **and** in `MIGRATIONS` — run `change-schema.md`, never a private DDL
+constant.
+
+The second half of the same failure is quieter: after a rebuild the table exists
+but is empty, and an index whose source is the vault (not the JSONL event store)
+is not repopulated by the replay. Subscribe to the adapter's `onCacheRebuilt`
+signal and rebuild, or the index silently answers "nothing" until the next load.
+
+Reproduce it in the running app — no Jest lane covers this seam:
+`adapter.rebuildCache()`, then touch a note, then read `dev:errors`.

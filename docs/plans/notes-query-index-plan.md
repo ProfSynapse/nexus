@@ -68,7 +68,7 @@ What breaks, in order:
 Obsidian itself (metadataCache/explorer/graph) strains well before 1M, so ~100–200k covers
 essentially every real vault, power users included.
 
-## 5. Schema (in-memory tables; not in the persisted blob)
+## 5. Schema (owned tables; rows rebuilt from the vault, not replayed from JSONL)
 
 ```sql
 -- one row per note. integer id keeps the EAV table small (no repeated TEXT path).
@@ -110,8 +110,17 @@ CREATE INDEX IF NOT EXISTS idx_np_note     ON note_properties(note_id);
 - **Typing pass (load-bearing):** YAML frontmatter is untyped — on upsert, coerce each value
   (number; ISO-8601 date → epoch ms in `value_num`; boolean; list → one row per element; object),
   always storing a `value_text`. This is what makes `due < <epoch>` and numeric comparisons work.
-- **No schema migration / `CURRENT_SCHEMA_VERSION` bump:** these tables are created in the
-  in-memory DB at startup, not part of the persisted v-schema. (`CREATE TABLE IF NOT EXISTS`.)
+- ~~**No schema migration / `CURRENT_SCHEMA_VERSION` bump:** these tables are created in the
+  in-memory DB at startup, not part of the persisted v-schema. (`CREATE TABLE IF NOT EXISTS`.)~~
+  **SUPERSEDED — this decision was wrong and shipped a bug.** "Rebuildable" is about where the
+  data comes from; it does not excuse the tables from the schema. Only `ensureSchema()` created
+  them, and it runs once, at notesIndex service start. "Nexus: Rebuild cache" closes the
+  connection, deletes the cache blob and reopens a database from `SCHEMA_SQL` alone — which had
+  neither table — while the still-subscribed `NotesIndexBuilder` kept writing on every
+  metadataCache/vault event. Every note create/edit/rename/delete for the rest of the session
+  then failed with `SQLite3Error: no such table: notes`. Both tables now live in `schema.ts` and
+  `SchemaMigrator` migration **v14**, so every path that creates a database creates them; the
+  adapter also emits `cache-rebuilt` so the index repopulates instead of going silently empty.
 
 ## 6. `NotesIndexService` — build, freshness, lifecycle
 
@@ -207,7 +216,9 @@ useTools({
 
 - ❌ Filter→SQL compiler (agent writes the `WHERE`).
 - ❌ Formula/expression evaluator + Bases function table (SQLite + agent SQL replace it).
-- ❌ Schema migration / blob persistence for the index (in-memory rebuild instead).
+- ❌ ~~Schema migration / blob persistence for the index (in-memory rebuild instead).~~
+  Superseded — see §5: the tables are owned by `SCHEMA_SQL` + migration v14. The *rows* are still
+  rebuilt from the vault rather than replayed from JSONL; only the table definitions moved.
 - ❌ Body-content indexing (`searchContent` owns that; content read on demand).
 
 ## 9. Optional companion: `.base` round-trip (`baseSet`)

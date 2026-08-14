@@ -85,9 +85,11 @@ export class StorageMaintenanceService {
   private rebuildInFlight: Promise<void> | null = null;
 
   /**
-   * Typed event bus for adapter consumers. Currently emits one event:
+   * Typed event bus for adapter consumers. Emits two events:
    *   `external-sync` — payload: { result: SyncResult, modified: ModifiedStream[] }
-   * fired after a watcher-triggered sync completes.
+   *     fired after a watcher-triggered sync completes.
+   *   `cache-rebuilt` — no payload, fired after a successful `rebuildCache()`
+   *     so derived indexes the JSONL replay does not restore can rebuild.
    */
   private readonly externalEvents = new Events();
 
@@ -140,6 +142,14 @@ export class StorageMaintenanceService {
         }
 
         options.onProgress?.('Complete', 1, 1);
+
+        // Tell derived indexes their rows are gone. `initialize()` above opened a
+        // BRAND NEW database from SCHEMA_SQL, so every table the JSONL replay
+        // does not repopulate — the notes query index in particular — is now
+        // empty. Without this signal the index stays empty and silently answers
+        // "no notes" until the next plugin load. Fired after the rebuild
+        // succeeds; a failed rebuild throws above and never reaches here.
+        this.externalEvents.trigger('cache-rebuilt');
       } finally {
         // Clear on both success and failure so a follow-up rebuild can
         // re-run; the original error (if any) still rejects this promise.
@@ -170,6 +180,26 @@ export class StorageMaintenanceService {
 
   /** Remove a subscription previously added via `onExternalSync`. */
   offExternalSync(ref: EventRef): void {
+    this.externalEvents.offref(ref);
+  }
+
+  /**
+   * Subscribe to "the cache database was thrown away and rebuilt". Fired at the
+   * end of a successful `rebuildCache()`, once the new database is open and the
+   * JSONL replay has finished.
+   *
+   * Only derived indexes that are NOT rebuilt from JSONL need this — the notes
+   * query index is built from the vault, so nothing in the replay restores it.
+   * Returns an Obsidian EventRef; pass it to `offCacheRebuilt()`.
+   */
+  onCacheRebuilt(callback: () => void): EventRef {
+    return this.externalEvents.on('cache-rebuilt', () => {
+      callback();
+    });
+  }
+
+  /** Remove a subscription previously added via `onCacheRebuilt`. */
+  offCacheRebuilt(ref: EventRef): void {
     this.externalEvents.offref(ref);
   }
 

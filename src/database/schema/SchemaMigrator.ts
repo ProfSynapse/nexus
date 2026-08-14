@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export interface Migration {
   version: number;
@@ -463,6 +463,52 @@ export const MIGRATIONS: Migration[] = [
         UNIQUE(provider, name)
       )`,
       'CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)'
+    ]
+  },
+
+  // Version 13 -> 14: Add the notes query index (`notes` + `note_properties`).
+  // These two tables already existed at runtime — NotesIndexService.ensureSchema()
+  // issued this DDL at startup — but they were absent from SCHEMA_SQL, so every
+  // freshly created database lacked them. "Nexus: Rebuild cache" closes the
+  // connection, deletes the cache blob and reopens from SCHEMA_SQL alone, which
+  // dropped both tables while the still-subscribed NotesIndexBuilder kept writing
+  // to them: `SQLite3Error: no such table: notes` on every subsequent note
+  // create/edit/rename/delete, for the rest of the session. Owning the tables in
+  // the schema makes every database-creating path produce them.
+  // See docs/plans/notes-query-index-plan.md §5 / §6.
+  {
+    version: 14,
+    description: 'Add notes + note_properties tables (notes query index) to the owned schema',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS notes (
+        id INTEGER PRIMARY KEY,
+        path TEXT NOT NULL UNIQUE,
+        basename TEXT NOT NULL,
+        folder TEXT NOT NULL,
+        ext TEXT NOT NULL,
+        title TEXT,
+        ctime INTEGER NOT NULL,
+        mtime INTEGER NOT NULL,
+        size INTEGER NOT NULL,
+        tags_json TEXT,
+        links_json TEXT,
+        frontmatter_json TEXT,
+        content_hash TEXT NOT NULL
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder)',
+      'CREATE INDEX IF NOT EXISTS idx_notes_mtime ON notes(mtime)',
+      `CREATE TABLE IF NOT EXISTS note_properties (
+        note_id INTEGER NOT NULL REFERENCES notes(id),
+        key TEXT NOT NULL,
+        key_raw TEXT NOT NULL,
+        value_text TEXT,
+        value_num REAL,
+        value_type TEXT NOT NULL,
+        position INTEGER
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_np_key_text ON note_properties(key, value_text)',
+      'CREATE INDEX IF NOT EXISTS idx_np_key_num ON note_properties(key, value_num)',
+      'CREATE INDEX IF NOT EXISTS idx_np_note ON note_properties(note_id)'
     ]
   },
 ];

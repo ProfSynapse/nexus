@@ -44,6 +44,8 @@ function makeFakeAdapter(opts: FakeAdapterOptions) {
     transaction: jest.fn(async (fn: () => Promise<unknown>) => fn()),
   };
 
+  const rebuiltSubscribers: Array<() => void> = [];
+
   const adapter = {
     isReady: () => opts.ready,
     getInitError: () => opts.initError ?? null,
@@ -54,9 +56,18 @@ function makeFakeAdapter(opts: FakeAdapterOptions) {
           setTimeout(() => resolve(opts.queryReady), opts.gateDelayMs ?? 0);
         })
     ),
+    onCacheRebuilt: jest.fn((cb: () => void) => {
+      rebuiltSubscribers.push(cb);
+      return {};
+    }),
   };
 
-  return { adapter, sqlite, exec };
+  /** Fire the adapter's cache-rebuilt event the way rebuildCache() does. */
+  const emitCacheRebuilt = () => {
+    for (const cb of rebuiltSubscribers) cb();
+  };
+
+  return { adapter, sqlite, exec, emitCacheRebuilt };
 }
 
 function makeContext(adapter: unknown): ServiceCreationContext {
@@ -128,5 +139,25 @@ describe('notesIndex service definition (startup ordering)', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('re-creates the index when the adapter says the cache was rebuilt', async () => {
+    // "Nexus: Rebuild cache" reopens an empty database. Without this
+    // subscription the index answers "no notes" until the next plugin load —
+    // and before the tables were owned by the schema, every write after a
+    // rebuild threw "no such table: notes".
+    const { adapter, exec, emitCacheRebuilt } = makeFakeAdapter({ queryReady: true, ready: true });
+    const builder = (await notesIndexDefinition().create(makeContext(adapter))) as NotesIndexBuilder;
+
+    expect(adapter.onCacheRebuilt).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledTimes(1);
+
+    emitCacheRebuilt();
+    await new Promise((r) => setTimeout(r, 5));
+
+    // The schema is re-issued against the brand-new connection.
+    expect(exec).toHaveBeenCalledTimes(2);
+    expect(String(exec.mock.calls[1][0])).toContain('CREATE TABLE IF NOT EXISTS notes');
+    builder.stop();
   });
 });

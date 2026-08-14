@@ -84,6 +84,27 @@ export class NotesIndexBuilder {
     });
   }
 
+  /**
+   * Repopulate after "Nexus: Rebuild cache" threw the database away.
+   *
+   * That path closes the connection, deletes the cache blob and reopens from
+   * SCHEMA_SQL, so the notes rows are gone — and nothing in the JSONL replay
+   * restores them, because this index is derived from the vault, not from the
+   * event store. `ensureSchema()` is re-issued (idempotent) so an older cache
+   * that predates the v14 migration still lands somewhere writable, then the
+   * vault walk repopulates. Failures are logged, not thrown: the caller is an
+   * event handler.
+   */
+  async rebuildAfterCacheReset(): Promise<void> {
+    try {
+      await this.service.ensureSchema();
+      await this.buildAll();
+    } catch (error) {
+      this.ready = false;
+      console.error('[NotesIndex] rebuild after cache reset failed; note queries will return nothing:', error);
+    }
+  }
+
   /** Full (re)build: hash-gated upsert of every markdown note, then prune. */
   async buildAll(): Promise<void> {
     const files = this.app.vault.getMarkdownFiles();

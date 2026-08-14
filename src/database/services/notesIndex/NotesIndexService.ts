@@ -2,11 +2,16 @@
  * NotesIndexService — SQLite CRUD over the `notes` + `note_properties` tables.
  *
  * Located at: src/database/services/notesIndex/NotesIndexService.ts
- * The vault is the source of truth; these two tables are a rebuildable, derived,
- * IN-MEMORY index (created via `ensureSchema()` at startup, NOT a persisted
- * v-schema migration — see docs/plans/notes-query-index-plan.md §5 / §6). EAV
+ * The vault is the source of truth; these two tables are a rebuildable, derived
+ * index (see docs/plans/notes-query-index-plan.md §5 / §6). EAV
  * (`note_properties`) gives indexed lookup for arbitrary frontmatter keys;
  * `notes.frontmatter_json` is kept for cheap projection via `json_extract`.
+ *
+ * Rebuildable does NOT mean unowned: both tables live in the canonical schema
+ * (schema.ts + SchemaMigrator v14). They used to be created here and only here,
+ * which meant every freshly created database lacked them — "Nexus: Rebuild
+ * cache" reopens from SCHEMA_SQL alone, and every note write afterwards failed
+ * with "no such table: notes" for the rest of the session.
  *
  * This service is storage-only (mirrors SkillIndexService): it issues SQL and
  * knows nothing about Obsidian. The vault walk + freshness live in
@@ -32,7 +37,15 @@ export interface NoteIndexInput {
   contentHash: string;
 }
 
-/** DDL for the in-memory index. Idempotent; run on every startup. */
+/**
+ * DDL for the index. Idempotent; re-issued at startup and after a cache rebuild
+ * so a database that predates the v14 migration still gets the tables.
+ *
+ * MUST stay identical to the `notes` / `note_properties` definitions in
+ * src/database/schema/schema.ts and SchemaMigrator migration 14 — those are the
+ * definitions every new database actually executes. `NotesIndexSchemaParity`
+ * in tests/unit/NotesIndexService.test.ts fails if the three drift apart.
+ */
 export const NOTES_INDEX_DDL = `
 CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY,
