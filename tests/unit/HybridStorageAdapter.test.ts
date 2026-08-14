@@ -431,8 +431,50 @@ describe('HybridStorageAdapter', () => {
       await pending;
 
       const state = adapter.hydration.getState();
-      expect(state.phase).toBe('running');
+      expect(state.phase).toBe('complete');
       expect(state.error).toBeUndefined();
+    });
+
+    // Regression: a background (non-blocking) startup rebuild used to leave the
+    // hydration phase stuck at `running` — `onProgress` moved it there and only
+    // the blocking path ever completed it. `isQueryReady()` then stayed false
+    // for the rest of the session, so every `waitForQueryReady()` caller waited
+    // out its idle timeout and resolved false. The notes index, which starts on
+    // that gate, then ran `ensureSchema()` against a connection it had been told
+    // was not ready.
+    it('leaves the adapter query-ready after a background startup fullRebuild', async () => {
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => {
+        onProgress('Processing workspaces', 0, 2);
+        onProgress('Processing conversations', 2, 2);
+        return Promise.resolve(successfulRebuild);
+      });
+
+      void adapter.initLifecycle.run(() => runStartupFullRebuild(adapter, false), { blocking: false });
+
+      await expect((adapter as unknown as HybridStorageAdapter).waitForReady()).resolves.toBe(true);
+      expect(adapter.hydration.getState().phase).toBe('complete');
+      expect((adapter as unknown as HybridStorageAdapter).isQueryReady()).toBe(true);
+      await expect((adapter as unknown as HybridStorageAdapter).waitForQueryReady(50)).resolves.toBe(true);
+    });
+
+    it('settles a waiter registered before a background startup fullRebuild finishes', async () => {
+      jest.useFakeTimers();
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => new Promise((resolve) => {
+        onProgress('Processing workspaces', 0, 2);
+        window.setTimeout(() => resolve(successfulRebuild), 20);
+      }));
+
+      void adapter.initLifecycle.run(() => runStartupFullRebuild(adapter, false), { blocking: false });
+      // Registered while the rebuild is mid-flight, exactly like the notes
+      // index service does at startup.
+      const gate = (adapter as unknown as HybridStorageAdapter).waitForQueryReady(10_000);
+
+      await jest.advanceTimersByTimeAsync(20);
+
+      await expect(gate).resolves.toBe(true);
+      expect((adapter as unknown as HybridStorageAdapter).isQueryReady()).toBe(true);
     });
   });
 

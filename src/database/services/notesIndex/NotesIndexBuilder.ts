@@ -76,7 +76,12 @@ export class NotesIndexBuilder {
   async startInBackground(): Promise<void> {
     await this.service.ensureSchema();
     this.subscribe();
-    void this.buildAll();
+    // The walk runs unawaited, so its failure has to be reported here or it
+    // becomes an unhandled rejection and the index is silently empty.
+    void this.buildAll().catch((error) => {
+      this.ready = false;
+      console.error('[NotesIndex] background build failed; note queries will return nothing:', error);
+    });
   }
 
   /** Full (re)build: hash-gated upsert of every markdown note, then prune. */
