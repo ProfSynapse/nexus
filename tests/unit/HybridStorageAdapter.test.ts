@@ -607,6 +607,80 @@ describe('HybridStorageAdapter', () => {
       await expect(gate).resolves.toBe(true);
       expect((adapter as unknown as HybridStorageAdapter).isQueryReady()).toBe(true);
     });
+
+    // Regression (#158 gap 1): the idle watchdog used to be armed only when
+    // `isBlockingHydration` was true. But `updateProgress` moves the phase to
+    // `running` on BOTH branches, and `running` is not query-ready — so a
+    // background rebuild that reported progress and then stalled left
+    // `isQueryReady()` false indefinitely with nothing to fail it. Every
+    // `waitForQueryReady()` caller then burned its full idle timeout, and the
+    // rebuild promise never settled at all.
+    it('fails hydration when a background startup fullRebuild stalls after progress', async () => {
+      jest.useFakeTimers();
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => {
+        onProgress('Processing workspaces', 0, 2);
+        // Never resolves and never reports progress again.
+        return new Promise(() => undefined);
+      });
+
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        const pending = runStartupFullRebuild(adapter, false);
+        const rejection = expect(pending).rejects.toThrow('made no progress');
+
+        await jest.advanceTimersByTimeAsync(50);
+        await rejection;
+
+        const state = adapter.hydration.getState();
+        expect(state.phase).toBe('error');
+        expect(state.error).toContain('made no progress');
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+
+    it('settles background-rebuild query-ready waiters as failed when the rebuild stalls', async () => {
+      jest.useFakeTimers();
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => {
+        onProgress('Processing workspaces', 0, 2);
+        return new Promise(() => undefined);
+      });
+
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        void adapter.initLifecycle.run(() => runStartupFullRebuild(adapter, false), { blocking: false });
+        // The notes index registers this gate while the rebuild is mid-flight.
+        const gate = (adapter as unknown as HybridStorageAdapter).waitForQueryReady(10_000);
+
+        // Only the watchdog's idle timeout elapses — far short of the gate's
+        // own 10 s budget, so a `true`/late resolution here means the watchdog
+        // never armed.
+        await jest.advanceTimersByTimeAsync(50);
+
+        await expect(gate).resolves.toBe(false);
+        await expect((adapter as unknown as HybridStorageAdapter).waitForReady()).resolves.toBe(false);
+        expect((adapter as unknown as HybridStorageAdapter).isQueryReady()).toBe(false);
+        expect((adapter as unknown as HybridStorageAdapter).getInitError()?.message).toContain('made no progress');
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+
+    it('still leaves a background rebuild that never reports progress query-ready while it runs', async () => {
+      jest.useFakeTimers();
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockReturnValue(new Promise(() => undefined));
+
+      void adapter.initLifecycle.run(() => runStartupFullRebuild(adapter, false), { blocking: false });
+
+      await jest.advanceTimersByTimeAsync(200);
+
+      // Phase never left `idle`, which is query-ready, so the watchdog must
+      // stay inert rather than failing a rebuild that has nothing to stall on.
+      expect(adapter.hydration.getState().phase).toBe('idle');
+    });
   });
 
   describe('reconcileMissingConversations', () => {
