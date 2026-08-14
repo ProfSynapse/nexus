@@ -22,6 +22,7 @@ import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
+import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 
 type JsonObject = Record<string, unknown>;
 
@@ -105,6 +106,10 @@ interface GoogleUsage {
 }
 
 interface GoogleResponse {
+  /** Present instead of candidates when the prompt itself was blocked. */
+  promptFeedback?: {
+    blockReason?: string;
+  };
   candidates?: Array<{
     finishReason?: string;
     content?: {
@@ -315,6 +320,22 @@ export class GoogleAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Google',
+        // generateContent?alt=sse answers HTTP 200 and then emits a google.rpc.Status
+        // frame -- {"error":{"code":400,"message":"...","status":"INVALID_ARGUMENT"}} --
+        // when the request is rejected after the connection is established. A prompt
+        // blocked by safety arrives as promptFeedback.blockReason with no candidates,
+        // which is likewise a dead stream rather than an empty answer.
+        extractError: (chunk) => {
+          const direct = extractStreamErrorMessage(chunk, 'Google streaming error');
+          if (direct) {
+            return direct;
+          }
+          const blockReason = (chunk as GoogleResponse).promptFeedback?.blockReason;
+          if (typeof blockReason === 'string' && blockReason.length > 0) {
+            return `Google blocked this prompt (${blockReason})`;
+          }
+          return null;
+        },
         extractContent: (chunk) => {
           const response = chunk as GoogleResponse;
           // Surface error finish reasons as user-facing content before the stream ends

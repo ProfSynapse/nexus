@@ -306,6 +306,9 @@ export class GithubCopilotAdapter extends BaseAdapter {
           const event = parsed as CopilotSSEEvent;
           return event.choices?.[0]?.finish_reason || null;
         },
+        // The Copilot chat endpoint is OpenAI-compatible: a rejected request after a
+        // 200 (quota, content filter, upstream failure) arrives as {"error":{...}}.
+        extractError: (parsed) => extractStreamErrorMessage(parsed, 'GitHub Copilot streaming error'),
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -410,6 +413,8 @@ export class GithubCopilotAdapter extends BaseAdapter {
     const toolCallsMap = new Map<number, ToolCall>();
     let currentResponseId: string | null = null;
     let isCompleted = false;
+    // Fatal error frame over HTTP 200; thrown after the queue drains.
+    let streamError: string | undefined = undefined;
 
     const parser = createParser((sseEvent) => {
       if (sseEvent.type === 'reconnect-interval' || isCompleted) return;
@@ -436,6 +441,14 @@ export class GithubCopilotAdapter extends BaseAdapter {
         }
         event = parsed;
       } catch {
+        return;
+      }
+
+      // Responses API failures arrive as data frames on an HTTP 200 stream.
+      const errorMessage = extractResponsesApiStreamError(event, 'GitHub Copilot streaming error');
+      if (errorMessage) {
+        streamError = errorMessage;
+        isCompleted = true;
         return;
       }
 

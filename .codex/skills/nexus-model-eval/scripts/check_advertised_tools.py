@@ -9,9 +9,20 @@ second is a trap: the model does exactly what its system prompt says, the
 executor cannot resolve the command to a known tool, and the hallucination
 assertion fails the scenario with "not in the defined tool set".
 
-Run this before attributing any `Hallucinated tool call` failure. If the command
-in the failure appears below, the model was obeying its prompt and the failure
-belongs to the harness, not the model.
+The two lists are meant to agree exactly — the fixtures carry a matching tool
+for every advertised command, and nothing is advertised that production does not
+have. A gap therefore means one of the two files drifted, and any
+`Hallucinated tool call` naming a listed command belongs to the harness, not the
+model. Run this before attributing such a failure.
+
+Comparison is on the CLI form (`content set-property`), not the raw function
+name, because that is what EvalToolExecutor.parseCliCommands resolves on: it
+kebab-cases both halves of `agent_tool` and matches aliases. Comparing raw names
+would flag a command the executor resolves fine.
+
+The reverse direction is reported too: a fixture tool that nothing advertises is
+not a trap, but the model only ever meets it by guessing the agent name in a
+getTools selector, so it is usually drift rather than intent.
 
 This answers a grading question only. Whether a *scenario* is satisfiable is a
 harness question — use `nexus-eval-harness/scripts/check_scenarios.py` for that.
@@ -110,29 +121,49 @@ def main() -> int:
         print(f"error: {PROMPT_REL} not found", file=sys.stderr)
         return 2
 
-    domain = set(NAME_RE.findall(read_const_block((repo / TOOLS_REL).read_text(encoding="utf-8"), "NEXUS_TOOLS")))
-    if not domain:
+    domain_names = set(NAME_RE.findall(read_const_block((repo / TOOLS_REL).read_text(encoding="utf-8"), "NEXUS_TOOLS")))
+    if not domain_names:
         print(f"error: could not read NEXUS_TOOLS from {TOOLS_REL}", file=sys.stderr)
         return 2
 
     suffixes = load_kebab_suffixes(repo)
+    # Resolve on the CLI form, exactly as EvalToolExecutor.parseCliCommands does.
+    domain = {cli_form(name, suffixes) for name in domain_names}
     catalog_block = read_const_block(prompt_path.read_text(encoding="utf-8"), "DEFAULT_TOOL_CATALOG")
     if not catalog_block:
         print(f"error: could not read DEFAULT_TOOL_CATALOG from {PROMPT_REL}", file=sys.stderr)
         return 2
 
     gaps: list[tuple[str, list[str]]] = []
+    advertised_commands: set[str] = set()
     advertised = 0
     for agent, tools_blob in CATALOG_ENTRY_RE.findall(catalog_block):
         commands = QUOTED_RE.findall(tools_blob)
         advertised += len(commands)
-        absent = [cli_form(f"{agent}_{tool}", suffixes) for tool in commands if f"{agent}_{tool}" not in domain]
+        absent = []
+        for tool in commands:
+            command = cli_form(f"{agent}_{tool}", suffixes)
+            advertised_commands.add(command)
+            if command not in domain:
+                absent.append(command)
         if absent:
             gaps.append((agent, absent))
+
+    # Reverse direction: a fixture tool no catalog entry advertises. Not a trap —
+    # the model is never told to call it — but the prompt is its only map, so an
+    # unadvertised fixture tool is normally drift in the other file.
+    unadvertised = sorted(domain - advertised_commands)
 
     if not gaps:
         if not args.quiet_ok:
             print(f"No gap: all {advertised} advertised command(s) are backed by a fixture tool.")
+            if unadvertised:
+                print(
+                    "\nFixture tool(s) the prompt never advertises "
+                    "(reachable only by guessing a getTools selector):"
+                )
+                for command in unadvertised:
+                    print(f"    {command}")
         return 0
 
     total = sum(len(absent) for _, absent in gaps)
@@ -141,6 +172,10 @@ def main() -> int:
     for agent, absent in gaps:
         print(f"  {agent}:")
         for command in absent:
+            print(f"    {command}")
+    if unadvertised:
+        print("\nFixture tool(s) the prompt never advertises (drift in the other direction):")
+        for command in unadvertised:
             print(f"    {command}")
     print("\nAttribute any `Hallucinated tool call` naming one of these as harness-artifact.")
     return 0

@@ -97,3 +97,43 @@ export function extractStreamErrorMessage(
   // Truthy but shapeless (e.g. `error: true`) -- still an error, still must throw.
   return fallbackMessage;
 }
+
+/**
+ * Error extractor for the OpenAI Responses API event stream, shared by every
+ * adapter that speaks it (OpenAI, OpenAI Codex, GitHub Copilot's /responses path).
+ *
+ * The Responses stream reports a fatal failure over HTTP 200 in two ways:
+ *   {"type":"error","code":"...","message":"..."}                 // stream-level
+ *   {"type":"response.failed","response":{"error":{"message":...}}}
+ *
+ * `response.incomplete` is deliberately NOT treated as an error: a response
+ * truncated by max_output_tokens still carries usable text.
+ */
+export function extractResponsesApiStreamError(
+  event: unknown,
+  fallbackMessage = 'Responses API streaming error'
+): string | null {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+
+  const frame = event as Record<string, unknown>;
+  const type = typeof frame.type === 'string' ? frame.type : '';
+
+  if (type === 'error') {
+    return (
+      firstNonEmptyString(frame.message) ??
+      extractStreamErrorMessage(frame, fallbackMessage) ??
+      fallbackMessage
+    );
+  }
+
+  if (type === 'response.failed' || type === 'response.error') {
+    const response = frame.response;
+    const fromResponse = extractStreamErrorMessage(response, fallbackMessage);
+    return fromResponse ?? fallbackMessage;
+  }
+
+  // A bare {"error": {...}} frame with no Responses event type.
+  return extractStreamErrorMessage(frame, fallbackMessage);
+}
