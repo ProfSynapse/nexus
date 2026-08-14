@@ -203,6 +203,33 @@ describe('ModelRegistry latest Gemini Flash models', () => {
   });
 });
 
+describe('ModelRegistry DeepSeek V4 Pro 0813 model', () => {
+  it('registers the dated GA snapshot for OpenRouter as a text-only thinking model', () => {
+    expect(ModelRegistry.findModel('openrouter', 'deepseek/deepseek-v4-pro-0813')).toEqual(expect.objectContaining({
+      name: 'DeepSeek V4 Pro 0813',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: 0.435,
+      outputCostPerMillion: 0.87,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: false,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it('keeps the direct DeepSeek provider on the undated alias that resolves to 0813', () => {
+    expect(ModelRegistry.findModel('deepseek', 'deepseek-v4-pro')).toEqual(expect.objectContaining({
+      inputCostPerMillion: 0.435,
+      outputCostPerMillion: 0.87
+    }));
+    expect(ModelRegistry.findModel('deepseek', 'deepseek-v4-pro-0813')).toBeUndefined();
+  });
+});
+
 describe('ModelRegistry Kimi K3 model', () => {
   it('registers Kimi K3 for OpenRouter with current pricing and capabilities', () => {
     expect(ModelRegistry.findModel('openrouter', 'moonshotai/kimi-k3')).toEqual(expect.objectContaining({

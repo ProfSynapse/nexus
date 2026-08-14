@@ -49,8 +49,13 @@ export const DEEPSEEK_MODELS: ModelSpec[] = [
     }
   },
 
-  // Pro — higher quality. Pricing reflects 75% promotional discount valid through 2026-05-31.
-  // Original list price: $1.74 input / $3.48 output per 1M tokens.
+  // Pro — higher quality. $0.435/$0.87 is the standard published rate as of
+  // 2026-08-13 (re-verified against the official pricing page), not a discount:
+  // what used to be the promotional rate became the list rate. The undated
+  // `deepseek-v4-pro` id below now resolves to the DeepSeek-V4-Pro-0813 GA
+  // snapshot, so no separate dated entry is needed here.
+  // Pricing note: DeepSeek switches to peak/off-peak billing on 2026-08-16
+  // 16:00 UTC, with off-peak at half the peak rate. Revisit these numbers then.
   {
     provider: 'deepseek',
     name: 'DeepSeek V4 Pro',
