@@ -5,7 +5,7 @@
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "npm run lint:obsidian && node scripts/build-cli.mjs && node scripts/generate-cli-content.mjs && tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc -p tsconfig.connector.json && node scripts/generate-connector-content.mjs",
+		"build": "npm run lint && node scripts/build-cli.mjs && node scripts/generate-cli-content.mjs && tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc -p tsconfig.connector.json && node scripts/generate-connector-content.mjs",
 		"build:cli": "node scripts/build-cli.mjs && node scripts/generate-cli-content.mjs",
 		"sync:agent-context": "node scripts/sync-agent-context.mjs",
 		"sync:skills": "node scripts/sync-agent-context.mjs --skills-only",
@@ -14,8 +14,9 @@
 		"test": "jest",
 		"test:coverage": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":80,\"functions\":80,\"lines\":80,\"statements\":80}}'",
 		"smoke:google-live": "node scripts/smoke-google-live.mjs",
-		"lint": "npm run lint:obsidian",
+		"lint": "npm run lint:obsidian && npm run lint:mobile",
 		"lint:obsidian": "eslint .",
+		"lint:mobile": "node scripts/check-mobile-imports.mjs",
 		"deploy": "npm run build && powershell.exe -ExecutionPolicy Bypass -File .\\postbuild.ps1",
 		"mockup:audio-editor": "node scripts/serve-mockups.mjs audio-editor-leaf-view.html"
 	},
