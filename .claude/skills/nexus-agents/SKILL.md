@@ -171,7 +171,10 @@ any throw, so a failed agent is absent rather than half-registered.
 
 ```
 agents/[agentName]/
-  [agentName].ts     # extends BaseAgent, registers tools in the constructor
+  [agentName].ts     # extends BaseAgent, registers tools in the constructor —
+                     # `registerLazyTool({slug, name, description, version, factory})`
+                     # is the norm; `registerTool(new XTool(...))` for eager ones
+                     # with complex dependencies
   tools/[toolName].ts
   tools/services/    # tool-specific services
   services/          # agent-level shared services
@@ -180,8 +183,9 @@ agents/[agentName]/
 ```
 
 - `BaseAgent` — `src/agents/baseAgent.ts`
-- `BaseTool<Params, Result>` — `src/agents/baseTool.ts`; implement `execute()`,
-  `getParameterSchema()`, `getResultSchema()`
+- `BaseTool<Params, Result>` — `src/agents/baseTool.ts`; `execute()` and
+  `getParameterSchema()` are abstract, `getResultSchema()` has a default (the
+  common result schema) and is override-only
 - `IAgent` / `ITool` — `src/agents/interfaces/`
 - App agents also extend `BaseAppAgent` (`src/agents/apps/BaseAppAgent.ts`) and may
   opt into `AppRuntimeContext` for settings, storage-adapter and session-context
