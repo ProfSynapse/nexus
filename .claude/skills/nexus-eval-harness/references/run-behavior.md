@@ -38,9 +38,12 @@ console warning. If that leaves none, the suite prints a skip notice and
 ordinary `npm run test` cannot bill a provider.
 
 Local providers (`ollama`, `lmstudio`) are keyless and point at a localhost
-OpenAI-compatible endpoint (`OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL`). Ollama is
-driven through the LM Studio adapter, because the Nexus Ollama adapter is
-text-only and cannot emit tool calls.
+OpenAI-compatible endpoint (`OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL`). Note that
+an `ollama` target is driven through the **LM Studio** adapter against Ollama's
+OpenAI-compatible route, not through the Nexus Ollama adapter — so a local grade
+does not exercise the adapter a user on Ollama actually runs. (The in-file
+justification for that detour is out of date; the Ollama adapter now reports
+function support. Treat the routing as the fact and the reason as unverified.)
 
 ## The tool-set filter is a filter
 

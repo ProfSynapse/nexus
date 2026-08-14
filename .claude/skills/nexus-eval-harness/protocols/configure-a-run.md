@@ -16,8 +16,10 @@ that finishes, and numbers nobody has to caveat.
      It needs no vault.
    - **live** — real agents execute against a throwaway vault directory. It also
      proves execution, but only for the agents the headless stack registers, and
-     Obsidian-only APIs are absent, so scenarios that lean on them mis-grade.
-     Read the mode table in `../references/harness-map.md` before choosing live.
+     every `obsidian` import still resolves to the repo's hand-written mock, so
+     anything built on Obsidian's own helpers behaves like that mock rather than
+     like the app. Read the mode table in `../references/harness-map.md` before
+     choosing live.
 
 2. Choose how targets are named.
    - Iterating: `EVAL_TARGETS='provider=model,provider=model'` (or

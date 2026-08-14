@@ -113,3 +113,7 @@ claude-code-sourcemap-main/
 test-artifacts/
 tests/eval/test-vault/*/
 !tests/eval/test-vault/notes/
+
+# Python bytecode from skill validator scripts
+__pycache__/
+*.pyc

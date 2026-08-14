@@ -62,7 +62,10 @@ string and captures the inner call under that name.
 Live mode registers a fixed, short list of agents (read the file — it is the
 authority) with vector search off. A scenario that needs an agent the headless
 stack never constructs cannot pass in live mode, and the failure looks like a
-model failure in the report.
+model failure in the report. Live is also not the app: Jest maps every
+`obsidian` import to the repo's hand-written mock in every lane, this one
+included, so agent code that leans on Obsidian's own helpers is graded against
+the mock's behaviour.
 
 ## Model-free coverage that already exists
 
