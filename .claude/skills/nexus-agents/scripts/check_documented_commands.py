@@ -107,6 +107,16 @@ def strip_flags(tokens: list[str]) -> list[str]:
     return out
 
 
+def split_selector(tokens: list[str]) -> list[list[str]]:
+    """Split a `nexus tools` selector, which may arrive as one quoted string.
+
+    `nexus tools "storage list, content read"` is a single shlex token, so the
+    comma split has to happen inside the token as well as between tokens.
+    """
+    joined = " ".join(tokens)
+    return [segment.split() for segment in joined.split(",") if segment.split()]
+
+
 def split_commands(tokens: list[str]) -> list[list[str]]:
     """Split a token list on the trailing-comma command separator."""
     commands: list[list[str]] = [[]]
@@ -157,7 +167,7 @@ def extract(line: str) -> list[tuple[str, list[str]]]:
             return []
         remainder = remainder[remainder.index("--") + 1:]
     else:
-        remainder = strip_flags(remainder)
+        return [(kind, command) for command in split_selector(strip_flags(remainder))]
     return [(kind, command) for command in split_commands(remainder)]
 
 

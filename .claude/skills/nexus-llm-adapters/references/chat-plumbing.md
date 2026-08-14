@@ -19,9 +19,14 @@ Consequences:
 - Widening the view union to match storage, or vice versa, changes rendering
   decisions elsewhere.
 
-Read both declarations before treating a mismatch as a defect. Search for
-`branchType` across `src/types/` and the conversion helpers; the storage type and
-the view type are declared separately and are meant to stay that way.
+Read both declarations before treating a mismatch as a defect:
+
+```bash
+rg -n "branchType" src/ --type ts
+```
+
+The storage-side declarations, the view-side union, and the helpers that convert
+between them will all be in that output. They are declared separately on purpose.
 
 ## Subagent tool calls are already executed
 The `chunk.toolCalls` a subagent executor receives are **already executed and
