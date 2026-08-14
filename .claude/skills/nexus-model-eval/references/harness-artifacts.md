@@ -41,8 +41,8 @@ answered *before* unwrapping, so no inner call is ever recorded and an
 expectation naming a domain tool in that turn cannot be satisfied.
 **Proof.** Does the failing turn's scenario script a `useTools` response and
 expect a domain tool name in the same turn? Then no model can pass it →
-`fixture-bug`. `nexus-eval-harness/scripts/check_scenarios.py` is the mechanical
-version of this check.
+`fixture-bug`. The scenario checker in `nexus-eval-harness` (`check_scenarios.py`)
+is the mechanical version of this check.
 
 ### Round mismatches on a model that did the right work in the wrong shape
 **Cause.** Without `allowReorder`, expected calls are consumed round by round. A
