@@ -651,6 +651,20 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     }
     
     /**
+     * Release the IPC socket immediately, without awaiting the full stop.
+     *
+     * Called synchronously from onunload so the socket path is free before the
+     * replacement plugin instance binds it. See #337.
+     */
+    releaseIpcSocket(): void {
+        try {
+            this.connectionManager.getServer()?.releaseIpcSocket();
+        } catch (error) {
+            logger.systemError(error as Error, 'IPC Socket Release');
+        }
+    }
+
+    /**
      * Get the MCP server instance - delegates to MCPConnectionManager
      */
     getServer(): MCPServer | null {

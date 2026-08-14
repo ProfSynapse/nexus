@@ -153,6 +153,13 @@ export default class NexusPlugin extends Plugin {
     }
 
     onunload(): void {
+        // Free the MCP socket path here, synchronously, before anything below
+        // gets a chance to await. unloadPlugin() runs embedding shutdown, a
+        // state save and a SQLite close before it reaches the connector, which
+        // is tens of seconds — and Obsidian loads the replacement instance
+        // immediately, so by the time the old instance closed its listener it
+        // was unlinking the *new* instance's socket. See #337.
+        this.connector?.releaseIpcSocket();
         void this.unloadPlugin();
     }
 

@@ -177,6 +177,17 @@ export class MCPServer implements IMCPServer {
     }
 
     /**
+     * Release the IPC socket without waiting for the rest of the shutdown.
+     *
+     * Synchronous on purpose: it has to complete inside the same turn as
+     * onunload(), before Obsidian starts loading the replacement instance.
+     * stop() still does the full teardown afterwards. See #337.
+     */
+    releaseIpcSocket(): void {
+        this.ipcTransportManager.closeListener();
+    }
+
+    /**
      * Check if the server is running
      */
     isRunning(): boolean {
