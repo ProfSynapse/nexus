@@ -43,10 +43,12 @@ through every layer and silently vanished at the final paint.
 
 **LM Studio speculative decoding.** A `draft_model` against a batched-MLX target
 fails. `LMStudioAdapter` detects the failure (HTTP *or* in-stream) before any real
-output, marks the draft incompatible, drops `draft_model`, and retries — so chat
-always produces output. Batched MLX bans speculative decoding outright and vision
-MLX never supports it; GGUF targets have no such restriction, paired with a
-same-family GGUF draft for matching vocab.
+output (`producedRealOutput` gate), marks the draft incompatible (per `target::draft`
+pair, with a one-time Notice), drops `draft_model`, and retries — so chat always
+produces output. The two rejection causes the code distinguishes: the engine/mode
+doesn't support speculative decoding (batched MLX, vision MLX) or the draft's
+tokenizer doesn't match. Field guidance, not enforced by code: pair a GGUF target
+with a same-family GGUF draft for matching vocab.
 
 **`ensureModelLoaded` never compares `flash_attention`.** It is passed through when
 configured, but comparing it caused infinite model reloads: it is llama.cpp-only, and
