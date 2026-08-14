@@ -114,6 +114,62 @@ function foldSeparators(text: string): string {
 }
 
 /**
+ * Reduce one `paths` entry to the longest fixed prefix that every path it can
+ * match must begin with, or `null` when it constrains nothing.
+ *
+ * This exists so a scope can be pushed down into the embedding query, where the
+ * candidate window is taken. A literal path is already a prefix. A glob is
+ * truncated at the last folder boundary before its first metacharacter, so
+ * `_Base/**\/*.md` reduces to `_Base/` while `**\/notes/*.md` reduces to
+ * nothing.
+ *
+ * The reduction is intentionally conservative: a prefix here must never exclude
+ * a path the caller's own pattern would have accepted, since the real matching
+ * is still done by the post-filter afterwards.
+ */
+function pathScopePrefix(path: string): string | null {
+  const normalized = normalizePath(path);
+
+  if (!isGlobPattern(normalized)) {
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  const firstGlob = normalized.search(/[*?[\]{}]/);
+  const lastSeparator = normalized.lastIndexOf('/', firstGlob);
+  if (lastSeparator < 0) {
+    return null;
+  }
+
+  return normalized.slice(0, lastSeparator + 1);
+}
+
+/**
+ * Fixed prefixes covering every entry in `paths`, or `undefined` when the scope
+ * cannot be expressed as prefixes.
+ *
+ * The entries are OR'd, so one unbounded entry (a bare `/`, or a glob with a
+ * wildcard in its first segment) makes the whole union unbounded. Returning
+ * `undefined` in that case leaves the query unscoped and the post-filter in
+ * charge, which is the pre-existing behaviour.
+ */
+function pathScopePrefixes(paths: string[]): string[] | undefined {
+  if (paths.length === 0) {
+    return undefined;
+  }
+
+  const prefixes: string[] = [];
+  for (const path of paths) {
+    const prefix = pathScopePrefix(path);
+    if (prefix === null) {
+      return undefined;
+    }
+    prefixes.push(prefix);
+  }
+
+  return prefixes;
+}
+
+/**
  * Score how well `text` matches the query, using one tier ladder.
  *
  * Filenames and file bodies are both scored through this function so their
@@ -277,10 +333,30 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     }
 
     try {
-      // Use EmbeddingService.semanticSearch()
-      const semanticResults = await embeddingService.semanticSearch(searchParams.query, searchParams.limit * 2); // Get extra for path filtering
+      // Push the scope down into the vector query. The candidate window there
+      // is global and small, so a scope applied only to its OUTPUT can empty a
+      // perfectly good result set: at limit 10 the query ranked the whole vault
+      // and kept 60 rows, and if none of them were under the requested folder
+      // the caller got zero results and no reason why (#323).
+      //
+      // Not every scope reduces to a prefix, so the post-filter below stays as
+      // the second pass that does the real matching.
+      const scopePrefixes = pathScopePrefixes(searchParams.paths);
+
+      const semanticResults = await embeddingService.semanticSearch(
+        searchParams.query,
+        searchParams.limit * 2, // Get extra for the glob post-filter below
+        scopePrefixes
+      );
 
       if (semanticResults.length === 0) {
+        if (scopePrefixes) {
+          // The query itself was scoped, so an empty candidate set means the
+          // requested folders hold no embedded notes — an honest answer, not a
+          // broken index. Reporting a database fault here would be a false
+          // alarm that only appears once the scope reaches the query.
+          return this.prepareResult(true, { results: [] });
+        }
         return this.prepareResult(false, undefined, 'Semantic search returned no results. This may indicate an issue with the vector database. Please check the console for errors.');
       }
 
