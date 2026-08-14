@@ -1,15 +1,9 @@
 <!-- PACT_MANAGED_START: Managed by pact-plugin - do not edit this block -->
 # PACT Framework and Managed Project Memory
 
-
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume b3cecaa5-b21c-4ff1-8986-75b0d0d92091`
-- Team: `session-b3cecaa5`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/b3cecaa5-b21c-4ff1-8986-75b0d0d92091`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.4.49`
-- Started: 2026-07-01 14:48:23 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -19,19 +13,27 @@
 
 <!-- pinned: 2026-06-02 -->
 ### Tool-schema `required`/`oneOf`/`enum` is NOT runtime-validated (no ajv)
-Agent tool param schemas (`getParameterSchema`) are DOCUMENTATION + CLI-normalizer hints only — there is NO ajv/JSON-schema validation behind `ToolBatchExecutionService.execute(params)`. A schema `required: [...]`, `oneOf`, or `enum` does NOT reject a malformed payload at runtime; bad input flows straight to the service. **Validation guards MUST live in the service/normalizer layer, not the schema.** Discovered v5.9.x (PR #236): a `createTask.linkedNotes` oneOf object missing `notePath` silently persisted `notePath:undefined` until an explicit guard was added in `normalizeLinkedNote` (TaskService). Rule: when a tool accepts structured input, add explicit field guards in the service/normalizer — never rely on the schema to enforce.
+Agent tool param schemas (`getParameterSchema`) are DOCUMENTATION + CLI-normalizer hints only — there is NO ajv/JSON-schema validation behind `ToolBatchExecutionService.execute(params)`. A schema `required: [...]`, `oneOf`, or `enum` does NOT reject a malformed payload at runtime; bad input flows straight to the service. **Validation guards MUST live in the service/normalizer layer, not the schema.** Origin: a `createTask.linkedNotes` oneOf object missing `notePath` silently persisted `notePath:undefined` until an explicit guard was added in `normalizeLinkedNote` (`src/agents/taskManager/services/TaskService.ts:78`). Rule: when a tool accepts structured input, add explicit field guards in the service/normalizer — never rely on the schema to enforce.
 
 <!-- pinned: 2026-04-20 -->
-### Line endings: LF canonical via `.gitattributes` (as of v5.8.2 / PR #169)
-Repo has `.gitattributes` declaring LF canonical across `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`/`.json`/`.md`/`.css`/`.html`/`.yml`/`.sh` + binary markers for images/audio/fonts/pdfs. If you see CRLF in the tree, it's a local-editor bug — fix the editor, don't chase it with tool normalization. Never reintroduce CRLF. If 500+ files show modified with tiny `--ignore-cr-at-eol` delta, someone's editor wrote CRLF — re-run `git add --renormalize .` on that subset, don't let it land.
+### Line endings: LF canonical via `.gitattributes`
+`.gitattributes` declares LF canonical across `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs`/`.json`/`.md`/`.css`/`.html`/`.yml`/`.sh` + binary markers for images/audio/fonts/pdfs. If you see CRLF in the tree, it's a local-editor bug — fix the editor, don't chase it with tool normalization. If 500+ files show modified with a tiny `--ignore-cr-at-eol` delta, someone's editor wrote CRLF — re-run `git add --renormalize .` on that subset, don't let it land.
 
 <!-- pinned: 2026-04-23 -->
 ### Dynamic ToolManager sync: deferred refactor (issue #174)
-`AgentRegistrationService.syncToolManagerAgent` + `ToolManagerAgent.registerDynamicAgent/unregisterDynamicAgent` is a callback-wrap bridge that keeps `getTools` discovery in sync when `AppManager` installs/uninstalls app agents at runtime (v5.8.4). Works today because `AppManager` is the only dynamic registrar. **Does not compose** for a second one. When a remote-MCP loader / plugin-extension agent / other dynamic registrar lands, refactor to event-based: add `onAgentRegistered`/`onAgentUnregistered` to `AgentManager`, have `ToolManagerAgent` subscribe in its constructor, delete the bridge + the `instanceof ToolManagerAgent` concrete import in `AgentRegistrationService`. Do NOT do this refactor speculatively — wait for the triggering consumer. Tracking: https://github.com/ProfSynapse/nexus/issues/174.
+`AgentRegistrationService.syncToolManagerAgent` (`src/services/agent/AgentRegistrationService.ts:85`) + `ToolManagerAgent.registerDynamicAgent/unregisterDynamicAgent` (`src/agents/toolManager/toolManager.ts:117`) is a callback-wrap bridge that keeps `getTools` discovery in sync when `AppManager` installs/uninstalls app agents at runtime. Works today because `AppManager` is the only dynamic registrar. **Does not compose** for a second one. When a remote-MCP loader / plugin-extension agent / other dynamic registrar lands, refactor to event-based: add `onAgentRegistered`/`onAgentUnregistered` to `AgentManager`, have `ToolManagerAgent` subscribe in its constructor, delete the bridge + the `instanceof ToolManagerAgent` concrete import. Do NOT do this refactor speculatively — wait for the triggering consumer. Tracking: https://github.com/ProfSynapse/nexus/issues/174.
 
-<!-- pinned: 2026-04-20, updated 2026-05-11 -->
-### ToolManager MCP contract: CLI-first only (as of v5.8.2 / PR #170; replace migrated v5.9.0)
-`useTools`/`getTools` accept ONLY top-level CLI shape: `tool` string + context fields (`workspaceId`, `sessionId`, `memory`, `goal`, `constraints?`) at top level. Legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` throw `Deprecated payload shape` at `src/agents/toolManager/services/ToolCliNormalizer.ts:444/462/495`. `UseToolParams` has no `calls`/`request` fields. `executePrompts` actions: `replace` uses 4-field pattern-anchored shape `{path, start, end, content}` (was `oldContent` + `startLine` + `endLine` + `position` pre-v5.9.0; old shape gets a clean validation error, no compat shim); `append`/`prepend` route to `insert`; `position < 1` rejected. CLI parser decodes `\uXXXX` in quoted strings.
+<!-- pinned: 2026-04-20, updated 2026-08-14 -->
+### ToolManager MCP contract: CLI-first only
+`useTools`/`getTools` accept ONLY the top-level CLI shape: a `tool` string plus context fields (`workspaceId`, `sessionId`, `memory`, `goal`, `constraints?`) at the top level. Optional top-level `strategy: 'serial' | 'parallel'` and `values: Record<string, string>` (see below). Legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` throw `Deprecated payload shape` at `src/agents/toolManager/services/ToolCliNormalizer.ts:757/775/808`. `UseToolParams` has no `calls`/`request` fields.
+
+`content replace` and `executePrompts.replace` use the 4-field pattern-anchored shape `{path, start, end, content}` — `start`/`end` are TEXT anchors matched as whole lines (Unicode-normalized, so straight vs curly quotes compare equal), never line numbers. The pre-v5.9.0 `{oldContent, newContent, startLine, endLine}` shape gets a clean validation error, no compat shim. In `executePrompts`, `append`/`prepend` route to `insert`; `position < 1` is rejected. The CLI parser decodes `\uXXXX` in quoted strings.
+
+**Context contract is now ENFORCED** (not just declared): `ToolCliNormalizer.collectContextContractViolations()` / `validateExecutionContext()` are called first in `useTools.ts:37` and throw a *recoverable steering error* when `memory`/`goal` are empty or placeholder. `workspaceId`/`sessionId` keep silent defaults and only steer on present-junk; `constraints` is optional. getTools/discovery is exempt. The eval harness imports the same validator (single source).
+
+**Verbatim / multiline value transports** (do not flatten multiline content):
+- MCP/chat: top-level `values` map, referenced from the tool string as `@key`. Substituted *after* tokenization with NO escape processing, so backslashes, quotes, and newlines survive exactly (`C:\temp`, LaTeX `\alpha`, regex `\d`). Quoting the token (`"@key"`) passes the literal text. A missing key, or a declared key the command never references, fails loud.
+- Terminal CLI: `--<flag>-stdin` and `--<flag>-file <path>` hydrate *any* value-taking flag, not just `--content`. One `-stdin` per command (stdin reads once); several `-file` transports may coexist; a flag must not arrive both directly and via a transport.
 
 <!-- pinned: 2026-03-29 -->
 ### pdfjs-dist in Obsidian/Electron (legacy build + shared loader)
@@ -48,31 +50,25 @@ Use `loadPdfJs()` from `PdfJsLoader.ts` in both `PdfTextExtractor.ts` and `PdfPa
 
 <!-- pinned: 2026-04-05 -->
 ### Shared Transcription Infrastructure
-Transcription extracted from ingest into shared service at `src/services/llm/TranscriptionService.ts`. Five providers fully integrated:
-- **OpenAI** (`whisper-1`, `gpt-4o-transcribe`) — word timestamps via `verbose_json`
-- **Groq** — word timestamps, fastest inference
-- **Mistral** (`voxtral-mini`) — word timestamps + diarization
-- **Deepgram** — word timestamps, utterances, diarization, keyword biasing
-- **AssemblyAI** — word timestamps, speaker labels
+Shared service at `src/services/llm/TranscriptionService.ts`; adapters at `src/services/llm/adapters/{provider}/`; types at `src/services/llm/types/VoiceTypes.ts`. Providers with word-level timestamps: **OpenAI** (`verbose_json`), **Groq**, **Mistral** (+diarization), **Deepgram** (+utterances, diarization, keyword biasing), **AssemblyAI** (+speaker labels).
 
-Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/types/VoiceTypes.ts`.
-⚠️ Ingest shim at `src/agents/ingestManager/tools/services/TranscriptionService.ts` strips word-level data — audio editor must call shared service directly.
-- **Drag-drop file path**: Browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to get vault-relative path in `handleIngestFiles`.
+⚠️ The ingest shim at `src/agents/ingestManager/tools/services/TranscriptionService.ts` strips word-level data — callers that need word timings must use the shared service directly.
+
+**Drag-drop file path**: browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to recover the vault-relative path in `handleIngestFiles`.
 
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
 
 <!-- PACT_MEMORY_END -->
-
 <!-- PACT_MANAGED_END -->
 
 # Claude Code Context Document
-Last Updated: 2026-08-06
+Last Updated: 2026-08-14
 
 ## Project Overview
-- **Name**: Nexus (package: claudesidian-mcp)
+- **Name**: Nexus (package: `claudesidian-mcp`, manifest id `nexus`)
 - **Version**: 5.16.4
-- **Type**: Obsidian Community Plugin
+- **Type**: Obsidian Community Plugin (`isDesktopOnly: false`, minAppVersion 1.8.7)
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
 - **Stack**: TypeScript, Node.js, Obsidian Plugin API, MCP SDK
@@ -87,6 +83,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 - `registerDomEvent` for all DOM events (not `addEventListener` — causes memory leaks)
 - Use `requestUrl()` not `fetch()` for HTTP; `normalizePath()` for paths
 - `vault.adapter` is acceptable for direct storage-path access when needed; normalize paths and resolve Nexus storage roots from settings instead of hardcoding `.nexus` or `Nexus`
+- `normalizePath()` does NOT strip `..` — path confinement needs an explicit `assertInside`-style guard at every write/copy/remove boundary
 
 ### Mobile Compatibility (Critical)
 
@@ -105,121 +102,113 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 1. **Never** top-level import Node.js built-ins — use `desktopRequire()` from `src/utils/desktopRequire.ts`
 2. **Never** top-level import npm packages that depend on Node.js built-ins (mammoth, jszip, xlsx, yaml, etc.) — use dynamic `await import()` inside async functions
 3. **Replace** `EventEmitter` with Obsidian's `Events` class (cross-platform)
-4. **Desktop-only features** (ingestion, composer, OAuth, CLI, MCP transports): ensure all Node.js-dependent imports are lazy
+4. **Desktop-only features** (ingestion, composer, OAuth, CLI, MCP transports, data analysis): ensure all Node.js-dependent imports are lazy
 
 **Known desktop-only npm packages**: mammoth, jszip, xlsx, yaml (all have Node.js transitive deps)
 
 ## Recent Changes
 
-**Current Version**: 5.16.2
-Full changelog: `docs/changelog.md`
+**Current version**: 5.16.4. Full changelog: `docs/changelog.md` — that file is the changelog; do not retell releases here. Only entries with a live, forward-looking consequence belong below.
 
-**Latest**:
-- **v5.16.2** (2026-08-06) — Search ranking + CLI grounding. `searchContent.ts` tier ladder is now single-scale: `TITLE_EXACT_SCORE 0.95 > EXACT_PHRASE_SCORE 0.9 > ALL_WORDS_SCORE 0.8 > PARTIAL_MATCH_FLOOR 0.3 > FUZZY_ONLY_CEILING 0.25`; filename fuzzy was previously normalized to `1 + score/100` (~0.92–0.95), an incommensurable scale that let a coincidental name beat a verbatim body match (PRs #312/#313/#314, issue #309). `foldSeparators()` folds `-`/`_` to spaces on both sides so a kebab filename matches a spaced query. Results carry `matchType: 'content' | 'path' | 'semantic'`. **Test methodology changed (#315)** — three defects shipped past a green suite, all found by searching the real vault: `tests/unit/SearchContentTool.test.ts` now runs every ranking assertion twice with the vault enumerated in both orders and fails loudly if the order decides it (a tie is not a ranking rule), plus a naming-style × query-style cross-product; `tests/debug/search-ranking-live-smoke.test.ts` (`RUN_SEARCH_SMOKE=1`) drives a live vault through the `nexus` CLI so the real `prepareFuzzySearch` is exercised. The `prepareFuzzySearch` mock in `tests/mocks/obsidian/core.ts` charges a small per-discontiguity penalty **capped at 8** — this reproduces why the bug existed; do not make it proportional or the tests go vacuous. Also: `nexus --vault X use … -- storage list` no longer strips the agent name (#310); `NoteEmbeddingService.embedNote` treats ENOENT as a skip, not an error, and no longer logs-and-rethrows (callers already log) (#316); task metadata shallow-merges (#307, issue #305); `load-state` returns current tags (#308, issue #306).
-- **v5.9.7** — Archive visibility fix for tagged states (PR #218, commit `eae5f507` + version bump `05ce7199`): drops the `stateMeta.tags ? null :` shortcut at `MemoryService.getStates:555` so `adapter.getState` always runs. Pre-fix, the SQLite-metadata fast-path skipped JSONL content fetch for tagged states, and the skeleton return path never surfaced `state.metadata.isArchived` — UI list filter and AI-facing `listStates` filter both saw archived tagged states as active. Surgical 1 LoC + 3 regression tests (`MemoryServiceGetStates.test.ts`). Both UI and AI filters inherit the fix (read from same `getStates` output). Manually verified in Obsidian. Tech-debt follow-up tracked in **issue #219** (denormalize `is_archived` into SQLite metadata, ~80–120 LoC, v13 migration — restores the perf shortcut without correctness cost).
-- **v5.9.6 + #215 / #216** (manually verified, **issue #215 closed**) — state CRUA tools (`updateState` + `archiveState`) added to MemoryManager + states management UI section under workspace settings. Contract: AI gets archive-only (soft, reversible); UI gets archive AND delete (humans can permanently destroy). No `deleteState` MCP tool exists. Storage extension: `state_updated` event mirroring `state_deleted` (~80 LoC across 9 files). 2 remediation cycles during review: Cycle 1 (B1 archiveState skeleton-corruption for tagged states, B2/B3 StateRepository event-fold + archive round-trip tests), Cycle 2 (M1 MemoryService.deleteState latent landmine — routed through `HybridStorageAdapter.deleteState` via `withDualBackend`). Post-merge manual-test surfaced the archive-visibility bug (fixed in v5.9.7 above). Frontend polish F1-F4 still open in **issue #217**.
-- **v5.9.6** — Startup hydration recovery (PR #211, commit `3cf6d3f5` + version bump `f16356ac`): self-healing for stalled startup hydration in `StartupHydrationController`.
-- **v5.9.0** — Pattern-anchored `content replace` (PR #206): hard schema break from `{path, oldContent, newContent, startLine, endLine}` to 4-field `{path, start, end, content}` on both `ContentManager.replace` and `executePrompts.replace`. No compat shim — old shape returns clean validation error. See the pinned ToolManager MCP contract entry for the full contract.
-- **v5.8.14** — DeepSeek as first-class cloud provider (PR #205, resolves #204): direct DeepSeek API alongside other cloud providers. 4 models (`deepseek-v4-flash`/`-pro` + `-thinking` variants), thinking mode via existing `ThinkingEffortMapper`. Mobile-compatible. ⚠️ Untested in production. Known follow-up: `ProviderManager.ts` (659 LoC) and `ProvidersTab.ts` (645 LoC) crossed 600-line maintainability threshold from wiring additions; refactor when next touched.
-- **v5.8.13** — Cache backend re-run loop hotfix (PR #203): fixes v5.8.12 regression on Windows. `PluginScopedStorageCoordinator.saveState` was clobbering `cacheBackend` on every boot; `runJanitor` `cache.db` delete now retries with backoff. Cross-platform fix — Mac was masking the loop via JANITOR fast-path.
-- **v5.8.12** — Cloud-sync-aware cache backend (PR #202): IndexedDB on desktop (cloud-sync-immune), `vault.adapter` file backend on mobile. Foreground-blocking migration FSM on first launch. Resolves GDrive Shared Drive boot-hang. New `Nexus: Rebuild cache` command.
-- **v5.8.11** — CLI tool array-bracket fix (PR #201, fixes #200): `ToolCliNormalizer` strips outer JSON-array-literal `[...]` pair on CSV-fallback when inner content fails `JSON.parse`. Fixes wikilink corruption in `content set-property --value "[[[A]],[[B]]]"`.
-- **v5.8.10** — Sync-safe storage reconcile Phase 1: conflict-copy regex relax + new `ReconcilePipeline` (3-layer idempotency) + v11→v12 `shard_cursors` migration. Resolves GDrive task-revert incident. Phase 2 (cache.db relocation) was superseded by v5.8.12.
-
-Older versions: see `docs/changelog.md`.
+- **v5.16.4** — multiline/verbatim value transports (`values` map, `--<flag>-stdin`/`--<flag>-file`) and honest CLI PATH reporting. The transport contract is pinned above; it is load-bearing for anything that passes content through a tool.
+- **v5.16.2** — search ranking is a **single-scale tier ladder** in `src/agents/searchManager/tools/searchContent.ts`: `TITLE_EXACT_SCORE 0.95 > EXACT_PHRASE_SCORE 0.9 > ALL_WORDS_SCORE 0.8 > PARTIAL_MATCH_FLOOR 0.3 > FUZZY_ONLY_CEILING 0.25`. Never reintroduce a second scale (filename fuzzy used to be normalized to `1 + score/100`, which let a coincidental name beat a verbatim body match). `foldSeparators()` folds `-`/`_` to spaces on both sides. Results carry `matchType: 'content' | 'path' | 'semantic'`.
+  **Test methodology rule that came out of it** — three defects shipped past a green suite. `tests/unit/SearchContentTool.test.ts` runs every ranking assertion twice with the vault enumerated in both orders and fails loudly if order decides it (a tie is not a ranking rule). `tests/debug/search-ranking-live-smoke.test.ts` (`RUN_SEARCH_SMOKE=1`) drives a live vault through the `nexus` CLI so the real `prepareFuzzySearch` runs. **The `prepareFuzzySearch` mock in `tests/mocks/obsidian/core.ts` charges a per-discontiguity penalty capped at 8 — do not make it proportional, or the tests go vacuous.**
 
 ## Quick Navigation
 
 ### Core Directories
-- `/src/agents/` - Agent implementations (PromptManager, ContentManager, etc.)
-- `/src/services/` - Shared services (LLM providers, memory, conversations)
-- `/src/components/` - UI components (chat view, settings, modals)
-- `/src/types/` - TypeScript type definitions
-- `/src/utils/` - Utility functions and helpers
+- `/src/agents/` - Agent implementations (see Agent Architecture below)
+- `/src/services/` - Shared services (LLM providers, memory, conversations, chat)
+- `/src/components/`, `/src/ui/`, `/src/settings/` - UI components, chat view, settings tabs
+- `/src/database/` - Storage adapters, SQLite cache, schema migrations
+- `/src/types/`, `/src/utils/` - Type definitions and helpers
 
 ### Key Files
-- `main.ts` - Plugin entry point and lifecycle management
-- `connector.ts` - MCP server connector for Claude Desktop
-- `src/agents/index.ts` - Agent registry and initialization
-- `src/services/conversationService.ts` - Chat conversation management
-- `src/services/llmService.ts` - LLM provider abstraction layer
+- `src/main.ts` - Plugin entry point and lifecycle management
+- `src/connector.ts` - MCP server connector for Claude Desktop
+- `src/agents/index.ts` - Agent registry
+- `src/services/ConversationService.ts` - Chat conversation management
+- `src/services/llm/core/LLMService.ts` - LLM provider abstraction layer
+- `src/ui/chat/ChatView.ts` - Chat view
+- `src/components/ConfigModal.ts` - Settings modal
+- `src/utils/cliAssets.ts` - Shipped CLI guidance/help text (single-sourced to prod + docs)
 
 ## Agent Architecture
 
 ### Available Agents
 
 **ToolManager** (`src/agents/toolManager/`) - **MCP Entry Point** (Two-Tool Architecture)
-   - `getTools`: Discovery - returns tool schemas for requested agents/tools
-   - `useTools`: Execution - unified context-first tool execution
-   - *Only these 2 tools are exposed to Claude Desktop. All other agents work internally.*
+- `getTools`: Discovery — returns tool schemas for requested agents/tools
+- `useTools`: Execution — unified context-first tool execution
+- *Only these 2 tools are exposed to Claude Desktop. All other agents work internally.*
 
 > Tool names below are the **CLI form** (`agent tool-name`, kebab-case) — what a
-> caller actually types and what `getTools`/`useTools` resolve. Verify against
-> `src/agents/**` (`slug:`) before trusting; the `/nexus-release` skill gates on
-> refreshing this list, and `tests/unit/shippedGuidanceCommands.test.ts` fails
-> when shipped docs name a tool that does not exist.
+> caller types and what `getTools`/`useTools` resolve. Source of truth is the
+> `slug:` field under `src/agents/**` (camelCase there, kebab-cased for CLI).
+> Regenerate `cli-first-tool-schemas.json` with `npm run schemas:tools`.
+> `tests/unit/shippedGuidanceCommands.test.ts` fails when shipped docs name a
+> tool that does not exist.
 
-1. **PromptManager** (`src/agents/promptManager/`) - Custom prompts and LLM integration
-   - `prompt`: execute, create, get, list, update, archive, sub, list-models,
+**Always-on agents (8, 56 tools):**
+
+1. **PromptManager** (`src/agents/promptManager/`) — custom prompts and LLM integration
+   - `prompt`: execute, subagent, create, get, list, update, archive, list-models,
      generate-image, generate-audio, generate-video, check-generated-artifact
    - No delete — the AI gets `archive` (reversible). Media generation is async:
      `generate-*` returns a job, poll `check-generated-artifact <jobId>`.
-
-2. **ContentManager** (`src/agents/contentManager/`) - Note reading/editing operations
+2. **ContentManager** (`src/agents/contentManager/`) — note reading/editing
    - `content`: read, write, replace, insert, set-property
-   - `read` requires `--start-line`. `replace` is pattern-anchored
-     `{path, start, end, content}` — anchor TEXT, not line numbers.
-
-3. **StorageManager** (`src/agents/storageManager/`) - File/folder management
+   - `read` requires `--start-line`. `replace` is pattern-anchored (see pinned contract).
+3. **StorageManager** (`src/agents/storageManager/`) — file/folder management
    - `storage`: list, create-folder, move, copy, archive, open
-
-4. **SearchManager** (`src/agents/searchManager/`) - Advanced search operations
+4. **SearchManager** (`src/agents/searchManager/`) — search
    - `search`: content, directory, memory, query-notes
-
-5. **MemoryManager** (`src/agents/memoryManager/`) - Workspace/state/workflow management
+5. **MemoryManager** (`src/agents/memoryManager/`) — workspace/state/workflow management
    - `memory`: create-workspace, list-workspaces, search-workspaces, load-workspace,
      update-workspace, archive-workspace, create-state, list-states, load-state,
      update-state, archive-state, run
    - No session tools — sessions are context fields, not tools. `memory run`
-     triggers a workflow (`--workflow-id`/`--workflow-name`).
-
-6. **CanvasManager** (`src/agents/canvasManager/`) - Obsidian canvas operations
+     triggers a workflow (`--workflow-id`/`--workflow-name`). AI gets archive-only
+     for states (soft, reversible); permanent delete is UI-only, there is no
+     `deleteState` MCP tool.
+6. **CanvasManager** (`src/agents/canvasManager/`) — Obsidian canvas
    - `canvas`: read, write, update, list
-
-7. **TaskManager** (`src/agents/taskManager/`) - Workspace-scoped project/task management with DAG dependencies
+7. **TaskManager** (`src/agents/taskManager/`) — workspace-scoped projects/tasks with DAG dependencies
    - `task`: create-project, list-projects, update-project, archive-project,
      create, list, update, move, query, open, link-note
    - Note the asymmetry: project tools are suffixed (`create-project`), task tools
      are bare (`create`, `list`, `update`, `move`, `query`).
-   - Services: TaskService (business facade), DAGService (pure computation)
-   - Auto-loads task summary when workspace loads
-
-8. **IngestManager** (`src/agents/ingestManager/`) - PDF/audio ingestion
+   - Services: TaskService (business facade), DAGService (pure computation).
+     Auto-loads a task summary when a workspace loads.
+8. **IngestManager** (`src/agents/ingestManager/`) — PDF/audio ingestion
    - `ingest`: run, capabilities
 
-9. **WebToolsAgent** (`src/agents/apps/webTools/`) - Headless browser tools (desktop-only)
+**Opt-in app agents (5, 18 tools)** — a vault only exposes the apps it enables:
+
+9. **WebToolsAgent** (`src/agents/apps/webTools/`) — headless browser (desktop-only)
    - `web`: open, capture-markdown, capture-png, capture-pdf, links
-
-10. **ComposerAgent** (`src/agents/apps/composer/`) - Multimodal file composition
+10. **ComposerAgent** (`src/agents/apps/composer/`) — multimodal file composition
     - `composer`: compose, list-formats
-
-11. **ElevenLabsAgent** (`src/agents/apps/elevenlabs/`) - AI audio (app, opt-in)
+11. **ElevenLabsAgent** (`src/agents/apps/elevenlabs/`) — AI audio
     - `elevenlabs`: list-voices, sound-effects, generate-music
-    - No text-to-speech tool; TTS runs through `prompt generate-audio` using the
-      ElevenLabs Voice defaults.
-
-12. **DataAnalysisAgent** (`src/agents/apps/dataAnalysis/`) - Pyodide pandas (app, opt-in, desktop-only)
+    - No text-to-speech tool; TTS runs through `prompt generate-audio`.
+12. **DataAnalysisAgent** (`src/agents/apps/dataAnalysis/`) — Pyodide pandas (desktop-only)
     - `data`: run-python, list-capabilities
-
-13. **SkillsAgent** (`src/agents/apps/skills/`) - Skills Protocol (app, opt-in)
+13. **SkillsAgent** (`src/agents/apps/skills/`) — Skills Protocol
     - `skills`: list-skills, load-skill, create-skill, update-skill, archive-skill, sync-skills
+    - Design: `docs/plans/skills-protocol-integration-plan.md`. Skills live under
+      `<root>/skills/<provider>/<name>/SKILL.md`, indexed in the SQLite `skills`
+      table; `sync-skills` mirrors to/from vault-root `.{provider}/skills/`
+      (last-writer-wins) and **writes into the user's real provider dotfolders** —
+      confirm scope before changing that behavior. Path confinement lives in
+      `skillPaths.ts` (`resolveVaultPath`/`assertInside`/`isSafePathSegment`).
 
 ### Agent Structure Pattern
 ```
 agents/
   [agentName]/
     [agentName].ts          # Main agent class extending BaseAgent
-    tools/                   # Operation tools
+    tools/                  # Operation tools
       [toolName].ts
       services/             # Tool-specific services
     services/               # Agent-level shared services
@@ -227,94 +216,180 @@ agents/
     utils/
 ```
 
+App agents additionally extend `BaseAppAgent` (`src/agents/apps/BaseAppAgent.ts`) and
+may opt into `AppRuntimeContext` (`src/agents/apps/AppRuntimeContext.ts`) for settings,
+storage-adapter, and session-context access.
+
 ### Base Classes
-- **BaseAgent** (`src/agents/baseAgent.ts`) - Common agent functionality
-- **BaseTool** (`src/agents/baseTool.ts`) - Common tool functionality with generic types
-- **IAgent** (`src/agents/interfaces/IAgent.ts`) - Agent interface contract
-- **ITool** (`src/agents/interfaces/ITool.ts`) - Tool interface contract
+- **BaseAgent** (`src/agents/baseAgent.ts`)
+- **BaseTool** (`src/agents/baseTool.ts`) — generic `BaseTool<Params, Result>`
+- **IAgent** (`src/agents/interfaces/IAgent.ts`), **ITool** (`src/agents/interfaces/ITool.ts`)
 
-## Current Work
+## Current Work / Open Items
 
-**Active branch**: `main` (feature work on `feat/agy-cli-reroute`, `fix/issue-272-taskboard-pagination`, `fix/issue-271-chat-loading-state`). **Open PRs**: #275 (#272 task-board undercount fix), #276 (#271a/b spinner + CLI process bound) — both await manual test + merge.
+No in-flight uncommitted work is tracked here — the working tree is clean at 5.16.4.
+Check `git log` and `docs/plans/` for what is actually in progress.
 
-**v5.12.0 RELEASED 2026-06-13** (PRs #265–#267 + commits `abf26e03`/`780905f0`; workflow run 27475645444 success, 3 assets + attestations, no connector.js). Marquee: **Adaptive Search / self-improving local retrieval (#265)** — query-side low-rank adapter over the frozen MiniLM encoder, learned from implicit search→open feedback during idle 45-min "dream" cycles (`src/services/embeddings/adapter/`, ~3.1k LoC + 11 test files). On-by-default (opt-out `embeddings.retrievalLearning:false`), desktop-only, identity-safe (only promotes a tuning that beats a held-out test → "search can't get worse"), reversible (delete `<root>/data/embeddings/adapter.json`), fully local. Command: "Consolidate retrieval memory (dream now)". Default bake-off trains InfoNCE/BPR/KTO each round, best-on-held-out wins. User guide already shipped: `guide/adaptive-search.md` (README links it 3×). Also: **Task Board delete-task icon + cold-start empty-board fix (#267)** — board card now has a confirm-gated trash icon next to edit; `TaskBoardDataController.loadBoardData` now awaits `adapter.waitForQueryReady()` before reading (was rendering "No tasks" on cold cache because `workspaceService.getWorkspaces()` had no hydration gate, only TaskService did). **MCP read-batching nudge (#266)** — agent-facing prompt guidance only (batch known multi-file reads into one parallel `useTools` call); the learned next-tool predictor + eager prefetch were both measured against real vault traces and SHELVED. Framing decided with user: minor bump, headline-but-conservative on the learning feature, keep on-by-default. **Release-skill gap now CLOSED**: `versions.json` bump (5th file) is in the skill as of `abf26e03`; followed it correctly this release.
+**Proposed, planned but not started** (each has a design plan and a tracking issue):
+- **Web capture via Defuddle** — `docs/plans/web-capture-defuddle-plan.md`. Replace the
+  Web Viewer `save-to-vault` dependency in `web capture-markdown` with Defuddle core
+  plus Obsidian's `htmlToMarkdown()`; adds a mobile-capable fetch transport.
+- **BasesManager agent** — `docs/plans/bases-manager-agent-plan.md`. `.base` file
+  read/write/update/list plus `analyze`, which executes the query through Obsidian's
+  own engine. The agent is not registered at all when Bases is disabled.
+- **In-app verification via the Obsidian CLI** — `docs/plans/obsidian-cli-verification-plan.md`.
+  build → `plugin:reload` → `dev:errors` → screenshot, so "works in Obsidian" stops
+  being a human-only check.
 
-**v5.11.2 RELEASED 2026-06-12** (PRs #250–#264 + `c91631c0` + same-day fixes; workflow success, 3 assets + attestations). Same-day pre-release findings, all shipped in the release: Requesty live smoke found+fixed `google/gemini-3.5-flash` → `vertex/gemini-3.5-flash` (Requesty has no google/ alias for 3.5 Flash; other 12 slugs verified via live `/v1/models`); `tests/debug/provider-model-live-smoke.test.ts` extended with `requesty`+`anthropic` providers; eslint crash on `version-bump.mjs` fixed (`disableTypeChecked` doesn't cover third-party typed rules — explicit `obsidianmd/*: off` + `globals.node` in the JS/MJS block); changelog backfilled for 5.11.0/5.11.1. **Release-skill gap**: `versions.json` needs the new version entry (release.yml guard from #255) — skill's 3-file list is incomplete. **Remaining manual checks** (`docs/testing/manual-test-plan-post-5.11.1.md`, local-only): MCP socket connect on installed build, secure-key-storage round-trip. `action-gh-release` bumped v2→v3 for the June 16, 2026 Node 24 forced upgrade (next-release verify).
+**Deferred, with a live decision attached:**
+- **Reasoning-LEVEL (low/medium/high) UI for local models — WON'T DO** unless
+  re-requested. The gap is real and 3-part: (1) `ChatSettingsRenderer.renderReasoningControls`
+  gates on `staticModelsService.findModel`, which has no `lmstudio`/`ollama` case;
+  (2) `OllamaAdapter` sends `think:<boolean>` (Ollama accepts `"low"|"medium"|"high"|"max"`
+  for gpt-oss) and `LMStudioAdapter` sends no `reasoning_effort`; (3) `ThinkingEffortMapper`
+  has no Ollama/LM Studio entries. **User decision: users set reasoning effort in
+  LM Studio's own UI where available.** Do not build this speculatively.
+- **getTools loop-breaker — scoped, NOT built.** Plan: `docs/plans/gettools-loop-breaker-plan.md`.
+  (A) a per-exchange getTools tracker in `ToolContinuationService` that steers on
+  ≥3 consecutive or repeated-selector getTools calls; (B) decorate getTools and
+  search/list *results* with "these are schemas/locations — call useTools / content
+  read next". Partial (B) has landed in the system prompt (`SystemPromptBuilder`),
+  `searchWorkspaces`, and shipped CLI guidance, but generic search/list result
+  decoration and the tracker do not exist. Steers must never block; keep
+  `TOOL_ITERATION_LIMIT=15` as the backstop.
+- **Canonical Message Pipeline — Phase 3**: drop the redundant
+  `LLMService.generateResponseStream` remap; accept `ConversationMessage[]` directly.
+  ~3–5h, medium risk. Plan: `docs/plans/canonical-message-pipeline-plan.md`.
+  Phases 1+2 shipped. Phase 4 (single canonical message type) deferred to the
+  next provider add.
 
-**In-flight (not yet PR'd):**
-- **DEFERRED (won't-do, 2026-06-28): reasoning-LEVEL (low/medium/high) UI for local models.** Confirmed the gap is real & 3-part — (1) `ChatSettingsRenderer.renderReasoningControls` gates on `staticModelsService.findModel` which has NO `lmstudio`/`ollama` case (falls to `default: return []`), so the Reasoning toggle/effort-slider never renders for local providers; (2) adapters don't pass a level anyway — `OllamaAdapter` sends `think:<boolean>` (Ollama actually accepts `think:"low"|"medium"|"high"|"max"` for gpt-oss; verified via docs), `LMStudioAdapter` sends NO `reasoning_effort` (LM Studio defers to OpenAI param semantics, so gpt-oss WOULD honor `reasoning_effort`); (3) `ThinkingEffortMapper` has Anthropic/Google/Groq/DeepSeek/OpenAI entries but none for Ollama/LM Studio. Per-model nuance: levels apply only to gpt-oss-class; qwen3-thinking is always-on (`/api/v1/models` → `capabilities.reasoning.allowed_options:["on"]`). **User decision: leave it — users set reasoning effort in LM Studio's own UI where available.** Do NOT build A+B+C unless re-requested.
-- **Local-model (LM Studio + Ollama) thinking / streaming / speculative-decoding fixes — UNCOMMITTED on `main`, awaiting user manual test (2026-06-26).** Build green (`main.js` rebuilt), lint+tsc clean, LMStudioAdapter tests 10/10, full sweep clean except the known pre-existing `TaskBoardEditCoordinator` jsdom-Modal failure. **DO NOT COMMIT until user tests** (standing constraint). Root cause found by live-curling the user's LM Studio: sending `draft_model` for speculative decoding against a **batched MLX** target returns `SpeculativeDecodingNotSupportedError` as an **in-stream `{"error":{...}}` frame over HTTP 200** (not an HTTP error) → `processNodeStream` silently swallowed it (no extractor matched) → empty stream → blank bubble / blank inspect / "stuck in reasoning". Fixes: (1) NEW `extractError` hook on `SSEStreamOptions` + `processNodeStream` (`BaseAdapter.ts`) — in-stream error frames now throw `LLMProviderError('…','PROVIDER_STREAM_ERROR')` instead of ending empty; (2) `LMStudioAdapter.generateStreamAsync` refactored to `streamChatOnce(requestBody)` private generator + try/catch that, on a draft error (HTTP **or** in-stream) before any real output, calls `markDraftIncompatible`, deletes `draft_model`, and `yield*`-retries without speculative → chat ALWAYS produces output (also covers tokenizer/vocab-mismatch drafts); (3) `ensureModelLoaded` — **restored `parallel:1`** in the load body (verified via `echo_load_config` that LM Studio DOES honor `parallel` despite it being absent from the public REST docs; MLX speculative needs a non-batched parallel:1 instance), now scans ALL `loaded_instances` and skips only when a suitable one exists (context match; parallel:1 required when a draft is configured) so it neither reloads every turn nor piles up duplicate instances; **flash_attention is passed through but NEVER compared** (llama.cpp-only; MLX no-op + unreported → comparing it caused infinite reloads — this was the "loads a NEW model every chat" bug). Endpoints confirmed correct/official: `/api/v1/models`, `/api/v1/models/load`. **MLX = the culprit**: batched-MLX bans speculative decoding and vision MLX never supports it; user is switching to **GGUF** (no batched restriction) — pair a GGUF target with a SAME-FAMILY GGUF draft for matching vocab. Also note `/api/v1/models` natively reports `capabilities.vision` + `capabilities.reasoning` (could later replace the name-regex thinking detection + vision gating). **Thinking rendering**: confirmed end-to-end WORKING — `reasoning_content`→`chunk.reasoning`→`MessageStreamHandler` synthetic `reasoning`-type tool call → `toolDisplayNormalizer.buildReasoningGroup` ("Reasoning" group, live) + persisted to `message.reasoning`. **REASONING-RENDER GAP — FIXED (2026-06-26, same uncommitted batch).** Root cause: reasoning flowed through every layer and was persisted to `message.reasoning`, but the FINAL render dropped it — `MessageBubble` computed `state.activeReasoning` and never used it, and the live path emitted a fragile synthetic `reasoning`-type tool call that the tool coordinator never rendered. Fix (7 files): NEW `onReasoningUpdate(messageId,text,isComplete)` event on `StreamHandlerEvents`/`MessageManagerEvents` replacing the synthetic tool call in `MessageStreamHandler` (deleted `createReasoningToolCall`); `ChatView.onReasoningUpdate` → `MessageDisplay.updateMessageReasoning` → `MessageBubble.updateReasoning` (live writer) + `MessageBubble.syncReasoningBlock` renders a collapsible `<details class="message-reasoning">` "Thinking" block from `getActiveReasoning` (auto-expands while streaming, collapses on complete) wired into both `createStandardMessageContainer` and `updateWithNewMessage`; `styles.css` `.message-reasoning*`; `ToolInspectionModal` now includes messages with reasoning (think-only responses appear) via `hasInspectableContent` + a default-open "Reasoning" data block. Build+lint+tsc clean; LMStudioAdapter 10/10, MessageStreamHandler+MessageManager tests pass. Touched files: `src/services/llm/streaming/SSEStreamProcessor.ts`, `src/services/llm/adapters/BaseAdapter.ts`, `src/services/llm/adapters/lmstudio/LMStudioAdapter.ts`, `src/services/llm/adapters/ollama/OllamaAdapter.ts`, `src/services/llm/adapters/shared/thinkingModels.ts` (NEW), `src/agents/toolManager/tools/getTools.ts` + `services/ToolCliNormalizer.ts` + `types.ts` (getTools compact-discovery bloat cap, ~25k→~3k), `src/components/llm-provider/providers/LMStudioProviderModal.ts` (speculative pair gating layers 1&2), + tests. Also uncommitted from earlier in same session: getTools compact-discovery cap, native thinking for LM Studio (`reasoning_content`) & Ollama (`think:true`/`message.thinking`), speculative-pair UI gating via `/api/v0/models` metadata.
-- **AGY CLI re-route (issue #271c) — adapter swap in progress on `feat/agy-cli-reroute`** (`.worktrees/feat-agy-cli-reroute`, off current main). Plan: `docs/plans/agy-cli-reroute-plan.md` (APPROVED). Replaces deprecated `gemini` CLI runtime with Google Antigravity CLI (`agy` v1.0.10, `~/.local/bin/agy`) in the `google-gemini-cli` provider (provider id UNCHANGED for settings compat). **2 commits landed**: `518007fd` slice e (UI relabel → "Antigravity CLI"/"Google (Antigravity)", 3 files), `7d4b765c` slices a/b/c+R7 (binary swap geminiCli.ts:49; DELETE the gemini `--output-format json` JSON-parse pipeline → `parseAgyOutput`=stdout.trim seam, agy emits PLAIN TEXT + NO token usage; NEW `geminiCliModelNormalize.ts` FAIL-CLOSED allowlist — agy `--model` fails OPEN on bad slug so Nexus must reject; R7 `GeminiCliAuthService` strict→tolerant `access_token`-presence scan, boolean-only). Build green, adapter test rewritten to agy contract 6/6, suite 3601/0. **agy contract (verified v1.0.10)**: plain-text only (no `--output-format json`); `--model` takes human labels (`agy models`: "Gemini 3.5 Flash (Medium/High/Low)", "Gemini 3.1 Pro", "Claude Sonnet/Opus 4.6", "GPT-OSS 120B") and FAILS OPEN; no token usage; auth file-based `~/.gemini/oauth_creds.json` (may be multi-object → tolerant parse); **IGNORES `GEMINI_CLI_SYSTEM_SETTINGS_PATH`** (verified — so the old env-pointed temp-settings mechanism is dead for agy); native tool-restriction = `--sandbox` + permission-prompting (no `--dangerously-skip-permissions`). **Slice d PENDING** (invocation flags + tool-restriction posture + env-strip + deferred UI runtime strings): under focused agy-security re-review (Task #38) — leading design is `agy --print --model <label> --print-timeout <ms> --sandbox` with NO config write at all (eliminates the persistent-`~/.gemini`-write HIGH risk). Then TEST + peer-review. **Related**: PRs #275 (#272 task-board undercount) + #276 (#271a/b spinner+CLI-bound) OPEN, await manual test + merge; AGY branch rebases onto main after #276 to inherit the idle watchdog. SECURITY non-negotiables: auth probe boolean-only (never read/log/return token); no persistent ~/.gemini writes; no `--dangerously-skip-permissions`; allowlist-validate model labels.
-- **Skills App (Skills Protocol integration) — FEATURE-COMPLETE on `feat/skills-app`, not yet PR'd** (`.worktrees/feat-skills-app`; 6 commits `07d50e3b`→`6302c460`). Full design: `docs/plans/skills-protocol-integration-plan.md`. Installable App (`src/agents/apps/skills/`, ComposerAgent-shaped, cross-platform, no creds), one-line registration in `AppManager.getBuiltInAppRegistry`. ALL phases shipped: discovery+index (v13 SQLite), loadSkill (loadWorkspace-shaped + usage history), CRUA (create/update/archive, archive-then-replace), import + sync-back (vault-root `.{provider}/skills/` ⇄ mirror, last-writer-wins), cross-context usage history (§9, trace `metadataJson.activeSkills` stamping, zero-migration), and the Settings → Apps → Skills management UI (via new `AppCustomSection` framework hook + `SkillsSectionRenderer`). Generic `AppRuntimeContext` (settings + storage-adapter + sessionContextManager getters) added to `BaseAppAgent` — opt-in, future apps reuse it. **Pre-PR adversarial audit (2026-05-31, 3 parallel auditors) → ALL findings fixed**: 5 BLOCKING (4 path-traversal/destructive-write — root cause: §7 "no traversal" never implemented + `normalizePath` doesn't strip `..`; + 1 scanner `(provider,name)` key-fork) + 5 MAJOR + 6 MINOR. Fix = new `skillPaths.ts` (`resolveVaultPath`/`assertInside`/`isSafePathSegment`) wired at every write/copy/remove boundary, provider validation, archived-exclusion on `findByName`, safe provider-scoped prune, `AppCustomSection` disposer hook (Component-leak fix), `hashSkillContent` (CRLF-normalized), LIKE-escape. Audit + resolution table: `docs/review/skills-app-prePR-audit-2026-05-31.md` (gitignored). **Full suite 3051 passed / 17 skipped / 0 failed; build+lint clean.** Net-new tests ~131 (incl. +41 audit-fix). ⚠️ Verified by unit tests + build only — NOT yet manually tested in Obsidian; mirror is empty until syncSkills import or createSkill runs. ⚠️ m5 (`adapter.list('')`→`'/'` vault-root discovery) still needs a manual MOBILE smoke check. **Next: PR + merge to main.** _(build history below.)_ **Phase 0 DONE (commit `07d50e3b`)**: app scaffold + 6 tool stubs, `types.ts`, `SkillValidator` (28 tests) + `SkillScanner` (7 tests — walks `<root>/skills/<provider>/<name>/SKILL.md` via `vault.adapter`, ignores `_`/`.`-prefixed, inline FNV-1a hash), **v13 SQLite migration** (`skills` table, UNIQUE(provider,name), CURRENT_SCHEMA_VERSION 12→13). **Phase 1 DONE (commit `e72e725b`)**: generic `AppRuntimeContext` injection (settings + storage-adapter getters → `BaseAppAgent.setRuntimeContext`, threaded via AppManager 5th ctor arg from AgentRegistrationService; `HybridStorageAdapter.getSqliteCache()` accessor) — opt-in, future apps reuse it. `SkillIndexService` (pure SQLite cache over `skills`; `syncFromScan` UPSERT preserves owned `is_archived`/`last_loaded_at`; recency-ordered `list`; `findByName`/`touchLoaded`; 12 tests). `SkillsContext.resolveSkillsRuntime` (settings→`<root>/skills` via resolveVaultRoot, vault.adapter, SQLite index+scanner; friendly errors). **listSkills + loadSkill now functional** (scan→sync→list/findByName; loadSkill §12-shaped: instructions+files+nudge+alternatives). Build+lint clean, 45 skills tests green. **Next**: CRUA (createSkill/updateSkill/archiveSkill via SkillValidator) + `SkillSyncService` (import from vault-root `.{provider}/skills/` + sync-back, archive-then-replace last-writer-wins, co-located `_archive/`) + usage-history attribution via `memory_traces.metadataJson.activeSkills` (§9) + settings UI for manual editing. ⚠️ mirror is empty until import/create lands, so listSkills returns [] today. ⚠️ sync-back WRITES to the user's real provider dotfolders — confirm scope before building.
-- **Settings UI redesign — Wave 3 (Workspaces tab)**: v3.1 mockup blessed 2026-05-26 (`docs/mockups/workspace-tab-redesign-v3-subpages.html`). 4-PR slice plan at `docs/plans/workspace-tab-redesign-plan.md`. **PR1 MERGED** (PR #220, squashed to main 2026-05-27): BoxedSection + ConfirmModal primitives, WorkspaceDetailRenderer/WorkspaceFormRenderer/StatesSectionRenderer shell ports preserving PR #216 v5.9.7 archive-visibility chain, ConfirmModal sweep across 3 call sites with `variant=delete` uniform on `confirmDangerousAction`, `styles.css` `.ws-section` family + breadcrumb fix at :5045. +2270/-246 across 13 files; full suite 2863 passed / 17 skipped; build+lint clean. Peer-reviewed by architect+frontend+test (0 Blocking, 8 Minor + 4 Future dispositioned). Review synthesis: `docs/review/pr220-wave3-pr1-2026-05-27.md`. **PR2 carry-forwards** (user-approved disposition, bundled into PR2 scope per plan §PR-Slicing): Group A — ConfirmModal hardening pre-task (~30 LoC: require `component`, add `onResolve`+`ConfirmModal.confirm()` helper, async error handling); Group B — `--space-*` token sweep on `.ws-section` family + wire `variant=remove` to workflow/keyfile × buttons; Group C — UX-outcome test layer (handler-wrapping integration tests + toggle-flip + re-instantiation coverage). **F-4 mobile-compat lint guard** tracked as #221. **Next**: PR2 (row primitives + checkbox sweep + Group A/B/C carry-forwards), PR3 (TaskDetail + Dependencies/Linked notes — production-ahead), PR4 (WorkflowEditor + FilePicker + mobile breakpoint).
-- **Canonical Message Pipeline — Phase 3**: drop redundant `LLMService.generateResponseStream` remap; accept `ConversationMessage[]` directly. ~3-5h, medium risk. Plan: `docs/plans/canonical-message-pipeline-plan.md`. Phase 1+2 shipped in PR #142. Phase 4 (single canonical message type) deferred to next-provider-add.
-- **Issue #88 — CustomPromptStorageService dual-write desync**: fix committed (3447d8c5) on `fix/issue-88-dual-write-desync` worktree, awaiting PR.
-- **Context Budget Service**: `feat/context-budget-service` branch, work ongoing.
-- **LLM Eval Harness** (`tests/eval/`, ~3500 lines, plan in `docs/plans/llm-eval-harness-plan.md`): grades two-tool MCP usage via `RUN_EVAL=1`. Skill: `/nexus-model-eval`. Cloud leaderboard (mock mode, 35 scenarios): gemma-4-31b-it 91%, gemma-4-26b-a4b-it 89%, qwen3.6-27b 83%, qwen3.5-9b 80%, laguna-xs.2 80%. **PR #269 merged** the app-fidelity fixes (always-meta surface, CLI-arg parsing, search-slug corrections). **Local-model grading (uncommitted on main, 2026-06-19)**: `EvalRunner.ts`/`ConfigLoader.ts` add keyless `ollama`/`lmstudio` providers via `LMStudioAdapter`→`localhost/v1`; `eval.test.ts` now caps concurrency (`EVAL_CONCURRENCY`, defaults to **serial=1 for local single-slot servers** — concurrent fan-out at Ollama's one inference slot caused a 120s-timeout 500-storm that discarded the whole run), streams per-case progress to `test-artifacts/eval-progress-<ts>.log`, and treats per-job throws as non-fatal failed scenarios. gemma4:e4b on Mac ≈ 19 tok/s gen, ~30–56s/scenario, ~20–30 min full run. **Jest test-timeout now scales with serial lane count** (`eval.test.ts`; was a fixed ~8min that killed serial runs at 9/35; override `EVAL_TEST_TIMEOUT_MS`).
+**Open bug follow-ups (deferred, not blocking):**
+- `CONFLICT_COPY_PATTERNS` (`src/database/migration/CacheBackendMigration.ts:12`)
+  does not match the Dropbox `cache (User's conflicted copy YYYY-MM-DD).db` form —
+  the closing paren before `.db` breaks the anchor.
+- `waitForQueryReady` post-migration race — first-boot transient timeout is papered
+  over with a sticky restart Notice; root cause not investigated.
+- `FilePickerRenderer.getRootFolder()` (`src/components/workspace/FilePickerRenderer.ts:191`)
+  passes `/blog-test`-style paths to `getAbstractFileByPath()`, which expects no
+  leading slash. Fix: `normalizePath()` or strip the leading slash.
+- Claude Code `ENAMETOOLONG` (issue #64) — an earlier fix may not have fully
+  resolved it. UNVERIFIED against current code; needs re-investigation.
 
-**Failure-pattern analysis + system-prompt iteration (uncommitted on main, 2026-06-19):** (1) **JSON report output** — `ReportGenerator.generateReportJson`/`saveReportJson` emit a `.json` sibling next to every `.md` (per-model + aggregate): untruncated tool-call args as objects, sorted `byModel` leaderboard, full turns/errors. Wired at both save sites in `eval.test.ts`. (2) **`excludeFromBoard` scenario flag** (`types.ts` → `ScenarioResult.excludedFromBoard`, stamped in the `finish()` choke point in `eval.test.ts`, honored in JSON `byModel`): run+reported but not scored, for known fixture bugs. (3) **Scenario filter already exists**: `EVAL_SCENARIO_NAMES=a,b,c` (comma-sep, via `config.scenarioNames`/`shouldRunScenario`) — use for targeted retests, no new code. (4) **System prompt reframed** (`SystemPromptBuilder.buildWorkingStrategySection`): two-phase EXPLORE/ACT → three buckets **exploration (search/list) → inspection (read) → exploitation (write/move/etc)** + soft one-line "after search you're encouraged to read the relevant file(s); search/list results are locations, not contents." Shared by prod+eval via `fixtures/system-prompt.ts`. (5) **multi-intent fixture bug fixed** (`vague-prompts.eval.yaml`): single `useTools` turn returned todo content for EVERY read, so following a search hit looped/bailed; rewrote as deterministic 3-round chain w/ `sequentialMockResponses` (api read returns real content), `excludeFromBoard:true` until re-verified. **Targeted cloud retest (n=1, mock):** 3-bucket prompt NET-POSITIVE on discovery/protocol — all-agents +3 fixed, get-tools/topic-switch qwen3.6 fixed, write-new-note laguna stopped hallucinating, vague-organize laguna+qwen3.6 fixed; BUT **search-then-read-chain unmoved (0/5)** — models search, get `{path,score}` (no content), fabricate the answer; soft prompt nudge does NOT overcome it. **Next lever (proposed): decorate the search/list tool RESULT** ("this is a location — call content read --path X"; result-side nudge the model can't ignore, doubles as recovery steer). **Op gotchas:** on test timeout the report-save block never runs (reports lost, only progress log survives) → recover from progress log, or make save timeout-resilient. **getTools-loop ROOT CAUSE found + `vague-organize` FIXED:** the scripted getTools mock is SELECTOR-INSENSITIVE (returns the same fixed blob for every call); `vague-organize` exposed only storage tools, so a model that planned to SEARCH for 2024 notes asked getTools for `search`, got storage back, read it as "discovery broken," and looped getTools forever at temp 0 (gemma-31b 24 calls/1307s). NOT an agent-name bug — both prod + eval `toKebabCase` strip `Manager` so `search`→`searchManager` resolves fine. Fix (`vague-prompts.eval.yaml`): getTools mock now exposes BOTH storage+search; result mocks switched to DOMAIN-tool keys (`storageManager_list`/`searchManager_content`/`storageManager_move`) so the executor's useTools fallback dispatches per inner command in ANY order/round; expectations relaxed to `getTools`(name-only, no params → selector check skipped) + the two `storage move`s, so list→move AND search→move both pass. VERIFIED: gemma-4-31b now PASS in 102s (was 1307s loop). **Production loop-breaker scoped (NOT built):** `docs/plans/gettools-loop-breaker-plan.md` — (A) `ToolContinuationService` per-exchange getTools tracker → steer on ≥3 consecutive or repeated-selector getTools ("you already discovered [...]; getTools returns schemas not data — call useTools"); (B) decorate getTools + search/list RESULTS with "these are schemas/locations — call useTools/content read next" (also fixes the search→read satisfice the system prompt couldn't). Steers never block; keep `TOOL_ITERATION_LIMIT=15` as final backstop. **`EVAL_TEMP` knob added** (`ConfigLoader.applyDefaultEnvOverrides`): overrides `defaults.temperature`; per-scenario `temperature:` still wins over it (precedence: scenario > EVAL_TEMP > config). All grading is temp 0 (deterministic) — which is also the WORST case for the getTools loop (greedy decoding can't jitter out of a stuck state). **Report-save now timeout-resilient** (`eval.test.ts`): `allResults` is populated incrementally in the per-scenario `finish()` (was pushed only after `mapWithConcurrency` resolved, so a mid-run test-timeout lost ALL reports — bit us twice: cloud targeted + qwen local); `afterAll` now saves partial JSON/MD on timeout. **qwen3.5:4b LOCAL graded (2026-06-19, new prompt, enforcement off, serial; full 38 across two runs after first timed out at 32):** BOARD 21 PASS / 16 FAIL of 37 (~57%, multi-intent excluded). Report-save-on-timeout fix + vague-organize de-loop both VERIFIED on the 6-scenario completion run (JSON+MD saved; vague-organize failed in 246s on a malformed getTools call, NOT the 1307s loop). Failures concentrate on PROTOCOL COMPREHENSION not chain-completion (the 4B wall): Pattern C skips getTools→calls useTools directly (~5: simple-read, create-new-note, expand-toolset, debug-two-exchange), Pattern B wrong agent/selector in getTools (~4: topic-switch asked for `prompt.*`, search-by-keyword `-help.search`, update-note dumped context-object into args.tool). Not bad for 4B; the loop-breaker + result-decoration (plan b) + 3-bucket prompt would help this size most. Next: headless agent stack — replace fake tool schemas with real agents on TestVault.
-
-- **Context-contract enforcement + recovery testing (uncommitted on main, 2026-06-19):** PRODUCTION change — `useTools` now enforces the context contract that was previously declared-but-not-enforced (schema `required` is doc-only, no ajv). `ToolCliNormalizer` gained pure shared helpers `collectContextContractViolations()` / `formatContextContractError()` + method `validateExecutionContext()`; `UseToolTool.execute()` calls it first and throws a **recoverable steering error** when `memory`/`goal` are empty/placeholder (workspaceId/sessionId keep silent defaults, steer only on present-junk; constraints optional). getTools/discovery is exempt. 13 unit tests (`ToolManagerContextContract.test.ts`); full suite 3636 pass (only pre-existing `TaskBoardEditCoordinator` jsdom-Modal failure). The eval harness imports the SAME validator (single source) — `EvalToolExecutor` enforces it (`enforceContextContract` / `EVAL_ENFORCE_CONTEXT=1`) AND supports `forceContextSteering: N` (deterministically rejects the first N useTools calls with the real steering error to test recovery regardless of model behavior); `EvalRunner` grades recovery within `maxRecoveryRounds` (default 3); `tests/eval/scenarios/context-recovery.eval.yaml`. VERIFIED on gemma4:e4b: forced steering pushed it from `memory:'N/A'` to a real summary, then it re-issued and completed (steer=1, recovered=True, PASS). Insight: validation-driven recovery is non-deterministic (models send `''` vs `'N/A (First turn)'`), so `forceContextSteering` is the reliable test path. Follow-up: per-round mock response queue (current mock is name-keyed last-write-wins) for non-context recovery patterns (read→error→read→success); harness unit tests for the executor recovery logic.
-
-**Open follow-ups (deferred, not blocking):**
-- **Issue #217** — Frontend polish from PR #216 review: F1 (empty-name silent ignore in StateEditModal), F2 (no-op save fires noisy state_updated event), F3 (double-click race on Archive/Restore/Delete with no in-flight disable), F4 (stale-promise stomp on rapid workspace re-render). All Minor severity; not blocking.
-- **Issue #219** — Denormalize `state.isArchived` into SQLite metadata (perf follow-up to v5.9.7 / #218). ~80–120 LoC + v12→v13 migration. Restores the fast-path read shortcut without sacrificing correctness. Not blocking until power-user workspaces hit 100–500+ states.
-- `CONFLICT_COPY_PATTERNS` regex widening for Dropbox `cache (User's conflicted copy YYYY-MM-DD).db` form (closing paren before `.db` breaks the anchor).
-- `waitForQueryReady` post-migration race — first-boot transient timeout papered over with sticky restart Notice in v5.8.12; root-cause investigation deferred.
-- Issue #64 — Claude Code ENAMETOOLONG: PR #73 fix may not have fully resolved. Needs re-investigation.
-- File Picker rootFolder leading-slash: `FilePickerRenderer.getRootFolder()` passes `/blog-test`-style paths to `getAbstractFileByPath()` which expects no leading slash. Fix: `normalizePath()` or strip leading slash.
+**UNVERIFIED older items** (predate this clone's history; status unknown — confirm on GitHub before acting):
+- Issue #217 — frontend polish from the states-management UI review: empty-name
+  silent ignore in StateEditModal, no-op save firing a noisy `state_updated`,
+  double-click race on Archive/Restore/Delete, stale-promise stomp on rapid
+  workspace re-render. All Minor.
+- Issue #219 — denormalize `state.isArchived` into SQLite metadata to restore the
+  fast-path read shortcut lost in the archive-visibility fix. ~80–120 LoC + a
+  migration. Not blocking until workspaces hit 100–500+ states.
+- Issue #221 — mobile-compat lint guard.
+- Issue #88 — `CustomPromptStorageService` dual-write desync.
+- Settings UI redesign Waves/PRs 2–4 (row primitives, TaskDetail, WorkflowEditor +
+  mobile breakpoint). Plan: `docs/plans/workspace-tab-redesign-plan.md`.
 
 ### Branch Architecture
 
 A branch IS a conversation with parent metadata:
 - `metadata.parentConversationId`: parent conversation
 - `metadata.parentMessageId`: message the branch is attached to
-- `metadata.branchType`: 'alternative' | 'subagent'
+- `metadata.branchType`: `'alternative' | 'subagent'`
 
-**Key Files**:
-- `src/services/chat/BranchService.ts` - Facade over ConversationService
-- `src/ui/chat/controllers/SubagentController.ts` - Subagent infrastructure
-- `src/ui/chat/controllers/NexusLoadingController.ts` - Loading overlays
-- `src/ui/chat/services/ContextTracker.ts` - Token/cost tracking
+**Key files**: `src/services/chat/BranchService.ts` (facade over ConversationService),
+`src/ui/chat/controllers/SubagentController.ts`, `src/ui/chat/controllers/NexusLoadingController.ts`,
+`src/ui/chat/services/ContextTracker.ts` (token/cost tracking).
 
 ### Known Issues
 
-- **Workspace Delete Persistence** (Feb 2): deleted workspaces may reappear on reload. Backend delete logic looks correct; suspect UI cache issue.
-- **WebLLM/Nexus**: multi-turn tool continuations may crash on Apple Silicon (WebGPU issue). If startup hangs on "loading cache", clear site data.
+- **Workspace Delete Persistence**: deleted workspaces may reappear on reload.
+  Backend delete logic looks correct; suspect UI cache. UNVERIFIED — long-standing,
+  re-confirm it still reproduces before spending time on it.
+- **WebLLM / Nexus Quark**: multi-turn tool continuations may crash on Apple Silicon
+  (WebGPU). If startup hangs on "loading cache", clear site data.
 
 ## Development Notes
 
 ### Build Commands
-- `npm run dev` - Development build with watch mode
-- `npm run build` - Production build (TypeScript + esbuild)
-- `npm run test` - Run Jest test suite
-- `npm run lint` - Run ESLint
-- `npm run deploy` - Build and deploy via PowerShell script
-- **Release**: Use `/nexus-release` skill for version bumping and GitHub release creation
+- `npm run dev` — esbuild dev build
+- `npm run build` — full production build (obsidian lint → CLI build → CLI content gen → `tsc --noEmit` → esbuild → connector tsc → connector content gen)
+- `npm run build:cli` — CLI bundle + generated CLI content only
+- `npm run test` — Jest
+- `npm run lint` — ESLint (alias of `lint:obsidian`)
+- `npm run schemas:tools` — regenerate `cli-first-tool-schemas.json`
+- `npm run sync:agent-context` / `npm run sync:skills` — sync shipped agent context/skills
+- `npm run deploy` — build + PowerShell deploy (Windows)
+- **Release**: use the `/nexus-release` skill. It bumps `package.json`, `manifest.json`,
+  `versions.json`, and the changelog — `versions.json` is guarded by the release
+  workflow, so it is not optional.
 
 ### Testing Approach
-- **Unit Tests**: Jest for core logic and services (1200+ tests)
-- **Integration Tests**: Manual testing in Obsidian environment
-- **MCP Testing**: Via Claude Desktop connection
+- **Unit tests**: Jest, ~346 test files under `tests/`
+- **Integration**: manual testing in Obsidian
+- **MCP**: via Claude Desktop connection
+- **LLM eval harness** (`tests/eval/`, `RUN_EVAL=1`, skill `/nexus-model-eval`):
+  grades two-tool MCP usage. Plan: `docs/plans/llm-eval-harness-plan.md`.
+  Useful knobs: `EVAL_SCENARIO_NAMES=a,b,c` (targeted retest), `EVAL_CONCURRENCY`
+  (**defaults to serial=1** — local single-slot servers 500-storm under fan-out),
+  `EVAL_TEMP`, `EVAL_TEST_TIMEOUT_MS`, `EVAL_ENFORCE_CONTEXT=1`. Per-case progress
+  streams to `test-artifacts/eval-progress-<ts>.log`; reports save incrementally
+  so a mid-run timeout still produces JSON + MD. Scenarios with known fixture bugs
+  can set `excludeFromBoard: true` to run without scoring.
+  **Harness gotcha**: the scripted getTools mock is selector-insensitive — it returns
+  the same blob for every call. A scenario that exposes only some agents will make a
+  model conclude "discovery is broken" and loop getTools forever at temp 0. Expose
+  every agent the scenario could plausibly need.
 
 ### Code Patterns
 
-- **Agents**: Extend `BaseAgent`, register tools in constructor
-- **Tools**: Extend `BaseTool<Params, Result>`, implement `execute()`, `getParameterSchema()`, `getResultSchema()`
-- **Results**: Return `{ success: boolean, ...data }` or `{ success: false, error: string }`
-- **Services**: Singletons with dependency injection via constructor
-- **Adding a new agent**: (1) Add `initializeYourAgent()` to `AgentInitializationService.ts`, (2) Add `safeInitialize('yourAgent', ...)` to a phase in `AgentRegistrationService.doInitializeAllAgents()`. No factory classes, no ServiceDefinitions entry.
+- **Agents**: extend `BaseAgent`, register tools in the constructor
+- **Tools**: extend `BaseTool<Params, Result>`, implement `execute()`, `getParameterSchema()`, `getResultSchema()`
+- **Results**: return `{ success: boolean, ...data }` or `{ success: false, error: string }`
+- **Services**: singletons with constructor dependency injection
+- **Adding a new agent**: (1) add `initializeYourAgent()` to
+  `src/services/agent/AgentInitializationService.ts`, (2) add
+  `safeInitialize('yourAgent', ...)` to a phase in
+  `AgentRegistrationService.doInitializeAllAgents()`. No factory classes, no
+  ServiceDefinitions entry.
 
 ### Dependencies
-See `package.json`. Key: MCP SDK, express, winston, uuid. LLM provider SDKs removed — direct HTTP via ProviderHttpClient.
+See `package.json`. Key: MCP SDK, express, winston, uuid. LLM provider SDKs were
+removed — providers talk direct HTTP via `ProviderHttpClient`.
 
 ## Code Quality
 
-Full tech debt tracker: `docs/tech-debt.md`
+Large-file punchlist: `docs/plans/large-file-refactor-punchlist.md`.
 
-**600+ line files to watch**: WorkspaceService (965), ModelAgentManager (895), SQLiteCacheManager (856), ConversationService (813), connector (731), ChatSettingsModal (702), ChatView (659), OpenRouterAdapter (640), ProviderManager (659), ProvidersTab (645), ValidationService (625), BatchExecutePromptTool (618), GoogleAdapter (612)
+**600+ line files to watch** (re-measured 2026-08-14 with `wc -l`):
 
-**Plugin store compliance**: `isDesktopOnly: false` is correct. VaultOperations uses `app.fileManager.trashFile()` (constructor takes `App` as first arg).
+| Lines | File |
+|------:|------|
+| 1426 | `src/utils/cliAssets.ts` |
+| 1247 | `src/components/shared/ChatSettingsRenderer.ts` |
+| 1214 | `src/settings/tabs/GetStartedTab.ts` |
+| 1182 | `src/ui/chat/ChatView.ts` |
+| 1167 | `src/agents/toolManager/services/ToolCliNormalizer.ts` |
+| 1150 | `src/settings/tabs/DefaultsTab.ts` |
+| 1052 | `src/services/ConversationService.ts` |
+| 1019 | `src/database/adapters/HybridStorageAdapter.ts` |
+|  999 | `src/ui/chat/services/ModelAgentManager.ts` |
+|  941 | `src/agents/taskManager/services/TaskService.ts` |
+|  916 | `src/agents/searchManager/services/MemorySearchProcessor.ts` |
+|  901 | `src/services/cli/LocalCliInstaller.ts` |
+|  890 | `src/settings/tabs/WorkspacesTab.ts` |
+|  880 | `src/services/llm/adapters/openrouter/OpenRouterAdapter.ts` |
+|  871 | `src/services/llm/adapters/BaseAdapter.ts` |
+|  854 | `src/database/interfaces/StorageEvents.ts` |
+|  846 | `src/services/llm/adapters/google/GoogleAdapter.ts` |
+|  839 | `src/services/llm/adapters/lmstudio/LMStudioAdapter.ts` |
+|  829 | `src/services/llm/adapters/webllm/WebLLMEngine.ts` |
+|  784 | `src/services/llm/adapters/openai/OpenAIAdapter.ts` |
+|  774 | `src/services/WorkspaceService.ts` |
+|  770 | `src/connector.ts` |
+|  710 | `src/database/storage/SQLiteCacheManager.ts`, `src/settings/tabs/ProvidersTab.ts` |
+|  673 | `src/services/llm/providers/ProviderManager.ts` |
+
+**Plugin store compliance**: `isDesktopOnly: false` is correct. VaultOperations uses
+`app.fileManager.trashFile()` (constructor takes `App` as its first arg).
 
 ## MCP Integration
 
@@ -326,73 +401,122 @@ Full tech debt tracker: `docs/tech-debt.md`
 
 ### Two-Tool Architecture
 
-Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` (execution).
+Instead of 70+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` (execution).
 
-**Context Schema**: `{ workspaceId, sessionId, memory, goal, constraints? }` - all required except constraints.
+**Context schema**: `{ workspaceId, sessionId, memory, goal, constraints? }` —
+all required except `constraints`, and **enforced at runtime** (see the pinned
+ToolManager contract for exactly what steers vs. silently defaults).
 
 **Flow**: `getTools` → get schemas → `useTools` with the context fields at the top
 level plus a single `tool` string. Batch by separating commands with a top-level
-comma outside quotes: `"storage list --path Notes, content read --path a.md --start-line 1"`.
+comma outside quotes:
+`"storage list --path Notes, content read --path a.md --start-line 1"`.
 
 ⚠️ The `calls: [{agent, tool, params}]` array and the nested `context: {...}` object
 were removed in v5.9.0 and are rejected outright (`Deprecated payload shape`).
 Context fields must NOT appear as CLI flags inside the `tool` string either.
 
-**Benefits**: 95% token reduction (~15,000 → ~500), works with small context models.
+**Benefits**: large token reduction vs. exposing every tool schema; works with
+small-context models.
 
-**Key Files**: `src/agents/toolManager/` (agent + tools), `src/services/trace/ToolCallTraceService.ts`
+**Key files**: `src/agents/toolManager/` (agent + tools),
+`src/services/trace/ToolCallTraceService.ts`, `src/utils/cliAssets.ts` (shipped guidance).
 
-**Tool Count**: 74 tools across 13 agents (not counting ToolManager meta-tools) —
-56 across the 8 always-on agents, plus 18 across the 5 opt-in apps (composer,
-elevenlabs, data, skills, web). A vault only exposes the apps it has enabled, so
-`cli-first-tool-schemas.json` (66/11) reflects the vault it was generated from.
+**Tool count**: 74 tools across 13 agents (excluding the 2 ToolManager meta-tools) —
+56 across the 8 always-on agents, plus 18 across the 5 opt-in apps. The checked-in
+`cli-first-tool-schemas.json` shows 66 tools / 11 agents because it was generated
+from a vault with `skills` and `data` disabled; regenerate with `npm run schemas:tools`.
 
 ## Memory & Workspace System
 
 ### Storage Location
 
-**Primary synced event store**: settings-derived vault root, `settings.storage.rootPath` (default `Nexus`) with managed data under `<rootPath>/data/`:
-- `conversations/<conversationId>/shard-*.jsonl` - sharded append-only conversation events
-- `workspaces/<workspaceId>/shard-*.jsonl` - sharded append-only workspace/session/state/trace events
-- `tasks/<workspaceId>/shard-*.jsonl` - sharded append-only task/project events
-- `_meta/` - storage and migration manifests
+**Primary synced event store**: settings-derived vault root,
+`settings.storage.rootPath` (default `Nexus`), with managed data under `<rootPath>/data/`:
+- `conversations/<conversationId>/shard-*.jsonl` — sharded append-only conversation events
+- `workspaces/<workspaceId>/shard-*.jsonl` — workspace/session/state/trace events
+- `tasks/<workspaceId>/shard-*.jsonl` — task/project events
+- `_meta/` — storage and migration manifests
 
-**Configured root rules**: resolve with `resolveVaultRoot(settings, { configDir })`; never hardcode `Nexus` except as `DEFAULT_STORAGE_SETTINGS.rootPath`, and never hardcode `.nexus` for new writes.
+**Configured root rules**: resolve with `resolveVaultRoot(settings, { configDir })`
+(`src/database/storage/VaultRootResolver.ts:133`). Never hardcode `Nexus` except as
+`DEFAULT_STORAGE_SETTINGS.rootPath`, and never hardcode `.nexus` for new writes.
 
-**Legacy read paths**: `.obsidian/plugins/<plugin-folder>/data/`, compatibility plugin folders (`nexus`, `claudesidian-mcp`), legacy `.nexus/`, and `storage.previousRootPaths` remain read/migration fallback sources. They are not the primary write target.
+**Legacy read paths** (read/migration fallback only, never the write target):
+`.obsidian/plugins/<plugin-folder>/data/`, compatibility plugin folders (`nexus`,
+`claudesidian-mcp`), legacy `.nexus/`, and `storage.previousRootPaths`.
 
 **Local-only cache** (auto-rebuilt from JSONL, never synced):
-- **Desktop (v5.8.12+)**: IndexedDB-backed via `IndexedDBCacheBlobStore`. Cloud-sync-immune. First-launch migration FSM upgrades existing `cache.db` installs.
+- **Desktop**: IndexedDB via `IndexedDBCacheBlobStore` — cloud-sync-immune. A
+  first-launch migration FSM upgrades existing `cache.db` installs.
 - **Mobile**: `vault.adapter` file backend via `VaultAdapterCacheBlobStore`.
+- Chosen by `src/database/storage/CacheBlobStoreFactory.ts`.
 
-**Migration**: On startup, legacy JSONL sources are read/migrated into the configured vault-root event store without deleting old files. Mobile users whose vault syncs after init can run **Nexus: Refresh synced data** from the command palette.
+**Migration**: on startup, legacy JSONL sources are read/migrated into the configured
+vault-root event store without deleting old files. Mobile users whose vault syncs
+after init can run **Nexus: Refresh synced data**. **Nexus: Rebuild cache** recovers
+from a corrupted cache.
 
-**Path resolution**: Use `resolveVaultRoot()` for the configured synced event root and `resolvePluginStorageRoot()` for plugin-scoped compatibility/cache paths.
+**Path resolution**: `resolveVaultRoot()` for the configured synced event root;
+`resolvePluginStorageRoot()` (`src/database/storage/PluginStoragePathResolver.ts:26`)
+for plugin-scoped compatibility/cache paths.
 
 ### Architecture
-- Hybrid JSONL + SQLite: sharded JSONL event store = source of truth, SQLite = rebuildable fast query/vector cache
+- Hybrid JSONL + SQLite: the sharded JSONL event store is the source of truth;
+  SQLite is a rebuildable fast query/vector cache
+- **SQLite schema version 13** (`CURRENT_SCHEMA_VERSION` in
+  `src/database/schema/SchemaMigrator.ts:76`) — v9 added the 4 task tables, v10
+  workflow columns, v11 the archive flag, v12 `shard_cursors`, v13 the `skills` table
 - True database pagination with OFFSET/LIMIT
 - Workspace-scoped sessions and traces
 - Searchable via MemoryManager and SearchManager agents
 
 ## UI Components
 
-- **Chat View**: `src/components/ChatView.ts` - conversations, branching, streaming, tool accordion
-- **Settings**: `src/components/ConfigModal.ts` - tabbed LLM/agent configuration
+- **Chat view**: `src/ui/chat/ChatView.ts` — conversations, branching, streaming, tool accordion
+- **Settings**: `src/components/ConfigModal.ts` + `src/settings/tabs/` — tabbed LLM/agent configuration
 
 ### Chat Suggesters
 | Trigger | Purpose |
 |---------|---------|
 | `/` | Tool hints |
-| `@` | Custom agents |
+| `@` | Custom agents / prompts |
 | `[[` | Note links |
 | `#` | Workspace data |
 
-Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPromptBuilder.ts`
+Key files: `src/ui/chat/components/suggesters/` (`ToolSuggester`, `PromptSuggester`,
+`NoteSuggester`, `WorkspaceSuggester` + TextArea/ContentEditable variants,
+`initializeSuggesters.ts`), `src/ui/chat/services/MessageEnhancer.ts`,
+`src/ui/chat/services/SystemPromptBuilder.ts`.
 
 ## Architectural Notes
 
-- **Subagents**: Branch → stream via LLMService → save result. `chunk.toolCalls` are display-only.
-- **WebLLM/Nexus**: Nexus Quark (4B, 4K context), `<tool_call>` format. May crash on Apple Silicon.
-- **Storage**: Branches as JSONL events, SQLite v12 schema (4 task tables added in v9, workflow columns in v10, archive flag in v11, `shard_cursors` added in v12), tool names use `agent_tool` format.
-- **Apps & Vault Access**: App agents that produce files must have vault access wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs (audio, images) and `vault.create()` for text. Always ensure parent directories exist before writing.
+- **Subagents**: branch → stream via LLMService → save result. `chunk.toolCalls` are display-only.
+- **Reasoning / thinking rendering**: reasoning streams as `chunk.reasoning`, is
+  emitted via `onReasoningUpdate(messageId, text, isComplete)` on
+  `StreamHandlerEvents`/`MessageManagerEvents`, and renders as a collapsible
+  `<details class="message-reasoning">` block. Do NOT reintroduce a synthetic
+  `reasoning`-type tool call — the tool coordinator never rendered it.
+- **In-stream error frames**: some providers (notably LM Studio) return
+  `{"error":{...}}` frames over HTTP 200. `SSEStreamOptions.extractError` +
+  `processNodeStream` in `BaseAdapter.ts` turn those into
+  `LLMProviderError(..., 'PROVIDER_STREAM_ERROR')` instead of an empty stream.
+  Any new streaming adapter should wire `extractError`.
+- **LM Studio speculative decoding**: a `draft_model` against a batched-MLX target
+  fails; `LMStudioAdapter` marks the draft incompatible and retries without it, so
+  chat always produces output. `ensureModelLoaded` passes `flash_attention` through
+  but **never compares it** (llama.cpp-only; MLX no-ops and does not report it —
+  comparing caused infinite model reloads).
+- **Antigravity CLI (`agy`)**: the `google-gemini-cli` provider id is unchanged for
+  settings compat, but the runtime is `agy`, not the deprecated `gemini` CLI. `agy`
+  emits **plain text** (no JSON output mode) and reports **no token usage**;
+  `--model` takes human labels and **fails open** on an unknown slug, so
+  `geminiCliModelNormalize.ts` is a **fail-closed allowlist** — keep it that way.
+  Auth is a boolean-only presence probe over `~/.gemini/oauth_creds.json`; never
+  read, log, or return the token. No `--dangerously-skip-permissions`.
+- **WebLLM / Nexus Quark**: 4B, 4K context, `<tool_call>` format. May crash on Apple Silicon.
+- **Storage**: branches are JSONL events; tool names use the `agent_tool` format.
+- **Apps & vault access**: app agents that produce files must have vault access
+  wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs
+  (audio, images) and `vault.create()` for text. Always ensure parent directories
+  exist before writing.
