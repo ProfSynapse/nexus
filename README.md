@@ -41,7 +41,8 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 | Local CLI bridge (`nexus` command) | No | Yes |
 | Semantic search (local embeddings) | No | Yes |
 | Ingestion (PDF, audio, DOCX) | No | Yes |
-| Composer and Web Tools | No | Yes |
+| Web capture to Markdown (`web capture-markdown`) | Yes | Yes |
+| Composer and the rest of Web Tools | No | Yes |
 | Data Analysis (Python over CSV/Excel) | No | Yes |
 
 Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/nexus/issues).

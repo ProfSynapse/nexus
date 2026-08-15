@@ -2,7 +2,7 @@
 
 ## August 2026
 
-**Unreleased** — Your agent can read, write and run Obsidian Bases
+**v5.17.0** — Obsidian Bases, web capture that works on mobile, and streams that fail out loud instead of going blank
 
 **Bases are part of the vault your agent can work with**
 - A new `base` agent covers `.base` files end to end: `base read` returns the saved
@@ -18,12 +18,73 @@
   show up after the next plugin reload; they are never offered as tools that can only
   answer "not available".
 
+**Saving a web page no longer depends on the Web Viewer**
+- `web capture-markdown` used to open a Web Viewer tab, run the core plugin's
+  save-to-vault command, and then go looking for whatever file it produced. That made
+  it desktop-only, quietly useless when Web Viewer was turned off, and it moved your
+  workspace around to do a read. It now extracts the article itself and keeps the page
+  metadata ([#338](https://github.com/ProfSynapse/nexus/pull/338)).
+- **This is the first web capability that works on mobile.** Pages are fetched
+  directly by default; on desktop, a page that comes back empty or JavaScript-rendered
+  falls back to the live browser view automatically, so signed-in and app-like pages
+  still capture. `--transport fetch` or `--transport browser` forces one or the other.
+
+**Chat says what went wrong instead of going blank**
+- Several providers report failures — a rejected key, a content block, a model that
+  is not available to you — inside a normal-looking successful response. Nexus only
+  read those for LM Studio, so for every other provider the reply just stopped: empty
+  bubble, nothing in the console, no way to tell a failure from a model with nothing
+  to say. Every provider now surfaces the real error
+  ([#336](https://github.com/ProfSynapse/nexus/pull/336)).
+- Anthropic had a second version of the same problem, where the error was thrown
+  somewhere it could never escape and the stream simply ended normally.
+
+**Models and providers**
+- **Gemini 3.7 Flash** on both Google and OpenRouter
+  ([#326](https://github.com/ProfSynapse/nexus/pull/326)), and **DeepSeek V4 Pro
+  (0813)** on OpenRouter ([#327](https://github.com/ProfSynapse/nexus/pull/327)). Both
+  are opt-in; no default changes to reach them.
+- **Perplexity** models were listed in the picker but missing from the model registry,
+  so every Perplexity call came back unpriced. They are now registered and costed.
+- A fresh install used to start on `gpt-4o`, a model no longer in the registry — the
+  picker could not match it and cost was always blank. New installs start on the
+  current OpenAI flagship instead. The GitHub Copilot default moved to a model that
+  actually resolves, and its model list no longer advertises names and context windows
+  that did not match what the gateway serves.
+
 **Fixes**
+- Deleting a workspace during the first seconds after startup appeared to work and
+  then undid itself — the row vanished from the UI and came back on the next read.
+  Writes were quietly falling back to a store nothing reads while the plugin was still
+  hydrating; they now wait, like reads already did. The same fix covers creating and
+  updating a workspace and deleting a session, a saved state or a conversation
+  ([#333](https://github.com/ProfSynapse/nexus/issues/333)).
+- Rebuilding the cache no longer breaks note search for the rest of the session. The
+  note index tables were not part of the schema a rebuild recreates, so they were
+  dropped while indexing carried on writing to them.
+- After reloading the plugin, the CLI socket worked for about twenty seconds and then
+  disappeared with nothing logged — the departing instance deleted the socket the
+  incoming one had just claimed. Nexus now releases its own socket at unload and
+  verifies the file still belongs to it before removing it
+  ([#339](https://github.com/ProfSynapse/nexus/pull/339)).
+- On a brand-new vault the startup gate never opened, so everything waiting on the
+  index burned its full timeout before giving up, and a genuine storage failure
+  surfaced as `Database not initialized` with no trace of the real cause.
 - Adding a few hundred notes at once and then reloading no longer fills the console
   with `Database not initialized`. The note index kept listening for vault changes
   after the plugin unloaded and went on writing to a database that had already closed
   — one leftover listener per reload, so the noise grew with every reload of the
   session.
+- PDF support (24 MB of it) was being loaded during plugin startup, on mobile
+  included; it now loads the first time you actually compose a PDF.
+- The OAuth device-code panel rendered with collapsed padding and spacing because the
+  spacing values it referenced did not exist.
+- `prompt sub` declared two options, `--agent` and `--tools`, that were impossible to
+  pass — both collapsed to the same empty flag name. They are now `--persona` and
+  `--toolset`.
+- The `skills` and `data` agents were missing from the generated tool catalog, so
+  documentation naming their commands could not be checked and their schemas were
+  absent from the reference export.
 
 ---
 
