@@ -31,6 +31,32 @@ the applier. Re-verify by rebuilding the cache again and confirming survival.
 The inverse: something deleted from SQLite without appending a deletion event.
 Replay faithfully restores what the event store still says exists.
 
+## "There is no deletion event to fix — the type does not exist"
+
+Do not assume a delete writes an event just because its siblings do. Session
+deletion had no `session_deleted` type at all: `SessionRepository.delete` ran one
+`DELETE FROM sessions` and touched JSONL never, so a deleted session was measured
+coming back on the next rebuild (`sessions 0 → 1`), with its states and traces
+still in the cache from before. Start every deletion investigation with
+`grep -rn "<entity>_deleted" src/`; an empty result is the diagnosis.
+
+Adding the type is a three-place change — the interface plus both union/guard
+lists in `StorageEvents.ts`, the applier `case`, and the repository write — and
+then two questions have to be answered explicitly:
+
+- **Which stream does the tombstone go in, and does this entity own one?** A
+  session owns none: its events live in the *parent workspace's* stream, shared
+  with the workspace and its sibling sessions. There is nothing to remove from
+  disk and removing that file would destroy the parent — the tombstone IS the
+  removal. Contrast a workspace, which owns two streams that must both go.
+- **Does old JSONL need a backfill?** For a brand-new deletion type, no, and
+  synthesising one is dangerous: the only signal that a pre-fix delete happened
+  is "present in JSONL, absent from SQLite", which is also what a cold, partial
+  or mid-hydration cache looks like. Writing tombstones from that inference turns
+  a rebuildable cache state into permanent data loss, inverting the invariant in
+  `storage-model.md`. Old streams simply have no tombstone; the entity comes back
+  once and the user's next delete is permanent.
+
 ## "The view says 'no tasks' but the data is there"
 
 A read raced startup hydration. Await `waitForQueryReady()` (optional on
