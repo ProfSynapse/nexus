@@ -14,10 +14,13 @@ A non-zero exit here is a release that would have failed after the tag existed.
 
 WARNINGS are drift the workflow tolerates but that still ships wrong: a stale
 lockfile version, a versions.json entry whose minAppVersion disagrees with the
-manifest, a missing changelog entry, hand-reformatted version files, and a
-workflow trigger that no longer matches what this check assumes.
+manifest, a missing or under-written changelog entry, hand-reformatted version
+files, and a workflow trigger that no longer matches what this check assumes.
 
-Stdlib only. Does not need node_modules, does not run git, changes nothing.
+Stdlib only. Does not need node_modules and changes nothing. Reads git history
+(read-only, `git tag` and `git log`) for the changelog-coverage warning only,
+and skips that one check when git is unavailable or the tag range cannot be
+resolved.
 
 Usage:
   python3 check_release_ready.py                 # check the working tree as-is
@@ -32,10 +35,12 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+ISSUE_REF = re.compile(r"#(\d+)")
 WORKFLOW = Path(".github") / "workflows" / "release.yml"
 
 
@@ -163,6 +168,80 @@ def check_changelog(root: Path, version: str, report: Report) -> None:
             "docs/changelog.md",
             f"no entry mentioning {version}; the release ships without a curated "
             "changelog entry",
+        )
+        return
+    check_changelog_coverage(root, version, text, report)
+
+
+def git(root: Path, *args: str) -> str | None:
+    """Run a read-only git command, or return None if git cannot answer."""
+    try:
+        done = subprocess.run(
+            ("git", *args),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def previous_release_tag(root: Path, version: str) -> str | None:
+    """The highest bare-semver tag below `version`. Bare only: a `v`-prefixed tag
+    never triggered a release, so it never bounded one."""
+    out = git(root, "tag", "--list")
+    if out is None:
+        return None
+    def key(tag: str) -> tuple[int, int, int]:
+        return tuple(int(p) for p in tag.split("."))  # type: ignore[return-value]
+    if not SEMVER.match(version):
+        return None
+    older = [t for t in out.split() if SEMVER.match(t) and key(t) < key(version)]
+    return max(older, key=key) if older else None
+
+
+def changelog_entry(text: str, version: str) -> str | None:
+    """The one version block, from its `**vX.Y.Z**` heading to the next block."""
+    start = text.find(f"**v{version}**")
+    if start == -1:
+        return None
+    rest = text[start + 1 :]
+    end = min(
+        (i for i in (rest.find("\n---\n"), rest.find("\n**v")) if i != -1),
+        default=-1,
+    )
+    return rest if end == -1 else rest[:end]
+
+
+def check_changelog_coverage(root: Path, version: str, text: str, report: Report) -> None:
+    """Warn about PRs and issues merged since the last release that the new
+    changelog entry never mentions.
+
+    A pre-existing "Unreleased" entry is the trap: it is written when the first
+    feature lands and then read as finished, so everything merged after it ships
+    undocumented. Not every merge earns a bullet -- CI, build and internal work
+    legitimately have none -- so this is a warning to triage, never an error."""
+    entry = changelog_entry(text, version)
+    if entry is None:
+        return
+    previous = previous_release_tag(root, version)
+    if previous is None:
+        return
+    log = git(root, "log", "--no-merges", "--format=%s%n%b", f"{previous}..HEAD")
+    if log is None:
+        return
+    merged = {m for m in ISSUE_REF.findall(log)}
+    documented = set(ISSUE_REF.findall(entry))
+    missing = sorted(merged - documented, key=int)
+    if missing:
+        report.warn(
+            "docs/changelog.md",
+            f"the v{version} entry never mentions "
+            + ", ".join(f"#{n}" for n in missing)
+            + f", merged since {previous}; confirm each is internal rather than an "
+            "undocumented user-facing change",
         )
 
 
