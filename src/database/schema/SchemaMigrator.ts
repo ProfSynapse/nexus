@@ -56,6 +56,8 @@
  * ============================================================================
  */
 
+import { deriveStateMetadataFromJson, resolveStateDescription } from '../utils/stateContent';
+
 /**
  * Minimal interface for SQLite database operations needed by SchemaMigrator.
  * Works with both sql.js and @dao-xyz/sqlite3-vec WASM databases.
@@ -73,7 +75,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 export interface Migration {
   version: number;
@@ -542,6 +544,72 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_tool_operation_status ON tool_operation_receipts(status)',
       'CREATE INDEX IF NOT EXISTS idx_tool_operation_workspace_status ON tool_operation_receipts(workspaceId, status)'
     ]
+  },
+
+  // Version 15 -> 16: Denormalize the state archive flag (issue #219).
+  //
+  // `state.metadata.isArchived` lived only inside the snapshot content in the
+  // JSONL event store, so `MemoryService.getStates` called `adapter.getState`
+  // for EVERY row just to learn whether it was archived. Each of those reads
+  // parses the whole workspace event stream, making a cold `listStates`
+  // quadratic in the number of states (measured: 200 states -> 200 reads,
+  // 180k events parsed, ~500 ms).
+  //
+  // The column is deliberately NULLABLE WITH NO DEFAULT: NULL means "unknown,
+  // ask the content". A `DEFAULT 0` would silently claim every pre-existing
+  // archived state is visible again — exactly the archive-visibility bug #218
+  // fixed. Rows are filled in three ways:
+  //   1. here, for rows whose `stateJson` the applier already cached;
+  //   2. `StateRepository.backfillDerivedStateMetadata()` at the first init
+  //      after this migration, which reads each workspace JSONL ONCE (not
+  //      once per state) and folds it — the upgrade cost is O(workspaces);
+  //   3. lazily by `MemoryService.getStates`, which still reads content for
+  //      any row that is still NULL.
+  //
+  // `description` is backfilled alongside it from `context.activeTask`: once
+  // the archive flag no longer forces a content read, that fallback is the
+  // only thing keeping `listStates` from reporting "No description" for every
+  // state the createState tool ever wrote (it supplies no explicit
+  // description). Both writers of this table derive it identically via
+  // src/database/utils/stateContent.ts.
+  {
+    version: 16,
+    description: 'Add isArchived column to states table so getStates filters without reading JSONL content',
+    sql: [
+      'ALTER TABLE states ADD COLUMN isArchived INTEGER',
+      'CREATE INDEX IF NOT EXISTS idx_states_archived ON states(isArchived)'
+    ],
+    migrationFn: (db: MigratableDatabase): void => {
+      // Only rows the event applier populated carry stateJson; rows written
+      // live by StateRepository have it NULL and are left unknown for the
+      // JSONL-backed backfill described above.
+      const rows = db.exec(
+        'SELECT id, description, stateJson FROM states WHERE stateJson IS NOT NULL AND isArchived IS NULL'
+      );
+      if (rows.length === 0) return;
+
+      let skipped = 0;
+      for (const row of rows[0].values) {
+        const id = row[0] as string;
+        const description = (row[1] ?? null) as string | null;
+        const stateJson = row[2] as string;
+
+        const derived = deriveStateMetadataFromJson(stateJson);
+        if (!derived) {
+          skipped++;
+          continue;
+        }
+
+        db.run(
+          'UPDATE states SET isArchived = ?, description = ? WHERE id = ?',
+          [derived.isArchived ? 1 : 0, resolveStateDescription(description, derived), id]
+        );
+      }
+
+      if (skipped > 0) {
+        console.warn(`[SchemaMigrator] state archive backfill: skipped ${skipped} state(s) with unparseable stateJson`);
+      }
+    }
   },
 ];
 
