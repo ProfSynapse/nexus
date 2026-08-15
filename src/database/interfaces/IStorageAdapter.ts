@@ -37,6 +37,7 @@ import {
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
 import type { IMessageRepository } from '../repositories/interfaces/IMessageRepository';
+import type { StateListOptions } from '../repositories/interfaces/IStateRepository';
 /**
  * Extended query options for flexible data retrieval
  */
@@ -273,15 +274,20 @@ export interface IStorageAdapter {
   /**
    * Get states for a workspace or session
    *
+   * Result rows carry `isArchived` from SQLite (issue #219) so callers do not
+   * have to fetch each state's content to filter archived ones out. It is
+   * `undefined` only for rows migrated from a pre-v15 cache that have not been
+   * backfilled yet — for those, the content is still authoritative.
+   *
    * @param workspaceId - Workspace ID
    * @param sessionId - Optional session ID to filter by
-   * @param options - Pagination options
+   * @param options - Pagination and archive-filter options
    * @returns Paginated list of state metadata
    */
   getStates(
     workspaceId: string,
     sessionId?: string,
-    options?: PaginationParams
+    options?: StateListOptions
   ): Promise<PaginatedResult<StateMetadata>>;
 
   /**
