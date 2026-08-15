@@ -57,6 +57,29 @@ reports it.
 The whole path is best-effort by design: any failure falls through to the server's
 just-in-time loading so chat is never blocked.
 
+## Runtime context is the budget, not the model's claim
+A model's native maximum, a configured context request, and the context the local
+runtime actually allocated are three different numbers. Publishing a generous
+fallback as `ModelInfo.contextWindow` makes the context badge and pre-send
+compaction gate fail together: Nexus believes space remains while the runtime is
+already truncating or out of memory.
+
+For a configurable local runtime, keep one source of truth:
+
+1. Request the chosen context when loading or generating.
+2. Read back the loaded instance's reported context allocation.
+3. Publish that allocation in model metadata and update the compaction budget
+   from the same value.
+4. If the runtime cannot report it yet, use the explicit configured value or a
+   conservative fallback, never the model's theoretical maximum.
+
+Server-wide performance controls are not request controls. Flash attention and
+KV-cache format may require environment changes and a server restart, and can
+affect other applications sharing the runtime. Detect and explain them; do not
+silently mutate a user-owned server. A Nexus-owned runtime may apply a validated
+profile, but still verify the resulting allocation rather than assuming the
+setting was honored.
+
 ## Reasoning effort
 Not wired for local providers, deliberately. See `reasoning-rendering.md`.
 

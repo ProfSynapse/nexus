@@ -4,6 +4,12 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-15 | Vetted `node-llama-cpp@3.19.1` for a research-only local-model
+architecture comparison. The published package is Node-only, has no browser
+entry, and upstream explicitly forbids Electron renderer use; the existing
+dependency-vetting and desktop-isolation protocols routed the investigation
+correctly. | No skill change. | refinement-log.md only.
+
 2026-08-14 | The checker existed but nothing in the repo ran it, so the skill
 told readers it was "the only guard" while a violation could still ship — an
 unfinished artifact, not a gate. Also found that a Node built-in import in a

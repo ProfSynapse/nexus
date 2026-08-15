@@ -4,6 +4,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+- 2026-08-15 | Researching adaptive Ollama context exposed a missing diagnostic:
+  local model metadata can report a native/fallback window instead of the runtime
+  allocation, causing both the context badge and compaction gate to fail; tuning
+  variables may also belong to a shared server rather than the request. | Added a
+  symptom row and a runtime-context/source-of-truth plus server-ownership section.
+  | Files: `references/symptoms.md`, `references/local-providers.md`.
+
 - 2026-08-14 | improve-skill pass. The skill was a single prose file: correct
   content, but nothing to execute, no progressive disclosure, and no check. |
   Restructured into a router plus four protocols and six references; added

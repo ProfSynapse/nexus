@@ -4,6 +4,11 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-15 | Used the grading guidance to separate hardware eligibility from
+Nexus protocol quality while researching local-model recommendations; no
+harness run, attribution problem, stale claim, or routing mismatch occurred. |
+No change. | none.
+
 2026-08-14 | Skill was a single prose file that had never been fact-checked
 against `tests/eval/`: it told the reader to run the harness but not how to tell
 a model's failure from the harness's, carried a stale "harness fixes already
