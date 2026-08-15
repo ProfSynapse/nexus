@@ -223,6 +223,31 @@ export class StorageRouter {
     }
   }
 
+  /**
+   * Permanently remove a logical stream from BOTH layouts.
+   *
+   * `deleteFile` only reaches the legacy flat `<basePath>/<relativePath>` file.
+   * On a vault-root install the events live in a sharded DIRECTORY, so a delete
+   * that only called `deleteFile` removed nothing at all and the next
+   * `rebuildCache()` replayed the stream back into the cache.
+   *
+   * Both branches run — a vault that migrated may still have the legacy file
+   * sitting next to the sharded directory, and leaving it behind resurrects the
+   * entity just as effectively.
+   */
+  async deleteStream(relativePath: string, basePath: string): Promise<void> {
+    if (this.vaultEventStore) {
+      const eventPath = this.getVaultEventLogicalPath(relativePath);
+      if (eventPath) {
+        await this.vaultEventStore.deleteStream(eventPath);
+      }
+    }
+
+    for (const variant of this.getLogicalPathVariants(relativePath)) {
+      await this.deleteFile(variant, basePath);
+    }
+  }
+
   // -- File Metadata ----------------------------------------------------------
 
   async getFileModTime(relativePath: string): Promise<number | null> {
