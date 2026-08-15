@@ -32,6 +32,7 @@ import { JsonlVaultWatcher, ModifiedStream } from '../sync/JsonlVaultWatcher';
 import { ReconcilePipeline } from '../sync/ReconcilePipeline';
 import { QueryCache } from '../optimizations/QueryCache';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+import type { StateListOptions } from '../repositories/interfaces/IStateRepository';
 import {
   WorkspaceMetadata,
   SessionMetadata,
@@ -309,6 +310,13 @@ export class HybridStorageAdapter implements IStorageAdapter {
         await this.runReconcile('task', () => this.reconcileMissingTasks());
       }
 
+      // Fill in the state columns denormalized in schema v15 (issue #219) for
+      // rows that came over from a v14 cache. Costs one indexed SELECT once
+      // every row is known, and one JSONL read per affected workspace before
+      // that — never one per state, which is the cost being removed. A full
+      // rebuild above already writes the columns, so this then finds nothing.
+      await this.runStateMetadataBackfill();
+
       // NOTE: the hydration phase is terminated by runStartupFullRebuild itself
       // (it is what moves the phase to `running` via onProgress), so both the
       // blocking and the background rebuild leave a query-ready phase behind.
@@ -385,6 +393,20 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   private getStartupRebuildIdleTimeoutMs(): number {
     return this.startupRebuildIdleTimeoutMs ?? DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS;
+  }
+
+  /**
+   * One-shot (per cache) backfill of the state columns denormalized in schema
+   * v15. Never fatal: a failure here only means `MemoryService.getStates`
+   * keeps resolving the archive flag from JSONL content, which is what it did
+   * before the column existed.
+   */
+  private async runStateMetadataBackfill(): Promise<void> {
+    try {
+      await this.stateRepo.backfillDerivedStateMetadata();
+    } catch (error) {
+      console.error('[HybridStorageAdapter] State metadata backfill failed:', error);
+    }
   }
 
   private async runReconcile(label: string, fn: () => Promise<number>): Promise<void> {
@@ -846,7 +868,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   getStates = async (
     workspaceId: string,
     sessionId?: string,
-    options?: PaginationParams
+    options?: StateListOptions
   ): Promise<PaginatedResult<StateMetadata>> => {
     await this.ensureInitialized();
     return this.stateRepo.getStates(workspaceId, sessionId, options);
