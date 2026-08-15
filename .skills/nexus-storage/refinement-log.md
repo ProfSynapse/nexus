@@ -33,3 +33,15 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   nothing because the failing caller holds the previous instance. | Added the
   symptom entry with both survivor shapes, the listener-count probe, and the
   prototype-patch attribution trick. | references/failure-modes.md.
+
+- 2026-08-15 | Fixing permanent workspace deletion: the "Data reappeared after a
+  rebuild" entry pointed at a missing deletion event, but the delete already
+  appended one and the data came back anyway. Three facts the skill did not
+  carry decided the bug, and each cost a source read: the applier handling the
+  tombstone was narrower than the live delete, FK enforcement is off so no
+  declared `ON DELETE CASCADE` ever fires (`grep -rn "foreign_keys" src/`
+  returns nothing), and a workspace owns two streams — `workspaces/ws_<id>` and
+  `tasks/tasks_<id>` — so a tombstone in one says nothing about the other. |
+  Sharpened the entry with the three additional conditions and named
+  `rebuildCache()` plus a per-table count in the running app as the check.
+  | references/failure-modes.md.

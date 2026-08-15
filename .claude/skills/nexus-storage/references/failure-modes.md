@@ -31,6 +31,28 @@ the applier. Re-verify by rebuilding the cache again and confirming survival.
 The inverse: something deleted from SQLite without appending a deletion event.
 Replay faithfully restores what the event store still says exists.
 
+**Appending the deletion event is not sufficient, and stopping there is how this
+ships twice.** Three further things have to hold, and a delete has failed on all
+of them at once:
+
+- **The applier must delete as much as the delete did.** Replay reaches the
+  tombstone only after re-applying every event that created the entity's
+  children, so an applier narrower than the live delete leaves those children as
+  orphans on every rebuild.
+- **Nothing cascades in SQLite.** The schema declares `ON DELETE CASCADE` in
+  several places, but FK enforcement is off — SQLite's per-connection default,
+  and nothing turns it on (`grep -rn "foreign_keys" src/` returns nothing). A
+  `DELETE FROM workspaces` removes exactly one row. Delete children explicitly,
+  child-before-parent, and put the statement list in ONE place both the
+  repository and the applier call, or the two drift.
+- **One entity can own more than one stream.** A workspace owns
+  `workspaces/ws_<id>` *and* `tasks/tasks_<id>`; a tombstone in the first says
+  nothing about the second, and `fullRebuild` replays every stream it lists.
+  Derive the set from the repositories' `jsonlPath`, do not assume one.
+
+Do not settle for "the row is gone from the UI". The check is
+`adapter.rebuildCache()` followed by a count per table, in the running app.
+
 ## "The view says 'no tasks' but the data is there"
 
 A read raced startup hydration. Await `waitForQueryReady()` (optional on
