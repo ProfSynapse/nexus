@@ -5,7 +5,7 @@
 **v5.17.1** — Nexus passes Obsidian's build check again, and the README finally says what it talks to
 
 **The plugin builds in Obsidian's own environment**
-- Obsidian's community platform rebuilds every published version in a clean container to scan it, and 5.17.0 failed that build before it compiled anything: one of the checks wired into `npm run build` needed a Python interpreter that the container does not have. It is a Node script now, so nothing outside Node and npm is required to build Nexus. This is why 5.17.0's safety scorecard showed no results for malware, vulnerable dependencies, obfuscation or network use — those four scans only run once the build succeeds, so one missing interpreter suppressed all of them.
+- Obsidian's community platform rebuilds every published version in a clean container to scan it, and 5.17.0 failed that build before it compiled anything: one of the checks wired into `npm run build` needed a Python interpreter that the container does not have. It is a Node script now, so nothing outside Node and npm is required to build Nexus ([#221](https://github.com/ProfSynapse/nexus/issues/221)). This is why 5.17.0's safety scorecard showed no results for malware, vulnerable dependencies, obfuscation or network use — those four scans only run once the build succeeds, so one missing interpreter suppressed all of them.
 
 **You can now see what Nexus contacts, and when**
 - The README has a **Network Use** section listing every external host, grouped by the action that triggers it — provider APIs, the one-time downloads that optional desktop features need, and the update check. Nothing is contacted when the plugin loads, and there is no telemetry or analytics of any kind ([#351](https://github.com/ProfSynapse/nexus/pull/351)).
