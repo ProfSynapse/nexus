@@ -34,13 +34,15 @@ this page; each protocol carries the steps and the checks.
 2. Whatever the protocol, you MUST run the reachability checker before calling
    the change done — it is the only guard for this defect class:
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
-   # same check, the way the build invokes it (finds a Python 3 for you):
+   node scripts/check-mobile-imports.mjs .
+   # identical, the way the build invokes it:
    npm run lint:mobile
    ```
-   `scripts/check-mobile-imports.mjs` in the repo is a launcher, not a second
-   implementation — it locates a Python 3 and runs this exact script, preferring
-   the `.skills/` copy. There is one checker; edit it here.
+   `scripts/check-mobile-imports.mjs` in the repo IS the checker — one
+   implementation, edit it there. It was a Python script behind a launcher until
+   2026-08-15, when Obsidian's community scorecard failed build verification on a
+   clean container that has Node but no Python. A build gate may only depend on
+   what the build already needs.
 
    It walks static imports from `src/main.ts`, follows no `await import()`, and
    exits non-zero when a Node built-in is reachable from init. Run
@@ -68,9 +70,10 @@ this page; each protocol carries the steps and the checks.
   import is decoration, and what reachability really guarantees),
   `plugin-store-rules.md` (the store rules and which are already lint-enforced),
   `pdfjs-in-electron.md` (the worker constraint and the single sanctioned entry).
-- `scripts/check_mobile_imports.py` the import-graph checker. Run it; do not
-  reimplement it as a grep — grep cannot see reachability, and this repo has
-  known-correct hits that a grep reports as violations.
+- The import-graph checker lives in the repo, not here:
+  `scripts/check-mobile-imports.mjs`. Run it; do not reimplement it as a grep —
+  grep cannot see reachability, and this repo has known-correct hits that a grep
+  reports as violations.
 
 ## Boundaries
 

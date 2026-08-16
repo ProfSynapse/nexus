@@ -4,6 +4,26 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-15 | Obsidian's community scorecard failed 5.17.0 with "Build verification
+failed while running the build script", and the captured output was our own
+`[check-mobile-imports] no Python 3 interpreter found`. Their builder is a clean
+container with Node and no Python, so #221's `build -> lint -> lint:mobile` chain
+exited 1 before anything compiled — which also suppressed the malware, vulnerable-
+dependency, obfuscation and network scans, since those only run on a build that
+completed. #221's message claimed "the Node port so the build needs no Python",
+but only the launcher was ported; the walker stayed Python and the launcher's own
+header said so. The lesson is narrower than "prefer Node": **a gate wired into the
+build may only depend on what the build already needs.** Python was a prerequisite
+nobody had declared, and it held on every machine we tested on. | Ported the
+349-line walker to Node as the single implementation in
+`scripts/check-mobile-imports.mjs`, deleted the Python script, and repointed every
+protocol at the Node command. Verified byte-identical output to the Python original
+across all five modes (default, `--packages`, `--json`, `--trace` on- and off-path),
+still exit 1 on an injected `node:fs` in `src/main.ts`, and clean under
+`env -i PATH=<node only>`. | `scripts/check-mobile-imports.mjs` (repo),
+`scripts/check_mobile_imports.py` (deleted), `SKILL.md`, all five `protocols/`,
+`references/init-order.md`.
+
 2026-08-15 | Vetted `node-llama-cpp@3.19.1` for a research-only local-model
 architecture comparison. The published package is Node-only, has no browser
 entry, and upstream explicitly forbids Electron renderer use; the existing

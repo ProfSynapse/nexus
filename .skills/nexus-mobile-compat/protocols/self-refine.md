@@ -25,7 +25,7 @@ feedback, and record the change.
    ```bash
    python3 /tmp/skill-crafter/skills/skill-crafter/scripts/validate_skill.py \
      .claude/skills/nexus-mobile-compat
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+   node scripts/check-mobile-imports.mjs .
    ```
    If you changed the checker, you MUST also re-run it against a fixture with a
    known violation, so a change that silently stopped detecting anything cannot

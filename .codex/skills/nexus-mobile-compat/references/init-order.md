@@ -35,7 +35,7 @@ The same top-level import is fatal in a module the startup path loads and inert
 in one it does not. So the property that keeps the tree safe is a shape of the
 import graph, and any new import anywhere can change it.
 
-That is why `scripts/check_mobile_imports.py` walks the graph from `src/main.ts`
+That is why `scripts/check-mobile-imports.mjs` walks the graph from `src/main.ts`
 instead of grepping. It follows static imports only: `await import()` is a
 deliberate non-edge, because deferring the load is exactly the fix.
 

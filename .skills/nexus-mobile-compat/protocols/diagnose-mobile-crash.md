@@ -18,7 +18,7 @@ trip per hypothesis.
 
 2. **For an init crash, run the checker first.**
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+   node scripts/check-mobile-imports.mjs .
    ```
    If it exits non-zero, the printed chain is the answer. Fix per
    `import-without-crashing.md` and stop.
@@ -27,7 +27,7 @@ trip per hypothesis.
    checker both see Node built-ins; neither sees a package that requires one
    internally.
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py . --packages
+   node scripts/check-mobile-imports.mjs . --packages
    ```
    Take each package on that list through step 2 of `vet-a-dependency.md` —
    `npm pack`, grep the published files, check which entry the bundler resolves.

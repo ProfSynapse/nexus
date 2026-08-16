@@ -560,7 +560,7 @@ Do not add an Ollama SDK or a new HTTP/process package.
 Required verification:
 
 ```bash
-python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+node scripts/check-mobile-imports.mjs .
 npm run lint:mobile
 ```
 

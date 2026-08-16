@@ -52,8 +52,8 @@ mobile cannot execute.
 
 6. **Prove it.**
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py . --trace <your/file.ts>
+   node scripts/check-mobile-imports.mjs .
+   node scripts/check-mobile-imports.mjs . --trace <your/file.ts>
    ```
    The first exits non-zero if any Node built-in became reachable. The second
    tells you whether the module you just edited is on the startup path at all —

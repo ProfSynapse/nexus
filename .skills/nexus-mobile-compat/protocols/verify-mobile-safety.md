@@ -14,7 +14,7 @@ run, and did not break a store rule.
 
 1. **Run the reachability checker. It MUST exit 0.**
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py .
+   node scripts/check-mobile-imports.mjs .
    # or, identically, the wired-in form the build uses:
    npm run lint:mobile
    ```
@@ -29,12 +29,12 @@ run, and did not break a store rule.
    something moved onto the startup path. Loading a package eagerly is not a
    crash, but it is init cost paid by every launch on every device.
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py . --packages
+   node scripts/check-mobile-imports.mjs . --packages
    ```
 
 3. **Trace anything you are unsure about.**
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py . --trace path/to/module.ts
+   node scripts/check-mobile-imports.mjs . --trace path/to/module.ts
    ```
    Use this when a module has a top-level import that is only safe because
    nothing loads it at startup. "Not reachable" is a fact about today's graph, not

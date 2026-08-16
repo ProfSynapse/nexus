@@ -48,7 +48,7 @@ Obsidian renderer on mobile, and know what it costs, before it enters
 
 6. **Verify the graph after wiring it up.**
    ```bash
-   python3 .claude/skills/nexus-mobile-compat/scripts/check_mobile_imports.py . --packages
+   node scripts/check-mobile-imports.mjs . --packages
    ```
    Every package the checker lists is loaded during mobile init. If your new
    package appears there, you either meant it (and it passed step 3) or you
