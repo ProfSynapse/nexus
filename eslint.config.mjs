@@ -200,36 +200,21 @@ export default defineConfig([
         },
     },
 
-    // Bases API (1.10.0) vs minAppVersion (1.8.7) — the ONE file allowed to
-    // name it. `obsidianmd/no-unsupported-api` is right that
-    // `Plugin.registerBasesView` and `BasesView` post-date minAppVersion; this
-    // file is the runtime guard the rule is asking for and exists precisely so
-    // nothing else has to reference those symbols:
-    //   - `registerBasesView` is read once, behind `typeof === 'function'`, and
-    //     bound; on an older app the whole feature (and its agent) is absent.
-    //   - `BasesView` is dereferenced only inside the view factory, which
-    //     Obsidian calls only when the Bases API exists. At module scope it
-    //     would be `class extends undefined` and would take plugin init down.
-    // Inline eslint-disable is blocked for obsidianmd rules (the
-    // obsidian-releases bot rejects it), so this is handled at config level —
-    // the same pattern as the no-nodejs-modules block above.
+    // NOTE — there used to be a block here turning `obsidianmd/no-unsupported-api`
+    // off for `basesAvailability.ts` and `baseResultHarvester.ts`, on the grounds
+    // that the Bases API (1.10.0) post-dated `minAppVersion` (1.8.7) but was
+    // reached only behind runtime guards. The reasoning was sound and the code
+    // still carries those guards — but the suppression could never achieve its
+    // purpose: Obsidian's community scanner runs this rule with its own config
+    // and never reads ours, so it reported all 23 sites on every published
+    // version regardless. Community review also disallows suppressing this rule.
     //
-    // `baseResultHarvester.ts` is exempt for the same reason, one step further
-    // out: it reads `BasesQueryResult` / `BasesEntry` / `BasesEntryGroup` off a
-    // live view. The only thing that ever calls it is the analyze runner, which
-    // only runs once Obsidian has constructed a `nexus-analyze` view — which
-    // requires the Bases API to exist AND the agent to have been registered,
-    // which `ensureAnalyzeViewRegistered` gates. On an app without Bases the
-    // whole agent is absent, so there is no reachable path to these symbols.
-    {
-        files: [
-            "src/agents/baseManager/services/basesAvailability.ts",
-            "src/agents/baseManager/services/baseResultHarvester.ts",
-        ],
-        rules: {
-            "obsidianmd/no-unsupported-api": "off",
-        },
-    },
+    // Fixed properly in 5.18.0 by raising `minAppVersion` to 1.10.0, which is
+    // simply true — Nexus does name Bases APIs. Users below 1.10.0 are not
+    // stranded: `versions.json` pins 5.17.1 at 1.8.7, so Obsidian offers them
+    // that build instead. The rule now guards these files for real; do not add
+    // the exemption back. If it fires, the code named an API newer than the
+    // manifest claims, which is a fact to fix rather than silence.
 
     // ── Mobile-safety import guard for shared UI primitives (issue #221) ─────
     // src/settings/components/** holds the primitives every settings surface
