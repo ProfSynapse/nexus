@@ -47,6 +47,34 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 
 Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/nexus/issues).
 
+## Network Use
+
+**Nexus does not call out on its own.** Nothing is sent when the plugin loads, and there is no telemetry, analytics, crash reporting, or usage tracking of any kind. Your notes stay in your vault unless you do something that sends them somewhere. Every request below is listed with the action that causes it.
+
+**AI provider APIs.** Contacted only once you enter that provider's API key and then use it. Your prompt — and whatever vault content the agent decides to include — goes to the provider you chose, and your key is only ever sent to the provider it belongs to.
+
+| | |
+|---|---|
+| Chat and models | `openrouter.ai`, `api.openai.com`, `api.anthropic.com`, `generativelanguage.googleapis.com`, `api.mistral.ai`, `api.groq.com`, `api.deepseek.com`, `api.perplexity.ai`, `router.requesty.ai`, `api.githubcopilot.com` |
+| Voice and transcription | `api.elevenlabs.io`, `api.deepgram.com`, `api.assemblyai.com`, `streaming.assemblyai.com` |
+| Sign-in flows | `auth.openai.com` and `chatgpt.com` (OpenAI Codex), `api.github.com` (GitHub Copilot) |
+
+Ollama and LM Studio talk to your own machine and leave it entirely.
+
+**Downloads for optional desktop features.** A few features fetch their engine the first time you enable them, rather than shipping inside `main.js` — the download is cached and does not repeat. Never enabling the feature means never making the request.
+
+| Feature | Downloads from |
+|---|---|
+| Semantic search | `cdn.jsdelivr.net` (transformers.js), `huggingface.co` (embedding model) |
+| Vector cache | `cdn.jsdelivr.net` or `unpkg.com` (`sqlite3.wasm`) |
+| Data analysis | `cdn.jsdelivr.net` (Pyodide), `files.pythonhosted.org` (openpyxl) |
+| PDF ingestion | `cdn.jsdelivr.net` (pdf.js worker) |
+| In-browser local models | `cdn.jsdelivr.net`, `esm.run`, `huggingface.co`, `raw.githubusercontent.com` (model weights) |
+
+**Housekeeping.** Opening Nexus settings checks for a newer version (`api.github.com`, `raw.githubusercontent.com`). Asking an agent to load the built-in guides workspace fetches the current guides (`raw.githubusercontent.com`).
+
+**Not requests.** Two things look like external hosts but aren't. Calls to OpenRouter and Requesty carry `HTTP-Referer: https://synapticlabs.ai` and `X-Title: Nexus` — the app-attribution headers those routers show in their dashboards. They are header *values*; nothing is fetched from that address. And buttons like *Download Node.js* or *Get an API key* open `nodejs.org`, `ollama.com`, `lmstudio.ai`, `claude.ai`, `github.com`, or the provider's own console (`platform.openai.com`, `console.anthropic.com`, `aistudio.google.com`, and so on) **in your browser** — the plugin never retrieves them.
+
 ## Use Cases
 
 | If you want to... | Start here |
