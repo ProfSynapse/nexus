@@ -4,6 +4,7 @@
  * Based on Requesty streaming documentation
  */
 
+import { BRAND_NAME } from '../../../../constants/branding';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -111,9 +112,13 @@ export class RequestyAdapter extends BaseAdapter {
         headers: {
           ...this.buildHeaders(),
           'Authorization': `Bearer ${this.apiKey}`,
-          'HTTP-Referer': 'https://synaptic-lab-kit.com',
-          'X-Title': 'Synaptic Lab Kit',
-          'User-Agent': 'Synaptic-Lab-Kit/1.0.0'
+          // Attribution only — these are header VALUES that show up in Requesty's
+          // dashboard, not request targets. Nothing is ever fetched from the
+          // referer. They read 'synaptic-lab-kit.com' / 'Synaptic Lab Kit' until
+          // 2026-08-15: a paste from another project, pointing at a domain that
+          // no longer resolves. Keep them in step with the OpenRouter adapters.
+          'HTTP-Referer': 'https://synapticlabs.ai',
+          'X-Title': BRAND_NAME
         },
         body: JSON.stringify({
           model: options?.model || this.currentModel,
@@ -221,9 +226,10 @@ export class RequestyAdapter extends BaseAdapter {
       headers: {
         ...this.buildHeaders(),
         'Authorization': `Bearer ${this.apiKey}`,
-        'HTTP-Referer': 'https://synaptic-lab-kit.com',
-        'X-Title': 'Synaptic Lab Kit',
-        'User-Agent': 'Synaptic-Lab-Kit/1.0.0'
+        // See the note on the streaming request above: attribution headers, not
+        // request targets.
+        'HTTP-Referer': 'https://synapticlabs.ai',
+        'X-Title': BRAND_NAME
       },
       body: JSON.stringify(requestBody),
       timeoutMs: 60_000
