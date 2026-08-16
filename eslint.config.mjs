@@ -209,7 +209,7 @@ export default defineConfig([
     // and never reads ours, so it reported all 23 sites on every published
     // version regardless. Community review also disallows suppressing this rule.
     //
-    // Fixed properly in 5.18.0 by raising `minAppVersion` to 1.10.0, which is
+    // Fixed properly in 5.17.2 by raising `minAppVersion` to 1.10.0, which is
     // simply true — Nexus does name Bases APIs. Users below 1.10.0 are not
     // stranded: `versions.json` pins 5.17.1 at 1.8.7, so Obsidian offers them
     // that build instead. The rule now guards these files for real; do not add

@@ -2,6 +2,15 @@
 
 ## August 2026
 
+**v5.17.2** — Nexus now declares the Obsidian version it actually needs
+
+**Requires Obsidian 1.10.0 or later**
+- Nexus uses Obsidian's Bases API for the `base` agent, and that API arrived in Obsidian 1.10.0 — but the plugin claimed to run on 1.8.7. That claim was wrong, and Obsidian's automated review flagged 23 places where it showed. The manifest now says 1.10.0.
+- **If you are on an older Obsidian, you do not lose Nexus.** Obsidian will offer you 5.17.1, the last release that supported 1.8.7, instead of failing the update. To move past it, update Obsidian — 1.10.0 was released in October 2025, three versions back.
+- Nothing about how Nexus behaves changed here. The Bases code was already guarded so it never ran on an app without Bases; what was wrong was the version the plugin advertised, not the way it worked ([#352](https://github.com/ProfSynapse/nexus/pull/352)).
+
+---
+
 **v5.17.1** — Nexus passes Obsidian's build check again, and the README finally says what it talks to
 
 **The plugin builds in Obsidian's own environment**

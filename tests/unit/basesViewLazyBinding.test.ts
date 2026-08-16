@@ -2,7 +2,7 @@
  * `BasesView` must never be dereferenced at module load.
  *
  * `src/agents/baseManager/services/basesAvailability.ts` imports `BasesView`
- * from 'obsidian' as a VALUE. Until 5.18.0 that was unsafe on its face —
+ * from 'obsidian' as a VALUE. Until 5.17.2 that was unsafe on its face —
  * `BasesView` is `@since 1.10.0` and `minAppVersion` was 1.8.7 — and this test
  * existed to prove the binding was nonetheless lazy. `minAppVersion` is 1.10.0
  * now, so the version gap is gone and that original reason with it.
@@ -35,7 +35,7 @@
  * bundle. Only a *reachable* top-level dereference is caught. That is the shape
  * a real regression has (the class is returned by the factory, so it is kept),
  * but do not read a green run here as "no post-1.10.0 symbol is used eagerly".
- * `obsidianmd/no-unsupported-api` is the check for that, and as of 5.18.0 it is
+ * `obsidianmd/no-unsupported-api` is the check for that, and as of 5.17.2 it is
  * active on these files — the config exemption it used to have was removed.
  */
 import * as esbuild from 'esbuild';
