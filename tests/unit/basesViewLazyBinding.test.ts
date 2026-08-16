@@ -2,12 +2,22 @@
  * `BasesView` must never be dereferenced at module load.
  *
  * `src/agents/baseManager/services/basesAvailability.ts` imports `BasesView`
- * from 'obsidian' as a VALUE, and `BasesView` is `@since 1.10.0` — newer than
- * the manifest's `minAppVersion` of 1.8.7. That is only safe because esbuild
- * emits `obsidian` as an external CJS require, so the binding resolves as a
- * property access (`import_obsidian.BasesView`) at call time, inside
- * `createAnalyzeView`, rather than when the module is evaluated. On an Obsidian
- * without the Bases API the property is simply never read.
+ * from 'obsidian' as a VALUE. Until 5.18.0 that was unsafe on its face —
+ * `BasesView` is `@since 1.10.0` and `minAppVersion` was 1.8.7 — and this test
+ * existed to prove the binding was nonetheless lazy. `minAppVersion` is 1.10.0
+ * now, so the version gap is gone and that original reason with it.
+ *
+ * The invariant is still worth pinning, for a narrower reason: Bases is a CORE
+ * PLUGIN that the user can disable, and `registerBasesView` is documented to
+ * return false when Bases is not enabled in the vault. Whether `BasesView`
+ * itself is absent from the module in that state is NOT something we have
+ * verified, so the lazy binding stays as defence in depth rather than because
+ * we know it is load-bearing.
+ *
+ * It is safe because esbuild emits `obsidian` as an external CJS require, so
+ * the binding resolves as a property access (`import_obsidian.BasesView`) at
+ * call time, inside `createAnalyzeView`, rather than when the module is
+ * evaluated. Where the property is missing it is simply never read.
  *
  * The whole guarantee therefore rests on the emitted shape, not on the source.
  * Change `format` away from `cjs`, or hoist the `class ... extends BasesView`
@@ -24,7 +34,9 @@
  * module scope and never used does NOT trip these tests — it never reaches the
  * bundle. Only a *reachable* top-level dereference is caught. That is the shape
  * a real regression has (the class is returned by the factory, so it is kept),
- * but do not read a green run here as "no post-1.8.7 symbol is used eagerly".
+ * but do not read a green run here as "no post-1.10.0 symbol is used eagerly".
+ * `obsidianmd/no-unsupported-api` is the check for that, and as of 5.18.0 it is
+ * active on these files — the config exemption it used to have was removed.
  */
 import * as esbuild from 'esbuild';
 import path from 'path';
