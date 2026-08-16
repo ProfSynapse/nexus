@@ -22,6 +22,7 @@ import {
   SearchResult,
   ToolCall
 } from './types';
+import { BRAND_NAME } from '../../../constants/branding';
 import { BaseCache, CacheManager } from '../utils/CacheManager';
 import { LLMCostCalculator } from '../utils/LLMCostCalculator';
 import { TokenUsageExtractor } from '../utils/TokenUsageExtractor';
@@ -667,7 +668,11 @@ export abstract class BaseAdapter {
   protected buildHeaders(additionalHeaders?: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'Synaptic-Lab-Kit/1.0.0',
+      // Every adapter that calls buildHeaders() advertises this to its provider.
+      // It said 'Synaptic-Lab-Kit/1.0.0' until 2026-08-15 — another project's
+      // name, left behind by the rename. Adapters that must impersonate a
+      // specific client (GithubCopilotAdapter) override it deliberately.
+      'User-Agent': BRAND_NAME,
       ...additionalHeaders
     };
 
