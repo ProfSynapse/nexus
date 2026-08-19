@@ -7,7 +7,7 @@ reasoning is unclear — this protocol states what to do, that reference states 
 
 ## Mission
 Produce a correct commit on `main` and a bare `X.Y.Z` tag on it, such that the
-release workflow runs green and publishes the three plugin assets with
+release workflow runs green and publishes the plugin plus schema assets with
 attestation.
 
 ## Steps
@@ -46,7 +46,7 @@ npm version <patch|minor|major> --no-git-tag-version
 This bumps `package.json` and `package-lock.json`, then runs the repo's `version`
 lifecycle script (`version-bump.mjs`), which writes the new version into
 `manifest.json` and appends the `version -> minAppVersion` entry to
-`versions.json`.
+`versions.json`, then regenerates the release's CLI and MCP schema catalogs.
 
 Expect `manifest.json` to come back reindented from tabs to two spaces — the
 bump script rewrites it that way. The whole-file diff is cosmetic and harmless;
@@ -167,9 +167,9 @@ gh release view X.Y.Z
 ```
 
 Confirm: the release name is exactly `X.Y.Z` (the workflow sets it from the tag —
-never rename it); assets are exactly `main.js`, `manifest.json`, `styles.css` and
-nothing else (no `connector.js`); notes were auto-generated; the attestation step
-succeeded.
+never rename it); assets are `main.js`, `manifest.json`, `styles.css`,
+`cli-tools.json`, and `mcp-tools.json` (still no `connector.js`); notes were
+auto-generated; the attestation step succeeded.
 
 Anything wrong → `recover.md`.
 

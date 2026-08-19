@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "latest": "5.17.2",
+  "versions": {
+    "5.17.2": {
+      "cli": "5.17.2/cli-tools.json",
+      "mcp": "5.17.2/mcp-tools.json"
+    }
+  }
+}

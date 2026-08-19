@@ -1,4 +1,12 @@
-# Who reads the catalog
+# Who reads the catalogs
+
+## The versioned release bundle
+
+`<repo>/schemas/manifest.json` maps Nexus releases to `cli-tools.json` and
+`mcp-tools.json`. The eval harness resolves `latest` or a pinned version through
+that manifest; release CI publishes the current pair as release assets. Normal
+builds run `npm run schemas:check`, which compares both files to the live
+registries and verifies the root compatibility aliases.
 
 Two files with the same basename exist, and only one of them is read by
 anything. Getting this wrong is the mistake this skill exists to prevent,
@@ -6,9 +14,8 @@ because every symptom of it looks like success.
 
 ## The repo-root catalog
 
-Path: cli-first-tool-schemas.json at the repository root. Not gitignored, so it
-is versioned with the code, and it is what the exporter writes only when you
-pass `--output cli-first-tool-schemas.json`.
+Path: cli-first-tool-schemas.json at the repository root. It is the current CLI
+compatibility alias, refreshed by `npm run schemas:release`.
 
 Two Jest tests read it, both by resolving the repo root and reading that exact
 basename:
@@ -34,9 +41,11 @@ does not fail when the catalog is old; it keeps passing, validating shipped
 guidance against tools as they used to be. The drift test in the first file
 exists specifically to stop that from going quiet.
 
-## The default destination
+`tool-schemas.json` is the matching current MCP compatibility alias.
 
-Path: docs/generated/cli-first-tool-schemas.json, where `npm run schemas:tools`
+## The scratch destination
+
+Path: docs/generated/cli-first-tool-schemas.json, where a direct exporter call
 writes when given no `--output`. The repo's ignore rules cover docs with a
 narrow allowlist that does not include a generated directory, so this file is
 never committed, and no test, script or shipped doc reads it. It is a fine place

@@ -33,6 +33,8 @@ export interface EvalDefaults {
 
 export interface EvalConfig {
   mode: 'mock' | 'live';
+  /** Release schema bundle to test against. Defaults to the manifest's latest. */
+  schemaVersion: string;
   testVaultPath?: string;
   providers: Record<string, ProviderConfig>;
   defaults: EvalDefaults;
@@ -192,6 +194,7 @@ export interface ScenarioResult {
 export interface EvalRunResult {
   config: string;
   mode: 'mock' | 'live';
+  schemaVersion: string;
   results: ScenarioResult[];
   startTime: number;
   endTime: number;

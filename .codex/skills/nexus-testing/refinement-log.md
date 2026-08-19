@@ -4,6 +4,8 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-19 | The catalog-target guard falsely failed because it compared an intentional scratch subset to the new release alias. | Changed it to validate manifest-selected CLI/MCP artifacts against their root aliases and ignore scratch exports. | `scripts/check_catalog_target.py`, `refinement-log.md`.
+
 2026-08-14 | Restructured from a single prose file via the skill-crafter
 improve-skill protocol. Every factual claim re-verified against the tree; the
 lane table, gate names and env-var lists were replaced with discovery commands

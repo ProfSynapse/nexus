@@ -20,20 +20,24 @@ graded — only the calls.
    the test timeout, and writes the reports.
 2. `ConfigLoader.ts` — turns a YAML config (or the built-in default) plus env
    overrides into one `EvalConfig`. It also reads the repo-root `.env`.
-3. `ScenarioLoader.ts` — reads `*.eval.yaml` under the configured glob. Each
+3. `SchemaCatalog.ts` — resolves `schemaVersion` through
+   `<repo>/schemas/manifest.json`, loads the generated MCP surface and the advertised
+   subset of the generated CLI catalog, and converts them for the executor.
+4. `ScenarioLoader.ts` — reads `*.eval.yaml` under the configured glob. Each
    file must be a **list** of scenarios; an entry without `name` or `turns` is
    skipped with a console warning and no other trace.
-4. `EvalRunner.ts` — runs one job: groups turns into exchanges, creates the tool
+5. `EvalRunner.ts` — runs one job: groups turns into exchanges, creates the tool
    executor, builds a `StreamingOrchestrator` over a real provider adapter, runs
    one `generateResponseStream` per exchange, then asserts.
-5. `EvalToolExecutor.ts` (mock) or `LiveToolExecutor.ts` (live) — implements the
+6. `EvalToolExecutor.ts` (mock) or `LiveToolExecutor.ts` (live) — implements the
    same `IToolExecutor` the app uses, so the orchestrator cannot tell the
    difference.
-6. `assertions.ts` — the graders: expected calls per round, the meta-arg
+7. `assertions.ts` — the graders: expected calls per round, the meta-arg
    contract, and the hallucination check.
-7. `ReportGenerator.ts` — markdown and JSON reports.
+8. `ReportGenerator.ts` — markdown and JSON reports, including the resolved
+   schema release.
 
-Supporting pieces: `fixtures/tools.ts` (the tool schemas the model and the mock
+Supporting pieces: `fixtures/tools.ts` (loads the versioned schemas the model and the mock
 executor share), `fixtures/system-prompt.ts` (builds the **production** system
 prompt through `SystemPromptBuilder`), `RequestCapture.ts` (raw HTTP dumps on
 failure), `EvalAdapterRegistry.ts`, `types.ts` (the scenario and config
@@ -56,7 +60,7 @@ string and captures the inner call under that name.
 | tool results | scripted by the scenario, or synthesised | produced by real agents |
 | vault | none | a per-job directory under `testVaultPath`, gitignored |
 | `seedFiles` | ignored | seeded, plus files inferred from `mockResponses` payloads that carry a `path` + `content` pair |
-| agents available | every tool in `fixtures/tools.ts` | only what `headless/HeadlessAgentStack.ts` registers |
+| agents available | advertised tools selected from the versioned CLI catalog | only what `headless/HeadlessAgentStack.ts` registers |
 | what it proves | tool *invocation* | invocation plus real execution |
 
 Live mode registers a fixed, short list of agents (read the file — it is the

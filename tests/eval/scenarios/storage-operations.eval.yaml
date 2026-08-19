@@ -88,47 +88,24 @@
 - name: copy-and-rename
   description: User asks to copy a file — should use copy not move
   toolSet: meta
+  allowReorder: true
   turns:
     - userMessage: "Make a copy of templates/weekly-review.md and put it in notes/this-week.md"
       expectedTools:
         - name: getTools
           params:
             tool: "storage"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: storageManager
-                tool: copy
-                description: Copy a file or folder
-                command: "storage copy"
-                usage: "storage copy <path> <destination>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: destination
-                    flag: --destination
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'storage copy "path-value" "destination-value"'
+      mockResponses: {}
 
     - expectedTools:
         - name: useTools
           params:
             tool: "storage copy"
       mockResponses:
-        useTools:
+        storageManager_copy:
           success: true
           result:
-            results:
-              - tool: copy
-                success: true
+            newPath: notes/this-week.md
 
 - name: archive-old-files
   description: User asks to archive a file — should use archive tool

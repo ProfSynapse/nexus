@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'fs';
+import { spawnSync } from 'node:child_process';
 
 // Invoked by the npm `version` lifecycle script. Syncs the bumped version into
 // manifest.json and records the version -> minAppVersion mapping in
@@ -19,3 +20,12 @@ writeFileSync('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 const versions = JSON.parse(readFileSync('versions.json', 'utf8'));
 versions[targetVersion] = minAppVersion;
 writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
+
+const schemaGeneration = spawnSync(
+  process.execPath,
+  ['scripts/generate-tool-schemas.mjs', '--release-version', targetVersion],
+  { stdio: 'inherit' },
+);
+if (schemaGeneration.status !== 0) {
+  process.exit(schemaGeneration.status ?? 1);
+}

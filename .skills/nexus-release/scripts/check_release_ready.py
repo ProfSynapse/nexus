@@ -9,6 +9,7 @@ guard in .github/workflows/release.yml:
   3. versions.json has an entry keyed by it
   4. with --tag: the tag equals it and is itself a bare X.Y.Z (the workflow's
      tag filter has no `v` prefix, and a non-matching tag fires nothing at all)
+  5. schemas/manifest.json points at CLI and MCP artifacts for that version
 
 A non-zero exit here is a release that would have failed after the tag existed.
 
@@ -155,6 +156,35 @@ def check_lockfile(root: Path, version: str, report: Report) -> None:
             f"is {version!r}; `npm ci` tolerates this, but it is the signature of a "
             "hand-edited bump -- `npm version` keeps them together",
         )
+
+
+def check_schema_catalog(root: Path, version: str, report: Report) -> None:
+    manifest_path = root / "schemas" / "manifest.json"
+    manifest = load_json(manifest_path, report)
+    if manifest is None:
+        return
+    if manifest.get("latest") != version:
+        report.error(
+            "schemas/manifest.json",
+            f"latest {manifest.get('latest')!r} != package.json {version!r}; "
+            "run `npm run schemas:release`",
+        )
+    entry = manifest.get("versions", {}).get(version)
+    if not isinstance(entry, dict):
+        report.error("schemas/manifest.json", f"has no release entry for {version!r}")
+        return
+    for kind in ("cli", "mcp"):
+        relative = entry.get(kind)
+        if not isinstance(relative, str) or not relative:
+            report.error("schemas/manifest.json", f"{version!r} has no {kind} artifact path")
+            continue
+        artifact_path = root / "schemas" / relative
+        artifact = load_json(artifact_path, report)
+        if artifact is not None and artifact.get("nexusVersion") != version:
+            report.error(
+                str(artifact_path.relative_to(root)),
+                f"nexusVersion {artifact.get('nexusVersion')!r} != {version!r}",
+            )
 
 
 def check_changelog(root: Path, version: str, report: Report) -> None:
@@ -329,6 +359,7 @@ def main() -> int:
     version = check_versions(root, args.tag, report)
     if version:
         check_lockfile(root, version, report)
+        check_schema_catalog(root, version, report)
         check_changelog(root, version, report)
     check_formatting(root, report)
     check_workflow(root, report)

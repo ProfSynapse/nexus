@@ -9,8 +9,8 @@ mistakes that make a scenario silently useless rather than red:
   2. A field the harness does not know, a wrong type, or a bad `toolSet`.
      The field list and the ToolSetType union are read from tests/eval/types.ts
      at run time, so this check cannot drift from the harness.
-  3. An expected tool or a mock-response key that no tool in
-     tests/eval/fixtures/tools.ts can ever produce — the assertion is then
+  3. An expected tool or a mock-response key that no tool selected from the
+     versioned schema catalog can ever produce — the assertion is then
      unsatisfiable no matter how well the model behaves.
   4. A CLI selector/command in `params.tool` that resolves to no known agent
      or tool (e.g. `search search-content` when the slug is `search content`).
@@ -34,6 +34,7 @@ Warnings never fail the run.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -308,11 +309,36 @@ def read_union(source: str, name: str) -> list:
     return re.findall(r"'([^']+)'", match.group(1))
 
 
-def read_tool_names(source: str, const: str) -> list:
-    match = re.search(r"export const %s: Tool\[\] = \[(.*?)\n\];" % re.escape(const), source, re.S)
-    if not match:
-        return []
-    return re.findall(r"^\s*name: '([A-Za-z0-9_]+)',", match.group(1), re.M)
+def read_generated_tool_names(root: str, manifest_rel: str, catalog_rel: str) -> tuple[list, list]:
+    manifest_path = os.path.join(root, manifest_rel)
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    version = manifest.get("latest")
+    entry = manifest.get("versions", {}).get(version, {})
+    with open(os.path.join(os.path.dirname(manifest_path), entry["cli"]), "r", encoding="utf-8") as handle:
+        cli = json.load(handle)
+    with open(os.path.join(os.path.dirname(manifest_path), entry["mcp"]), "r", encoding="utf-8") as handle:
+        mcp = json.load(handle)
+    with open(os.path.join(root, catalog_rel), "r", encoding="utf-8") as handle:
+        catalog_source = handle.read()
+
+    advertised = set()
+    for match in re.finditer(r"\{\s*agent:\s*'([^']+)',\s*tools:\s*\[([^]]*)\]", catalog_source):
+        agent = match.group(1)
+        for tool in re.findall(r"'([^']+)'", match.group(2)):
+            advertised.add(f"{agent}_{tool}")
+
+    domain = [
+        f"{tool['agent']}_{tool['tool']}"
+        for tool in cli.get("tools", [])
+        if f"{tool.get('agent')}_{tool.get('tool')}" in advertised
+    ]
+    meta = [
+        tool["name"].removeprefix("toolManager_")
+        for tool in mcp.get("tools", [])
+        if isinstance(tool.get("name"), str)
+    ]
+    return domain, meta
 
 
 def python_type_ok(value, ts_type: str, enums: dict) -> bool:
@@ -502,7 +528,7 @@ def check_file(path: str, rel: str, contracts: dict, report: Report, seen_names:
                     report.error(rel, exp_line, f"`{name}`: expectedTools entry has no `name`")
                     continue
                 if tool_name not in tool_names:
-                    report.error(rel, exp_line, f"`{name}`: expects tool `{tool_name}`, which is in neither META_TOOLS nor NEXUS_TOOLS (tests/eval/fixtures/tools.ts) — the assertion can never pass")
+                    report.error(rel, exp_line, f"`{name}`: expects tool `{tool_name}`, which is absent from the selected release schema catalog — the assertion can never pass")
                     continue
                 params = expected.get("params")
                 selector = params.get("tool") if isinstance(params, dict) else None
@@ -514,7 +540,7 @@ def check_file(path: str, rel: str, contracts: dict, report: Report, seen_names:
                 for key, response in responses.items():
                     key_line = responses.lines.get(key, turn_line)
                     if key not in tool_names:
-                        report.error(rel, key_line, f"`{name}`: mockResponses key `{key}` matches no tool in tests/eval/fixtures/tools.ts — it will never be used")
+                        report.error(rel, key_line, f"`{name}`: mockResponses key `{key}` matches no tool in the selected release schema catalog — it will never be used")
                     if not isinstance(response, dict) or "success" not in response:
                         report.error(rel, key_line, f"`{name}`: mockResponses[{key}] must be a mapping with a `success` field (MockToolResponse)")
 
@@ -617,15 +643,17 @@ def main(argv: list) -> int:
     parser.add_argument("--root", default=".", help="repo root (default: cwd)")
     parser.add_argument("--scenarios", default="tests/eval/scenarios", help="scenario file or directory, relative to --root")
     parser.add_argument("--types", default="tests/eval/types.ts", help="harness type definitions, relative to --root")
-    parser.add_argument("--tools", default="tests/eval/fixtures/tools.ts", help="tool fixtures, relative to --root")
+    parser.add_argument("--schemas", default="schemas/manifest.json", help="schema manifest, relative to --root")
+    parser.add_argument("--catalog", default="tests/eval/fixtures/system-prompt.ts", help="advertised eval catalog, relative to --root")
     args = parser.parse_args(argv)
 
     root = os.path.abspath(args.root)
     types_path = os.path.join(root, args.types)
-    tools_path = os.path.join(root, args.tools)
+    schemas_path = os.path.join(root, args.schemas)
+    catalog_path = os.path.join(root, args.catalog)
     scenarios_path = os.path.join(root, args.scenarios)
 
-    for required in (types_path, tools_path, scenarios_path):
+    for required in (types_path, schemas_path, catalog_path, scenarios_path):
         if not os.path.exists(required):
             print(f"usage error: not found: {required}", file=sys.stderr)
             print("Run from the repo root, or pass --root.", file=sys.stderr)
@@ -633,13 +661,13 @@ def main(argv: list) -> int:
 
     with open(types_path, "r", encoding="utf-8") as handle:
         types_source = handle.read()
-    with open(tools_path, "r", encoding="utf-8") as handle:
-        tools_source = handle.read()
-
-    domain_names = read_tool_names(tools_source, "NEXUS_TOOLS")
-    meta_names = read_tool_names(tools_source, "META_TOOLS")
+    try:
+        domain_names, meta_names = read_generated_tool_names(root, args.schemas, args.catalog)
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        print(f"usage error: could not read generated tool names: {exc}", file=sys.stderr)
+        return 2
     if not domain_names or not meta_names:
-        print(f"usage error: could not read tool names from {tools_path}", file=sys.stderr)
+        print(f"usage error: generated schema catalog selected no eval tools", file=sys.stderr)
         return 2
 
     domain_index: dict = {}

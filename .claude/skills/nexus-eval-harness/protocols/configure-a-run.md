@@ -37,18 +37,23 @@ that finishes, and numbers nobody has to caveat.
    getting through a flaky provider, and discount any pass with a nonzero
    `retryCount` in the report.
 
-4. Size the run before launching it. Concurrency is full fan-out unless a local
+4. Pin the tool contract when comparing results across releases. Set
+   `schemaVersion: X.Y.Z` in YAML or `EVAL_SCHEMA_VERSION=X.Y.Z`; omit it to use
+   the schema manifest's `latest`. The resolved version is written to each
+   report.
+
+5. Size the run before launching it. Concurrency is full fan-out unless a local
    provider is in the matrix (then serial) or `EVAL_CONCURRENCY` says otherwise,
    and the Jest test timeout has to cover the whole matrix — raise
    `EVAL_TEST_TIMEOUT_MS`, not `defaults.timeout`, when a large matrix runs out
    of budget. `../references/run-behavior.md` has the details.
 
-5. Before launching, confirm the environment is not lying to you. Values resolve
+6. Before launching, confirm the environment is not lying to you. Values resolve
    from `process.env` **or** the repo-root `.env`, so a leftover `EVAL_MODE` or
    `EVAL_TARGETS` there will redirect the run. Check that the variables you care
    about are unset or intentional — and NEVER print `.env` or a key.
 
-6. Launch. There is no npm script; the entry point is the Jest file, and
+7. Launch. There is no npm script; the entry point is the Jest file, and
    `RUN_EVAL=1` plus at least one resolvable provider key is mandatory or the
    suite skips and passes:
 
@@ -63,7 +68,7 @@ that finishes, and numbers nobody has to caveat.
    of its progress log on the first line; `tail -f` that log rather than waiting
    on buffered stdout.
 
-7. Stop condition: the reports exist under the artifacts dir and the job count
+8. Stop condition: the reports exist under the artifacts dir and the job count
    in the progress log header matches the matrix you intended.
 
 ## Guidelines

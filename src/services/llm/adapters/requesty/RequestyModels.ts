@@ -254,6 +254,22 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   },
   {
     provider: 'requesty',
+    name: 'GLM 5.3',
+    apiName: 'zai/glm-5.3',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.40,
+    outputCostPerMillion: 4.40,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
     name: 'Kimi K2.7 Code',
     apiName: 'moonshot/kimi-k2.7-code',
     contextWindow: 262144,

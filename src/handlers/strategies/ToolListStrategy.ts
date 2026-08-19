@@ -2,7 +2,7 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IRequestStrategy } from './IRequestStrategy';
 import { IRequestHandlerDependencies } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
-import { ITool } from '../../agents/interfaces/ITool';
+import { buildToolManagerMcpCatalog } from '../../agents/toolManager/services/ToolManagerMcpCatalog';
 import { logger } from '../../utils/logger';
 
 interface ToolListRequest {
@@ -48,16 +48,7 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
                 return Promise.resolve({ tools: [] });
             }
 
-            // Get tools from toolManager (getTools and useTools)
-            const toolManagerTools = toolManagerAgent.getTools();
-
-            // Convert to MCP tool format
-            // Use underscore separator (MCP requires ^[a-zA-Z0-9_-]{1,64}$ - no dots allowed)
-            const tools = toolManagerTools.map((tool: ITool<unknown, unknown>) => ({
-                name: `toolManager_${tool.slug}`,
-                description: tool.description,
-                inputSchema: tool.getParameterSchema()
-            }));
+            const tools = buildToolManagerMcpCatalog(toolManagerAgent);
 
             return Promise.resolve({ tools });
         } catch (error) {

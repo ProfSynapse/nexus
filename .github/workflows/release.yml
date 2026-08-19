@@ -39,6 +39,7 @@ jobs:
             echo "::error::Tag $TAG does not match package.json version $PKG_VERSION"; exit 1
           fi
           node -e "const v=require('./versions.json'); if(!v['$TAG']){console.error('::error::versions.json has no entry for $TAG');process.exit(1)}"
+          node -e "const s=require('./schemas/manifest.json'); if(s.latest!=='$TAG'||!s.versions['$TAG']){console.error('::error::schema catalog is not generated for '+ '$TAG');process.exit(1)}"
 
       - name: Build release assets
         run: npm run build
@@ -51,6 +52,8 @@ jobs:
             main.js
             manifest.json
             styles.css
+            schemas/${{ github.ref_name }}/cli-tools.json
+            schemas/${{ github.ref_name }}/mcp-tools.json
           generate_release_notes: true
 
       - name: Attest release assets
@@ -60,3 +63,5 @@ jobs:
             main.js
             manifest.json
             styles.css
+            schemas/${{ github.ref_name }}/cli-tools.json
+            schemas/${{ github.ref_name }}/mcp-tools.json

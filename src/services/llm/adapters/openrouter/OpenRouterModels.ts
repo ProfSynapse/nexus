@@ -230,6 +230,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'GLM 5.3',
+    apiName: 'z-ai/glm-5.3',
+    contextWindow: 1048576,
+    maxTokens: 131072,
+    inputCostPerMillion: 1.40,
+    outputCostPerMillion: 4.40,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'GLM 5V Turbo',
     apiName: 'z-ai/glm-5v-turbo',
     contextWindow: 202752,
@@ -671,6 +687,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 0.195,
     outputCostPerMillion: 1.56,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Qwen3.8 27B',
+    apiName: 'qwen/qwen3.8-27b',
+    contextWindow: 262144,
+    maxTokens: 131072,
+    inputCostPerMillion: 0.45,
+    outputCostPerMillion: 3.20,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

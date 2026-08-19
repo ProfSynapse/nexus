@@ -513,6 +513,8 @@ PREPARE and ARCHITECT are mostly done via this consultation. The remaining resea
 
 ### Require Further Research
 - [ ] **Real Nexus tool response shapes**: Need to capture actual getTools/useTools responses to build high-fidelity mock responses. Can be gathered by running the plugin with console logging.
+- [x] **Versioned generated tool schemas**: Release bundles now contain live CLI and MCP catalogs under `schemas/<version>/`; the eval harness selects `latest` or an explicit `schemaVersion`/`EVAL_SCHEMA_VERSION` and records the resolved release in reports.
+- [ ] **Real `nexus use` CLI harness**: Add an integration surface that executes `nexus use --memory <context> --goal <objective> -- <agent> <tool> --<flags>` through the shipped CLI, including `--*-stdin` and `--*-file` transports, instead of only simulating the inner `useTools.tool` command string.
 
 ---
 

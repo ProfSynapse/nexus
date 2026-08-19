@@ -1,7 +1,8 @@
 # How the exporter runs, and how it fails
 
-The exporter is scripts/generate-tool-schemas.mjs, run through the
-`schemas:tools` npm script. Everything below is a consequence of how it boots.
+The exporter is scripts/generate-tool-schemas.mjs. `schemas:release` writes the
+versioned CLI/MCP bundle; a direct call remains available for scratch subsets.
+Everything below is a consequence of how it boots.
 
 ## The headless boot
 
@@ -62,5 +63,5 @@ unconditionally, so the catalog always contains them.
   used a registry name or a slug where the CLI alias belongs.
 - `Invalid selector "..."` — more than two tokens in one segment. Selector
   segments are `agent` or `agent tool`, nothing deeper.
-- `Unknown argument: ...` — the exporter accepts only `--selector`, `--output`
-  and `--help`, each also in `--flag=value` form.
+- `Unknown argument: ...` — run `node scripts/generate-tool-schemas.mjs --help`
+  for the current accepted release, check, selector and output flags.
