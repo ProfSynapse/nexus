@@ -4,6 +4,8 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-19 | Versioned generated schemas made the structural checker fail because it parsed literal `NEXUS_TOOLS`/`META_TOOLS` arrays that no longer exist. | Changed the checker to resolve the latest CLI/MCP artifacts through `<repo>/schemas/manifest.json` and filter CLI tools through the advertised eval catalog; documented schema pinning and the loader path. | `scripts/check_scenarios.py`, `references/harness-map.md`, `protocols/configure-a-run.md`.
+
 2026-08-14 | Rebuilt from a single prose file through the skill-crafter
 improve-skill protocol. The old file was a knob list with no procedure, no
 verification, and several claims that did not match `tests/eval/`: it said

@@ -26,6 +26,7 @@ const PROVIDER_API_KEY_ENV: Record<string, string> = {
 
 const DEFAULT_CONFIG: EvalConfig = {
   mode: 'mock',
+  schemaVersion: 'latest',
   testVaultPath: 'tests/eval/test-vault/',
   providers: {
     openrouter: {
@@ -86,12 +87,14 @@ function applyEnvOverrides(config: EvalConfig): EvalConfig {
   const scenariosOverride = getEnv('EVAL_SCENARIOS');
   const toolSetOverride = getEnv('EVAL_TOOL_SET');
   const scenarioNamesOverride = getListEnv('EVAL_SCENARIO_NAMES');
+  const schemaVersionOverride = getEnv('EVAL_SCHEMA_VERSION');
 
   return {
     ...config,
     mode: modeOverride === 'mock' || modeOverride === 'live'
       ? modeOverride
       : config.mode,
+    schemaVersion: schemaVersionOverride || config.schemaVersion,
     providers: targets ?? config.providers,
     defaults: applyDefaultEnvOverrides(config.defaults),
     scenarios: scenariosOverride || config.scenarios,
@@ -198,6 +201,7 @@ function isScenarioToolSet(value: string | undefined): value is NonNullable<Eval
 function mergeWithDefaults(partial: Partial<EvalConfig>): EvalConfig {
   return {
     mode: partial.mode ?? DEFAULT_CONFIG.mode,
+    schemaVersion: partial.schemaVersion ?? DEFAULT_CONFIG.schemaVersion,
     testVaultPath: partial.testVaultPath ?? DEFAULT_CONFIG.testVaultPath,
     providers: partial.providers ?? DEFAULT_CONFIG.providers,
     defaults: {

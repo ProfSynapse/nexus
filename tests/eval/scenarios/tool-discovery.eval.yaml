@@ -94,49 +94,24 @@
 - name: expand-toolset-mid-conversation
   description: Model initially uses contentManager, then user asks something requiring storageManager too — model should fetch additional tools
   toolSet: meta
+  allowReorder: true
   turns:
     - userMessage: "Show me what's in notes/readme.md"
       expectedTools:
         - name: getTools
           params:
             tool: "content"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: contentManager
-                tool: read
-                description: Read content from a file
-                command: "content read"
-                usage: "content read <path> <startLine>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: startLine
-                    flag: --start-line
-                    type: number
-                    required: true
-                    positional: true
-                examples:
-                  - 'content read "path-value" 1'
+      mockResponses: {}
 
     - expectedTools:
         - name: useTools
           params:
             tool: "content read"
       mockResponses:
-        useTools:
+        contentManager_read:
           success: true
           result:
-            results:
-              - tool: read
-                success: true
-                data:
-                  content: "# README\n\nProject documentation"
+            content: "# README\n\nProject documentation"
 
     # User now wants to move/copy — needs storageManager
     - userMessage: "Great, now copy that file to the backup folder"
@@ -145,46 +120,27 @@
           params:
             tool: "storage"
       mockResponses:
-        getTools:
+        storageManager_list:
           success: true
           result:
-            tools:
-              - agent: storageManager
-                tool: copy
-                description: Copy a file or folder
-                command: "storage copy"
-                usage: "storage copy <path> <destination>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: destination
-                    flag: --destination
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'storage copy "path-value" "destination-value"'
+            items:
+              - name: backup
+                type: folder
 
     - expectedTools:
         - name: useTools
           params:
             tool: "storage copy"
       mockResponses:
-        useTools:
+        storageManager_copy:
           success: true
           result:
-            results:
-              - tool: copy
-                success: true
-                data:
-                  newPath: backup/readme.md
+            newPath: backup/readme.md
 
 - name: all-agents-conversation
   description: Long conversation that touches content, storage, and search across multiple exchanges
   toolSet: meta
+  allowReorder: true
   turns:
     # Exchange 1: search for something
     - userMessage: "Find notes about the product launch"
@@ -192,40 +148,19 @@
         - name: getTools
           params:
             tool: "search"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: searchManager
-                tool: content
-                description: Search for notes
-                command: "search content"
-                usage: "search content <query>"
-                arguments:
-                  - name: query
-                    flag: --query
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'search content "query-value"'
+      mockResponses: {}
 
     - expectedTools:
         - name: useTools
           params:
             tool: "search content"
       mockResponses:
-        useTools:
+        searchManager_content:
           success: true
           result:
             results:
-              - tool: content
-                success: true
-                data:
-                  results:
-                    - path: marketing/launch-plan.md
-                      score: 0.93
+              - path: marketing/launch-plan.md
+                score: 0.93
 
     # Exchange 2: read the found note
     - userMessage: "Read that launch plan"
@@ -233,43 +168,17 @@
         - name: getTools
           params:
             tool: "content"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: contentManager
-                tool: read
-                description: Read content from a file
-                command: "content read"
-                usage: "content read <path> <startLine>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: startLine
-                    flag: --start-line
-                    type: number
-                    required: true
-                    positional: true
-                examples:
-                  - 'content read "path-value" 1'
+      mockResponses: {}
 
     - expectedTools:
         - name: useTools
           params:
             tool: "content read"
       mockResponses:
-        useTools:
+        contentManager_read:
           success: true
           result:
-            results:
-              - tool: read
-                success: true
-                data:
-                  content: "# Launch Plan\n\nDate: March 15\nChannels: Blog, Twitter, Newsletter"
+            content: "# Launch Plan\n\nDate: March 15\nChannels: Blog, Twitter, Newsletter"
 
     # Exchange 3: organize — move to a different folder
     - userMessage: "Move it to the archive folder, we already launched"
@@ -277,40 +186,14 @@
         - name: getTools
           params:
             tool: "storage"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: storageManager
-                tool: move
-                description: Move a file or folder
-                command: "storage move"
-                usage: "storage move <path> <destination>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: destination
-                    flag: --destination
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'storage move "path-value" "destination-value"'
+      mockResponses: {}
 
     - expectedTools:
         - name: useTools
           params:
             tool: "storage move"
       mockResponses:
-        useTools:
+        storageManager_move:
           success: true
           result:
-            results:
-              - tool: move
-                success: true
-                data:
-                  newPath: archive/launch-plan.md
+            newPath: archive/launch-plan.md

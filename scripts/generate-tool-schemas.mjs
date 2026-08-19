@@ -7,6 +7,7 @@
  *   node scripts/generate-tool-schemas.mjs --selector "storage move, content read"
  *   node scripts/generate-tool-schemas.mjs --output docs/generated/storage-schemas.json
  *   node scripts/generate-tool-schemas.mjs --output -
+ *   node scripts/generate-tool-schemas.mjs --release-version 5.17.2
  */
 
 import fs from 'node:fs';
@@ -22,6 +23,7 @@ const obsidianMockPath = path.join(projectRoot, 'tests', 'mocks', 'obsidian', 'i
 const require = Module.createRequire(import.meta.url);
 
 const DEFAULT_OUTPUT = path.join('docs', 'generated', 'cli-first-tool-schemas.json');
+const DEFAULT_SCHEMAS_DIR = 'schemas';
 const DEFAULT_SELECTOR = '--help';
 const originalTsLoader = Module._extensions['.ts'];
 const originalLoad = Module._load;
@@ -29,6 +31,9 @@ const originalLoad = Module._load;
 function parseArgs(argv) {
   const options = {
     output: DEFAULT_OUTPUT,
+    schemasDir: DEFAULT_SCHEMAS_DIR,
+    releaseVersion: undefined,
+    check: false,
     selectors: [],
     help: false
   };
@@ -38,6 +43,11 @@ function parseArgs(argv) {
 
     if (arg === '--help' || arg === '-h') {
       options.help = true;
+      continue;
+    }
+
+    if (arg === '--check') {
+      options.check = true;
       continue;
     }
 
@@ -53,6 +63,36 @@ function parseArgs(argv) {
 
     if (arg.startsWith('--output=')) {
       options.output = arg.slice('--output='.length);
+      continue;
+    }
+
+    if (arg === '--schemas-dir') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('Missing value after --schemas-dir');
+      }
+      options.schemasDir = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--schemas-dir=')) {
+      options.schemasDir = arg.slice('--schemas-dir='.length);
+      continue;
+    }
+
+    if (arg === '--release-version') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('Missing value after --release-version');
+      }
+      options.releaseVersion = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--release-version=')) {
+      options.releaseVersion = arg.slice('--release-version='.length);
       continue;
     }
 
@@ -84,6 +124,9 @@ function printUsage() {
     'Options:',
     `  --output <path>      Output file path (default: ${DEFAULT_OUTPUT})`,
     `  --selector <value>   CLI selector string, same shape as getTools (default: ${DEFAULT_SELECTOR})`,
+    `  --schemas-dir <path> Versioned schema root (default: ${DEFAULT_SCHEMAS_DIR})`,
+    '  --release-version    Generate CLI + MCP catalogs for a Nexus release',
+    '  --check              Fail if the latest committed bundle differs from runtime',
     '  --help               Show this message',
     '',
     'Examples:',
@@ -92,6 +135,8 @@ function printUsage() {
     '  node scripts/generate-tool-schemas.mjs --selector "storage move, content read"',
     '  node scripts/generate-tool-schemas.mjs --output docs/generated/task-tools.json --selector "task"',
     '  node scripts/generate-tool-schemas.mjs --output - --selector "prompt generate-image"',
+    '  node scripts/generate-tool-schemas.mjs --release-version 5.17.2',
+    '  node scripts/generate-tool-schemas.mjs --check',
   ].join('\n'));
 }
 
@@ -399,13 +444,14 @@ function instantiateAgents() {
   }
 
   return {
+    app,
     agents,
     registry,
     normalizer: new ToolCliNormalizer(registry)
   };
 }
 
-function collectSchemas(agents, registry, normalizer, selectorInput) {
+function collectSchemas(agents, registry, normalizer, selectorInput, generatedAt = new Date().toISOString()) {
   const requests = normalizer.normalizeDiscoveryRequests({ tool: selectorInput });
   const tools = [];
 
@@ -439,13 +485,143 @@ function collectSchemas(agents, registry, normalizer, selectorInput) {
   }
 
   return {
-    generatedAt: new Date().toISOString(),
+    schemaVersion: 1,
+    generatedAt,
     selector: selectorInput,
     toolCount: tools.length,
     agentCount: Object.keys(byAgent).length,
     agents: byAgent,
     tools
   };
+}
+
+function collectMcpSchemas(runtime, releaseVersion, generatedAt) {
+  const { ToolManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'toolManager', 'toolManager'));
+  const { buildToolManagerMcpCatalog } = require(path.join(
+    projectRoot,
+    'src',
+    'agents',
+    'toolManager',
+    'services',
+    'ToolManagerMcpCatalog'
+  ));
+  const toolManager = new ToolManagerAgent(
+    runtime.app,
+    runtime.registry,
+    { workspaces: [], customAgents: [], vaultRoot: [] }
+  );
+  const tools = buildToolManagerMcpCatalog(toolManager);
+
+  return {
+    schemaVersion: 1,
+    nexusVersion: releaseVersion,
+    generatedAt,
+    toolCount: tools.length,
+    tools,
+  };
+}
+
+function writeJson(filePath, payload) {
+  const resolved = path.resolve(process.cwd(), filePath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return resolved;
+}
+
+function writeReleaseBundle(options, runtime, cliPayload) {
+  const releaseVersion = options.releaseVersion;
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(releaseVersion)) {
+    throw new Error(`Invalid release version: ${releaseVersion}`);
+  }
+
+  const generatedAt = cliPayload.generatedAt;
+  cliPayload.nexusVersion = releaseVersion;
+  const mcpPayload = collectMcpSchemas(runtime, releaseVersion, generatedAt);
+  const releaseDir = path.join(options.schemasDir, releaseVersion);
+  const cliRelativePath = path.posix.join(releaseVersion, 'cli-tools.json');
+  const mcpRelativePath = path.posix.join(releaseVersion, 'mcp-tools.json');
+  const cliPath = writeJson(path.join(releaseDir, 'cli-tools.json'), cliPayload);
+  const mcpPath = writeJson(path.join(releaseDir, 'mcp-tools.json'), mcpPayload);
+
+  const manifestPath = path.join(options.schemasDir, 'manifest.json');
+  const resolvedManifest = path.resolve(process.cwd(), manifestPath);
+  const existing = fs.existsSync(resolvedManifest)
+    ? JSON.parse(fs.readFileSync(resolvedManifest, 'utf8'))
+    : { schemaVersion: 1, latest: releaseVersion, versions: {} };
+  const versions = {
+    ...(existing.versions || {}),
+    [releaseVersion]: {
+      cli: cliRelativePath,
+      mcp: mcpRelativePath,
+    },
+  };
+  const manifest = {
+    schemaVersion: 1,
+    latest: releaseVersion,
+    versions: Object.fromEntries(
+      Object.entries(versions).sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+    ),
+  };
+  writeJson(manifestPath, manifest);
+
+  // Compatibility aliases for callers that have not adopted the manifest yet.
+  writeJson('cli-first-tool-schemas.json', cliPayload);
+  writeJson('tool-schemas.json', mcpPayload);
+
+  console.log(JSON.stringify({
+    releaseVersion,
+    manifest: resolvedManifest,
+    cli: cliPath,
+    mcp: mcpPath,
+    cliToolCount: cliPayload.toolCount,
+    mcpToolCount: mcpPayload.toolCount,
+  }, null, 2));
+}
+
+function assertEqual(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${label} is stale. Run npm run schemas:release after setting the package version.`);
+  }
+}
+
+function checkReleaseBundle(options, runtime, liveCliPayload) {
+  const packageVersion = JSON.parse(
+    fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')
+  ).version;
+  const schemasRoot = path.resolve(process.cwd(), options.schemasDir);
+  const manifest = JSON.parse(fs.readFileSync(path.join(schemasRoot, 'manifest.json'), 'utf8'));
+  if (manifest.latest !== packageVersion) {
+    throw new Error(
+      `Schema manifest latest (${manifest.latest}) does not match package version (${packageVersion})`
+    );
+  }
+  const entry = manifest.versions?.[packageVersion];
+  if (!entry) {
+    throw new Error(`Schema manifest has no entry for package version ${packageVersion}`);
+  }
+
+  const cli = JSON.parse(fs.readFileSync(path.join(schemasRoot, entry.cli), 'utf8'));
+  const mcp = JSON.parse(fs.readFileSync(path.join(schemasRoot, entry.mcp), 'utf8'));
+  const cliAlias = JSON.parse(fs.readFileSync(path.join(projectRoot, 'cli-first-tool-schemas.json'), 'utf8'));
+  const mcpAlias = JSON.parse(fs.readFileSync(path.join(projectRoot, 'tool-schemas.json'), 'utf8'));
+  const liveMcp = collectMcpSchemas(runtime, packageVersion, liveCliPayload.generatedAt);
+
+  if (cli.nexusVersion !== packageVersion || mcp.nexusVersion !== packageVersion) {
+    throw new Error(`Schema artifacts do not identify package version ${packageVersion}`);
+  }
+  assertEqual(cliAlias, cli, 'CLI compatibility catalog');
+  assertEqual(mcpAlias, mcp, 'MCP compatibility catalog');
+  assertEqual(cli.tools, liveCliPayload.tools, 'Versioned CLI catalog');
+  assertEqual(mcp.tools, liveMcp.tools, 'Versioned MCP catalog');
+  if (cli.toolCount !== cli.tools.length || mcp.toolCount !== mcp.tools.length) {
+    throw new Error('Schema artifact toolCount does not match its tools array');
+  }
+
+  console.log(JSON.stringify({
+    checkedVersion: packageVersion,
+    cliToolCount: cli.toolCount,
+    mcpToolCount: mcp.toolCount,
+  }, null, 2));
 }
 
 function writeOutput(outputPath, payload) {
@@ -473,6 +649,12 @@ function main() {
     return;
   }
 
+  if (options.releaseVersion === 'package') {
+    options.releaseVersion = JSON.parse(
+      fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')
+    ).version;
+  }
+
   const selectorInput = options.selectors.length > 0
     ? options.selectors.join(', ')
     : DEFAULT_SELECTOR;
@@ -483,8 +665,21 @@ function main() {
 
   try {
     const runtime = instantiateAgents();
-    const payload = collectSchemas(runtime.agents, runtime.registry, runtime.normalizer, selectorInput);
-    writeOutput(options.output, payload);
+    const generatedAt = new Date().toISOString();
+    const payload = collectSchemas(
+      runtime.agents,
+      runtime.registry,
+      runtime.normalizer,
+      options.releaseVersion ? DEFAULT_SELECTOR : selectorInput,
+      generatedAt,
+    );
+    if (options.check) {
+      checkReleaseBundle(options, runtime, payload);
+    } else if (options.releaseVersion) {
+      writeReleaseBundle(options, runtime, payload);
+    } else {
+      writeOutput(options.output, payload);
+    }
   } finally {
     restoreLoaders();
   }

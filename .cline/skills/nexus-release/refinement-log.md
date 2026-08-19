@@ -4,6 +4,8 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-19 | Release readiness had no guard for the newly required versioned CLI/MCP artifacts. | Added manifest/artifact/version checks and updated release machinery, bump, asset, and verification guidance. | `scripts/check_release_ready.py`, `references/release-machinery.md`, `protocols/cut-release.md`.
+
 2026-08-15 | Cutting 5.17.0. An `**Unreleased**` changelog entry already existed
 and read as finished, but it had been written when the first feature of the cycle
 landed and covered 2 of the 41 commits since 5.16.4 — Defuddle web capture, the

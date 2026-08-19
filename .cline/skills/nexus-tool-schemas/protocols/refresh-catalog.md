@@ -1,15 +1,14 @@
 # Protocol: refresh-catalog
 
-Context: the catalog committed at the repo root is the reference two Jest tests
-compare against — one for drift against the live registry, one for every command
-written in the shipped docs. Any change to a tool's parameter schema, slug or
-description, to an agent's registration, or to `ToolCliNormalizer` makes it
-stale. This is the consequential export; `export-subset.md` is the throwaway one.
+Context: `<repo>/schemas/manifest.json` points at the versioned CLI and MCP catalogs for
+the current release. The two repo-root JSON files are compatibility aliases.
+Any change to either live surface makes the bundle stale. This is the
+consequential export; `export-subset.md` is the throwaway one.
 Read `../references/consumers.md` for who reads what.
 
 ## Mission
-Regenerate the repo-root catalog from the live normalizer and prove the
-catalog-backed tests pass against it.
+Regenerate the current release bundle from the live registries and prove every
+consumer sees the same CLI and MCP contracts.
 
 ## Steps
 1. Confirm the exporter can run. It transpiles TypeScript in-process and mocks
@@ -27,17 +26,19 @@ catalog-backed tests pass against it.
 
    Fix `instantiateAgents()` in scripts/generate-tool-schemas.mjs before
    continuing if it reports a missing agent.
-3. Generate to the repo-root file. The `--output` is not optional here: the
-   default destination is a gitignored scratch path that no consumer reads.
+3. Generate the versioned release bundle. The script reads the version from
+   `package.json`, writes both release artifacts, advances the manifest, and
+   refreshes the compatibility aliases.
 
    ```bash
-   npm run schemas:tools -- --output cli-first-tool-schemas.json
+   npm run schemas:release
    ```
 
    The exporter prints the resolved path, tool count and per-agent counts.
 4. Validate the file you just wrote:
 
    ```bash
+   npm run schemas:check
    python3 .claude/skills/nexus-tool-schemas/scripts/check_catalog.py cli-first-tool-schemas.json
    ```
 
@@ -59,8 +60,8 @@ catalog-backed tests pass against it.
 ## Guidelines
 - Pattern: regenerate, then read the diff. A refresh that changes nothing means
   the change did not reach the caller-facing schema, which is worth knowing.
-- Anti-pattern: writing to the default path and calling the catalog refreshed.
-  Everything looks successful and nothing that matters changed.
+- Anti-pattern: using a selector/scratch export as a release refresh. It does
+  not update the manifest or MCP surface.
 - Anti-pattern: editing the JSON to make a test pass. The test exists to detect
   exactly that divergence.
 

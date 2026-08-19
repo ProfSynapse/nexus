@@ -13,6 +13,7 @@ import type { EvalRunResult, EvalConfig } from './types';
 export interface EvalReportJson {
   config: string;
   mode: string;
+  schemaVersion: string;
   providers: string[];
   startTime: number;
   endTime: number;
@@ -57,7 +58,7 @@ export function generateReport(runResult: EvalRunResult, config: EvalConfig): st
   lines.push(`# Eval Report — ${timestamp}`);
   lines.push('');
   lines.push(`## Config`);
-  lines.push(`Mode: ${runResult.mode} | Providers: ${providerNames.join(', ')} | Models: ${modelCount}`);
+  lines.push(`Mode: ${runResult.mode} | Schema: ${runResult.schemaVersion} | Providers: ${providerNames.join(', ')} | Models: ${modelCount}`);
   lines.push('');
 
   // Results summary table
@@ -168,6 +169,7 @@ export function generateReportJson(runResult: EvalRunResult, config: EvalConfig)
   return {
     config: runResult.config,
     mode: runResult.mode,
+    schemaVersion: runResult.schemaVersion,
     providers: providerNames,
     startTime: runResult.startTime,
     endTime: runResult.endTime,

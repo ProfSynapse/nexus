@@ -23,7 +23,7 @@ import { loadScenarios } from './ScenarioLoader';
 import { RequestCapture } from './RequestCapture';
 import { calculateMaxRetryDelayMs, runScenario } from './EvalRunner';
 import { generateReport, saveReport, generateReportJson, saveReportJson } from './ReportGenerator';
-import { META_TOOLS, NEXUS_TOOLS, SIMPLE_TOOLS } from './fixtures/tools';
+import { loadEvalToolFixtures, SIMPLE_TOOLS } from './fixtures/tools';
 import { DEFAULT_SYSTEM_PROMPT, MINIMAL_SYSTEM_PROMPT, initializeSystemPrompts } from './fixtures/system-prompt';
 import type { EvalConfig, EvalScenario, ScenarioResult, ToolSetType } from './types';
 import type { Tool } from '../../src/services/llm/adapters/types';
@@ -33,6 +33,7 @@ import type { Tool } from '../../src/services/llm/adapters/types';
 // ---------------------------------------------------------------------------
 
 const config = loadConfig();
+const schemaTools = loadEvalToolFixtures(config.schemaVersion);
 const enabledProviders = getEnabledProviders(config);
 const capture = new RequestCapture();
 
@@ -62,10 +63,10 @@ function resolveSystemPrompt(prompt: string): string {
 
 function resolveToolSet(toolSet: ToolSetType | undefined): Tool[] {
   switch (toolSet) {
-    case 'nexus': return NEXUS_TOOLS;
+    case 'nexus': return schemaTools.nexusTools;
     case 'simple': return SIMPLE_TOOLS;
     case 'meta':
-    default: return META_TOOLS;
+    default: return schemaTools.metaTools;
   }
 }
 
@@ -312,7 +313,8 @@ describe('LLM Eval Harness', () => {
           provider,
           model,
           tools,
-          config
+          config,
+          schemaTools.nexusTools,
         );
       });
 
@@ -378,6 +380,7 @@ describe('LLM Eval Harness', () => {
       const modelRunResult = {
         config: process.env.EVAL_CONFIG || 'default',
         mode: config.mode,
+        schemaVersion: schemaTools.version,
         results: modelResults,
         startTime,
         endTime: Date.now(),
@@ -407,6 +410,7 @@ describe('LLM Eval Harness', () => {
       const runResult = {
         config: process.env.EVAL_CONFIG || 'default',
         mode: config.mode,
+        schemaVersion: schemaTools.version,
         results: allResults,
         startTime,
         endTime: Date.now(),

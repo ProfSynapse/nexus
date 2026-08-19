@@ -4,6 +4,8 @@ Append-only record of changes to this skill. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-19 | The skill treated one repo-root CLI file as authoritative, but releases now generate versioned CLI and MCP catalogs with compatibility aliases. | Updated refresh and consumer guidance around `schemas:release`, `schemas:check`, the manifest, both surfaces, and scratch exports. | `protocols/refresh-catalog.md`, `references/consumers.md`, `references/exporter-internals.md`.
+
 ## 2026-08-14 | improve-skill pass
 
 **Observation.** The skill documented the exporter's default output path as the

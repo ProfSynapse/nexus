@@ -32,7 +32,6 @@ import type { LLMProviderSettings } from '../../src/types';
 import { EvalToolExecutor } from './EvalToolExecutor';
 import { LiveToolExecutor } from './LiveToolExecutor';
 import { EvalAdapterRegistry } from './EvalAdapterRegistry';
-import { NEXUS_TOOLS } from './fixtures/tools';
 import { assertToolCalls, assertToolCallRounds, assertNoHallucinatedTools } from './assertions';
 import type { IToolExecutor } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
 import type {
@@ -330,7 +329,8 @@ export async function runScenario(
   provider: ProviderEntry,
   model: string,
   tools: Tool[],
-  config: EvalConfig
+  config: EvalConfig,
+  domainTools: Tool[],
 ): Promise<ScenarioResult> {
   const startTime = Date.now();
   const runId = `${provider.id}-${model.replace(/[\\/]/g, '_')}-${scenario.name}`;
@@ -365,6 +365,7 @@ export async function runScenario(
         systemPrompt,
         temperature,
         config,
+        domainTools,
         trace
       );
 
@@ -474,12 +475,12 @@ function isMetaToolSet(tools: Tool[]): boolean {
  * For meta mode, includes both the meta tool names AND domain tool names,
  * since the executor captures inner domain calls from useTools unwrapping.
  */
-function buildValidToolNames(tools: Tool[]): string[] {
+function buildValidToolNames(tools: Tool[], domainTools: Tool[]): string[] {
   const names = tools.map(t => t.function?.name).filter(Boolean) as string[];
   if (isMetaToolSet(tools)) {
     // Also allow domain tool names — these appear in captured calls
     // when useTools unwraps inner calls
-    const domainNames = NEXUS_TOOLS.map(t => t.function?.name).filter(Boolean) as string[];
+    const domainNames = domainTools.map(t => t.function?.name).filter(Boolean) as string[];
     return [...names, ...domainNames];
   }
   return names;
@@ -499,6 +500,7 @@ async function createToolExecutor(
   tools: Tool[],
   runId: string,
   scenario: EvalScenario,
+  domainTools: Tool[],
 ): Promise<{ executor: IToolExecutor & { getCapturedCalls(): CapturedToolCall[]; resetCalls(): void }; cleanup?: () => void }> {
   if (config.mode === 'live') {
     const path = await import('node:path');
@@ -512,7 +514,7 @@ async function createToolExecutor(
 
   const mockExecutor = new EvalToolExecutor();
   if (isMetaToolSet(tools)) {
-    mockExecutor.setDomainTools(NEXUS_TOOLS);
+    mockExecutor.setDomainTools(domainTools);
   }
   // Must be set before registerTurnResponses so registrations route to the
   // per-round FIFO queue rather than the last-write-wins map.
@@ -539,10 +541,11 @@ async function executeScenario(
   systemPrompt: string,
   temperature: number,
   config: EvalConfig,
+  domainTools: Tool[],
   trace?: EvalTrace
 ): Promise<TurnResult[]> {
   const runId = `${provider.id}-${model.replace(/[\\/]/g, '_')}-${scenario.name}`;
-  const { executor: toolExecutor } = await createToolExecutor(config, tools, runId, scenario);
+  const { executor: toolExecutor } = await createToolExecutor(config, tools, runId, scenario, domainTools);
   const adapter = await createAdapter(provider);
   const registry = new EvalAdapterRegistry([[provider.id, adapter]]);
 
@@ -554,7 +557,7 @@ async function executeScenario(
   };
 
   const orchestrator = new StreamingOrchestrator(registry, settings, toolExecutor);
-  const validToolNames = buildValidToolNames(tools);
+  const validToolNames = buildValidToolNames(tools, domainTools);
   const turnResults: TurnResult[] = [];
 
   // Conversation history accumulates across exchanges (multi-message conversations)

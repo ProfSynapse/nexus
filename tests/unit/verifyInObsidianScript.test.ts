@@ -159,7 +159,7 @@ exit 1`;
       const artifacts = path.join(tmpRoot, 'artifacts');
       const { status, output } = runScript(
         ['--vault', 'demo', '--skip-build', '--artifacts-dir', artifacts],
-        { PATH: `${dir}:${process.env.PATH}` }
+        { NEXUS_OBSIDIAN_CLI: path.join(dir, 'obsidian-cli') }
       );
 
       expect(output).toContain('dev:errors is clean');
@@ -177,7 +177,7 @@ exit 1`;
       );
       const { status, output } = runScript(
         ['--vault', 'demo', '--skip-build', '--artifacts-dir', path.join(tmpRoot, 'artifacts-dirty')],
-        { PATH: `${dir}:${process.env.PATH}` }
+        { NEXUS_OBSIDIAN_CLI: path.join(dir, 'obsidian-cli') }
       );
 
       expect(output).toContain('FAILED');
@@ -193,7 +193,7 @@ exit 1`;
       );
       const { status, output } = runScript(
         ['--vault', 'demo', '--skip-build', '--artifacts-dir', path.join(tmpRoot, 'artifacts-weird')],
-        { PATH: `${dir}:${process.env.PATH}` }
+        { NEXUS_OBSIDIAN_CLI: path.join(dir, 'obsidian-cli') }
       );
 
       expect(output).toContain('FAILED');

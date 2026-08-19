@@ -176,6 +176,7 @@
 - name: replace-content
   description: User asks to replace specific text in a note
   toolSet: meta
+  allowReorder: true
   seedFiles:
     notes/config.md: |
       # Config
@@ -190,44 +191,19 @@
           params:
             tool: "content"
       mockResponses:
-        getTools:
+        contentManager_read:
           success: true
           result:
-            tools:
-              - agent: contentManager
-                tool: replace
-                description: Replace or delete content in a file
-                command: "content replace"
-                usage: "content replace <path> <search> <replace>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: search
-                    flag: --search
-                    type: string
-                    required: true
-                    positional: true
-                  - name: replace
-                    flag: --replace
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'content replace "path-value" "search-value" "replace-value"'
+            content: "# Config\n\nenvironment: staging\napiBaseUrl: https://staging.example.com\ndeployTarget: staging"
 
     - expectedTools:
         - name: useTools
           params:
             tool: "content replace"
       mockResponses:
-        useTools:
+        contentManager_replace:
           success: true
           result:
-            results:
-              - tool: replace
-                success: true
-                data:
-                  replacements: 3
+            linesDelta: 0
+            totalLines: 5
+            diff: "@@ -1,5 +1,5 @@\n # Config\n \n-environment: staging\n-apiBaseUrl: https://staging.example.com\n-deployTarget: staging\n+environment: production\n+apiBaseUrl: https://production.example.com\n+deployTarget: production"

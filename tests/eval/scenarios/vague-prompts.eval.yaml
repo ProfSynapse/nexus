@@ -202,42 +202,7 @@
         - name: getTools
           params:
             tool: "content, search"
-      mockResponses:
-        getTools:
-          success: true
-          result:
-            tools:
-              - agent: contentManager
-                tool: read
-                description: Read content from a file
-                command: "content read"
-                usage: "content read <path> <startLine>"
-                arguments:
-                  - name: path
-                    flag: --path
-                    type: string
-                    required: true
-                    positional: true
-                  - name: startLine
-                    flag: --start-line
-                    type: number
-                    required: true
-                    positional: true
-                examples:
-                  - 'content read "path-value" 1'
-              - agent: searchManager
-                tool: content
-                description: Search for notes containing specific content
-                command: "search content"
-                usage: "search content <query>"
-                arguments:
-                  - name: query
-                    flag: --query
-                    type: string
-                    required: true
-                    positional: true
-                examples:
-                  - 'search content "query-value"'
+      mockResponses: {}
 
     # Round 1: read the todo list + search for the api-redesign notes.
     - expectedTools:
@@ -245,20 +210,16 @@
           params:
             tool: "content read, search content"
       mockResponses:
-        useTools:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Todo\n- Fix login bug\n- Update docs"
+        searchManager_content:
           success: true
           result:
             results:
-              - tool: read
-                success: true
-                data:
-                  content: "# Todo\n- Fix login bug\n- Update docs"
-              - tool: content
-                success: true
-                data:
-                  results:
-                    - path: engineering/api-redesign.md
-                      score: 0.91
+              - path: engineering/api-redesign.md
+                score: 0.91
 
     # Round 2 (optional follow-up): if the model reads the file the search
     # surfaced, it now gets the REAL api-redesign content — not the todo again.
@@ -266,11 +227,7 @@
     # sequentialMockResponses the queued response feeds this read.
     - expectedTools: []
       mockResponses:
-        useTools:
+        contentManager_read:
           success: true
           result:
-            results:
-              - tool: read
-                success: true
-                data:
-                  content: "# API Redesign\n\n- Move auth to OAuth2\n- Versioned endpoints under /v2\n- Deprecate /legacy by Q3"
+            content: "# API Redesign\n\n- Move auth to OAuth2\n- Versioned endpoints under /v2\n- Deprecate /legacy by Q3"

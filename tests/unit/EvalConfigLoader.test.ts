@@ -17,6 +17,7 @@ describe('EvalConfigLoader', () => {
     delete process.env.EVAL_RETRY_BACKOFF_MULTIPLIER;
     delete process.env.EVAL_RETRY_MAX_DELAY_MS;
     delete process.env.EVAL_TIMEOUT_MS;
+    delete process.env.EVAL_SCHEMA_VERSION;
   });
 
   afterAll(() => {
@@ -58,11 +59,13 @@ describe('EvalConfigLoader', () => {
     process.env.EVAL_RETRY_BACKOFF_MULTIPLIER = '3';
     process.env.EVAL_RETRY_MAX_DELAY_MS = '10000';
     process.env.EVAL_TIMEOUT_MS = '90000';
+    process.env.EVAL_SCHEMA_VERSION = '5.17.2';
 
     const { loadConfig } = await import('../eval/ConfigLoader');
     const config = loadConfig();
 
     expect(config.mode).toBe('live');
+    expect(config.schemaVersion).toBe('5.17.2');
     expect(config.scenarios).toBe('tests/eval/scenarios/search-variations.eval.yaml');
     expect(config.scenarioNames).toEqual([
       'simple-read',

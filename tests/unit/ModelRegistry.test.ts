@@ -203,6 +203,63 @@ describe('ModelRegistry latest Gemini Flash models', () => {
   });
 });
 
+// If either gateway drops or mislabels GLM 5.3, these lookups and provider-specific
+// limits fail instead of leaving a stale model picker entry undetected.
+describe('ModelRegistry GLM 5.3 models', () => {
+  it('registers GLM 5.3 for OpenRouter with the gateway model ID', () => {
+    expect(ModelRegistry.findModel('openrouter', 'z-ai/glm-5.3')).toEqual(expect.objectContaining({
+      name: 'GLM 5.3',
+      contextWindow: 1048576,
+      maxTokens: 131072,
+      inputCostPerMillion: 1.4,
+      outputCostPerMillion: 4.4,
+      capabilities: {
+        supportsJSON: true,
+        supportsImages: false,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      }
+    }));
+  });
+
+  it('registers GLM 5.3 for Requesty with its provider-specific model ID', () => {
+    expect(ModelRegistry.findModel('requesty', 'zai/glm-5.3')).toEqual(expect.objectContaining({
+      name: 'GLM 5.3',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      inputCostPerMillion: 1.4,
+      outputCostPerMillion: 4.4,
+      capabilities: {
+        supportsJSON: true,
+        supportsImages: false,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      }
+    }));
+  });
+});
+
+describe('ModelRegistry Qwen3.8 27B model', () => {
+  it('registers Qwen3.8 27B for OpenRouter with its live catalog metadata', () => {
+    expect(ModelRegistry.findModel('openrouter', 'qwen/qwen3.8-27b')).toEqual(expect.objectContaining({
+      name: 'Qwen3.8 27B',
+      contextWindow: 262144,
+      maxTokens: 131072,
+      inputCostPerMillion: 0.45,
+      outputCostPerMillion: 3.20,
+      capabilities: {
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      }
+    }));
+  });
+});
+
 describe('ModelRegistry DeepSeek V4 Pro 0813 model', () => {
   it('registers the dated GA snapshot for OpenRouter as a text-only thinking model', () => {
     expect(ModelRegistry.findModel('openrouter', 'deepseek/deepseek-v4-pro-0813')).toEqual(expect.objectContaining({
