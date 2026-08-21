@@ -46,6 +46,7 @@ import {
 } from '../streaming/SSEStreamProcessor';
 import { pumpSseEventQueue } from './shared/SseStreamPump';
 import { createProviderStreamError } from '../streaming/streamErrorFrames';
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache keys
@@ -89,6 +90,7 @@ interface StreamToolCallAccumulator {
   };
   reasoning_details?: Array<Record<string, unknown>>;
   thought_signature?: string;
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
 }
 
 interface JsonLineParseOptions {
@@ -280,6 +282,9 @@ export abstract class BaseAdapter {
               if (typeof toolCall.thought_signature === 'string') {
                 accumulated.thought_signature = toolCall.thought_signature;
               }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks)) {
+                accumulated.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
+              }
               toolCallsAccumulator.set(index, accumulated);
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
             } else {
@@ -300,6 +305,9 @@ export abstract class BaseAdapter {
               }
               if (typeof toolCall.thought_signature === 'string' && !existing.thought_signature) {
                 existing.thought_signature = toolCall.thought_signature;
+              }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks) && !existing.anthropic_thinking_blocks) {
+                existing.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
               }
             }
           }

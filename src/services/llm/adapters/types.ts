@@ -3,6 +3,8 @@
  * Based on patterns from services/llm/
  */
 
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
+
 /**
  * Supported LLM providers
  */
@@ -154,6 +156,8 @@ export interface ToolCall {
   reasoning_details?: Array<Record<string, unknown>>;
   // Google Gemini: thought_signature for thinking models
   thought_signature?: string;
+  // Anthropic: exact signed/redacted blocks required for tool continuations.
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */
   sourceFormat?: ToolCallFormat;
 }

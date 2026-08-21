@@ -63,7 +63,9 @@ export class AnthropicContextBuilder implements IContextBuilder {
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Assistant message contains both text AND tool_use blocks
-          const content: LLMContentBlock[] = [];
+          const content: LLMContentBlock[] = [
+            ...this.getPreservedThinkingBlocks(msg.toolCalls)
+          ];
 
           if (msg.content && msg.content.trim()) {
             content.push({ type: 'text', text: msg.content });
@@ -140,12 +142,15 @@ export class AnthropicContextBuilder implements IContextBuilder {
     }
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks: LLMContentBlock[] = toolCalls.map(tc => ({
+    const toolUseBlocks: LLMContentBlock[] = [
+      ...this.getPreservedThinkingBlocks(toolCalls),
+      ...toolCalls.map(tc => ({
       type: 'tool_use' as const,
       id: tc.id,
       name: tc.function?.name || '',
       input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
-    }));
+      }))
+    ];
 
     messages.push({ role: 'assistant', content: toolUseBlocks });
 
@@ -174,12 +179,15 @@ export class AnthropicContextBuilder implements IContextBuilder {
     const messages: AnthropicMessage[] = [...(previousMessages as AnthropicMessage[])];
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks: LLMContentBlock[] = toolCalls.map(tc => ({
+    const toolUseBlocks: LLMContentBlock[] = [
+      ...this.getPreservedThinkingBlocks(toolCalls),
+      ...toolCalls.map(tc => ({
       type: 'tool_use' as const,
       id: tc.id,
       name: tc.function?.name || '',
       input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
-    }));
+      }))
+    ];
 
     messages.push({ role: 'assistant', content: toolUseBlocks });
 
@@ -195,5 +203,27 @@ export class AnthropicContextBuilder implements IContextBuilder {
     messages.push({ role: 'user', content: toolResultBlocks });
 
     return messages;
+  }
+
+  private getPreservedThinkingBlocks(
+    toolCalls: Array<Pick<LLMToolCall, 'anthropic_thinking_blocks'>>
+  ): LLMContentBlock[] {
+    const blocks = toolCalls.find(toolCall => toolCall.anthropic_thinking_blocks?.length)
+      ?.anthropic_thinking_blocks;
+
+    if (!blocks) {
+      return [];
+    }
+
+    return blocks.map(block => block.type === 'thinking'
+      ? {
+          type: 'thinking',
+          thinking: block.thinking,
+          signature: block.signature
+        }
+      : {
+          type: 'redacted_thinking',
+          data: block.data
+        });
   }
 }

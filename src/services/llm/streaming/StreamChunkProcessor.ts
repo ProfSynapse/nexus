@@ -33,6 +33,7 @@
  */
 
 import { StreamChunk, ToolCall } from '../adapters/types';
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 interface StreamToolCallFunction {
   name?: string;
@@ -46,6 +47,7 @@ interface StreamToolCall {
   function?: StreamToolCallFunction;
   reasoning_details?: unknown;
   thought_signature?: unknown;
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
 }
 
 function normalizeStreamToolCall(toolCall: StreamToolCall): ToolCall {
@@ -62,6 +64,9 @@ function normalizeStreamToolCall(toolCall: StreamToolCall): ToolCall {
       : undefined,
     thought_signature: typeof toolCall.thought_signature === 'string'
       ? toolCall.thought_signature
+      : undefined,
+    anthropic_thinking_blocks: Array.isArray(toolCall.anthropic_thinking_blocks)
+      ? toolCall.anthropic_thinking_blocks
       : undefined
   };
 }
@@ -132,6 +137,9 @@ export class StreamChunkProcessor {
           if (toolCall.thought_signature) {
             accumulated.thought_signature = toolCall.thought_signature;
           }
+          if (Array.isArray(toolCall.anthropic_thinking_blocks)) {
+            accumulated.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
+          }
 
           toolCallsAccumulator.set(index, accumulated);
         } else {
@@ -159,6 +167,9 @@ export class StreamChunkProcessor {
           }
           if (toolCall.thought_signature && !existing.thought_signature) {
             existing.thought_signature = toolCall.thought_signature;
+          }
+          if (Array.isArray(toolCall.anthropic_thinking_blocks) && !existing.anthropic_thinking_blocks) {
+            existing.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
           }
         }
       }

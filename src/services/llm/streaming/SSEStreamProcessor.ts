@@ -49,6 +49,7 @@
 
 import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 import { createProviderStreamError } from './streamErrorFrames';
 
 export interface SSEParsedUsage {
@@ -69,6 +70,7 @@ export interface SSEToolCall {
   function?: SSEToolCallFunction;
   reasoning_details?: unknown;
   thought_signature?: unknown;
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
 }
 
 export interface SSEParsedEvent extends Record<string, unknown> {
@@ -237,6 +239,9 @@ export class SSEStreamProcessor {
               if (typeof toolCall.thought_signature === 'string') {
                 accumulated.thought_signature = toolCall.thought_signature;
               }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks)) {
+                accumulated.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
+              }
 
               toolCallsAccumulator.set(index, accumulated);
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
@@ -264,6 +269,9 @@ export class SSEStreamProcessor {
               }
               if (typeof toolCall.thought_signature === 'string' && !existing.thought_signature) {
                 existing.thought_signature = toolCall.thought_signature;
+              }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks) && !existing.anthropic_thinking_blocks) {
+                existing.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
               }
             }
           }

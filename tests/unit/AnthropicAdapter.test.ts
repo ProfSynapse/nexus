@@ -104,6 +104,56 @@ describe('AnthropicAdapter', () => {
       const result = await adapter.generateUncached('hi');
       expect(result.model).toBe(ANTHROPIC_DEFAULT_MODEL);
     });
+
+    it('uses adaptive summarized thinking and effort for Claude 4.6+', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          model: 'claude-sonnet-5',
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn'
+        });
+      });
+
+      await new AnthropicAdapter('ak-test', 'claude-sonnet-5').generateUncached('hi', {
+        enableThinking: true,
+        thinkingEffort: 'low',
+        temperature: 0.2,
+        maxTokens: 4096
+      });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+      expect(body.output_config).toEqual({ effort: 'low' });
+      expect(body).not.toHaveProperty('temperature');
+      expect(body.max_tokens).toBe(4096);
+    });
+
+    it('keeps manual token-budget thinking for Claude 4.5', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          model: 'claude-haiku-4-5-20251001',
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn'
+        });
+      });
+
+      await new AnthropicAdapter('ak-test', 'claude-haiku-4-5-20251001').generateUncached('hi', {
+        enableThinking: true,
+        thinkingEffort: 'low',
+        temperature: 0.2,
+        maxTokens: 4096
+      });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 4000 });
+      expect(body).not.toHaveProperty('output_config');
+      expect(body).not.toHaveProperty('temperature');
+      expect(body.max_tokens).toBe(4096);
+    });
   });
 
   describe('SSE streaming', () => {
@@ -137,7 +187,37 @@ describe('AnthropicAdapter', () => {
       // Current behavior: the synthetic id from input_json_delta overwrites
       // the real tool_use id supplied by content_block_start
       expect(final.toolCalls).toEqual([
-        { id: 'anthropic-tool-2', type: 'function', function: { name: 'search', arguments: '{"q":"x"}' } }
+        {
+          id: 'anthropic-tool-2',
+          type: 'function',
+          function: { name: 'search', arguments: '{"q":"x"}' },
+          anthropic_thinking_blocks: [{ type: 'thinking', thinking: 'hmm', signature: '' }]
+        }
+      ]);
+    });
+
+    it('preserves signed and redacted thinking blocks on tool calls for exact replay', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'summary' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig_opaque' } },
+        { type: 'content_block_stop', index: 0 },
+        { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'redacted_opaque' } },
+        { type: 'content_block_stop', index: 1 },
+        { type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'toolu_1', name: 'search' } },
+        { type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } },
+        { type: 'message_stop' }
+      )));
+
+      const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('hi', {
+        enableThinking: true,
+        tools: [{ type: 'function', function: { name: 'search', description: 'Search', parameters: {} } }]
+      }));
+
+      const final = chunks[chunks.length - 1];
+      expect(final.toolCalls?.[0].anthropic_thinking_blocks).toEqual([
+        { type: 'thinking', thinking: 'summary', signature: 'sig_opaque' },
+        { type: 'redacted_thinking', data: 'redacted_opaque' }
       ]);
     });
 

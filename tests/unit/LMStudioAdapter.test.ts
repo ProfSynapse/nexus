@@ -2,9 +2,10 @@
  * LMStudioAdapter reasoning/thinking characterization tests.
  *
  * LM Studio's OpenAI-compatible API exposes reasoning-model thinking in a dedicated
- * `reasoning_content` field (delta when streaming, message when not) — the same shape
- * as DeepSeek. These tests pin that the adapter routes it to the shared reasoning
- * channel (StreamChunk.reasoning / metadata.reasoning) and keeps content clean.
+ * dedicated `reasoning` or `reasoning_content` fields (delta when streaming,
+ * message when not). These tests pin that the adapter routes both server shapes
+ * to the shared reasoning channel (StreamChunk.reasoning / metadata.reasoning)
+ * and keeps content clean.
  *
  * Mocks at the requestUrl seam and forces ProviderHttpClient.requestStream onto its
  * buffered requestUrl fallback by mocking hasNodeRuntime to false.
@@ -90,6 +91,24 @@ describe('LMStudioAdapter', () => {
       expect(result.text).toBe('four');
       expect(result.metadata?.reasoning).toBe('2 plus 2 is 4');
     });
+
+    it('surfaces the current message.reasoning shape as metadata.reasoning', async () => {
+      __setRequestUrlMock(async () => jsonResponse(200, {
+        id: 'cmpl-2',
+        model: 'gpt-oss-thinking',
+        choices: [{
+          message: { content: 'four', reasoning: 'Add the two pairs' },
+          finish_reason: 'stop'
+        }],
+        usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 }
+      }));
+
+      const adapter = new LMStudioAdapter(URL);
+      const result = await adapter.generateUncached('what is 2+2');
+
+      expect(result.text).toBe('four');
+      expect(result.metadata?.reasoning).toBe('Add the two pairs');
+    });
   });
 
   describe('reasoning (SSE streaming)', () => {
@@ -116,6 +135,26 @@ describe('LMStudioAdapter', () => {
       const final = chunks[chunks.length - 1];
       expect(final.complete).toBe(true);
       expect(final.usage).toEqual({ promptTokens: 5, completionTokens: 2, totalTokens: 7 });
+    });
+
+    it('yields current delta.reasoning fragments on the shared reasoning channel', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { choices: [{ delta: { reasoning: 'Need to' } }] },
+        { choices: [{ delta: { reasoning: ' answer briefly.' } }] },
+        { choices: [{ delta: { content: 'Hi' } }] },
+        {
+          choices: [{ delta: {}, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+        },
+        '[DONE]'
+      )));
+
+      const adapter = new LMStudioAdapter(URL);
+      const chunks = await collect(adapter.generateStreamAsync('hi'));
+
+      expect(chunks.filter(c => c.reasoning).map(c => c.reasoning).join(''))
+        .toBe('Need to answer briefly.');
+      expect(concatContent(chunks)).toBe('Hi');
     });
   });
 

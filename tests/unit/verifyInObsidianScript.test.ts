@@ -154,6 +154,24 @@ exit 1`;
   });
 
   describe('a reachable instance runs the loop', () => {
+    it('places the CLI subcommand before the vault selector on macOS-style CLIs', () => {
+      const orderedBody = `
+if [ "$1" = "--version" ]; then echo "Obsidian 1.13.7"; exit 0; fi
+if [ "$1" = "eval" ] && [ "$2" = "vault=demo" ]; then echo "1"; exit 0; fi
+if [ "$1" = "plugin:reload" ] && [ "$3" = "vault=demo" ]; then exit 0; fi
+if [ "$1" = "dev:errors" ] && [ "$2" = "vault=demo" ]; then exit 0; fi
+if [ "$1" = "dev:screenshot" ] && [ "$3" = "vault=demo" ]; then : > "\${2#path=}"; exit 0; fi
+exit 64`;
+      const dir = stub('ordered', 'obsidian', orderedBody);
+      const { status, output } = runScript(
+        ['--vault', 'demo', '--skip-build', '--artifacts-dir', path.join(tmpRoot, 'artifacts-ordered')],
+        { NEXUS_OBSIDIAN_CLI: path.join(dir, 'obsidian') }
+      );
+
+      expect(output).toContain('VERIFIED');
+      expect(status).toBe(0);
+    });
+
     it('resolves the CLI under the obsidian-cli name and passes on a clean dev:errors', () => {
       const dir = stub('happy', 'obsidian-cli', HAPPY_BODY);
       const artifacts = path.join(tmpRoot, 'artifacts');

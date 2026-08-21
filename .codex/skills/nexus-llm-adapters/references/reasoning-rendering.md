@@ -24,6 +24,16 @@ Two properties worth knowing:
   resolver, which respects the active branch alternative). Reasoning that never
   reaches that field survives streaming and disappears on the next full paint.
 
+## Provider field names are not invariant
+An adapter must map every reasoning field shape its provider actually emits to
+`chunk.reasoning`; a single missed alias produces normal answer text with no
+Thinking block. Do not assume one provider has one stable field name across all
+models or server versions. LM Studio's Chat Completions surface, for example,
+has emitted both `message.reasoning` / `delta.reasoning` and
+`message.reasoning_content` / `delta.reasoning_content`. Characterize each
+supported shape in both non-streaming and streaming tests, while treating a real
+provider round-trip as the proof that selects those fixtures.
+
 ## The trap: do not route reasoning through a tool call
 There was a previous mechanism that emitted a synthetic `reasoning`-typed tool
 call. It looked correct at every layer — the text flowed through the adapter, the
@@ -40,6 +50,23 @@ rg "type: ['\"]reasoning['\"]" src/services src/ui --type ts
 
 Zero hits is the healthy state. Any hit is an adapter or service building the
 shape that does not render.
+
+## Audit request controls separately from response extraction
+An adapter can parse every response field correctly and still show no readable
+reasoning because the request asked for the wrong mode. Audit both halves against
+current provider documentation:
+
+- whether thinking is enabled by a token budget, an effort level, or an adaptive
+  mode for the selected model generation;
+- whether readable reasoning is returned by default or needs an explicit summary
+  display option;
+- whether thinking makes sampling parameters invalid; and
+- whether opaque signatures or redacted blocks must be replayed unchanged on a
+  continuation.
+
+Do not choose one request shape for an entire provider when its model registry
+spans generations. Characterize at least one model on each side of the request-
+format boundary.
 
 ## Reasoning *level* for local providers is a decision, not a gap
 The reasoning toggle and effort slider render only when the model's **static**

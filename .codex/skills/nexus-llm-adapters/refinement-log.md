@@ -4,6 +4,19 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+- 2026-08-21 | Anthropic response extraction was correct, but newer registered
+  models used a request shape that was deprecated or rejected and some defaulted
+  to omitted summaries. | Added the missing/empty-thinking symptom and a request-
+  controls audit covering model-generation boundaries, visible summaries,
+  incompatible sampling controls, and opaque continuation state. | Files:
+  `references/symptoms.md`, `references/reasoning-rendering.md`.
+
+- 2026-08-21 | LM Studio returned normal answer text while Nexus showed no
+  Thinking block because the adapter recognized only `reasoning_content`, not
+  the provider's newer `reasoning` alias. | Added the missing-thinking symptom
+  and documented that reasoning field names vary across provider versions and
+  models. | Files: `references/symptoms.md`, `references/reasoning-rendering.md`.
+
 - 2026-08-15 | Researching adaptive Ollama context exposed a missing diagnostic:
   local model metadata can report a native/fallback window instead of the runtime
   allocation, causing both the context badge and compaction gate to fail; tuning

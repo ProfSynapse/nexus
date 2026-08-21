@@ -213,14 +213,12 @@ export class ProviderMessageBuilder {
         generateOptions.systemPrompt
       ) as ConversationMessage[];
 
-      // IMPORTANT: Disable thinking for tool continuations
-      // Anthropic requires assistant messages to start with a thinking block when thinking is enabled,
-      // but we don't have access to the original thinking content here.
+      // Keep thinking enabled. AnthropicContextBuilder replays the exact signed
+      // thinking/redacted_thinking blocks captured on the tool calls.
       return {
         ...generateOptions,
         conversationHistory,
-        systemPrompt: generateOptions.systemPrompt,
-        enableThinking: false // Disable thinking for tool continuations
+        systemPrompt: generateOptions.systemPrompt
       };
     } else if (isGoogleModel) {
       // Build proper Google/Gemini conversation history with functionCall and functionResponse

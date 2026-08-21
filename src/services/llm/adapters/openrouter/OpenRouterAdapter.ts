@@ -86,6 +86,8 @@ interface OpenRouterChoice extends JsonObject {
   delta?: {
     content?: string;
     text?: string;
+    reasoning?: string;
+    reasoning_content?: string;
     tool_calls?: OpenRouterToolCall[];
     toolCalls?: OpenRouterToolCall[];
     reasoning_details?: OpenRouterReasoningEntry[];
@@ -99,6 +101,8 @@ interface OpenRouterChoice extends JsonObject {
   };
   message?: {
     content?: string;
+    reasoning?: string;
+    reasoning_content?: string;
     reasoning_details?: OpenRouterReasoningEntry[];
     annotations?: OpenRouterAnnotation[];
     extra_content?: {
@@ -110,6 +114,8 @@ interface OpenRouterChoice extends JsonObject {
     thoughtSignature?: string;
   };
   reasoning_details?: OpenRouterReasoningEntry[];
+  reasoning?: string;
+  reasoning_content?: string;
   thought_signature?: string;
   thoughtSignature?: string;
   extra_content?: {
@@ -201,7 +207,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
         stop: options?.stopSequences,
         tools: options?.tools ? this.convertTools(options.tools) : undefined,
-        usage: { include: true } // Enable token usage and cost tracking
+        usage: { include: true }, // Enable token usage and cost tracking
+        ...this.getReasoningRequestParams(baseModel, options, false)
       };
 
       const response = await this.request<OpenRouterResponse>({
@@ -238,7 +245,10 @@ export class OpenRouterAdapter extends BaseAdapter {
         text,
         baseModel, // Use base model name, not :online version
         usage,
-        { webSearchResults },
+        {
+          webSearchResults,
+          thinking: this.extractReasoningText(data.choices[0]) || undefined
+        },
         finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter'
       );
     } catch (error) {
@@ -290,7 +300,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         tools: options?.tools ? this.convertTools(options.tools) : undefined,
         stream: true,
         // Enable reasoning for Gemini models to capture thought signatures
-        ...ReasoningPreserver.getReasoningRequestParams(baseModel, 'openrouter', hasTools || false)
+        ...this.getReasoningRequestParams(baseModel, options, hasTools || false)
       };
 
       const nodeStream = await this.requestStream({
@@ -483,6 +493,15 @@ export class OpenRouterAdapter extends BaseAdapter {
         // Extract reasoning from reasoning_details array (OpenRouter unified format)
         extractReasoning: (parsed) => {
           const response = parsed as OpenRouterResponse;
+          const directReasoning =
+            response.choices?.[0]?.delta?.reasoning ||
+            response.choices?.[0]?.delta?.reasoning_content ||
+            response.choices?.[0]?.message?.reasoning ||
+            response.choices?.[0]?.message?.reasoning_content;
+          if (directReasoning) {
+            return { text: directReasoning, complete: false };
+          }
+
           // Check for reasoning_details in delta or message
           const reasoningDetails =
             response.choices?.[0]?.delta?.reasoning_details ||
@@ -526,6 +545,39 @@ export class OpenRouterAdapter extends BaseAdapter {
     } catch (error) {
       this.handleError(error, 'streaming generation');
     }
+  }
+
+  private getReasoningRequestParams(
+    model: string,
+    options: GenerateOptions | undefined,
+    hasTools: boolean
+  ): Record<string, unknown> {
+    if (options?.enableThinking) {
+      return {
+        reasoning: {
+          effort: options.thinkingEffort || 'medium',
+          exclude: false
+        }
+      };
+    }
+
+    return ReasoningPreserver.getReasoningRequestParams(model, 'openrouter', hasTools);
+  }
+
+  private extractReasoningText(choice: OpenRouterChoice | undefined): string {
+    if (!choice) {
+      return '';
+    }
+
+    const direct = choice.message?.reasoning || choice.message?.reasoning_content;
+    if (direct) {
+      return direct;
+    }
+
+    const details = choice.message?.reasoning_details || choice.reasoning_details || [];
+    return details
+      .map(entry => entry.type === 'reasoning.summary' ? entry.summary || entry.text || '' : entry.text || '')
+      .join('');
   }
 
   /**

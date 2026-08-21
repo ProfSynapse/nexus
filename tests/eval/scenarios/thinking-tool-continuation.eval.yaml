@@ -1,0 +1,36 @@
+- name: thinking-tool-continuation
+  description: Thinking is visible in Nexus before a tool call and the model completes an answer after the tool result
+  toolSet: meta
+  providers:
+    - anthropic
+    - openai
+    - google
+    - openrouter
+  excludeFromBoard: true
+  thinking:
+    enabled: true
+    effort: medium
+    minimumCharacters: 1
+    requireBeforeFirstTool: true
+    requireFinalText: true
+  turns:
+    - userMessage: "Think carefully about the constraints in notes/reasoning-constraints.md. Read that note, then explain which option satisfies every constraint and why."
+      expectedTools:
+        - name: getTools
+          params:
+            tool: content
+      mockResponses: {}
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            path: notes/reasoning-constraints.md
+            content: "# Constraints\n\nChoose one option. Option A is fast but exceeds budget. Option B is within budget, meets the deadline, and passes security review. Option C misses the deadline."
+            totalLines: 3
+            startLine: 1
+            endLine: 3

@@ -64,6 +64,10 @@ interface OpenAIResponsesItem {
   name?: string;
   arguments?: string;
   encrypted_content?: string | null;
+  summary?: Array<{
+    type?: string;
+    text?: string;
+  }>;
   content?: OpenAIResponsesContentPart[];
   usage?: OpenAIResponsesUsage;
 }
@@ -524,6 +528,7 @@ export class OpenAIAdapter extends BaseAdapter {
           break;
 
         case 'response.reasoning_summary_text.delta':
+        case 'response.reasoning_text.delta':
           if (event.delta) {
             eventQueue.push({
               content: '', complete: false, reasoning: event.delta,
@@ -533,6 +538,7 @@ export class OpenAIAdapter extends BaseAdapter {
           break;
 
         case 'response.reasoning_summary_text.done':
+        case 'response.reasoning_text.done':
           if (event.text) {
             eventQueue.push({
               content: '', complete: false, reasoning: '', reasoningComplete: true,
@@ -613,6 +619,14 @@ export class OpenAIAdapter extends BaseAdapter {
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
+    if (options?.enableThinking && this.supportsReasoning(model)) {
+      responseParams.reasoning = {
+        effort: options.thinkingEffort || 'medium',
+        summary: 'auto'
+      };
+      responseParams.include = ['reasoning.encrypted_content'];
+    }
+
     const response = await this.request<OpenAIResponsesResponse>({
       url: `${this.baseUrl}/responses`,
       operation: 'generation',
@@ -634,7 +648,11 @@ export class OpenAIAdapter extends BaseAdapter {
 
     // Extract text content from output array
     let text = '';
+    let thinking = '';
     for (const item of responseJson.output) {
+      if (item.type === 'reasoning' && item.summary) {
+        thinking += item.summary.map(part => part.text || '').join('');
+      }
       if (item.type === 'message' && item.content) {
         for (const content of item.content) {
           if (content.type === 'output_text') {
@@ -654,7 +672,7 @@ export class OpenAIAdapter extends BaseAdapter {
       text,
       model,
       usage,
-      { responseId: responseJson.id },
+      { responseId: responseJson.id, thinking: thinking || undefined },
       'stop'
     );
   }

@@ -4,6 +4,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-21 | The harness graded tool calls and final prose but could not test
+the user's requested Nexus-facing thinking behavior or a reasoning-bearing
+tool continuation. | Documented the new thinking scenario semantics: grade
+only production-stream-visible reasoning, require a tool round for
+continuation coverage, and quarantine capability probes from leaderboards
+where appropriate. | `references/scenario-contract.md`, `refinement-log.md`.
+
 2026-08-19 | Versioned generated schemas made the structural checker fail because it parsed literal `NEXUS_TOOLS`/`META_TOOLS` arrays that no longer exist. | Changed the checker to resolve the latest CLI/MCP artifacts through `<repo>/schemas/manifest.json` and filter CLI tools through the advertised eval catalog; documented schema pinning and the loader path. | `scripts/check_scenarios.py`, `references/harness-map.md`, `protocols/configure-a-run.md`.
 
 2026-08-14 | Rebuilt from a single prose file through the skill-crafter

@@ -33,7 +33,9 @@ interface ChatCompletionResponse {
     message?: {
       content?: string;
       // LM Studio surfaces reasoning-model thinking in a dedicated field (same shape
-      // as DeepSeek) rather than inline <think> tags — we route it to StreamChunk.reasoning.
+      // as DeepSeek) rather than inline <think> tags — current releases use
+      // `reasoning`, while older/model-specific paths use `reasoning_content`.
+      reasoning?: string;
       reasoning_content?: string;
       tool_calls?: unknown[];
     };
@@ -77,6 +79,7 @@ type LMStudioStreamChunk = ChatCompletionResponse & {
     delta?: {
       content?: string;
       // Incremental reasoning tokens for thinking models (streamed before content).
+      reasoning?: string;
       reasoning_content?: string;
       tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }>;
     };
@@ -318,8 +321,11 @@ export class LMStudioAdapter extends BaseAdapter {
     const choice = data.choices[0];
     let content = choice.message?.content || '';
     let toolCalls = (choice.message?.tool_calls || []) as ToolCall[];
-    // Reasoning models return their thinking in a dedicated field — surface it as metadata.reasoning.
-    const reasoning = choice.message?.reasoning_content;
+    // LM Studio has shipped both names for the dedicated thinking field. Prefer
+    // the current `reasoning` shape, while retaining `reasoning_content` for
+    // DeepSeek/Qwen runtimes and older server releases.
+    const reasoning = [choice.message?.reasoning, choice.message?.reasoning_content]
+      .find(value => typeof value === 'string' && value.length > 0);
 
     if (ToolCallContentParser.hasToolCallsFormat(content)) {
       const parsed = ToolCallContentParser.parse(content);
@@ -447,10 +453,13 @@ export class LMStudioAdapter extends BaseAdapter {
     for await (const chunk of this.processNodeStream(nodeStream, {
       debugLabel: 'LM Studio',
       extractContent: (parsed) => (parsed as LMStudioStreamChunk).choices?.[0]?.delta?.content || null,
-      // Thinking models stream their reasoning in delta.reasoning_content (separate from
-      // content). Route it to the shared reasoning channel so it renders as a thinking block.
+      // LM Studio streams thinking separately from content, using either the
+      // current delta.reasoning field or the legacy/model-specific
+      // delta.reasoning_content field. Route both to the shared reasoning channel.
       extractReasoning: (parsed) => {
-        const reasoning = (parsed as LMStudioStreamChunk).choices?.[0]?.delta?.reasoning_content;
+        const delta = (parsed as LMStudioStreamChunk).choices?.[0]?.delta;
+        const reasoning = [delta?.reasoning, delta?.reasoning_content]
+          .find(value => typeof value === 'string' && value.length > 0);
         return typeof reasoning === 'string' && reasoning.length > 0 ? { text: reasoning, complete: false } : null;
       },
       extractError: (parsed) => {
@@ -674,7 +683,7 @@ export class LMStudioAdapter extends BaseAdapter {
       supportsJSON: true, // Most models support JSON mode
       supportsImages: false, // Depends on specific model
       supportsFunctions: true, // Many models support function calling via OpenAI-compatible API
-      supportsThinking: true, // Reasoning models stream native delta.reasoning_content
+      supportsThinking: true, // Reasoning models stream native reasoning fields
       maxContextWindow: 128000, // Varies by model, reasonable default
       supportedFeatures: ['streaming', 'function_calling', 'json_mode', 'local', 'privacy']
     };
@@ -734,7 +743,7 @@ export class LMStudioAdapter extends BaseAdapter {
 
   /**
    * Detect reasoning/thinking models by name so the UI offers the thinking toggle.
-   * Rendering itself doesn't depend on this — reasoning_content is routed whenever the
+   * Rendering itself doesn't depend on this — native reasoning fields are routed whenever the
    * model emits it — but this drives capability display. Shared with the Ollama adapter.
    */
   static detectThinkingSupport(modelId: string): boolean {

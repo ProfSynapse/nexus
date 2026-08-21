@@ -35,6 +35,9 @@ export interface EvalReportJson {
       passed: boolean;
       errors: string[];
       textContent: string;
+      reasoningContent: string;
+      reasoningEventCount: number;
+      reasoningBeforeFirstTool: boolean;
       toolCalls: Array<{ name: string; args: unknown }>;
     }>;
   }>;
@@ -103,6 +106,9 @@ export function generateReport(runResult: EvalRunResult, config: EvalConfig): st
         lines.push(`- **Turn ${turn.turnIndex + 1}**: ${turn.errors.join('; ')}`);
         if (turn.textContent.trim()) {
           lines.push(`  - Response: ${formatInlineSnippet(turn.textContent, 1000)}`);
+        }
+        if (turn.reasoningContent.trim()) {
+          lines.push(`  - Reasoning: ${formatInlineSnippet(turn.reasoningContent, 1000)}`);
         }
         if (turn.actualToolCalls.length > 0) {
           const callNames = turn.actualToolCalls.map((c) => c.name).join(', ');
@@ -197,6 +203,9 @@ export function generateReportJson(runResult: EvalRunResult, config: EvalConfig)
         passed: t.passed,
         errors: t.errors,
         textContent: t.textContent,
+        reasoningContent: t.reasoningContent,
+        reasoningEventCount: t.reasoningEventCount,
+        reasoningBeforeFirstTool: t.reasoningBeforeFirstTool,
         toolCalls: t.actualToolCalls.map((c) => ({ name: c.name, args: c.args })),
       })),
     })),

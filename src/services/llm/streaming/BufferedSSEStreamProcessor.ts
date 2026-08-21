@@ -2,6 +2,7 @@ import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
 import { SSEStreamOptions } from './SSEStreamProcessor';
 import { createProviderStreamError } from './streamErrorFrames';
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 interface BufferedUsage {
   prompt_tokens?: number;
@@ -26,6 +27,7 @@ interface BufferedToolCall {
   };
   reasoning_details?: unknown;
   thought_signature?: unknown;
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
   [key: string]: unknown;
 }
 
@@ -45,6 +47,9 @@ function normalizeBufferedToolCall(toolCall: BufferedToolCall): ToolCall {
       : undefined,
     thought_signature: typeof toolCall.thought_signature === 'string'
       ? toolCall.thought_signature
+      : undefined,
+    anthropic_thinking_blocks: Array.isArray(toolCall.anthropic_thinking_blocks)
+      ? toolCall.anthropic_thinking_blocks
       : undefined
   };
 }
@@ -146,6 +151,9 @@ export class BufferedSSEStreamProcessor {
               if (toolCall.thought_signature) {
                 accumulated.thought_signature = toolCall.thought_signature;
               }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks)) {
+                accumulated.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
+              }
 
               toolCallsAccumulator.set(index, accumulated);
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
@@ -175,6 +183,9 @@ export class BufferedSSEStreamProcessor {
               }
               if (toolCall.thought_signature && !existing.thought_signature) {
                 existing.thought_signature = toolCall.thought_signature;
+              }
+              if (Array.isArray(toolCall.anthropic_thinking_blocks) && !existing.anthropic_thinking_blocks) {
+                existing.anthropic_thinking_blocks = toolCall.anthropic_thinking_blocks;
               }
             }
           }
