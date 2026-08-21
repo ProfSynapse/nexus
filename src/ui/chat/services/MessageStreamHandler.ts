@@ -34,6 +34,7 @@ interface StreamToolCall {
   providerExecuted?: boolean;
   isComplete?: boolean;
   parameters?: unknown;
+  anthropic_thinking_blocks?: ConversationToolCall['anthropic_thinking_blocks'];
 }
 
 export interface StreamHandlerEvents {
@@ -90,6 +91,7 @@ function toConversationToolCall(toolCall: StreamToolCall): ConversationToolCall 
     success: toolCall.success,
     error: toolCall.error,
     providerExecuted: toolCall.providerExecuted,
+    anthropic_thinking_blocks: toolCall.anthropic_thinking_blocks,
     parameters: toolCall.parameters && typeof toolCall.parameters === 'object'
       ? (toolCall.parameters as Record<string, unknown>)
       : undefined

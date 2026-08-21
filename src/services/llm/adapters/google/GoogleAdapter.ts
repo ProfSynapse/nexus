@@ -35,7 +35,8 @@ interface GooglePart extends JsonObject {
   functionResponse?: {
     name?: string;
   };
-  thought?: string;
+  /** Native generateContent marks thought-summary parts with `thought: true`. */
+  thought?: boolean | string;
   thinking?: string;
   thoughtSignature?: string;
   thought_signature?: string;
@@ -426,10 +427,7 @@ export class GoogleAdapter extends BaseAdapter {
         extractReasoning: (chunk) => {
           const response = chunk as GoogleResponse;
           const parts = response.candidates?.[0]?.content?.parts || [];
-          const thinkingText = parts
-            .map((part: GooglePart) => part.thought || part.thinking || '')
-            .filter(Boolean)
-            .join('');
+          const thinkingText = this.extractThinkingFromParts(parts);
           if (thinkingText) {
             return { text: thinkingText, complete: false };
           }
@@ -561,7 +559,10 @@ export class GoogleAdapter extends BaseAdapter {
       textContent,
       options?.model || this.currentModel,
       extractedUsage,
-      { webSearchResults },
+      {
+        webSearchResults,
+        thinking: this.extractThinkingFromParts(responseJson.candidates?.[0]?.content?.parts || []) || undefined
+      },
       finishReason,
       toolCalls
     );
@@ -675,8 +676,8 @@ export class GoogleAdapter extends BaseAdapter {
         partTypes: parts.map((part: GooglePart) => {
           if (part?.functionCall) return 'functionCall';
           if (part?.functionResponse) return 'functionResponse';
-          if (part?.text) return 'text';
           if (part?.thought || part?.thinking || part?.thoughtSignature) return 'thinking';
+          if (part?.text) return 'text';
           return 'unknown';
         }),
         functionCallNames,
@@ -777,8 +778,22 @@ export class GoogleAdapter extends BaseAdapter {
 
   private extractTextFromParts(parts: GooglePart[]): string {
     return parts
-      .filter(part => part.text)
+      .filter(part => part.text && part.thought !== true && typeof part.thought !== 'string' && typeof part.thinking !== 'string')
       .map(part => part.text)
+      .join('');
+  }
+
+  private extractThinkingFromParts(parts: GooglePart[]): string {
+    return parts
+      .map((part) => {
+        if (part.thought === true) {
+          return part.text || '';
+        }
+        if (typeof part.thought === 'string') {
+          return part.thought;
+        }
+        return typeof part.thinking === 'string' ? part.thinking : '';
+      })
       .join('');
   }
 

@@ -18,6 +18,7 @@ import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
+import type { AnthropicThinkingBlock } from '../../../../types/llm/ProviderTypes';
 
 interface AnthropicMessage {
   role: string;
@@ -79,6 +80,26 @@ interface AnthropicResponse {
   message?: { usage?: AnthropicUsage };
 }
 
+interface AnthropicStreamEvent extends AnthropicResponse {
+  type?: string;
+  index?: number;
+  content_block?: {
+    type?: string;
+    id?: string;
+    name?: string;
+    thinking?: string;
+    signature?: string;
+    data?: string;
+  };
+  delta?: {
+    type?: string;
+    text?: string;
+    partial_json?: string;
+    thinking?: string;
+    signature?: string;
+  };
+}
+
 export class AnthropicAdapter extends BaseAdapter {
   readonly name = 'anthropic';
   readonly baseUrl = 'https://api.anthropic.com';
@@ -134,20 +155,15 @@ export class AnthropicAdapter extends BaseAdapter {
         requestParams.system = options.systemPrompt;
       }
 
-      // Extended thinking mode for Claude 4 models
+      // Use adaptive thinking on Claude 4.6+ and manual budgets on 4.5.
       if (options?.enableThinking && this.supportsThinking(options?.model || this.currentModel)) {
         const effort = options?.thinkingEffort || 'medium';
-        const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
-        const budgetTokens = thinkingParams?.budget_tokens || 16000;
-        requestParams.thinking = {
-          type: 'enabled',
-          budget_tokens: budgetTokens
-        };
-        // Ensure max_tokens > budget_tokens (Anthropic API requirement)
-        if (maxTokens <= budgetTokens) {
-          maxTokens = budgetTokens + 1024;
-          requestParams.max_tokens = maxTokens;
-        }
+        maxTokens = this.applyThinkingConfig(
+          requestParams,
+          options?.model || this.currentModel,
+          effort,
+          maxTokens
+        );
       }
 
       // Add tools if provided
@@ -173,6 +189,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
       let usage: AnthropicUsage | undefined;
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
+      const thinkingBlocks = new Map<number, AnthropicThinkingBlock>();
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/v1/messages`,
         operation: 'streaming generation',
@@ -184,7 +201,11 @@ export class AnthropicAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Anthropic',
-        extractContent: (event: AnthropicResponse & { type?: string; index?: number; content_block?: { type?: string; id?: string; name?: string }; delta?: { type?: string; text?: string; partial_json?: string; thinking?: string } }) => {
+        extractMetadata: (parsed) => {
+          this.captureThinkingBlock(parsed, thinkingBlocks);
+          return null;
+        },
+        extractContent: (event: AnthropicStreamEvent) => {
           if (event.type === 'message_start' && event.message?.usage) {
             usage = event.message.usage;
           } else if (event.type === 'message_delta' && event.usage) {
@@ -198,7 +219,10 @@ export class AnthropicAdapter extends BaseAdapter {
           }
           return null;
         },
-        extractToolCalls: (event: AnthropicResponse & { type?: string; index?: number; content_block?: { type?: string; id?: string; name?: string }; delta?: { type?: string; text?: string; partial_json?: string; thinking?: string } }) => {
+        extractToolCalls: (event: AnthropicStreamEvent) => {
+          const preservedThinkingBlocks = Array.from(thinkingBlocks.entries())
+            .sort(([left], [right]) => left - right)
+            .map(([, block]) => block);
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             return [{
               index: event.index,
@@ -207,7 +231,8 @@ export class AnthropicAdapter extends BaseAdapter {
               function: {
                 name: event.content_block.name || '',
                 arguments: ''
-              }
+              },
+              anthropic_thinking_blocks: preservedThinkingBlocks
             }];
           }
 
@@ -219,13 +244,14 @@ export class AnthropicAdapter extends BaseAdapter {
                 name: '',
                 arguments: event.delta.partial_json || ''
               },
-              type: 'function'
+              type: 'function',
+              anthropic_thinking_blocks: preservedThinkingBlocks
             }];
           }
 
           return null;
         },
-        extractFinishReason: (event: AnthropicResponse & { type?: string }) => {
+        extractFinishReason: (event: AnthropicStreamEvent) => {
           if (event.type === 'message_stop') {
             return 'stop';
           }
@@ -235,7 +261,7 @@ export class AnthropicAdapter extends BaseAdapter {
         // {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}.
         // (This used to throw from extractFinishReason, where the processor's
         // parse-error guard swallowed it and the stream just ended silently.)
-        extractError: (event: AnthropicResponse & { type?: string; error?: { type?: string; message?: string } }) => {
+        extractError: (event: AnthropicStreamEvent & { error?: { type?: string; message?: string } }) => {
           if (event.type !== 'error' && !event.error) {
             return null;
           }
@@ -243,7 +269,7 @@ export class AnthropicAdapter extends BaseAdapter {
           return message ? `Anthropic stream error: ${message}` : 'Anthropic stream error';
         },
         extractUsage: () => usage,
-        extractReasoning: (event: AnthropicResponse & { type?: string; index?: number; delta?: { type?: string; thinking?: string } }) => {
+        extractReasoning: (event: AnthropicStreamEvent) => {
           if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
             return {
               text: event.delta.thinking || '',
@@ -329,20 +355,15 @@ export class AnthropicAdapter extends BaseAdapter {
       requestParams.system = systemMessage.content;
     }
 
-    // Extended thinking mode for Claude 4 models
+    // Use adaptive thinking on Claude 4.6+ and manual budgets on 4.5.
     if (options?.enableThinking && this.supportsThinking(options?.model || this.currentModel)) {
       const effort = options?.thinkingEffort || 'medium';
-      const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
-      const budgetTokens = thinkingParams?.budget_tokens || 16000;
-      requestParams.thinking = {
-        type: 'enabled',
-        budget_tokens: budgetTokens
-      };
-      // Ensure max_tokens > budget_tokens (Anthropic API requirement)
-      if (maxTokens <= budgetTokens) {
-        maxTokens = budgetTokens + 1024;
-        requestParams.max_tokens = maxTokens;
-      }
+      maxTokens = this.applyThinkingConfig(
+        requestParams,
+        options?.model || this.currentModel,
+        effort,
+        maxTokens
+      );
     }
 
     // Add tools if provided
@@ -412,6 +433,77 @@ export class AnthropicAdapter extends BaseAdapter {
   private supportsThinking(modelId: string): boolean {
     const model = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(modelId));
     return model?.capabilities.supportsThinking || false;
+  }
+
+  private supportsAdaptiveThinking(modelId: string): boolean {
+    const normalized = this.normalizeModelId(modelId);
+    return /^claude-(?:fable|mythos|opus|sonnet)-(?:5(?:-|$)|4-(?:6|7|8)(?:-|$))/.test(normalized);
+  }
+
+  private captureThinkingBlock(
+    event: AnthropicStreamEvent,
+    blocks: Map<number, AnthropicThinkingBlock>
+  ): void {
+    const index = event.index;
+    if (index === undefined) {
+      return;
+    }
+
+    if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
+      blocks.set(index, {
+        type: 'thinking',
+        thinking: event.content_block.thinking || '',
+        signature: event.content_block.signature || ''
+      });
+      return;
+    }
+
+    if (event.type === 'content_block_start' && event.content_block?.type === 'redacted_thinking') {
+      blocks.set(index, {
+        type: 'redacted_thinking',
+        data: event.content_block.data || ''
+      });
+      return;
+    }
+
+    const existing = blocks.get(index);
+    if (!existing || existing.type !== 'thinking' || event.type !== 'content_block_delta') {
+      return;
+    }
+
+    if (event.delta?.type === 'thinking_delta') {
+      existing.thinking += event.delta.thinking || '';
+    } else if (event.delta?.type === 'signature_delta') {
+      existing.signature += event.delta.signature || '';
+    }
+  }
+
+  private applyThinkingConfig(
+    requestParams: Record<string, unknown>,
+    modelId: string,
+    effort: 'low' | 'medium' | 'high',
+    maxTokens: number
+  ): number {
+    // Anthropic rejects sampling temperature whenever thinking is enabled.
+    delete requestParams.temperature;
+
+    if (this.supportsAdaptiveThinking(modelId)) {
+      requestParams.thinking = { type: 'adaptive', display: 'summarized' };
+      requestParams.output_config = { effort };
+      return maxTokens;
+    }
+
+    const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
+    const budgetTokens = thinkingParams?.budget_tokens || 16000;
+    requestParams.thinking = { type: 'enabled', budget_tokens: budgetTokens };
+
+    if (maxTokens <= budgetTokens) {
+      const adjustedMaxTokens = budgetTokens + 1024;
+      requestParams.max_tokens = adjustedMaxTokens;
+      return adjustedMaxTokens;
+    }
+
+    return maxTokens;
   }
 
   private buildAnthropicHeaders(betaHeaders?: string[]): Record<string, string> {

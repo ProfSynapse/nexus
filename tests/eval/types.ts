@@ -75,6 +75,18 @@ export interface EvalTurn {
   mockResponses: Record<string, MockToolResponse>;
 }
 
+export interface ThinkingExpectation {
+  /** Send the production thinking controls to the selected provider adapter. */
+  enabled: boolean;
+  effort?: 'low' | 'medium' | 'high';
+  /** Minimum visible reasoning text Nexus must receive across the exchange. */
+  minimumCharacters?: number;
+  /** Require at least one reasoning event before the first streamed tool call. */
+  requireBeforeFirstTool?: boolean;
+  /** Require normal assistant text after the tool continuation completes. */
+  requireFinalText?: boolean;
+}
+
 /**
  * Which tool set a scenario uses:
  * - 'meta' (default): getTools + useTools — mirrors production two-tool architecture
@@ -98,6 +110,8 @@ export interface EvalScenario {
   timeout?: number;
   systemPrompt?: string;
   toolSet?: ToolSetType;
+  /** Optional Nexus-facing reasoning and tool-continuation assertions. */
+  thinking?: ThinkingExpectation;
   /**
    * When true, tool call round ordering is not enforced.
    * All expected tools must appear across all rounds, but the round
@@ -172,6 +186,9 @@ export interface TurnResult {
   expectedTools: ExpectedToolCall[];
   actualToolCalls: CapturedToolCall[];
   textContent: string;
+  reasoningContent: string;
+  reasoningEventCount: number;
+  reasoningBeforeFirstTool: boolean;
   errors: string[];
   durationMs: number;
 }

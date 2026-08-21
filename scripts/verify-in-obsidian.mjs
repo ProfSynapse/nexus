@@ -410,7 +410,8 @@ function checkVersion(cli) {
  * is not running, and an unattended run must not sit waiting on a cold start.
  */
 function checkInstanceRunning(cli, vaultArgs) {
-    const result = run(cli, [...vaultArgs, 'eval', 'code=1'], { timeoutMs: PROBE_TIMEOUT_MS });
+    const probeArgs = ['eval', ...vaultArgs, 'code=1'];
+    const result = run(cli, probeArgs, { timeoutMs: PROBE_TIMEOUT_MS });
     if (result.ok) return;
 
     const detail = result.timedOut
@@ -419,7 +420,7 @@ function checkInstanceRunning(cli, vaultArgs) {
 
     skip(
         'no running Obsidian instance answered the CLI.',
-        `Probe: \`${cli} ${[...vaultArgs, 'eval', 'code=1'].join(' ')}\` — ${detail}. ` +
+        `Probe: \`${cli} ${probeArgs.join(' ')}\` — ${detail}. ` +
         'Start Obsidian (and check the CLI toggle in Settings → General → Advanced).'
     );
 }
@@ -485,7 +486,7 @@ function main() {
     }
 
     // 2. Reload the plugin.
-    const reloadArgs = [...vaultArgs, 'plugin:reload', `id=${pluginId}`];
+    const reloadArgs = ['plugin:reload', `id=${pluginId}`, ...vaultArgs];
     step(`${cli} ${reloadArgs.join(' ')}`);
     const reload = run(cli, reloadArgs);
     if (!reload.ok) {
@@ -497,7 +498,7 @@ function main() {
     if (reload.output) info(`reload said: ${reload.output.split(/\r?\n/)[0]}`);
 
     // 3. dev:errors — the assertion.
-    const errorArgs = [...vaultArgs, 'dev:errors'];
+    const errorArgs = ['dev:errors', ...vaultArgs];
     step(`${cli} ${errorArgs.join(' ')}`);
     const errors = run(cli, errorArgs);
     if (!errors.ok && !errors.output) {
@@ -525,7 +526,7 @@ function main() {
         mkdirSync(artifactsDir, { recursive: true });
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
         screenshotPath = path.join(artifactsDir, `verify-${stamp}.png`);
-        const shotArgs = [...vaultArgs, 'dev:screenshot', `path=${screenshotPath}`];
+        const shotArgs = ['dev:screenshot', `path=${screenshotPath}`, ...vaultArgs];
         step(`${cli} ${shotArgs.join(' ')}`);
         const shot = run(cli, shotArgs);
         if (!shot.ok || !existsSync(screenshotPath)) {

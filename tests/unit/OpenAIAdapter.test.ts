@@ -73,6 +73,30 @@ describe('OpenAIAdapter', () => {
       expect(body.stream).toBe(false);
     });
 
+    it('requests reasoning and exposes non-streaming reasoning summaries', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          id: 'resp_reasoning',
+          output: [
+            { type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: 'Checked the constraints' }] },
+            { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }
+          ]
+        });
+      });
+
+      const result = await new OpenAIAdapter('sk-test').generateUncached('hi', {
+        enableThinking: true,
+        thinkingEffort: 'high'
+      });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+      expect(body.include).toContain('reasoning.encrypted_content');
+      expect(result.metadata?.thinking).toBe('Checked the constraints');
+    });
+
     it('throws when the Responses API returns no output items', async () => {
       __setRequestUrlMock(async () => jsonResponse(200, { id: 'resp_1', output: [] }));
 
@@ -147,6 +171,23 @@ describe('OpenAIAdapter', () => {
         reasoningId: 'rs_1',
         reasoningEncryptedContent: 'enc123'
       });
+    });
+
+    it('yields raw reasoning_text events when the API makes them available', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_raw' } },
+        { type: 'response.reasoning_text.delta', delta: 'raw thought', item_id: 'rs_raw' },
+        { type: 'response.reasoning_text.done', text: 'raw thought', item_id: 'rs_raw' },
+        { type: 'response.completed', response: { id: 'resp_r' } }
+      )));
+
+      const chunks = await collect(new OpenAIAdapter('sk-test').generateStreamAsync('hi'));
+
+      expect(chunks.find(chunk => chunk.reasoning === 'raw thought')).toMatchObject({
+        reasoningComplete: false,
+        reasoningId: 'rs_raw'
+      });
+      expect(chunks.some(chunk => chunk.reasoningComplete === true)).toBe(true);
     });
 
     it('converts Chat Completions tools to flat Responses API tools in the request body', async () => {

@@ -69,6 +69,24 @@ describe('OpenRouterAdapter', () => {
       ]);
     });
 
+    it('requests reasoning and exposes the non-streaming reasoning string', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          choices: [{ message: { content: 'Answer', reasoning: 'Working it out' }, finish_reason: 'stop' }]
+        });
+      });
+
+      const result = await new OpenRouterAdapter('or-test').generateUncached('hi', {
+        enableThinking: true,
+        thinkingEffort: 'high'
+      });
+
+      expect(JSON.parse(requests[0].body ?? '{}').reasoning).toEqual({ effort: 'high', exclude: false });
+      expect(result.metadata?.thinking).toBe('Working it out');
+    });
+
     it('throws UNKNOWN_ERROR when the response has no choices', async () => {
       __setRequestUrlMock(async () => jsonResponse(200, { choices: [] }));
 
@@ -137,6 +155,28 @@ describe('OpenRouterAdapter', () => {
 
       const reasoningChunk = chunks.find(chunk => chunk.reasoning !== undefined);
       expect(reasoningChunk).toMatchObject({ reasoning: 'Let me think', reasoningComplete: false });
+      expect(concatContent(chunks)).toBe('Answer');
+    });
+
+    it('yields the documented plain reasoning field and sends the selected effort', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse(
+          { choices: [{ delta: { reasoning: 'Let me think' } }] },
+          { choices: [{ delta: { content: 'Answer' } }] },
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+          '[DONE]'
+        ));
+      });
+
+      const chunks = await collect(new OpenRouterAdapter('or-test').generateStreamAsync('hi', {
+        enableThinking: true,
+        thinkingEffort: 'low'
+      }));
+
+      expect(chunks.find(chunk => chunk.reasoning === 'Let me think')).toBeDefined();
+      expect(JSON.parse(requests[0].body ?? '{}').reasoning).toEqual({ effort: 'low', exclude: false });
       expect(concatContent(chunks)).toBe('Answer');
     });
 

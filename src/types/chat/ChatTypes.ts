@@ -4,6 +4,7 @@
  */
 
 import type { ConversationBranch } from '../branch/BranchTypes';
+import type { AnthropicThinkingBlock } from '../llm/ProviderTypes';
 
 /** Token usage data for a message */
 export interface MessageUsage {
@@ -74,6 +75,8 @@ export interface ToolCall {
   parameters?: Record<string, unknown>;
   executionTime?: number;
   providerExecuted?: boolean;
+  /** Exact Anthropic thinking state; never derive this from the visible reasoning summary. */
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
   sourceFormat?: ToolCallFormat;
 }

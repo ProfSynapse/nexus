@@ -19,6 +19,11 @@ export interface ThinkingSettings {
   effort: ThinkingEffort;
 }
 
+/** Opaque Anthropic blocks that must be replayed byte-for-byte on tool continuations. */
+export type AnthropicThinkingBlock =
+  | { type: 'thinking'; thinking: string; signature: string }
+  | { type: 'redacted_thinking'; data: string };
+
 /**
  * Alias for backwards compatibility
  */

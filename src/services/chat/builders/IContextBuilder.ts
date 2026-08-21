@@ -9,6 +9,7 @@
  */
 
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
+import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 /**
  * OpenAI-format tool call (for streaming/continuation)
@@ -26,6 +27,8 @@ export interface LLMToolCall {
   thoughtSignature?: string;
   /** Source format for custom models */
   sourceFormat?: 'bracket' | 'xml' | 'native';
+  /** Provider-issued blocks that must be replayed exactly before Anthropic tool_use. */
+  anthropic_thinking_blocks?: AnthropicThinkingBlock[];
 }
 
 /**
@@ -48,13 +51,16 @@ export interface ToolExecutionResult {
  * Content block for Anthropic-style messages
  */
 export interface LLMContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'redacted_thinking';
   text?: string;
   id?: string;
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
   content?: string;
+  thinking?: string;
+  signature?: string;
+  data?: string;
 }
 
 /**

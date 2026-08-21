@@ -42,6 +42,7 @@ import type {
   TurnResult,
   ScenarioResult,
 } from './types';
+import { assertThinkingBehavior } from './thinkingAssertions';
 
 interface ProviderEntry {
   id: string;
@@ -610,6 +611,8 @@ async function executeScenario(
       systemPrompt,
       tools,
       temperature,
+      enableThinking: scenario.thinking?.enabled ?? false,
+      thinkingEffort: scenario.thinking?.effort,
       onToolEvent: (event, data) => {
         trace?.write('tool_event', {
           turnIndex,
@@ -620,6 +623,10 @@ async function executeScenario(
     };
 
     let textContent = '';
+    let reasoningContent = '';
+    let reasoningEventCount = 0;
+    let reasoningBeforeFirstTool = false;
+    let sawToolCall = false;
 
     try {
       const stream = orchestrator.generateResponseStream(
@@ -637,6 +644,11 @@ async function executeScenario(
         }
 
         if (yield_.reasoning) {
+          reasoningContent += yield_.reasoning;
+          reasoningEventCount++;
+          if (!sawToolCall) {
+            reasoningBeforeFirstTool = true;
+          }
           trace?.write('stream_reasoning', {
             turnIndex,
             reasoning: yield_.reasoning,
@@ -645,6 +657,7 @@ async function executeScenario(
         }
 
         if (yield_.toolCalls && yield_.toolCalls.length > 0) {
+          sawToolCall = true;
           trace?.write('stream_tool_calls', {
             turnIndex,
             toolCalls: yield_.toolCalls,
@@ -666,6 +679,9 @@ async function executeScenario(
         expectedTools: exchange.rounds.flatMap(r => r.expectedTools),
         actualToolCalls: toolExecutor.getCapturedCalls(),
         textContent: '',
+        reasoningContent,
+        reasoningEventCount,
+        reasoningBeforeFirstTool,
         errors: [`Stream error: ${errMsg}`],
         durationMs: Date.now() - exchangeStart,
       });
@@ -689,8 +705,19 @@ async function executeScenario(
       ? assertToolCalls(allExpected, capturedCalls)
       : assertToolCallRounds(roundExpectations, capturedCalls);
     const hallucinationAssertion = assertNoHallucinatedTools(capturedCalls, validToolNames);
+    const thinkingAssertion = assertThinkingBehavior(scenario.thinking, {
+      reasoningContent,
+      reasoningEventCount,
+      reasoningBeforeFirstTool,
+      sawToolCall,
+      finalText: textContent
+    });
 
-    const errors = [...roundAssertion.errors, ...hallucinationAssertion.errors];
+    const errors = [
+      ...roundAssertion.errors,
+      ...hallucinationAssertion.errors,
+      ...thinkingAssertion.errors
+    ];
 
     // Context-contract recovery grading. If enforcement steered the model
     // (incomplete memory/goal), report whether it recovered within the allowed
@@ -725,6 +752,9 @@ async function executeScenario(
       expectedTools: exchange.rounds.flatMap(r => r.expectedTools),
       actualToolCalls: capturedCalls,
       textContent: textContent.trim(),
+      reasoningContent: reasoningContent.trim(),
+      reasoningEventCount,
+      reasoningBeforeFirstTool,
     });
 
     turnResults.push({
@@ -733,6 +763,9 @@ async function executeScenario(
       expectedTools: exchange.rounds.flatMap(r => r.expectedTools),
       actualToolCalls: capturedCalls,
       textContent: textContent.trim(),
+      reasoningContent: reasoningContent.trim(),
+      reasoningEventCount,
+      reasoningBeforeFirstTool,
       errors,
       durationMs: Date.now() - exchangeStart,
     });

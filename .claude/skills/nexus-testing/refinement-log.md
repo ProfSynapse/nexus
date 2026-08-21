@@ -4,6 +4,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-21 | On macOS, the packaged verifier put `vault=<name>` before the CLI
+subcommand, while the installed CLI accepted `obsidian eval vault=<name> ...`.
+The existing stubs accepted arguments in any order and hid the defect. | Moved
+the subcommand first for eval, reload, errors, and screenshot calls; added a
+strict argument-order regression case. | `scripts/verify-in-obsidian.mjs`,
+`tests/unit/verifyInObsidianScript.test.ts`, `refinement-log.md`.
+
 2026-08-19 | The catalog-target guard falsely failed because it compared an intentional scratch subset to the new release alias. | Changed it to validate manifest-selected CLI/MCP artifacts against their root aliases and ignore scratch exports. | `scripts/check_catalog_target.py`, `refinement-log.md`.
 
 2026-08-14 | Restructured from a single prose file via the skill-crafter
