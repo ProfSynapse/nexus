@@ -44,6 +44,7 @@ import {
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { parseJsonColumn } from '../utils/jsonColumn';
 import { resolveMetadataUpdate } from './metadataUpdate';
+import { taskStreamPath } from './base/workspaceStreamPath';
 
 interface TaskRow extends DatabaseRow {
   id: string;
@@ -79,7 +80,7 @@ export class TaskRepository
   protected readonly entityType = 'task';
 
   protected jsonlPath(workspaceId: string): string {
-    return `tasks/tasks_${workspaceId}.jsonl`;
+    return taskStreamPath(workspaceId, this.entityType);
   }
 
   constructor(deps: RepositoryDependencies) {

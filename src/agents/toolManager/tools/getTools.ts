@@ -237,7 +237,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       properties: {
         workspaceId: {
           type: 'string',
-          description: 'Workspace ID. Optional. Defaults to "default".'
+          description: 'Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as "default". Pass "default" for the global workspace, or an exact value from the availableWorkspaces list this call returns.'
         },
         sessionId: {
           type: 'string',

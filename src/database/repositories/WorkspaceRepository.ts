@@ -35,6 +35,7 @@ import { PaginatedResult, PaginationParams } from '../../types/pagination/Pagina
 import { QueryOptions } from '../interfaces/IStorageAdapter';
 import { QueryCache } from '../optimizations/QueryCache';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { workspaceStreamPath } from './base/workspaceStreamPath';
 
 type SqliteValue = string | number | null;
 
@@ -63,7 +64,7 @@ export class WorkspaceRepository
 
   protected readonly tableName = 'workspaces';
   protected readonly entityType = 'workspace';
-  protected readonly jsonlPath = (id: string): string => `workspaces/ws_${id}.jsonl`;
+  protected readonly jsonlPath = (id: string): string => workspaceStreamPath(id, this.entityType);
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
