@@ -361,7 +361,12 @@ export class ConversationRepository
         }
       );
 
-      // 2. Delete from SQLite — messages are cascaded via foreign key constraint
+      // 2. Delete from SQLite. Messages are NOT cascaded despite the FK: SQLite
+      //    foreign-key enforcement is off on this connection, so the rows stayed
+      //    behind as orphans until the next rebuild (measured: 1 message row for
+      //    a 1-message conversation). `ConversationEventApplier` has always
+      //    deleted them explicitly on replay; this is the live path catching up.
+      await this.sqliteCache.run('DELETE FROM messages WHERE conversationId = ?', [id]);
       await this.sqliteCache.run(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
 
       // 3. Invalidate cache

@@ -12,12 +12,14 @@ import {
   WorkspaceDeletedEvent,
   SessionCreatedEvent,
   SessionUpdatedEvent,
+  SessionDeletedEvent,
   StateSavedEvent,
   StateUpdatedEvent,
   StateDeletedEvent,
   TraceAddedEvent,
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
+import { purgeSessionRows } from '../sessionOwnership';
 
 export class WorkspaceEventApplier {
   private sqliteCache: ISQLiteCacheManager;
@@ -53,6 +55,9 @@ export class WorkspaceEventApplier {
         break;
       case 'session_updated':
         await this.applySessionUpdated(event);
+        break;
+      case 'session_deleted':
+        await this.applySessionDeleted(event);
         break;
       case 'state_saved':
         await this.applyStateSaved(event);
@@ -151,6 +156,25 @@ export class WorkspaceEventApplier {
         1
       ]
     );
+  }
+
+  /**
+   * A `session_deleted` event has to remove everything the session owns, not
+   * just its row.
+   *
+   * This runs during replay — `rebuildCache()` and cross-device sync — where the
+   * `session_created`, `state_saved` and `trace_added` events for this session
+   * were applied from the same workspace stream moments earlier. The tombstone
+   * is what cancels them out; a session has no stream of its own to remove.
+   *
+   * `purgeSessionRows` is shared with `SessionRepository.delete` precisely so
+   * the live delete and the replay of that delete cannot drift apart.
+   */
+  private async applySessionDeleted(event: SessionDeletedEvent): Promise<void> {
+    if (!event.sessionId) {
+      return;
+    }
+    await purgeSessionRows(this.sqliteCache, event.sessionId);
   }
 
   private async applySessionUpdated(event: SessionUpdatedEvent): Promise<void> {
