@@ -1,5 +1,48 @@
 import type { StorageEvent } from '../../src/database/interfaces/StorageEvents';
+import type { ReconcileResult } from '../../src/database/sync/ReconcilePipeline';
 import { SyncCoordinator, type IJSONLWriter, type ISQLiteCacheManager, type SyncState } from '../../src/database/sync/SyncCoordinator';
+
+function createReconcileCoordinator(
+  reconcileResult: ReconcileResult,
+  persistenceFailure?: 'updateSyncState' | 'save'
+): {
+  coordinator: SyncCoordinator;
+  reconcileAll: jest.Mock<Promise<ReconcileResult>, []>;
+  sqliteCache: ISQLiteCacheManager;
+} {
+  const jsonlWriter: IJSONLWriter = {
+    getDeviceId: jest.fn(() => 'mobile-device'),
+    listFiles: jest.fn(async () => []),
+    getFileModTime: jest.fn(async () => null),
+    readEvents: jest.fn(async () => []),
+    getEventsNotFromDevice: jest.fn(async () => [])
+  };
+  const sqliteCache: ISQLiteCacheManager = {
+    getSyncState: jest.fn(async () => null),
+    updateSyncState: jest.fn(async () => {
+      if (persistenceFailure === 'updateSyncState') {
+        throw new Error('updateSyncState failed');
+      }
+    }),
+    isEventApplied: jest.fn(async () => false),
+    markEventApplied: jest.fn(async () => undefined),
+    run: jest.fn(async () => ({ changes: 1, lastInsertRowid: 1 })),
+    query: jest.fn(async () => []),
+    queryOne: jest.fn(async () => null),
+    clearAllData: jest.fn(async () => undefined),
+    rebuildFTSIndexes: jest.fn(async () => undefined),
+    save: jest.fn(async () => {
+      if (persistenceFailure === 'save') {
+        throw new Error('save failed');
+      }
+    })
+  };
+  const reconcileAll = jest.fn(async () => reconcileResult);
+  const coordinator = new SyncCoordinator(jsonlWriter, sqliteCache);
+  coordinator.setReconcilePipeline({ reconcileAll } as never);
+
+  return { coordinator, reconcileAll, sqliteCache };
+}
 
 describe('SyncCoordinator', () => {
   it('saves full rebuild once after replaying all JSONL files', async () => {
@@ -349,4 +392,99 @@ describe('SyncCoordinator', () => {
       { 'conversations/conv-1.jsonl': 500 }
     );
   });
+
+  it('propagates exact ReconcilePipeline paths through filesProcessed', async () => {
+    const delta =
+      'nexus-data/data/tasks/tasks_default/' +
+      'shard-000003 (Syncthing Delta sha256-' + 'b'.repeat(64) + ').jsonl';
+    const reconcileResult: ReconcileResult = {
+      success: true,
+      eventsApplied: 1,
+      eventsSkipped: 41,
+      shardsScanned: 1,
+      shardsFastPathed: 0,
+      silentOverwriteRescans: 0,
+      errors: [],
+      duration: 1,
+      filesProcessed: [delta]
+    };
+    const { coordinator } = createReconcileCoordinator(reconcileResult);
+
+    const result = await coordinator.sync();
+
+    expect(result.success).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.filesProcessed).toEqual([delta]);
+  });
+
+  it('returns a failed reconcile receipt without persistence or Complete progress', async () => {
+    const delta = 'Nexus/data/tasks/tasks_default/shard-000003.jsonl';
+    const reconcileResult: ReconcileResult = {
+      success: false,
+      eventsApplied: 1,
+      eventsSkipped: 2,
+      shardsScanned: 1,
+      shardsFastPathed: 0,
+      silentOverwriteRescans: 0,
+      errors: ['apply tasks/e2: failed'],
+      duration: 1,
+      filesProcessed: [delta]
+    };
+    const { coordinator, sqliteCache } = createReconcileCoordinator(reconcileResult);
+    const onProgress = jest.fn();
+
+    const result = await coordinator.sync({ onProgress });
+
+    expect(result).toMatchObject({
+      success: false,
+      eventsApplied: 1,
+      eventsSkipped: 2,
+      errors: ['apply tasks/e2: failed'],
+      filesProcessed: [delta]
+    });
+    expect(sqliteCache.updateSyncState).not.toHaveBeenCalled();
+    expect(sqliteCache.save).not.toHaveBeenCalled();
+    expect(onProgress).not.toHaveBeenCalledWith('Complete', 1, 1);
+  });
+
+  it.each(['updateSyncState', 'save'] as const)(
+    'preserves the reconcile receipt when %s persistence fails',
+    async persistenceFailure => {
+      const filesProcessed = [
+        'Nexus/data/tasks/tasks_default/shard-000003.jsonl',
+        'Nexus/data/workspaces/ws_default/shard-000004.jsonl'
+      ];
+      const reconcileResult: ReconcileResult = {
+        success: true,
+        eventsApplied: 7,
+        eventsSkipped: 9,
+        shardsScanned: 2,
+        shardsFastPathed: 0,
+        silentOverwriteRescans: 0,
+        errors: [],
+        duration: 1,
+        filesProcessed
+      };
+      const { coordinator, sqliteCache } = createReconcileCoordinator(
+        reconcileResult,
+        persistenceFailure
+      );
+      const onProgress = jest.fn();
+
+      const result = await coordinator.sync({ onProgress });
+
+      expect(result).toMatchObject({
+        success: false,
+        eventsApplied: 7,
+        eventsSkipped: 9,
+        errors: [`Sync failed: Error: ${persistenceFailure} failed`],
+        filesProcessed
+      });
+      expect(sqliteCache.updateSyncState).toHaveBeenCalledTimes(1);
+      expect(sqliteCache.save).toHaveBeenCalledTimes(
+        persistenceFailure === 'save' ? 1 : 0
+      );
+      expect(onProgress).not.toHaveBeenCalledWith('Complete', 1, 1);
+    }
+  );
 });

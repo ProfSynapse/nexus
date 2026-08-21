@@ -51,10 +51,10 @@ import type {
   ConversationEvent,
   TaskEvent
 } from '../interfaces/StorageEvents';
-import type { ISQLiteCacheManager } from './SyncCoordinator';
 import type { WorkspaceEventApplier } from './WorkspaceEventApplier';
 import type { ConversationEventApplier } from './ConversationEventApplier';
 import type { TaskEventApplier } from './TaskEventApplier';
+import { AsyncLock } from '../../utils/AsyncLock';
 
 export interface ReconcileResult {
   success: boolean;
@@ -71,17 +71,25 @@ export interface ReconcileResult {
   errors: string[];
   /** Wall-clock duration in milliseconds. */
   duration: number;
+  /** Full vault-relative paths opened and nominally examined. */
+  filesProcessed: string[];
 }
 
 export interface ReconcilePipelineOptions {
   vaultEventStore: VaultEventStore;
   syncStateStore: SQLiteSyncStateStore;
-  sqliteCache: ISQLiteCacheManager;
+  sqliteCache: TransactionalEventCache;
   workspaceApplier: WorkspaceEventApplier;
   conversationApplier: ConversationEventApplier;
   taskApplier: TaskEventApplier;
   /** Owning device id. Used as the cursor partition key. */
   deviceId: string;
+}
+
+export interface TransactionalEventCache {
+  isEventApplied(eventId: string): Promise<boolean>;
+  markEventApplied(eventId: string): Promise<void>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 /** Minimum event shape consumed by the pipeline. All storage events satisfy this. */
@@ -102,15 +110,19 @@ export interface ParsedShardPath {
 }
 
 export class ReconcilePipeline {
+  private readonly eventTransactionLock = new AsyncLock();
   private readonly vaultEventStore: VaultEventStore;
   private readonly syncStateStore: SQLiteSyncStateStore;
-  private readonly sqliteCache: ISQLiteCacheManager;
+  private readonly sqliteCache: TransactionalEventCache;
   private readonly workspaceApplier: WorkspaceEventApplier;
   private readonly conversationApplier: ConversationEventApplier;
   private readonly taskApplier: TaskEventApplier;
   private readonly deviceId: string;
 
   constructor(options: ReconcilePipelineOptions) {
+    if (typeof options.sqliteCache.transaction !== 'function') {
+      throw new Error('ReconcilePipeline requires transactional SQLite cache capability');
+    }
     this.vaultEventStore = options.vaultEventStore;
     this.syncStateStore = options.syncStateStore;
     this.sqliteCache = options.sqliteCache;
@@ -138,8 +150,12 @@ export class ReconcilePipeline {
         try {
           const result = await this.reconcileStreamInternal(category, streamId);
           this.accumulate(totals, result);
+          if (!result.success) {
+            return this.finalize(totals, start);
+          }
         } catch (error) {
           totals.errors.push(`Failed to reconcile ${category}/${streamId}: ${String(error)}`);
+          return this.finalize(totals, start);
         }
       }
     }
@@ -216,6 +232,9 @@ export class ReconcilePipeline {
         shardFileName: shard.fileName
       });
       this.accumulate(totals, result);
+      if (!result.success) {
+        break;
+      }
     }
 
     return this.finalize(totals, start);
@@ -234,6 +253,7 @@ export class ReconcilePipeline {
     // reads are a future optimization — applied_events PK already keeps the
     // apply path O(1) per duplicate event.
     const events = await this.readShardEvents(handle, parsed.shardFileName);
+    totals.filesProcessed.push(shardFullPath);
 
     // Layer 1 — cursor fast-path: if the last applied event matches the
     // shard's tail event, this shard has no new events for us.
@@ -262,21 +282,36 @@ export class ReconcilePipeline {
 
     for (const event of sorted) {
       try {
-        if (await this.sqliteCache.isEventApplied(event.id)) {
+        const outcome = await this.eventTransactionLock.acquire(() => (
+          this.sqliteCache.transaction(async () => {
+            if (await this.sqliteCache.isEventApplied(event.id)) {
+              return 'skipped' as const;
+            }
+            await this.applyEvent(parsed.category, event);
+            await this.sqliteCache.markEventApplied(event.id);
+            return 'applied' as const;
+          })
+        ));
+
+        if (outcome === 'skipped') {
           totals.eventsSkipped += 1;
           continue;
         }
-        await this.applyEvent(parsed.category, event);
-        await this.sqliteCache.markEventApplied(event.id);
         totals.eventsApplied += 1;
       } catch (error) {
         totals.errors.push(`apply ${parsed.category}/${event.id}: ${String(error)}`);
+        break;
       }
     }
 
-    // Cursor advances to the tail of the sorted run regardless of whether new
-    // events were applied. A re-run after a partial failure still fast-paths
-    // correctly because the tail event lives in `applied_events` (Layer 2).
+    // Cursor advances only after every event was either applied and marked or
+    // skipped as already applied. Leaving it unchanged on partial failure
+    // forces a later reconcile through Layer 2 instead of incorrectly taking
+    // the cursor fast-path past the failed event.
+    if (totals.errors.length > 0) {
+      return this.finalize(totals, start);
+    }
+
     const tail = sorted.length > 0 ? sorted[sorted.length - 1] : null;
     const nextCursor: ShardCursor = {
       deviceId: this.deviceId,
@@ -321,7 +356,7 @@ export class ReconcilePipeline {
     const shards = await handle.shardStore.listShards(handle.relativeStreamPath);
     const target = shards.find((s) => s.fileName === shardFileName);
     if (!target) {
-      return [];
+      throw new Error(`Shard not found: ${handle.absoluteStreamPath}/${shardFileName}`);
     }
     return readEventsFromShardFile(handle, target.fullPath);
   }
@@ -375,7 +410,8 @@ export class ReconcilePipeline {
       shardsFastPathed: 0,
       silentOverwriteRescans: 0,
       errors: [],
-      duration: 0
+      duration: 0,
+      filesProcessed: []
     };
   }
 
@@ -386,6 +422,11 @@ export class ReconcilePipeline {
     into.shardsFastPathed += from.shardsFastPathed;
     into.silentOverwriteRescans += from.silentOverwriteRescans;
     into.errors.push(...from.errors);
+    for (const path of from.filesProcessed) {
+      if (!into.filesProcessed.includes(path)) {
+        into.filesProcessed.push(path);
+      }
+    }
   }
 
   private finalize(result: ReconcileResult, start: number): ReconcileResult {
@@ -452,7 +493,7 @@ async function readEventsFromShardFile(
   }).app.vault.adapter;
 
   if (!(await adapter.exists(shardFullPath))) {
-    return [];
+    throw new Error(`Shard disappeared before read: ${shardFullPath}`);
   }
   const content = await adapter.read(shardFullPath);
   if (!content.trim()) {
@@ -460,15 +501,38 @@ async function readEventsFromShardFile(
   }
 
   const events: AnyStorageEvent[] = [];
-  for (const line of content.split(/\r?\n/)) {
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const trimmed = line.trim();
     if (!trimmed) continue;
+
+    let value: unknown;
     try {
-      events.push(JSON.parse(trimmed) as AnyStorageEvent);
+      value = JSON.parse(trimmed) as unknown;
     } catch {
-      // Match the existing ShardedJsonlStreamStore behavior — skip malformed.
-      console.warn(`[ReconcilePipeline] Skipping malformed line in ${shardFullPath}`);
+      throw new Error(`Malformed JSONL at ${shardFullPath}:${index + 1}`);
     }
+
+    if (
+      typeof value !== 'object'
+      || value === null
+      || Array.isArray(value)
+    ) {
+      throw new Error(`Invalid storage event at ${shardFullPath}:${index + 1}`);
+    }
+
+    const candidate = value as Record<string, unknown>;
+    if (
+      typeof candidate.id !== 'string'
+      || candidate.id.trim().length === 0
+      || typeof candidate.timestamp !== 'number'
+      || !Number.isFinite(candidate.timestamp)
+    ) {
+      throw new Error(`Invalid storage event at ${shardFullPath}:${index + 1}`);
+    }
+
+    events.push(value as AnyStorageEvent);
   }
   return events;
 }
