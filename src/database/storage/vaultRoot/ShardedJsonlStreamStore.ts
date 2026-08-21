@@ -235,6 +235,37 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
     });
   }
 
+  /**
+   * Permanently remove a whole logical stream: every file in its directory and
+   * then the directory itself.
+   *
+   * Deliberately removes EVERY file it finds, not just files matching
+   * `SHARD_FILE_PATTERN`. Cloud-sync conflict siblings (`shard-000001 (1).jsonl`)
+   * hold real events and would otherwise be left behind to be replayed by the
+   * next rebuild — a stream that deletes down to "only the events a conflict
+   * copy happens to hold" is worse than one that is not deleted at all.
+   *
+   * Returns `false` when the stream directory did not exist, which makes the
+   * call idempotent and therefore safe to retry after a partial failure.
+   */
+  async deleteStream(relativeStreamPath: string): Promise<boolean> {
+    const streamPath = this.getStreamPath(relativeStreamPath);
+
+    return this.locks.acquire(streamPath, async () => {
+      if (!(await this.app.vault.adapter.exists(streamPath))) {
+        return false;
+      }
+
+      const listing = await this.app.vault.adapter.list(streamPath);
+      for (const filePath of listing.files) {
+        await this.app.vault.adapter.remove(normalizePath(filePath));
+      }
+
+      await this.app.vault.adapter.rmdir(streamPath, true);
+      return true;
+    });
+  }
+
   private normalizeRelativeStreamPath(relativeStreamPath: string): string {
     return normalizePath(relativeStreamPath).replace(/^\/+|\/+$/g, '');
   }
