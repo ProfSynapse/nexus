@@ -57,8 +57,13 @@ Obsidian (the headless container) to turn a skip into a failure.
    | `nexus` | `--vault <name>` | `$NEXUS_VAULT`, else the single open vault |
 
    Because `obsidian`'s default follows window focus, an unattended run MUST
-   pass `vault=<name>` explicitly. Confine every write to one scratch folder in
-   that vault and touch nothing else.
+   pass `vault=<name>` explicitly. Immediately verify the target with
+   `obsidian vault vault=<name> info=name` before any write. On a multi-window
+   macOS install the CLI has been observed silently ignoring a spaced vault name
+   and continuing against the focused renderer; a successful command is not
+   proof that targeting worked. If the reported name is wrong, stop rather than
+   running diagnostics or mutations against the fallback vault. Confine every
+   write to one scratch folder in the verified vault and touch nothing else.
 
 2. **Build before you reload.** Reload only after a build that succeeded in the
    same run, or you will spend the loop diagnosing the previous bundle.

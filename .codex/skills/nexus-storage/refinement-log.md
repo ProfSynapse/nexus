@@ -4,6 +4,15 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+- 2026-08-23 | A failed vault-root migration left SQLite state metadata visible
+  to `list-states` while `load-state` could not read the intact `state_saved`
+  body in the destination shard. Fresh states worked only from the repository's
+  in-memory cache. The symptom map had no entry for this split read policy. |
+  Added a failure-mode entry that checks the persisted migration state, proves
+  metadata/event/cache behavior separately, forbids shard repair by hand, and
+  records the destination-first read invariant for every migration phase. |
+  references/failure-modes.md.
+
 - 2026-08-14 | The hydration-gate entry said "await `waitForQueryReady()`", and the
   notes-index startup did exactly that and still failed: the background startup
   rebuild never left the `running` phase, so the gate resolved false after its 120s

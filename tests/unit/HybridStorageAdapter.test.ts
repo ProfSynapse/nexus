@@ -8,6 +8,10 @@ import { StartupHydrationController } from '../../src/database/adapters/lifecycl
 import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
 import { ReconciliationCoordinator } from '../../src/database/adapters/lifecycle/ReconciliationCoordinator';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
+import { JSONLWriter } from '../../src/database/storage/JSONLWriter';
+import { StateRepository } from '../../src/database/repositories/StateRepository';
+import type { RepositoryDependencies } from '../../src/database/repositories/base/BaseRepository';
+import { createMockApp } from '../helpers/mockVaultAdapter';
 
 describe('HybridStorageAdapter', () => {
   afterEach(() => {
@@ -106,7 +110,7 @@ describe('HybridStorageAdapter', () => {
       expect(adapter.sqliteCache.setDbPath).toHaveBeenCalledWith('.obsidian/plugins/claudesidian-mcp/data/cache.db');
     });
 
-    it('keeps detected legacy roots readable while migration is pending', () => {
+    it('keeps the destination and detected legacy roots readable while migration is pending', () => {
       const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
         app: unknown;
         basePath: string;
@@ -155,7 +159,134 @@ describe('HybridStorageAdapter', () => {
         '.obsidian/plugins/claudesidian-mcp/data',
         '.nexus'
       ]);
-      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(false);
+      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(true);
+    });
+
+    it('reads the configured destination before legacy fallbacks after migration fails', async () => {
+      const { app } = createMockApp({
+        withLocalStorage: true,
+        initialFiles: {
+          '.nexus/workspaces/ws_ws-1.jsonl': [
+            JSON.stringify({
+              id: 'shared-event',
+              type: 'state_saved',
+              deviceId: 'legacy',
+              timestamp: 1,
+              workspaceId: 'ws-1',
+              sessionId: 'session-1',
+              data: { id: 'shared-state', name: 'Legacy copy', created: 1, stateJson: '{}' }
+            }),
+            JSON.stringify({
+              id: 'legacy-only',
+              type: 'state_saved',
+              deviceId: 'legacy',
+              timestamp: 2,
+              workspaceId: 'ws-1',
+              sessionId: 'session-1',
+              data: { id: 'legacy-state', name: 'Legacy state', created: 2, stateJson: '{}' }
+            })
+          ].join('\n') + '\n',
+          'Nexus/data/workspaces/ws_ws-1/shard-000001.jsonl': [
+            JSON.stringify({
+              id: 'shared-event',
+              type: 'state_saved',
+              deviceId: 'vault-root',
+              timestamp: 3,
+              workspaceId: 'ws-1',
+              sessionId: 'session-1',
+              data: { id: 'shared-state', name: 'Vault copy', created: 3, stateJson: '{}' }
+            }),
+            JSON.stringify({
+              id: 'vault-only-state',
+              type: 'state_saved',
+              deviceId: 'vault-root',
+              timestamp: 4,
+              workspaceId: 'ws-1',
+              sessionId: 'session-1',
+              data: {
+                id: 'state-1',
+                name: 'Chapter checkpoint',
+                created: 4,
+                stateJson: JSON.stringify({ chapter: 7 })
+              }
+            })
+          ].join('\n') + '\n'
+        }
+      });
+      const writer = new JSONLWriter({
+        app,
+        basePath: '.nexus',
+        readBasePaths: ['.nexus']
+      });
+      const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
+        app: typeof app;
+        jsonlWriter: JSONLWriter;
+        sqliteCache: { setDbPath: jest.Mock<void, [string]> };
+      };
+      adapter.app = app;
+      adapter.jsonlWriter = writer;
+      adapter.sqliteCache = { setDbPath: jest.fn() };
+
+      (adapter as unknown as { applyStoragePlan: (plan: unknown) => void }).applyStoragePlan({
+        vaultWriteBasePath: 'Nexus/data',
+        legacyReadBasePaths: ['.nexus'],
+        pluginCacheDbPath: '.obsidian/plugins/claudesidian-mcp/data/cache.db',
+        state: {
+          storageVersion: 2,
+          sourceOfTruthLocation: 'legacy-dotnexus',
+          migration: {
+            state: 'failed',
+            legacySourcesDetected: ['.nexus'],
+            activeDestination: 'Nexus/data'
+          }
+        },
+        roots: {},
+        vaultRoot: {
+          configuredPath: 'Nexus',
+          resolvedPath: 'Nexus',
+          dataPath: 'Nexus/data',
+          guidesPath: 'Nexus/guides',
+          maxShardBytes: 1024
+        }
+      });
+
+      const events = await writer.readEvents('workspaces/ws_ws-1.jsonl');
+
+      expect(events.map(event => event.id)).toEqual([
+        'shared-event',
+        'vault-only-state',
+        'legacy-only'
+      ]);
+      expect(events.find(event => event.id === 'shared-event')?.deviceId).toBe('vault-root');
+
+      const repository = new StateRepository({
+        sqliteCache: {
+          queryOne: jest.fn().mockResolvedValue({
+            id: 'state-1',
+            workspaceId: 'ws-1',
+            sessionId: 'session-1',
+            name: 'Chapter checkpoint',
+            description: null,
+            created: 4,
+            tagsJson: null
+          }),
+          query: jest.fn(),
+          run: jest.fn(),
+          transaction: jest.fn()
+        },
+        jsonlWriter: writer,
+        queryCache: {
+          cachedQuery: jest.fn((_key: string, fn: () => Promise<unknown>) => fn()),
+          invalidateByType: jest.fn(),
+          invalidateById: jest.fn(),
+          invalidate: jest.fn()
+        }
+      } as unknown as RepositoryDependencies);
+
+      await expect(repository.getStateData('state-1')).resolves.toMatchObject({
+        id: 'state-1',
+        content: { chapter: 7 }
+      });
     });
   });
 
