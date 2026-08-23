@@ -401,12 +401,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.jsonlWriter.setBasePath(plan.vaultWriteBasePath);
     const migrationComplete = plan.state.migration.state === 'verified'
       || plan.state.migration.state === 'not_needed';
-    // Legacy roots are migration inputs, not permanent read replicas. Keeping
-    // them active after cutover can resurrect deleted data and race cloud-sync
-    // deletion/placeholder operations during every startup read.
+    // The configured vault root is the active write destination at every
+    // migration phase, so it must also remain the first read source. Otherwise
+    // events written while migration is pending or failed are invisible after
+    // an in-memory cache miss. Legacy roots remain fallback inputs only until
+    // cutover; StorageRouter reads vault-root first and deduplicates by event ID.
     this.jsonlWriter.setReadBasePaths(migrationComplete ? [] : plan.legacyReadBasePaths);
     this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
-    this.jsonlWriter.setVaultEventStoreReadEnabled(migrationComplete);
+    this.jsonlWriter.setVaultEventStoreReadEnabled(true);
     this.sqliteCache.setDbPath(plan.pluginCacheDbPath);
     this.wireReconcilePipeline();
   }

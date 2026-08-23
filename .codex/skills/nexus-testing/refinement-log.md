@@ -4,6 +4,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-23 | On a multi-window macOS install, `obsidian eval vault="Rose N
+Thorn" ...` and `obsidian vault vault="Rose N Thorn" info=name` both returned
+the focused `Code` vault without an error. The live-loop treated an explicit
+vault argument as sufficient proof of targeting. | Added a mandatory harmless
+vault-name probe and a stop condition when the CLI silently falls back to the
+focused renderer. | `protocols/live-loop.md`, `refinement-log.md`.
+
 2026-08-21 | On macOS, the packaged verifier put `vault=<name>` before the CLI
 subcommand, while the installed CLI accepted `obsidian eval vault=<name> ...`.
 The existing stubs accepted arguments in any order and hid the defect. | Moved
