@@ -88,7 +88,11 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       const pageSize = params.pageSize || params.limit;
       const paginationOptions = {
         page: params.page ?? 0,
-        pageSize: pageSize
+        pageSize: pageSize,
+        // Answered in SQL from the denormalized isArchived column (issue #219).
+        // Rows whose flag is not backfilled yet come back regardless, which is
+        // why the in-memory filter below stays.
+        includeArchived: params.includeArchived === true
       };
 
       // Get states with true DB-level pagination across the workspace

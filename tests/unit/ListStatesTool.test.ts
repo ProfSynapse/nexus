@@ -75,7 +75,8 @@ describe('ListStatesTool', () => {
     expect(workspaceService.getWorkspaceByNameOrId).toHaveBeenCalledWith('Workspace Name');
     expect(memoryService.getStates).toHaveBeenCalledWith('workspace-1', undefined, {
       page: 0,
-      pageSize: undefined
+      pageSize: undefined,
+      includeArchived: false
     });
     expect(result.data).toEqual([
       {
@@ -115,5 +116,86 @@ describe('ListStatesTool', () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Workspace not found: Missing Workspace/);
     expect(memoryService.getStates).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Issue #219: the archive filter is now answered by a SQLite column rather
+   * than by fetching every state's JSONL content. The in-memory filter stays
+   * as the backstop for rows whose column is not backfilled yet, so both
+   * halves have to keep working.
+   */
+  describe('archive filtering', () => {
+    function buildTool(items: unknown[]) {
+      const memoryService = {
+        getStates: jest.fn().mockResolvedValue({
+          items,
+          page: 0,
+          pageSize: 10,
+          totalItems: items.length,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false
+        })
+      };
+      const workspaceService = {
+        getWorkspaceByNameOrId: jest.fn().mockResolvedValue({ id: 'workspace-1', name: 'Workspace Name' })
+      };
+      const agent = {
+        getMemoryServiceAsync: jest.fn().mockResolvedValue(memoryService),
+        getWorkspaceServiceAsync: jest.fn().mockResolvedValue(workspaceService)
+      } as unknown as MemoryManagerAgent;
+      return { tool: new ListStatesTool(agent), memoryService };
+    }
+
+    const context = {
+      workspaceId: 'Workspace Name',
+      sessionId: 'session-1',
+      memory: 'Testing archive filtering.',
+      goal: 'Verify archived states are hidden by default.'
+    };
+
+    const stateWith = (id: string, isArchived: boolean) => ({
+      id,
+      name: id,
+      description: 'desc',
+      sessionId: 'session-1',
+      workspaceId: 'workspace-1',
+      created: 1,
+      tags: [],
+      state: { state: { metadata: { isArchived } } }
+    });
+
+    it('asks SQL to exclude archived states by default', async () => {
+      const { tool, memoryService } = buildTool([stateWith('live', false)]);
+
+      await tool.execute({ context });
+
+      expect(memoryService.getStates).toHaveBeenCalledWith(
+        'workspace-1',
+        undefined,
+        expect.objectContaining({ includeArchived: false })
+      );
+    });
+
+    it('asks SQL to include archived states when includeArchived is set', async () => {
+      const { tool, memoryService } = buildTool([stateWith('live', false), stateWith('gone', true)]);
+
+      const result = await tool.execute({ context, includeArchived: true });
+
+      expect(memoryService.getStates).toHaveBeenCalledWith(
+        'workspace-1',
+        undefined,
+        expect.objectContaining({ includeArchived: true })
+      );
+      expect((result.data as Array<{ id: string }>).map(s => s.id).sort()).toEqual(['gone', 'live']);
+    });
+
+    it('still filters archived rows that SQL let through (flag not backfilled)', async () => {
+      const { tool } = buildTool([stateWith('live', false), stateWith('gone', true)]);
+
+      const result = await tool.execute({ context });
+
+      expect((result.data as Array<{ id: string }>).map(s => s.id)).toEqual(['live']);
+    });
   });
 });

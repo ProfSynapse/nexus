@@ -22,6 +22,7 @@ import { BaseRepository, RepositoryDependencies, DatabaseRow } from './base/Base
 import {
   IStateRepository,
   SaveStateData,
+  StateListOptions,
   UpdateStateData
 } from './interfaces/IStateRepository';
 import { StateMetadata, StateData } from '../../types/storage/HybridStorageTypes';
@@ -33,6 +34,7 @@ import {
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryParams } from './base/BaseRepository';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { deriveStateMetadata, resolveStateDescription } from '../utils/stateContent';
 
 interface StateRow extends DatabaseRow {
   id: string;
@@ -42,6 +44,11 @@ interface StateRow extends DatabaseRow {
   description?: string | null;
   created: number;
   tagsJson?: string | null;
+  /**
+   * 1 = archived, 0 = not archived, NULL = unknown (row predates the v16
+   * migration and has not been backfilled yet). See src/database/utils/stateContent.ts.
+   */
+  isArchived?: number | null;
 }
 
 /**
@@ -168,7 +175,7 @@ export class StateRepository
   async getStates(
     workspaceId: string,
     sessionId?: string,
-    options?: PaginationParams
+    options?: StateListOptions
   ): Promise<PaginatedResult<StateMetadata>> {
     let baseQuery = 'SELECT * FROM states WHERE workspaceId = ?';
     let countQuery = 'SELECT COUNT(*) as count FROM states WHERE workspaceId = ?';
@@ -178,6 +185,22 @@ export class StateRepository
       baseQuery += ' AND sessionId = ?';
       countQuery += ' AND sessionId = ?';
       params.push(sessionId);
+    }
+
+    if (options?.includeArchived === false) {
+      // ONLY an explicit `false` filters. Omitting the option means "every
+      // state", which is what every non-list caller depends on: restoring an
+      // archived state, renaming one, and the createState name-uniqueness
+      // check all have to see archived rows.
+      //
+      // `isArchived IS NULL` = not yet backfilled, so the answer is unknown and
+      // the row MUST survive this filter; the caller resolves it from content.
+      // Excluding unknowns here would hide states that are plainly not
+      // archived, which is the direction of failure that actually loses data
+      // from a list.
+      const archiveFilter = ' AND (isArchived IS NULL OR isArchived = 0)';
+      baseQuery += archiveFilter;
+      countQuery += archiveFilter;
     }
 
     baseQuery += ' ORDER BY created DESC';
@@ -273,18 +296,23 @@ export class StateRepository
           }
         );
 
-        // 2. Update SQLite cache (metadata only, no content)
+        // 2. Update SQLite cache (metadata only, no content). isArchived and
+        //    the description fallback are derived from the content here and by
+        //    WorkspaceEventApplier on replay — the two must agree or a cache
+        //    rebuild would change what lists show.
+        const derived = deriveStateMetadata(data.content);
         await this.sqliteCache.run(
-          `INSERT INTO states (id, workspaceId, sessionId, name, description, created, tagsJson)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO states (id, workspaceId, sessionId, name, description, created, tagsJson, isArchived)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             workspaceId,
             sessionId,
             data.name,
-            data.description ?? null,
+            resolveStateDescription(data.description, derived),
             data.created ?? now,
-            data.tags ? JSON.stringify(data.tags) : null
+            data.tags ? JSON.stringify(data.tags) : null,
+            derived.isArchived ? 1 : 0
           ]
         );
 
@@ -362,6 +390,13 @@ export class StateRepository
           setClauses.push('tagsJson = ?');
           params.push(JSON.stringify(updates.tags));
         }
+        if (updates.content !== undefined) {
+          // Archiving a state IS a content update (archiveState rewrites
+          // state.metadata.isArchived), so this is the write that keeps the
+          // denormalized column true.
+          setClauses.push('isArchived = ?');
+          params.push(deriveStateMetadata(updates.content).isArchived ? 1 : 0);
+        }
 
         if (setClauses.length > 0) {
           params.push(id);
@@ -406,6 +441,106 @@ export class StateRepository
     };
   }
 
+  /**
+   * Fill in `isArchived` (and the derived `description` fallback) for rows the
+   * v16 migration left unknown.
+   *
+   * The migration itself cannot do this: `migrationFn` is synchronous and only
+   * sees the database, while the archive flag lives in the JSONL event store.
+   * It backfills the rows whose `stateJson` the event applier happened to
+   * cache; everything written live by `saveState()` has `stateJson` NULL and
+   * lands here.
+   *
+   * The cost is deliberately O(workspaces), not O(states): each workspace
+   * stream is read ONCE and folded for every state in it. Reading per state —
+   * which is what `getStateData()` would do — is exactly the quadratic cost
+   * issue #219 exists to remove, so it must not be reintroduced by the fix.
+   *
+   * Idempotent and cheap to call on every startup: when nothing is unknown the
+   * whole thing is one indexed SELECT that returns no rows.
+   *
+   * @returns number of rows updated
+   */
+  async backfillDerivedStateMetadata(): Promise<number> {
+    const unknownRows = await this.sqliteCache.query<StateRow>(
+      'SELECT id, workspaceId, description FROM states WHERE isArchived IS NULL'
+    );
+    if (unknownRows.length === 0) {
+      return 0;
+    }
+
+    const byWorkspace = new Map<string, StateRow[]>();
+    for (const row of unknownRows) {
+      const list = byWorkspace.get(row.workspaceId);
+      if (list) {
+        list.push(row);
+      } else {
+        byWorkspace.set(row.workspaceId, [row]);
+      }
+    }
+
+    let updated = 0;
+
+    for (const [workspaceId, rows] of byWorkspace) {
+      let contentById: Map<string, unknown>;
+      try {
+        contentById = await this.readStateContents(workspaceId);
+      } catch (error) {
+        this.logError('backfillDerivedStateMetadata', error);
+        continue;
+      }
+
+      for (const row of rows) {
+        // A row with no event in the stream is left unknown rather than
+        // guessed at — MemoryService still resolves it from content.
+        if (!contentById.has(row.id)) {
+          continue;
+        }
+
+        const derived = deriveStateMetadata(contentById.get(row.id));
+        await this.sqliteCache.run(
+          'UPDATE states SET isArchived = ?, description = ? WHERE id = ?',
+          [derived.isArchived ? 1 : 0, resolveStateDescription(row.description, derived), row.id]
+        );
+        updated++;
+      }
+    }
+
+    if (updated > 0) {
+      this.invalidateCache();
+      this.log('backfillDerivedStateMetadata', { updated, workspaces: byWorkspace.size });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Read one workspace's event stream once and fold it into
+   * stateId -> latest content (state_saved, then any state_updated on top).
+   */
+  private async readStateContents(workspaceId: string): Promise<Map<string, unknown>> {
+    const events = await this.jsonlWriter.readEvents<StateSavedEvent | StateUpdatedEvent>(
+      this.jsonlPath(workspaceId)
+    );
+
+    const contentById = new Map<string, unknown>();
+    for (const event of events) {
+      if (event.type === 'state_saved' && event.data?.id) {
+        contentById.set(
+          event.data.id,
+          parseJsonColumn<unknown>(event.data.stateJson, `StateRepository.state#${event.data.id}`)
+        );
+      } else if (event.type === 'state_updated' && event.stateId && event.data?.stateJson !== undefined) {
+        contentById.set(
+          event.stateId,
+          parseJsonColumn<unknown>(event.data.stateJson, `StateRepository.state#${event.stateId}`)
+        );
+      }
+    }
+
+    return contentById;
+  }
+
   // ============================================================================
   // Protected Methods
   // ============================================================================
@@ -419,6 +554,11 @@ export class StateRepository
       name: stateRow.name,
       description: stateRow.description ?? undefined,
       created: stateRow.created,
+      // NULL stays `undefined` — "unknown", not "false". Callers use that to
+      // decide whether they still have to read the snapshot content.
+      isArchived: stateRow.isArchived === null || stateRow.isArchived === undefined
+        ? undefined
+        : stateRow.isArchived === 1,
       tags: parseJsonColumn<string[]>(stateRow.tagsJson, `StateRepository.tags#${stateRow.id}`)
     };
   }

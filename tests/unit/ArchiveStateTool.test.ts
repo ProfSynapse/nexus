@@ -136,6 +136,26 @@ describe('ArchiveStateTool', () => {
     expect(passedNextState.state?.contextFiles).toEqual(['notes/Plan.md']);
   });
 
+  it('does not ask getStates to hide archived states — restore has to find them', async () => {
+    // Issue #219 pushed the archive filter into SQL. If archiveState inherited
+    // that filter, an archived state would be invisible to the very command
+    // that un-archives it, and restore would fail with "not found".
+    const listItems: StateListItem[] = [{ id: 'state-1', name: 'Checkpoint', sessionId: 'session-1' }];
+    const { agent, memoryService } = buildAgentMocks({
+      listItems,
+      getStateResult: buildWorkspaceState({
+        state: { workspace: null, recentTraces: [], contextFiles: [], metadata: { isArchived: true } }
+      } as Partial<WorkspaceState>)
+    });
+    const tool = new ArchiveStateTool(agent);
+
+    const result = await tool.execute({ context: archiveContext(), name: 'Checkpoint', restore: true });
+
+    expect(result.success).toBe(true);
+    const options = memoryService.getStates.mock.calls[0][2];
+    expect(options?.includeArchived).not.toBe(false);
+  });
+
   it('restores an archived state by toggling metadata.isArchived to false, preserving tags', async () => {
     const listItems: StateListItem[] = [{ id: 'state-1', name: 'Tagged Checkpoint', sessionId: 'session-1' }];
     const existing = buildWorkspaceState({

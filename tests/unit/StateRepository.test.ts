@@ -168,3 +168,191 @@ describe('StateRepository.getStateData event-folding', () => {
     expect(deps.jsonlWriter.readEvents).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Issue #219: the archive flag is denormalized into the states table so
+ * listing states never has to open the JSONL stream. These pin the write side
+ * of that contract — the read side is in MemoryServiceGetStates.test.ts.
+ */
+describe('StateRepository archive-flag denormalization (v16)', () => {
+  function insertCall(deps: RepositoryDependencies) {
+    return (deps.sqliteCache.run as jest.Mock).mock.calls
+      .find((call: unknown[]) => /INSERT INTO states/.test(call[0] as string));
+  }
+
+  it('writes isArchived from the snapshot content on save', async () => {
+    const deps = createMockDeps();
+    const repo = new StateRepository(deps);
+
+    await repo.saveState('ws-1', 'session-1', {
+      name: 'Archived checkpoint',
+      content: { state: { metadata: { isArchived: true } } }
+    });
+
+    const call = insertCall(deps)!;
+    expect(call[0]).toContain('isArchived');
+    // columns: id, workspaceId, sessionId, name, description, created, tagsJson, isArchived
+    expect((call[1] as unknown[])[7]).toBe(1);
+  });
+
+  it('writes 0 (not NULL) for a snapshot with no archive flag', async () => {
+    const deps = createMockDeps();
+    const repo = new StateRepository(deps);
+
+    await repo.saveState('ws-1', 'session-1', {
+      name: 'Live checkpoint',
+      content: { state: { metadata: {} } }
+    });
+
+    expect((insertCall(deps)![1] as unknown[])[7]).toBe(0);
+  });
+
+  it('falls back to context.activeTask for the description column', async () => {
+    // createState supplies no description at all; without this fallback the
+    // metadata row cannot describe the state and listStates — which no longer
+    // reads content — would report "No description" for every LLM-made state.
+    const deps = createMockDeps();
+    const repo = new StateRepository(deps);
+
+    await repo.saveState('ws-1', 'session-1', {
+      name: 'Checkpoint',
+      content: { context: { activeTask: 'Wire up the backfill' } }
+    });
+
+    expect((insertCall(deps)![1] as unknown[])[4]).toBe('Wire up the backfill');
+  });
+
+  it('keeps an explicit description over the activeTask fallback', async () => {
+    const deps = createMockDeps();
+    const repo = new StateRepository(deps);
+
+    await repo.saveState('ws-1', 'session-1', {
+      name: 'Checkpoint',
+      description: 'Explicit',
+      content: { context: { activeTask: 'Wire up the backfill' } }
+    });
+
+    expect((insertCall(deps)![1] as unknown[])[4]).toBe('Explicit');
+  });
+
+  it('re-derives isArchived when a content update archives the state', async () => {
+    // archiveState works by rewriting state.metadata.isArchived through
+    // updateState, so this is the write that actually archives anything.
+    const deps = createMockDeps();
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue(stateMetadataRow());
+    const repo = new StateRepository(deps);
+
+    await repo.updateState('state-1', {
+      content: { state: { metadata: { isArchived: true } } }
+    });
+
+    const update = (deps.sqliteCache.run as jest.Mock).mock.calls
+      .find((call: unknown[]) => /UPDATE states SET/.test(call[0] as string))!;
+    expect(update[0]).toContain('isArchived = ?');
+    expect(update[1]).toContain(1);
+  });
+
+  it('filters archived rows in SQL only when includeArchived is explicitly false', async () => {
+    const deps = createMockDeps();
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({ count: 0 });
+    const repo = new StateRepository(deps);
+
+    await repo.getStates('ws-1', undefined, { includeArchived: false });
+    const filtered = (deps.sqliteCache.query as jest.Mock).mock.calls[0][0] as string;
+    expect(filtered).toContain('isArchived IS NULL OR isArchived = 0');
+
+    await repo.getStates('ws-1', undefined, { includeArchived: true });
+    expect((deps.sqliteCache.query as jest.Mock).mock.calls[1][0] as string).not.toContain('isArchived');
+  });
+
+  it('returns archived rows when no archive option is passed', async () => {
+    // Restoring an archived state, renaming one, and createState's
+    // name-uniqueness check all call getStates with no options and must still
+    // see archived rows. Filtering by default would break restore with
+    // "State not found" and let a duplicate name through.
+    const deps = createMockDeps();
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({ count: 0 });
+    const repo = new StateRepository(deps);
+
+    await repo.getStates('ws-1');
+
+    expect((deps.sqliteCache.query as jest.Mock).mock.calls[0][0] as string).not.toContain('isArchived');
+  });
+
+  it('surfaces NULL isArchived as undefined, not false', async () => {
+    // "unknown" must stay distinguishable from "not archived" or the read path
+    // stops falling back to content for un-backfilled rows.
+    const deps = createMockDeps();
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue(stateMetadataRow({ isArchived: null }));
+    const repo = new StateRepository(deps);
+
+    const unknown = await repo.getById('state-1');
+    expect(unknown?.isArchived).toBeUndefined();
+
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue(stateMetadataRow({ isArchived: 1 }));
+    const archived = await repo.getById('state-1');
+    expect(archived?.isArchived).toBe(true);
+
+    (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue(stateMetadataRow({ isArchived: 0 }));
+    const live = await repo.getById('state-1');
+    expect(live?.isArchived).toBe(false);
+  });
+});
+
+describe('StateRepository.backfillDerivedStateMetadata (v16 upgrade path)', () => {
+  it('reads each workspace stream ONCE, not once per state', async () => {
+    // Reading per state is precisely the quadratic cost issue #219 removes;
+    // a backfill that reintroduced it would make the upgrade worse than the
+    // problem.
+    const events: AnyStateEvent[] = [
+      savedEvent('state-1', { state: { metadata: { isArchived: true } } }),
+      savedEvent('state-2', { context: { activeTask: 'Keep going' } }),
+      updatedEvent('state-2', { state: { metadata: { isArchived: true } } }, 3)
+    ];
+    const deps = createMockDeps(events);
+    (deps.sqliteCache.query as jest.Mock).mockResolvedValue([
+      { id: 'state-1', workspaceId: 'ws-1', description: null },
+      { id: 'state-2', workspaceId: 'ws-1', description: null }
+    ]);
+
+    const repo = new StateRepository(deps);
+    const updated = await repo.backfillDerivedStateMetadata();
+
+    expect(updated).toBe(2);
+    expect(deps.jsonlWriter.readEvents).toHaveBeenCalledTimes(1);
+    expect(deps.jsonlWriter.readEvents).toHaveBeenCalledWith('workspaces/ws_ws-1.jsonl');
+
+    const writes = (deps.sqliteCache.run as jest.Mock).mock.calls
+      .filter((call: unknown[]) => /UPDATE states SET isArchived/.test(call[0] as string));
+    expect(writes).toHaveLength(2);
+    expect(writes[0][1]).toEqual([1, null, 'state-1']);
+    // state-2 was archived by a later state_updated, and its description comes
+    // from the saved snapshot's activeTask.
+    expect(writes[1][1]).toEqual([1, null, 'state-2']);
+  });
+
+  it('does not touch JSONL when every row already knows its flag', async () => {
+    const deps = createMockDeps();
+    (deps.sqliteCache.query as jest.Mock).mockResolvedValue([]);
+
+    const repo = new StateRepository(deps);
+    const updated = await repo.backfillDerivedStateMetadata();
+
+    expect(updated).toBe(0);
+    expect(deps.jsonlWriter.readEvents).not.toHaveBeenCalled();
+    expect(deps.sqliteCache.run).not.toHaveBeenCalled();
+  });
+
+  it('leaves a row unknown when the stream has no event for it', async () => {
+    const deps = createMockDeps([savedEvent('state-1', { value: 'x' })]);
+    (deps.sqliteCache.query as jest.Mock).mockResolvedValue([
+      { id: 'state-missing', workspaceId: 'ws-1', description: null }
+    ]);
+
+    const repo = new StateRepository(deps);
+    const updated = await repo.backfillDerivedStateMetadata();
+
+    expect(updated).toBe(0);
+    expect(deps.sqliteCache.run).not.toHaveBeenCalled();
+  });
+});

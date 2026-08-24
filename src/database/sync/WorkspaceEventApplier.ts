@@ -25,6 +25,7 @@ import {
 import { ISQLiteCacheManager } from './SyncCoordinator';
 import { purgeWorkspaceRows } from '../workspaceOwnership';
 import { purgeSessionRows } from '../sessionOwnership';
+import { deriveStateMetadataFromJson, resolveStateDescription } from '../utils/stateContent';
 
 export class WorkspaceEventApplier {
   private sqliteCache: ISQLiteCacheManager;
@@ -235,19 +236,27 @@ export class WorkspaceEventApplier {
       return;
     }
 
+    // Derive the denormalized columns from the snapshot exactly as
+    // StateRepository.saveState does on the live write path. If these two
+    // diverge, "Nexus: Rebuild cache" quietly changes which states are listed.
+    const derived = deriveStateMetadataFromJson(event.data.stateJson);
+
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO states
-       (id, sessionId, workspaceId, name, description, created, stateJson, tagsJson)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, sessionId, workspaceId, name, description, created, stateJson, tagsJson, isArchived)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
         event.sessionId,
         event.workspaceId,
         event.data.name ?? 'Unnamed State',
-        event.data.description ?? null,
+        resolveStateDescription(event.data.description, derived),
         event.data.created ?? Date.now(),
         event.data.stateJson ?? '{}',
-        event.data.tags ? JSON.stringify(event.data.tags) : null
+        event.data.tags ? JSON.stringify(event.data.tags) : null,
+        // NULL (unparseable stateJson) leaves the flag unknown rather than
+        // asserting "not archived"; MemoryService then falls back to content.
+        derived ? (derived.isArchived ? 1 : 0) : null
       ]
     );
   }
@@ -272,8 +281,22 @@ export class WorkspaceEventApplier {
       updates.push('tagsJson = ?');
       values.push(JSON.stringify(event.data.tags));
     }
-    // stateJson lives in JSONL only (not in the SQLite states table), so no
-    // SQLite column update is needed when only content changes.
+    if (event.data.stateJson !== undefined) {
+      // The full snapshot still lives in JSONL only — but the archive flag
+      // denormalized out of it (issue #219) has to follow content updates,
+      // because archiving a state IS a content update. Without this, a replay
+      // of state_saved + state_updated would resurrect archived states.
+      const derived = deriveStateMetadataFromJson(event.data.stateJson);
+      if (derived) {
+        updates.push('isArchived = ?');
+        values.push(derived.isArchived ? 1 : 0);
+      }
+      // The applier keeps a copy of the snapshot for rows it owns, so the
+      // stateJson column has to track the update too — otherwise the v16
+      // backfill would read a stale snapshot out of it.
+      updates.push('stateJson = ?');
+      values.push(event.data.stateJson);
+    }
 
     if (updates.length > 0) {
       values.push(event.stateId);

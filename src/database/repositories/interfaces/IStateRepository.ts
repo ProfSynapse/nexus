@@ -39,6 +39,25 @@ export interface UpdateStateData {
 }
 
 /**
+ * Options for listing states: pagination plus the archive filter.
+ *
+ * `includeArchived` is answered in SQL from the denormalized `isArchived`
+ * column (issue #219):
+ *
+ * - omitted / `true` — every state, archived or not. This is the default
+ *   because restoring, renaming and name-uniqueness checks all need to see
+ *   archived states; only list views want them hidden.
+ * - `false` — archived rows are excluded by the query itself.
+ *
+ * Rows whose flag is still unknown (NULL — not backfilled yet) are returned
+ * either way, so a caller that filters on archive state must still treat the
+ * snapshot content as authoritative for those.
+ */
+export interface StateListOptions extends PaginationParams {
+  includeArchived?: boolean;
+}
+
+/**
  * State repository interface
  */
 export interface IStateRepository extends IRepository<StateMetadata> {
@@ -47,14 +66,23 @@ export interface IStateRepository extends IRepository<StateMetadata> {
    *
    * @param workspaceId - Parent workspace ID
    * @param sessionId - Optional session ID to filter by
-   * @param options - Pagination options
+   * @param options - Pagination and archive-filter options
    * @returns Paginated list of state metadata
    */
   getStates(
     workspaceId: string,
     sessionId?: string,
-    options?: PaginationParams
+    options?: StateListOptions
   ): Promise<PaginatedResult<StateMetadata>>;
+
+  /**
+   * Fill in the denormalized columns for rows migrated from a pre-v16 schema.
+   * Reads each affected workspace's JSONL stream once. No-op (one indexed
+   * SELECT) once every row is known.
+   *
+   * @returns number of rows updated
+   */
+  backfillDerivedStateMetadata(): Promise<number>;
 
   /**
    * Get full state data including content

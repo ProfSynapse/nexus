@@ -2,12 +2,17 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 15
+ * Current Version: 16
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
  * 2. Add a migration in SchemaMigrator.ts for existing databases
  * 3. Update CURRENT_SCHEMA_VERSION in SchemaMigrator.ts
+ * 4. Bump the `INSERT OR IGNORE INTO schema_version VALUES (N, ...)` literal at
+ *    the END of SCHEMA_SQL to match. A fresh install is stamped by that literal
+ *    and then migrate() early-returns, so a stale value makes new users replay
+ *    migrations they should never run — and no machine with an existing cache
+ *    can see the difference.
  *
  * NOTE: Uses camelCase column names to match TypeScript/JavaScript conventions.
  */
@@ -69,6 +74,11 @@ CREATE TABLE IF NOT EXISTS states (
   created INTEGER NOT NULL,
   stateJson TEXT,
   tagsJson TEXT,
+  -- Denormalized from the snapshot's state.metadata.isArchived (issue #219) so
+  -- listing states never has to read their JSONL content. Nullable with NO
+  -- default on purpose: NULL means "unknown, ask the content", which is what
+  -- rows migrated from a pre-v16 cache hold until they are backfilled.
+  isArchived INTEGER,
   FOREIGN KEY(sessionId) REFERENCES sessions(id) ON DELETE CASCADE,
   FOREIGN KEY(workspaceId) REFERENCES workspaces(id) ON DELETE CASCADE
 );
@@ -76,6 +86,7 @@ CREATE TABLE IF NOT EXISTS states (
 CREATE INDEX IF NOT EXISTS idx_states_session ON states(sessionId);
 CREATE INDEX IF NOT EXISTS idx_states_workspace ON states(workspaceId);
 CREATE INDEX IF NOT EXISTS idx_states_created ON states(created);
+CREATE INDEX IF NOT EXISTS idx_states_archived ON states(isArchived);
 
 -- ==================== MEMORY TRACES ====================
 
@@ -539,5 +550,5 @@ CREATE INDEX IF NOT EXISTS idx_np_note ON note_properties(note_id);
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (15, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (16, strftime('%s', 'now') * 1000);
 `;

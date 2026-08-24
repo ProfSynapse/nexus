@@ -13,6 +13,7 @@ import {
 } from '../../../database/workspace-types';
 import { MemoryTraceData, SessionMetadata, StateMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
+import type { StateListOptions } from '../../../database/repositories/interfaces/IStateRepository';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from '../../../services/helpers/DualBackendExecutor';
 
@@ -522,10 +523,23 @@ export class MemoryService {
    * @param options - Optional pagination parameters
    * @returns Always returns PaginatedResult for consistent API
    */
+  /**
+   * List states for a workspace (optionally a single session).
+   *
+   * Reads SQLite metadata only. The archive flag consumers filter on lives at
+   * `item.state.state.metadata.isArchived`, and since schema v16 it is a
+   * denormalized column, so this no longer fetches every state's JSONL content
+   * to find it — that cost was one full workspace-stream parse PER STATE
+   * (issue #219: 200 states = 200 reads, ~180k events parsed, ~500 ms cold).
+   *
+   * Content is still fetched for a row whose flag is `undefined`, which means
+   * "not backfilled yet", not "not archived". Dropping that fallback is what
+   * made archived states reappear in #218.
+   */
   async getStates(
     workspaceId: string,
     sessionId?: string,
-    options?: PaginationParams
+    options?: StateListOptions
   ): Promise<PaginatedResult<{
     id: string;
     name: string;
@@ -552,7 +566,12 @@ export class MemoryService {
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, options);
         const convertedItems: StateItem[] = await Promise.all(result.items.map(async stateMeta => {
-          const fullState = await adapter.getState(stateMeta.id);
+          // The ONLY reason to open the JSONL stream here is a row whose
+          // archive flag SQLite cannot answer. Every other field the list
+          // needs is already on the metadata row.
+          const fullState = stateMeta.isArchived === undefined
+            ? await adapter.getState(stateMeta.id)
+            : null;
           const tags = stateMeta.tags || this.extractStateTagsFromContent(fullState?.content);
           return {
             id: stateMeta.id,
@@ -606,7 +625,17 @@ export class MemoryService {
     return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : undefined;
   }
 
+  /**
+   * Build the WorkspaceState consumers read.
+   *
+   * When `content` is absent this is a skeleton assembled from SQLite metadata
+   * alone. `state.metadata.isArchived` is filled from the denormalized column
+   * (v16) — every archive filter in the codebase reads it from there, so a
+   * skeleton that omitted it would silently list archived states as visible.
+   */
   private stateMetadataToWorkspaceState(state: StateMetadata, content?: unknown, tags: string[] = state.tags || []): WorkspaceState {
+    const archivedMetadata = state.isArchived === undefined ? {} : { isArchived: state.isArchived };
+
     if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
       const workspaceState = content as Partial<WorkspaceState>;
       return {
@@ -631,6 +660,9 @@ export class MemoryService {
           recentTraces: workspaceState.state?.recentTraces ?? [],
           contextFiles: workspaceState.state?.contextFiles ?? [],
           metadata: {
+            // Column first, snapshot second: when content was fetched it is
+            // the source of truth and wins.
+            ...archivedMetadata,
             ...workspaceState.state?.metadata,
             tags
           }
@@ -659,6 +691,7 @@ export class MemoryService {
         recentTraces: [],
         contextFiles: [],
         metadata: {
+          ...archivedMetadata,
           tags
         }
       }
