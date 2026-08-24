@@ -17,6 +17,7 @@ describe('CreateStateTool workspace context', () => {
   it('honors the workspaceId injected into tool params instead of falling back to default', async () => {
     const memoryService = {
       getStates: jest.fn().mockResolvedValue({ items: [] }),
+      findState: jest.fn().mockResolvedValue(null),
       saveState: jest.fn().mockResolvedValue('state-1'),
       getState: jest.fn().mockResolvedValue({
         workspaceId: 'workspace-uuid',
@@ -74,7 +75,9 @@ describe('CreateStateTool workspace context', () => {
       }
     ]);
     expect(workspaceService.getWorkspaceByNameOrId).toHaveBeenCalledWith('workspace-uuid');
-    expect(memoryService.getStates).toHaveBeenCalledWith('workspace-uuid');
+    // Name-uniqueness is a name-only lookup in SQL; the old list scan saw only
+    // the newest 25 states and let duplicates through past that.
+    expect(memoryService.findState).toHaveBeenCalledWith('workspace-uuid', 'diagnostic-state', { matchId: false });
     expect(memoryService.saveState).toHaveBeenCalledWith(
       'workspace-uuid',
       'session-1',
@@ -90,6 +93,7 @@ describe('CreateStateTool workspace context', () => {
   it('uses the top-level sessionId injected by useTools instead of creating a new session', async () => {
     const memoryService = {
       getStates: jest.fn().mockResolvedValue({ items: [] }),
+      findState: jest.fn().mockResolvedValue(null),
       saveState: jest.fn().mockResolvedValue('state-1'),
       getState: jest.fn().mockResolvedValue({
         workspaceId: 'workspace-uuid',

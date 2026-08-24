@@ -76,6 +76,24 @@ export interface IStateRepository extends IRepository<StateMetadata> {
   ): Promise<PaginatedResult<StateMetadata>>;
 
   /**
+   * Resolve one state by name or id within a workspace, in SQL.
+   *
+   * Use this instead of scanning `getStates` for a match: that is paginated
+   * (default 25, hard cap 200), so a scan silently cannot see older states.
+   * Archived rows are included.
+   *
+   * @param workspaceId - Workspace that owns the state
+   * @param identifier - State id, or state name
+   * @param options - Match tuning; see the implementation
+   * @returns Matching state metadata, or null
+   */
+  findState(
+    workspaceId: string,
+    identifier: string,
+    options?: { matchId?: boolean; caseSensitiveName?: boolean }
+  ): Promise<StateMetadata | null>;
+
+  /**
    * Fill in the denormalized columns for rows migrated from a pre-v16 schema.
    * Reads each affected workspace's JSONL stream once. No-op (one indexed
    * SELECT) once every row is known.

@@ -874,6 +874,15 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.stateRepo.getStates(workspaceId, sessionId, options);
   };
 
+  findState = async (
+    workspaceId: string,
+    identifier: string,
+    options?: { matchId?: boolean; caseSensitiveName?: boolean }
+  ): Promise<StateMetadata | null> => {
+    await this.ensureInitialized();
+    return this.stateRepo.findState(workspaceId, identifier, options);
+  };
+
   saveState = async (
     workspaceId: string,
     sessionId: string,
