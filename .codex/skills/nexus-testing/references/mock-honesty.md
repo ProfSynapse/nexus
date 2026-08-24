@@ -43,6 +43,15 @@ remembering to reverse by hand, because the guarantee survives the next author.
 Assert **ordinally** — "A outranks B" — never on numeric scores. Numeric
 assertions pin the current tuning and go vacuous the moment it changes.
 
+## Prove concurrency across the ownership boundary
+
+An in-flight map can make a concurrency test pass while hiding the reload or
+multi-instance race the test claims to cover. When the production risk crosses
+a service, plugin-load, cache, or device boundary, instantiate at least two
+owners sharing only the real coordination layer. Hold both behind a barrier
+after their initial read and release them together. A test that sends two calls
+through one service proves only that service's local coalescing.
+
 ## Where the ranking mock's honesty actually lives
 
 Two properties of `tests/mocks/obsidian/core.ts` are load-bearing rather than

@@ -25,31 +25,12 @@ import { shouldPassToolSchemasToProvider } from '../../../services/llm/utils/Too
 import type { PromptManagerAgent } from '../../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
+import type { ChatRuntimeEvent } from '../../../services/llm/runtime/ChatRuntimeEvent';
 import type { ToolSchemaInfo, AgentStatusItem, BranchViewContext, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
 import type { ConversationData, ToolCall, ChatMessage } from '../../../types/chat/ChatTypes';
 import type { StreamingController } from './StreamingController';
 import type { ToolEventCoordinator } from '../coordinators/ToolEventCoordinator';
 import { isSubagentMetadata } from '../../../types/branch/BranchTypes';
-
-interface SubagentToolCallLike {
-  id: string;
-  type?: string;
-  name?: string;
-  displayName?: string;
-  technicalName?: string;
-  function: {
-    name: string;
-    arguments: string;
-  };
-  result?: unknown;
-  success?: boolean;
-  error?: string;
-  status?: string;
-  isVirtual?: boolean;
-  providerExecuted?: boolean;
-  isComplete?: boolean;
-  parameters?: unknown;
-}
 
 interface SubagentResultPayload {
   success?: boolean;
@@ -288,7 +269,7 @@ export class SubagentController {
               {}
             );
             for await (const chunk of generator) {
-              if (chunk.complete) {
+              if (chunk.event.type === 'turn.completed') {
                 break;
               }
             }
@@ -321,13 +302,10 @@ export class SubagentController {
       abortSignal?: AbortSignal;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
     }
-  ) => AsyncGenerator<{
-    chunk: string;
-    complete: boolean;
-    toolCalls?: SubagentToolCallLike[];
-    reasoning?: string;
-  }, void, unknown> {
+  ) => AsyncGenerator<ChatRuntimeEvent, void, unknown> {
     const isOpenAITool = this.isOpenAITool.bind(this);
 
     return async function* (
@@ -339,6 +317,8 @@ export class SubagentController {
         abortSignal?: AbortSignal;
         workspaceId?: string;
         sessionId?: string;
+        operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+        operationScopeId?: string;
       }
     ) {
       try {
@@ -351,18 +331,17 @@ export class SubagentController {
           systemPrompt: options?.systemPrompt,
           sessionId: options?.sessionId,
           workspaceId: options?.workspaceId,
+          operationOrigin: options?.operationOrigin,
+          operationScopeId: options?.operationScopeId,
           tools,
         };
 
-        for await (const chunk of llmService.generateResponseStream(messages, streamOptions)) {
-          if (options?.abortSignal?.aborted) return;
-
-          yield {
-            chunk: chunk.chunk || '',
-            complete: chunk.complete,
-            toolCalls: chunk.toolCalls,
-            reasoning: chunk.reasoning,
-          };
+        for await (const event of llmService.generateResponseStream(messages, streamOptions)) {
+          if (options?.abortSignal?.aborted) {
+            yield { type: 'turn.aborted', reason: 'Generation aborted by user' };
+            return;
+          }
+          yield event;
         }
       } catch (error) {
         console.error('[SubagentController] Streaming error:', error);

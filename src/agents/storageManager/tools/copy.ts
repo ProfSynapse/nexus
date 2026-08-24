@@ -4,6 +4,8 @@ import { BaseTool } from '../../baseTool';
 import { CopyParams, CopyResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { resolveVaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileMove, verbs } from '../../utils/toolStatusLabels';
 
@@ -47,6 +49,14 @@ export class CopyTool extends BaseTool<CopyParams, CopyResult> {
     );
   }
 
+  getMutationIntent(params: CopyParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({
+      kind: 'copy',
+      from: resolveVaultPath(params.path),
+      to: resolveVaultPath(params.newPath),
+    });
+  }
+
   /**
    * Execute the tool
    * @param params Tool parameters
@@ -64,8 +74,8 @@ export class CopyTool extends BaseTool<CopyParams, CopyResult> {
 
       await FileOperations.duplicateNote(
         this.app,
-        params.path,
-        params.newPath,
+        resolveVaultPath(params.path),
+        resolveVaultPath(params.newPath),
         params.overwrite || false,
         false // autoIncrement not supported in simplified API
       );

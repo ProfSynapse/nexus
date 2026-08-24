@@ -25,7 +25,6 @@ import type {
   AgentStatusItem,
   BranchState,
   QueuedMessage,
-  SubagentToolCall,
   ToolSchemaInfo,
 } from '../../types/branch/BranchTypes';
 import type { BranchService } from './BranchService';
@@ -33,6 +32,7 @@ import type { MessageQueueService } from './MessageQueueService';
 import type { DirectToolExecutor } from './DirectToolExecutor';
 import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
 import { isTextOnlyProvider } from '../llm/utils/ToolSchemaSupport';
+import type { ChatRuntimeEvent } from '../llm/runtime/ChatRuntimeEvent';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -48,13 +48,10 @@ export interface SubagentExecutorDependencies {
       abortSignal?: AbortSignal;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
     }
-  ) => AsyncGenerator<{
-    chunk: string;
-    complete: boolean;
-    toolCalls?: SubagentToolCall[];
-    reasoning?: string;
-  }, void, unknown>;
+  ) => AsyncGenerator<ChatRuntimeEvent, void, unknown>;
   // Tool list service for pre-fetching schemas
   getToolSchemas?: (agentName: string, toolSlugs: string[]) => Promise<ToolSchemaInfo[]>;
 }
@@ -323,10 +320,11 @@ export class SubagentExecutor {
 
     // Generate response - streaming handles tool pingpong automatically
     let responseContent = '';
-    let toolCalls: SubagentToolCall[] | undefined;
+    let toolCalls: ToolCall[] | undefined;
     let reasoning = '';
     let toolIterations = 0;
     let lastToolUsed: string | undefined;
+    let sawTerminalEvent = false;
 
     const streamMessages = branchInfo.branch.messages;
 
@@ -354,12 +352,14 @@ export class SubagentExecutor {
     // Store in map so UI can access when navigating to this branch
     this.streamingBranchMessages.set(branchId, inMemoryMessages);
 
-    for await (const chunk of this.dependencies.streamingGenerator(streamMessages, {
+    for await (const event of this.dependencies.streamingGenerator(streamMessages, {
       abortSignal,
       workspaceId: params.workspaceId,
       sessionId: params.sessionId,
       provider: params.provider,
       model: params.model,
+      operationOrigin: 'subagent',
+      operationScopeId: branchId,
     })) {
       // Check abort during streaming
       if (abortSignal.aborted) {
@@ -376,61 +376,83 @@ export class SubagentExecutor {
         };
       }
 
-      responseContent += chunk.chunk;
-      if (chunk.toolCalls) {
+      let incrementalText = '';
+      let isComplete = false;
+
+      if (event.type === 'assistant.delta') {
+        incrementalText = event.text;
+        responseContent += event.text;
+      }
+      if (event.type === 'tool.snapshot') {
         // These are ALREADY-EXECUTED tool calls (with results)
         // They accumulate across all pingpong iterations
-        toolCalls = chunk.toolCalls;
-        toolIterations = chunk.toolCalls.length; // Approximate iteration count
+        toolCalls = event.calls;
+        toolIterations = event.calls.length; // Approximate iteration count
 
         // Track the last tool used for UI display
-        const latestTool = chunk.toolCalls[chunk.toolCalls.length - 1];
+        const latestTool = event.calls[event.calls.length - 1];
         if (latestTool?.function?.name) {
           lastToolUsed = latestTool.function.name;
           this.updateStatus(subagentId, { iterations: toolIterations, lastToolUsed });
         }
       }
-      if (chunk.reasoning) {
-        reasoning += chunk.reasoning;
+      if (event.type === 'reasoning.delta') {
+        reasoning += event.text;
+      }
+      if (event.type === 'turn.failed') {
+        throw new Error(event.error.message);
+      }
+      if (event.type === 'turn.aborted') {
+        await this.dependencies.branchService.updateBranchState(branchId, 'cancelled', toolIterations);
+        this.streamingBranchMessages.delete(branchId);
+        return {
+          success: false,
+          content: responseContent,
+          branchId,
+          conversationId: params.parentConversationId,
+          iterations: toolIterations,
+          error: event.reason || 'Cancelled by user',
+        };
+      }
+      if (event.type === 'turn.completed') {
+        isComplete = true;
+        sawTerminalEvent = true;
       }
 
       // Update IN-MEMORY message (like parent chat does) - NO storage writes during streaming
-      const convertedToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
-        ...tc,
-        type: 'function' as const,
-      }));
       streamingAssistantMessage.content = responseContent;
-      streamingAssistantMessage.toolCalls = convertedToolCalls;
+      streamingAssistantMessage.toolCalls = toolCalls;
       streamingAssistantMessage.reasoning = reasoning || undefined;
 
       // Emit tool calls event - SAME as parent chat does
       // This allows ToolEventCoordinator to dynamically create/update tool bubbles
-      if (convertedToolCalls && convertedToolCalls.length > 0) {
-        this.events.onToolCallsDetected?.(branchId, assistantMessageId, convertedToolCalls);
+      if (toolCalls && toolCalls.length > 0) {
+        this.events.onToolCallsDetected?.(branchId, assistantMessageId, toolCalls);
       }
 
       // Emit progress
       this.events.onSubagentProgress?.(subagentId, responseContent, toolIterations);
 
-      // Emit INCREMENTAL chunk (like parent chat) - chunk.chunk is already the new piece
-      // This allows StreamingController to append efficiently without re-rendering
+      // Emit only the new assistant delta so StreamingController can append
+      // efficiently without re-rendering the accumulated response.
       this.events.onStreamingUpdate?.(
         branchId,
         assistantMessageId,
-        chunk.chunk,  // Just the NEW chunk, not full content
-        chunk.complete,
+        incrementalText,
+        isComplete,
         responseContent  // Full content for finalization
       );
+    }
+
+    if (!sawTerminalEvent) {
+      throw new Error('Subagent runtime stream ended without a terminal turn event.');
     }
 
     // Update status with final count
     this.updateStatus(subagentId, { iterations: toolIterations || 1, lastToolUsed });
 
     // Convert tool calls for storage
-    const finalToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
-      ...tc,
-      type: 'function' as const,
-    }));
+    const finalToolCalls = toolCalls;
 
     // Update the placeholder message in storage with final content
     await this.dependencies.branchService.updateMessageInBranch(branchId, assistantMessageId, {

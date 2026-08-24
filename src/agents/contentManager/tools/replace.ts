@@ -18,7 +18,8 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { ReplaceParams, ReplaceResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { tryResolveVaultPath } from '../../../core/vaultPath';
+import { resolveVaultPath, tryResolveVaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import { addRecommendations } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { generateUnifiedDiff } from '../utils/unifiedDiff';
@@ -190,6 +191,10 @@ export class ReplaceTool extends BaseTool<ReplaceParams, ReplaceResult> {
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     return labelFileOp(verbs('Replacing in', 'Replaced in', 'Failed to replace in'), params, tense);
+  }
+
+  getMutationIntent(params: ReplaceParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({ kind: 'modify', path: resolveVaultPath(params.path) });
   }
 
   /**

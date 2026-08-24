@@ -6,15 +6,9 @@
  */
 
 import type { LLMService } from '../../src/services/llm/core/LLMService';
+import type { ChatRuntimeEvent } from '../../src/services/llm/runtime/ChatRuntimeEvent';
 
-export interface MockChunk {
-  chunk?: string;
-  complete?: boolean;
-  usage?: {
-    promptTokens?: number;
-    completionTokens?: number;
-  };
-}
+export type MockChunk = ChatRuntimeEvent;
 
 export interface MockStreamConfig {
   /** Chunks to yield during streaming */
@@ -36,8 +30,9 @@ export interface MockStreamConfig {
 export function createMockLLMService(config?: Partial<MockStreamConfig>): jest.Mocked<LLMService> {
   const defaultConfig: MockStreamConfig = {
     chunks: [
-      { chunk: 'Modified text' },
-      { complete: true, usage: { promptTokens: 100, completionTokens: 50 } }
+      { type: 'assistant.delta', text: 'Modified text' },
+      { type: 'usage.updated', usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 } },
+      { type: 'turn.completed' }
     ],
     chunkDelay: 0,
     ...config
@@ -127,14 +122,16 @@ export function createMockLLMService(config?: Partial<MockStreamConfig>): jest.M
 export function createSuccessMock(editedText: string, tokenUsage?: { input: number; output: number }): jest.Mocked<LLMService> {
   return createMockLLMService({
     chunks: [
-      { chunk: editedText },
+      { type: 'assistant.delta', text: editedText },
       {
-        complete: true,
+        type: 'usage.updated',
         usage: {
           promptTokens: tokenUsage?.input ?? 100,
-          completionTokens: tokenUsage?.output ?? 50
+          completionTokens: tokenUsage?.output ?? 50,
+          totalTokens: (tokenUsage?.input ?? 100) + (tokenUsage?.output ?? 50),
         }
-      }
+      },
+      { type: 'turn.completed' }
     ]
   });
 }
@@ -143,8 +140,16 @@ export function createSuccessMock(editedText: string, tokenUsage?: { input: numb
  * Creates a mock that simulates a streaming response with multiple chunks
  */
 export function createStreamingMock(textChunks: string[], delayMs = 10): jest.Mocked<LLMService> {
-  const chunks: MockChunk[] = textChunks.map(chunk => ({ chunk }));
-  chunks.push({ complete: true, usage: { promptTokens: 100, completionTokens: textChunks.length * 10 } });
+  const chunks: MockChunk[] = textChunks.map(text => ({ type: 'assistant.delta', text }));
+  chunks.push({
+    type: 'usage.updated',
+    usage: {
+      promptTokens: 100,
+      completionTokens: textChunks.length * 10,
+      totalTokens: 100 + textChunks.length * 10,
+    },
+  });
+  chunks.push({ type: 'turn.completed' });
 
   return createMockLLMService({
     chunks,
@@ -157,7 +162,7 @@ export function createStreamingMock(textChunks: string[], delayMs = 10): jest.Mo
  */
 export function createErrorMock(errorMessage: string, afterChunks?: number): jest.Mocked<LLMService> {
   return createMockLLMService({
-    chunks: afterChunks ? [{ chunk: 'Partial text' }] : [],
+    chunks: afterChunks ? [{ type: 'assistant.delta', text: 'Partial text' }] : [],
     error: new Error(errorMessage),
     errorAfterChunks: afterChunks
   });
@@ -182,8 +187,16 @@ export function createTimeoutMock(timeoutMs: number): jest.Mocked<LLMService> {
  * The generator will check the abort signal and throw if aborted
  */
 export function createAbortableMock(chunks: string[], chunkDelayMs = 50): jest.Mocked<LLMService> {
-  const mockChunks: MockChunk[] = chunks.map(chunk => ({ chunk }));
-  mockChunks.push({ complete: true, usage: { promptTokens: 100, completionTokens: chunks.length * 10 } });
+  const mockChunks: MockChunk[] = chunks.map(text => ({ type: 'assistant.delta', text }));
+  mockChunks.push({
+    type: 'usage.updated',
+    usage: {
+      promptTokens: 100,
+      completionTokens: chunks.length * 10,
+      totalTokens: 100 + chunks.length * 10,
+    },
+  });
+  mockChunks.push({ type: 'turn.completed' });
 
   return createMockLLMService({
     chunks: mockChunks,
@@ -197,8 +210,8 @@ export function createAbortableMock(chunks: string[], chunkDelayMs = 50): jest.M
 export function createEmptyResponseMock(): jest.Mocked<LLMService> {
   return createMockLLMService({
     chunks: [
-      { chunk: '' },
-      { complete: true, usage: { promptTokens: 100, completionTokens: 0 } }
+      { type: 'usage.updated', usage: { promptTokens: 100, completionTokens: 0, totalTokens: 100 } },
+      { type: 'turn.completed' }
     ]
   });
 }

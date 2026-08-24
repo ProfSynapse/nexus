@@ -407,7 +407,7 @@ export class StorageMaintenanceService {
         // Skip files with no workspace_created event (corrupt/incomplete).
         return !events.some(e => e.type === 'workspace_created');
       },
-      applyEvent: (e) => applier.apply(e)
+      applyEvent: async (e) => { await applier.apply(e); }
     };
     return this.deps.getReconciliationCoordinator().reconcile(category);
   }

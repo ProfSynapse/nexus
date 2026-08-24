@@ -91,7 +91,10 @@ Obsidian (the headless container) to turn a skip into a failure.
 
    1. `obsidian plugin:reload id=nexus` — code changes.
    2. Disable then enable the plugin, which runs the full unload path:
-      `obsidian eval vault=<name> code="await app.plugins.disablePlugin('nexus'); await app.plugins.enablePlugin('nexus')"`
+      ```bash
+      obsidian plugin:disable id=nexus vault=<name>
+      obsidian plugin:enable id=nexus vault=<name>
+      ```
    3. Quit and relaunch Obsidian — for anything involving startup ordering,
       workspace layout, or a view that is wrong from the first paint.
    4. Reset Nexus's persisted state — cache rebuild, event-store recovery. That
@@ -125,6 +128,14 @@ Obsidian (the headless container) to turn a skip into a failure.
      obsidian eval vault=<name> code="app.plugins.plugins.nexus.<...>"
      ```
 
+     The macOS 1.12.7 CLI does not support top-level `await` (`await is not
+     defined`), but it does wait for a Promise returned by the expression. Use a
+     Promise chain when the service call is asynchronous:
+
+     ```bash
+     obsidian eval vault=<name> code="app.plugins.plugins.nexus.getService('agentManager').then(x => JSON.stringify(x !== null))"
+     ```
+
      `eval` runs arbitrary JS against a live vault. Never point it at a vault
      whose contents matter, and confine writes to the scratch folder from
      step 1.
@@ -132,14 +143,18 @@ Obsidian (the headless container) to turn a skip into a failure.
 6. **Observe. Assert on logs and DOM; screenshots are for humans.**
 
    ```bash
+   obsidian dev:debug on vault=<name>                     # enable console capture
+   obsidian dev:console clear vault=<name>                # clear before the reload under test
    obsidian dev:errors vault=<name>                        # errors since load
    obsidian dev:console level=error vault=<name>           # console output
    obsidian dev:dom selector="<css>" text vault=<name>     # rendered state
    obsidian dev:screenshot path=test-artifacts/<name>.png vault=<name>
    ```
 
-   Treat unparseable CLI output as **unknown**, never as pass. A screenshot is
-   an artifact to show someone, not an assertion — diffing them buys flakiness.
+   Enable and clear console capture before the reload you intend to judge, or
+   `dev:console` includes stale failures from earlier runs. Treat unparseable CLI
+   output as **unknown**, never as pass. A screenshot is an artifact to show
+   someone, not an assertion — diffing them buys flakiness.
 
 7. **Loop.** While *any* exit condition in step 8 is unmet:
 

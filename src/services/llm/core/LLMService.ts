@@ -312,13 +312,23 @@ export class LLMService {
     return this.adapterRegistry.waitForInit();
   }
 
-  /** Clean up resources and unsubscribe from settings changes */
+  /** Clean up resources and unsubscribe from settings changes. */
   dispose(): void {
+    this.unsubscribeFromSettings();
+    this.adapterRegistry.clear();
+  }
+
+  /** Awaitable lifecycle hook used by ServiceContainer during plugin teardown. */
+  async cleanup(): Promise<void> {
+    this.unsubscribeFromSettings();
+    await this.adapterRegistry.dispose();
+  }
+
+  private unsubscribeFromSettings(): void {
     if (this.settingsEventRef) {
       LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
       this.settingsEventRef = null;
     }
-    this.adapterRegistry.clear();
   }
 
 }

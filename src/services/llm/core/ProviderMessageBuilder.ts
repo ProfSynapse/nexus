@@ -17,6 +17,7 @@ import { Tool, ToolCall as AdapterToolCall } from '../adapters/types';
 import { shouldPassToolSchemasToProvider } from '../utils/ToolSchemaSupport';
 import { synthesizeToolCallId } from '../utils/toolCallId';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
+import type { ToolExecutionOrigin } from '../../../types/tools/ToolOperationTypes';
 
 // Union type for tool calls from different sources
 type ToolCallUnion = AdapterToolCall | ChatToolCall;
@@ -101,6 +102,10 @@ export interface StreamingOptions {
   sessionId?: string;
   workspaceId?: string;
   conversationId?: string;
+  messageId?: string;
+  turnId?: string;
+  operationOrigin?: ToolExecutionOrigin;
+  operationScopeId?: string;
   temperature?: number;
   maxTokens?: number;
   topP?: number;

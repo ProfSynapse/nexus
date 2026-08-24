@@ -1,8 +1,32 @@
 # Refinement log
 
+2026-08-21 | The mobile reachability gate correctly accepted Web Crypto,
+TextEncoder, Obsidian/DataAdapter-backed receipt persistence, and the existing
+dynamically reached package exception; no false result or stale instruction was
+found. | No change. | `refinement-log.md` only.
+
+2026-08-21 | The reachability checker correctly traced the PR 5 policy additions from `src/main.ts`, reported the current browser-safe startup package, and found no Node built-in regression. | No change. | `refinement-log.md`.
+
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
+2026-08-21 | The terminal validator command named the removed `.claude/skills`
+mirror even though the mobile skill now lives under `.codex/skills`. | Corrected
+the validation target; the mobile reachability command itself remained current. |
+`protocols/self-refine.md`, `refinement-log.md`.
+
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
+
+2026-08-21 | The reachability checker correctly attributed the startup increase
+from 399 to 402 to the three new local provider-SPI modules, while validation
+identified historical references to an intentionally deleted checker as live
+dependencies. | Kept the historical facts but described the deleted Python
+checker as prose so validation no longer treats it as a dangling file. |
+`refinement-log.md` only.
+
+2026-08-21 | The reachability checker correctly reported the one-module local
+increase, no package increase, and no reachable Node builtin; no false positive,
+miss, or user correction was available. | No skill change. |
+`refinement-log.md` only.
 
 2026-08-15 | Obsidian's community scorecard failed 5.17.0 with "Build verification
 failed while running the build script", and the captured output was our own
@@ -20,8 +44,8 @@ nobody had declared, and it held on every machine we tested on. | Ported the
 protocol at the Node command. Verified byte-identical output to the Python original
 across all five modes (default, `--packages`, `--json`, `--trace` on- and off-path),
 still exit 1 on an injected `node:fs` in `src/main.ts`, and clean under
-`env -i PATH=<node only>`. | `scripts/check-mobile-imports.mjs` (repo),
-`scripts/check_mobile_imports.py` (deleted), `SKILL.md`, all five `protocols/`,
+`env -i PATH=<node only>`. | `scripts/check-mobile-imports.mjs` (repo), the
+deleted Python checker, `SKILL.md`, all five `protocols/`,
 `references/init-order.md`.
 
 2026-08-15 | Vetted `node-llama-cpp@3.19.1` for a research-only local-model
@@ -46,6 +70,7 @@ scripts/check-mobile-imports.mjs (repo).
 
 2026-08-14 | Restructured from a single prose document under the skill-crafter
 improve-skill protocol. The reachability rule was stated as a hazard with no way
-to check it (issue #221). | Split into protocols/references and added
-`scripts/check_mobile_imports.py`, which walks the static import graph from
-`src/main.ts` and fails on a reachable Node built-in. | whole skill.
+to check it (issue #221). | Split into protocols/references and added the
+original Python reachability checker (since deleted), which walked the static
+import graph from `src/main.ts` and failed on a reachable Node built-in. | whole
+skill.

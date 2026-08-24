@@ -70,7 +70,8 @@ describe('ConversationEmbeddingWatcher', () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await watcher.drain();
     watcher.stop();
   });
 
@@ -113,6 +114,29 @@ describe('ConversationEmbeddingWatcher', () => {
       watcher.stop(); // No error
       expect(mocks.getRegisteredCallback()).toBeNull();
     });
+
+    it('shutdown unregisters and waits for accepted embedding work', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      mocks.mockEmbeddingService.embedConversationTurn.mockImplementation(async () => gate);
+      mocks.mockMessageRepository.getMessagesBySequenceRange.mockResolvedValue([
+        createMessage({ role: 'user', content: 'Question', sequenceNumber: 0 })
+      ]);
+      mocks.mockDb.queryOne.mockResolvedValue({ metadataJson: '{}', workspaceId: 'ws', sessionId: 'session' });
+      watcher.start();
+      mocks.triggerMessageComplete(createMessage({
+        role: 'assistant', content: 'Answer', sequenceNumber: 1, state: 'complete'
+      }));
+
+      let settled = false;
+      const shutdown = watcher.shutdown().then(() => { settled = true; });
+      await Promise.resolve();
+      expect(mocks.getRegisteredCallback()).toBeNull();
+      expect(settled).toBe(false);
+      release();
+      await shutdown;
+      expect(settled).toBe(true);
+    });
   });
 
   // ==========================================================================
@@ -151,8 +175,7 @@ describe('ConversationEmbeddingWatcher', () => {
       // Trigger the callback
       mocks.triggerMessageComplete(assistantMessage);
 
-      // Wait for async processing
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).toHaveBeenCalledTimes(1);
 
@@ -163,6 +186,48 @@ describe('ConversationEmbeddingWatcher', () => {
       expect(embeddedPair.conversationId).toBe('conv-embed-001');
       expect(embeddedPair.workspaceId).toBe('ws-1');
       expect(embeddedPair.sessionId).toBe('sess-1');
+    });
+
+    it('drain waits for the active embedding operation', async () => {
+      let releaseEmbedding!: () => void;
+      let markEmbeddingStarted!: () => void;
+      const embeddingGate = new Promise<void>(resolve => {
+        releaseEmbedding = resolve;
+      });
+      const embeddingStarted = new Promise<void>(resolve => {
+        markEmbeddingStarted = resolve;
+      });
+      const userMessage = createMessage({
+        role: 'user',
+        content: 'Wait for this embedding',
+        sequenceNumber: 0,
+      });
+      mocks.mockMessageRepository.getMessagesBySequenceRange.mockResolvedValue([userMessage]);
+      mocks.mockDb.queryOne
+        .mockResolvedValueOnce({ metadataJson: '{}' })
+        .mockResolvedValueOnce({ workspaceId: null, sessionId: null });
+      mocks.mockEmbeddingService.embedConversationTurn.mockImplementation(() => {
+        markEmbeddingStarted();
+        return embeddingGate;
+      });
+      watcher.start();
+
+      mocks.triggerMessageComplete(createMessage({
+        role: 'assistant',
+        content: 'An answer',
+        sequenceNumber: 1,
+        state: 'complete',
+      }));
+
+      const drained = jest.fn();
+      const drainPromise = watcher.drain().then(drained);
+      await embeddingStarted;
+      expect(mocks.mockEmbeddingService.embedConversationTurn).toHaveBeenCalledTimes(1);
+      expect(drained).not.toHaveBeenCalled();
+
+      releaseEmbedding();
+      await drainPromise;
+      expect(drained).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -183,7 +248,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(userMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -197,7 +262,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(toolMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -210,7 +275,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(streamingMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -223,7 +288,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(emptyMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -236,7 +301,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(nullMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -249,7 +314,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(whitespaceMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -267,7 +332,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(branchMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -287,7 +352,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(mocks.mockEmbeddingService.embedConversationTurn).not.toHaveBeenCalled();
     });
@@ -326,7 +391,7 @@ describe('ConversationEmbeddingWatcher', () => {
 
       // Should not throw
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       // Error was logged (console.error is mocked in setup.ts)
       expect(console.error).toHaveBeenCalled();
@@ -344,7 +409,7 @@ describe('ConversationEmbeddingWatcher', () => {
 
       // Should not throw
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       expect(console.error).toHaveBeenCalled();
     });
@@ -370,7 +435,7 @@ describe('ConversationEmbeddingWatcher', () => {
       ]);
 
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       // Should still attempt to embed (invalid JSON treated as "not a branch")
       expect(mocks.mockEmbeddingService.embedConversationTurn).toHaveBeenCalledTimes(1);
@@ -406,7 +471,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       const pair = mocks.mockEmbeddingService.embedConversationTurn.mock.calls[0][0];
       expect(pair.workspaceId).toBe('ws-alpha');
@@ -433,7 +498,7 @@ describe('ConversationEmbeddingWatcher', () => {
       });
 
       mocks.triggerMessageComplete(assistantMessage);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await watcher.drain();
 
       const pair = mocks.mockEmbeddingService.embedConversationTurn.mock.calls[0][0];
       expect(pair.workspaceId).toBeUndefined();

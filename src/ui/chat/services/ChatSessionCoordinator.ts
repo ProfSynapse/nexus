@@ -1,4 +1,4 @@
-import { Component, Notice } from 'obsidian';
+import { Component } from 'obsidian';
 import { ChatService } from '../../../services/chat/ChatService';
 import { ConversationData } from '../../../types/chat/ChatTypes';
 import { ChatEventBinder } from '../utils/ChatEventBinder';
@@ -9,6 +9,8 @@ export interface WorkflowMessageOptions {
   systemPrompt?: string;
   workspaceId?: string;
   sessionId?: string;
+  operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+  operationScopeId?: string;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
 }
@@ -147,10 +149,24 @@ export class ChatSessionCoordinator {
       await messageManager.interruptCurrentGeneration();
     }
 
-    void messageManager.sendMessage(currentConversation, message, options).catch(error => {
-      console.error('[ChatSessionCoordinator] Failed to send workflow message:', error);
-      new Notice('Failed to start workflow run');
-    });
+    const existingMessageIds = new Set(currentConversation.messages.map(item => item.id));
+    await messageManager.sendMessage(currentConversation, message, options);
+
+    const assistantResponse = [...currentConversation.messages]
+      .reverse()
+      .find(item => item.role === 'assistant' && !existingMessageIds.has(item.id));
+    if (!assistantResponse) {
+      throw new Error('Workflow run did not produce an assistant response.');
+    }
+    if (assistantResponse.state === 'invalid') {
+      throw new Error('Workflow run failed during generation.');
+    }
+    if (assistantResponse.state === 'aborted') {
+      throw new Error('Workflow run was aborted.');
+    }
+    if (assistantResponse.state !== 'complete') {
+      throw new Error('Workflow run ended without a completed assistant response.');
+    }
   }
 
   async handleConversationSelected(conversation: ConversationData): Promise<void> {

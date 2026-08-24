@@ -14,15 +14,16 @@ import { createConversation, createUserMessage, createAssistantMessage } from '.
 import { createMockChatService } from '../mocks/chatService';
 import { ChatService } from '../../src/services/chat/ChatService';
 import { ConversationData } from '../../src/types/chat/ChatTypes';
+import type { ChatRuntimeEvent } from '../../src/services/llm/runtime/ChatRuntimeEvent';
 
 /**
  * Build an async generator that yields the provided chunks, mimicking
  * ChatService.generateResponseStreaming.
  */
-function streamOf(chunks: Array<Record<string, unknown>>) {
+function streamOf(events: ChatRuntimeEvent[]) {
   return async function* () {
-    for (const chunk of chunks) {
-      yield chunk;
+    for (const event of events) {
+      yield { messageId: 'msg_ai', event };
     }
   };
 }
@@ -58,7 +59,7 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
   it('clears isLoading on an empty-complete stream (no token ever streamed)', async () => {
     const conversation = conversationWithLoadingPlaceholder();
     mockChatService.generateResponseStreaming.mockImplementation(
-      streamOf([{ complete: true }])
+      streamOf([{ type: 'turn.completed' }])
     );
 
     await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
@@ -69,7 +70,7 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     expect(aiMessage?.content).toBe('');
   });
 
-  it('clears isLoading via the safety net when the stream ends without a complete chunk', async () => {
+  it('rejects a producer that ends without an explicit terminal event', async () => {
     const conversation = conversationWithLoadingPlaceholder();
     // No chunk has complete:true, so the loop exits and the post-loop safety
     // net must finalize the placeholder.
@@ -77,17 +78,21 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
       streamOf([])
     );
 
-    await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
+    await expect(handler.streamResponse(conversation, 'hi', 'msg_ai', {}))
+      .rejects.toThrow('without a terminal turn event');
 
     const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
-    expect(aiMessage?.isLoading).toBe(false);
-    expect(aiMessage?.state).toBe('complete');
+    expect(aiMessage?.isLoading).toBe(true);
+    expect(aiMessage?.state).toBe('draft');
   });
 
   it('still clears isLoading the normal way once a token streams', async () => {
     const conversation = conversationWithLoadingPlaceholder();
     mockChatService.generateResponseStreaming.mockImplementation(
-      streamOf([{ chunk: 'Hello' }, { complete: true }])
+      streamOf([
+        { type: 'assistant.delta', text: 'Hello' },
+        { type: 'turn.completed' },
+      ])
     );
 
     const result = await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
@@ -96,5 +101,64 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     expect(aiMessage?.isLoading).toBe(false);
     expect(aiMessage?.content).toBe('Hello');
     expect(result.streamedContent).toBe('Hello');
+  });
+
+  it('preserves reasoning, zero usage, metadata, provider, model, and cost through the reducer', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    const onReasoningUpdate = jest.fn();
+    events.onReasoningUpdate = onReasoningUpdate;
+    mockChatService.generateResponseStreaming.mockImplementation(
+      streamOf([
+        { type: 'reasoning.delta', text: 'Think' },
+        { type: 'assistant.delta', text: 'Answer' },
+        { type: 'reasoning.completed' },
+        { type: 'usage.updated', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } },
+        { type: 'response.metadata', metadata: { responseId: 'response-1', zero: 0 } },
+        { type: 'response.resolved', provider: 'openai', model: 'gpt-test' },
+        { type: 'cost.updated', cost: { totalCost: 0, currency: 'USD' } },
+        { type: 'turn.completed' },
+      ])
+    );
+
+    const result = await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
+    const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+
+    expect(onReasoningUpdate).toHaveBeenLastCalledWith('msg_ai', 'Think', true);
+    expect(aiMessage?.reasoning).toBe('Think');
+    expect(aiMessage?.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    expect(aiMessage?.metadata).toEqual({ responseId: 'response-1', zero: 0 });
+    expect(result.provider).toBe('openai');
+    expect(result.model).toBe('gpt-test');
+    expect(result.cost).toEqual({ totalCost: 0, currency: 'USD' });
+  });
+
+  it('does not treat an intermediate tool boundary as the terminal turn', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    const pendingToolCall = {
+      id: 'call-1',
+      type: 'function',
+      function: { name: 'content_read', arguments: '{"path":"note.md"}' }
+    };
+    const completedToolCall = {
+      ...pendingToolCall,
+      result: { content: 'note' },
+      success: true
+    };
+    mockChatService.generateResponseStreaming.mockImplementation(
+      streamOf([
+        { type: 'tool.snapshot', calls: [pendingToolCall], ready: true },
+        { type: 'response.completed', finishReason: 'tool_calls' },
+        { type: 'tool.execution.completed', operationId: 'call-1', call: completedToolCall, success: true },
+        { type: 'assistant.delta', text: 'Done' },
+        { type: 'turn.completed' },
+      ])
+    );
+
+    const result = await handler.streamResponse(conversation, 'read it', 'msg_ai', {});
+
+    expect(result.streamedContent).toBe('Done');
+    expect(result.toolCalls?.[0].success).toBe(true);
+    expect(events.onStreamingUpdate).toHaveBeenCalledWith('msg_ai', 'Done', false, true);
+    expect(events.onStreamingUpdate).toHaveBeenLastCalledWith('msg_ai', 'Done', true, false);
   });
 });

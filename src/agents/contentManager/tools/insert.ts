@@ -14,7 +14,8 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { InsertParams, InsertResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { tryResolveVaultPath } from '../../../core/vaultPath';
+import { resolveVaultPath, tryResolveVaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import { generateUnifiedDiff } from '../utils/unifiedDiff';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
@@ -35,6 +36,10 @@ export class InsertTool extends BaseTool<InsertParams, InsertResult> {
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     return labelFileOp(verbs('Inserting into', 'Inserted into', 'Failed to insert into'), params, tense);
+  }
+
+  getMutationIntent(params: InsertParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({ kind: 'modify', path: resolveVaultPath(params.path) });
   }
 
   /**

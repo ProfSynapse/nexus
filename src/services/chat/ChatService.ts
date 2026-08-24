@@ -20,6 +20,7 @@ import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
 import type { LLMService } from '../llm/core/LLMService';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 import type { ToolCallMessageHistoryOptions } from '../../database/repositories/interfaces/IMessageRepository';
+import type { ChatRuntimeEnvelope } from '../llm/runtime/ChatRuntimeEvent';
 
 interface ConversationListItem {
   id: string;
@@ -28,27 +29,6 @@ interface ConversationListItem {
   relevanceScore: number;
   created: number;
   lastUpdated: number;
-}
-
-interface ChatUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
-
-interface ChatStreamingChunk {
-  chunk: string;
-  complete: boolean;
-  messageId: string;
-  toolCalls?: ToolCall[];
-  metadata?: Record<string, unknown>;
-  reasoning?: string;
-  reasoningComplete?: boolean;
-  usage?: ChatUsage;
-  // Final-chunk-only fields for single-save persistence
-  provider?: string;
-  model?: string;
-  cost?: { totalCost: number; currency: string };
 }
 
 interface ChatMessageCreateParams {
@@ -218,6 +198,8 @@ export class ChatService {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
       promptId?: string;
       workflowId?: string;
       workflowName?: string;
@@ -270,8 +252,19 @@ export class ChatService {
 
         // Generate streaming response
         let completeResponse = '';
+        let terminalError: string | undefined;
         for await (const chunk of this.generateResponseStreaming(conversation.id, initialMessage, options)) {
-          completeResponse += chunk.chunk;
+          if (chunk.event.type === 'assistant.delta') {
+            completeResponse += chunk.event.text;
+          } else if (chunk.event.type === 'turn.failed') {
+            terminalError = chunk.event.error.message;
+          } else if (chunk.event.type === 'turn.aborted') {
+            terminalError = chunk.event.reason || 'Generation was aborted.';
+          }
+        }
+
+        if (terminalError) {
+          return { success: false, conversationId: conversation.id, sessionId, error: terminalError };
         }
 
         // Trace assistant response
@@ -333,6 +326,8 @@ export class ChatService {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
     }
   ): Promise<{
     success: boolean;
@@ -341,8 +336,26 @@ export class ChatService {
   }> {
     try {
       let messageId: string | undefined;
+      let terminalError: string | undefined;
+      let sawTerminal = false;
       for await (const chunk of this.conversationManager.sendMessage(conversationId, message, options)) {
         messageId = chunk.messageId;
+        if (chunk.event.type === 'turn.failed') {
+          sawTerminal = true;
+          terminalError = chunk.event.error.message;
+        } else if (chunk.event.type === 'turn.aborted') {
+          sawTerminal = true;
+          terminalError = chunk.event.reason || 'Generation was aborted.';
+        } else if (chunk.event.type === 'turn.completed') {
+          sawTerminal = true;
+        }
+      }
+
+      if (terminalError) {
+        return { success: false, messageId, error: terminalError };
+      }
+      if (!sawTerminal) {
+        return { success: false, messageId, error: 'Generation ended without a terminal event.' };
       }
 
       return {
@@ -374,6 +387,8 @@ export class ChatService {
       workspaceId?: string;
       sessionId?: string;
       messageId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
       abortSignal?: AbortSignal;
       excludeFromMessageId?: string;
       enableThinking?: boolean;
@@ -384,7 +399,7 @@ export class ChatService {
       transcriptionProvider?: string;
       transcriptionModel?: string;
     }
-  ): AsyncGenerator<ChatStreamingChunk, void, unknown> {
+  ): AsyncGenerator<ChatRuntimeEnvelope, void, unknown> {
     // Store current provider and session for backward compatibility
     if (options?.provider) {
       this.currentProvider = options.provider;

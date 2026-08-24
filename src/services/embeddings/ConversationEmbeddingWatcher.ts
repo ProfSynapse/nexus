@@ -30,6 +30,10 @@ import type { EmbeddingService } from './EmbeddingService';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import { hashContent } from './QAPairBuilder';
 import type { QAPair } from './QAPairBuilder';
+import {
+  createDrainableWorker,
+  type DrainableWorker,
+} from '../../utils/DrainableWorker';
 
 /**
  * Watches for completed assistant messages and embeds them as QA pairs.
@@ -47,6 +51,7 @@ export class ConversationEmbeddingWatcher {
   private readonly embeddingService: EmbeddingService;
   private readonly messageRepository: IMessageRepository;
   private readonly db: SQLiteCacheManager;
+  private readonly worker: DrainableWorker<MessageData>;
   private unsubscribe: (() => void) | null = null;
 
   /** Tracks in-flight pair IDs to prevent redundant concurrent embedding */
@@ -60,6 +65,17 @@ export class ConversationEmbeddingWatcher {
     this.embeddingService = embeddingService;
     this.messageRepository = messageRepository;
     this.db = db;
+    this.worker = createDrainableWorker(
+      message => this.handleMessageComplete(message),
+      {
+        onError: error => {
+          console.error(
+            '[ConversationEmbeddingWatcher] Failed to handle message complete:',
+            error
+          );
+        }
+      }
+    );
   }
 
   /**
@@ -74,13 +90,9 @@ export class ConversationEmbeddingWatcher {
 
     this.unsubscribe = this.messageRepository.onMessageComplete(
       (message: MessageData) => {
-        // Fire-and-forget: do not block the write path
-        this.handleMessageComplete(message).catch(error => {
-          console.error(
-            '[ConversationEmbeddingWatcher] Failed to handle message complete:',
-            error
-          );
-        });
+        // Fire-and-forget: do not block the write path. The worker provides a
+        // deterministic drain boundary for teardown and tests.
+        this.worker.enqueue(message);
       }
     );
   }
@@ -94,6 +106,19 @@ export class ConversationEmbeddingWatcher {
       this.unsubscribe();
       this.unsubscribe = null;
     }
+  }
+
+  /** Stop accepting completions and wait for accepted work before teardown. */
+  async shutdown(): Promise<void> {
+    this.stop();
+    await this.worker.close();
+  }
+
+  /**
+   * Wait until every completion callback accepted so far has settled.
+   */
+  drain(): Promise<void> {
+    return this.worker.drain();
   }
 
   /**

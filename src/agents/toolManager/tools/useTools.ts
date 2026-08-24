@@ -1,4 +1,6 @@
 import { ITool } from '../../interfaces/ITool';
+import type { ToolExecutionPolicy } from '../../policy/ToolExecutionPolicy';
+import { CONSERVATIVE_TOOL_EXECUTION_POLICY } from '../../policy/ToolExecutionPolicy';
 import { ToolBatchExecutionService } from '../services/ToolBatchExecutionService';
 import { ToolCliNormalizer } from '../services/ToolCliNormalizer';
 import { NormalizedUseToolParams, UseToolParams, UseToolResult } from '../types';
@@ -15,6 +17,10 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   name: string;
   description: string;
   version: string;
+
+  getExecutionPolicy(): Readonly<ToolExecutionPolicy> {
+    return CONSERVATIVE_TOOL_EXECUTION_POLICY;
+  }
 
   constructor(
     private batchExecutionService: ToolBatchExecutionService,
@@ -35,13 +41,20 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
     // Throws a recoverable steering error the model can self-correct from —
     // matching how malformed CLI flags already steer in normalizeExecutionCalls.
     this.cliNormalizer.validateExecutionContext(params);
+    if (params.operationId !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(params.operationId)) {
+      throw new Error('operationId must be 1-128 characters using letters, digits, period, underscore, colon, or hyphen. Reuse it only for an exact retry.');
+    }
 
     const normalizedParams: NormalizedUseToolParams = {
       context: this.cliNormalizer.normalizeContext(params),
       calls: this.cliNormalizer.normalizeExecutionCalls(params),
       strategy: params.strategy
     };
-    return this.batchExecutionService.execute(normalizedParams);
+    return this.batchExecutionService.execute(normalizedParams, {
+      operationId: params.operationId,
+      operationOrigin: 'external-mcp',
+      operationReplayable: Boolean(params.operationId),
+    });
   }
 
   getParameterSchema(): Record<string, unknown> {
@@ -79,6 +92,13 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
           type: 'string',
           enum: ['serial', 'parallel'],
           description: 'Execution strategy for multiple CLI commands. Defaults to serial. Use "parallel" for independent read-only commands (e.g. batched content reads) to avoid wasted round-trips.'
+        },
+        operationId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 128,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$',
+          description: 'Optional stable retry identity. Reuse the same value only for an exact retry; reusing it with different command parameters is rejected. Calls without it receive a non-replayable generated receipt and cannot be deduplicated across retries.'
         },
         values: {
           type: 'object',

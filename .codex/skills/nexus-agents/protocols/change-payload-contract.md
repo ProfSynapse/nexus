@@ -43,7 +43,7 @@ silently for old payloads, and leaves no forked copy of a rule behind.
 6. Regenerate the catalog if the change affects how commands or arguments are
    built, since the shipped-docs gate reads it:
    ```bash
-   npm run schemas:tools -- --output cli-first-tool-schemas.json
+   npm run schemas:release
    ```
 7. Verify end to end. Run `verify.md`.
 

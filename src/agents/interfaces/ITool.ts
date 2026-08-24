@@ -1,4 +1,8 @@
 import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+import type {
+  ToolExecutionPolicy,
+  ToolMutationIntent,
+} from '../policy/ToolExecutionPolicy';
 
 /**
  * Tense used when rendering a tool status label.
@@ -51,6 +55,12 @@ export interface ITool<T = unknown, R = unknown> {
    * @returns JSON schema object
    */
   getResultSchema(): JSONSchema;
+
+  /** Internal execution semantics used by batching, receipts, and approvals. */
+  getExecutionPolicy(): Readonly<ToolExecutionPolicy>;
+
+  /** Resolve the exact, vault-confined mutation performed by undoable tools. */
+  getMutationIntent?(params: T): Promise<ToolMutationIntent>;
 
   /**
    * Optional: produce a human-readable, parameter-aware status label for

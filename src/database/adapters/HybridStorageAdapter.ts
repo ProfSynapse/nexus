@@ -74,6 +74,7 @@ import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TaskRepository } from '../repositories/TaskRepository';
+import { ToolOperationRepository } from '../repositories/ToolOperationRepository';
 // Import services
 import { ExportService } from '../services/ExportService';
 
@@ -168,6 +169,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private messageRepo!: MessageRepository;
   private projectRepo!: ProjectRepository;
   private taskRepo!: TaskRepository;
+  private toolOperationRepo!: ToolOperationRepository;
 
   // Services
   private exportService!: ExportService;
@@ -201,6 +203,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.messageRepo = assembly.messageRepo;
     this.projectRepo = assembly.projectRepo;
     this.taskRepo = assembly.taskRepo;
+    this.toolOperationRepo = assembly.toolOperationRepo;
     this.exportService = assembly.exportService;
   }
 
@@ -642,6 +645,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   get tasks(): TaskRepository {
     return this.taskRepo;
+  }
+
+  /** Durable receipt repository used by the shared tool execution boundary. */
+  get operations(): ToolOperationRepository {
+    return this.toolOperationRepo;
   }
 
   async close(): Promise<void> {

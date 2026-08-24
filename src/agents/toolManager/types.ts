@@ -98,6 +98,12 @@ export interface UseToolParams {
   strategy?: 'serial' | 'parallel';
 
   /**
+   * Stable caller-supplied identity for retry suppression. Reuse only when
+   * retrying the exact same command payload.
+   */
+  operationId?: string;
+
+  /**
    * Verbatim payloads referenced from the tool string as `@key`. Substituted
    * after tokenization with NO escape processing, so backslashes, quotes, and
    * newlines survive exactly as written. Optional.

@@ -32,7 +32,8 @@ jest.mock('../../src/services/llm/core/StreamingOrchestrator', () => ({
   StreamingOrchestrator: jest.fn().mockImplementation(() => ({
     async *generateResponseStream(messages: LLMConversationMessage[], options: unknown) {
       mockOrchestratorCalls.push({ messages, options });
-      yield { chunk: 'done', complete: true, content: 'done' };
+      yield { type: 'assistant.delta', text: 'done' };
+      yield { type: 'turn.completed' };
     },
   })),
 }));
@@ -271,13 +272,14 @@ describe('StreamingResponseService.generateResponse — llmService boundary', ()
     const deps = makeStreamingDeps({
       generateResponseStream: async function* (messages) {
         captured = messages;
-        yield { chunk: 'Tokyo is sunny.', complete: true };
+        yield { type: 'assistant.delta', text: 'Tokyo is sunny.' };
+        yield { type: 'turn.completed' };
       },
       getConversation: jest.fn(async () => makeToolCallConversation()),
     });
 
     const svc = new StreamingResponseService(deps);
-    const chunks: Array<{ chunk: string; complete: boolean }> = [];
+    const chunks: Array<{ event: { type: string } }> = [];
     for await (const chunk of svc.generateResponse('conv-pipeline', 'Now check Tokyo.', {
       provider: 'openrouter',
       model: 'test-model',
@@ -286,7 +288,7 @@ describe('StreamingResponseService.generateResponse — llmService boundary', ()
       chunks.push(chunk);
     }
 
-    expect(chunks.some((c) => c.complete)).toBe(true);
+    expect(chunks.some((chunk) => chunk.event.type === 'turn.completed')).toBe(true);
     expect(captured).toBeDefined();
 
     const assistant = captured?.find((m) => m.role === 'assistant' && m.tool_calls);
@@ -324,12 +326,12 @@ describe('LLMService.generateResponseStream — orchestrator passthrough (Phase 
     const service = makeLLMService();
     const input = makeRichContextMessages();
 
-    const chunks: Array<{ chunk: string; complete: boolean }> = [];
+    const chunks: Array<{ type: string }> = [];
     for await (const chunk of service.generateResponseStream(input, { provider: 'openrouter', model: 'test-model' })) {
       chunks.push(chunk);
     }
 
-    expect(chunks).toHaveLength(1);
+    expect(chunks).toHaveLength(2);
     expect(mockOrchestratorCalls).toHaveLength(1);
 
     // Same array reference — a reintroduced `.map()` breaks this assertion.

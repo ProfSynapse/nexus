@@ -72,7 +72,10 @@ export interface LLMProviderConfig {
  * Default model selection settings
  */
 export interface DefaultModelSettings {
+  /** Legacy driver/default-instance key; remains authoritative when instanceId is absent. */
   provider: string;
+  /** Reserved for explicit configured instances; v1 defaults this to `provider`. */
+  instanceId?: string;
   model: string;
 }
 

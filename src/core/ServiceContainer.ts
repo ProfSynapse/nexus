@@ -58,7 +58,7 @@ export interface IServiceContainer {
   // Additional methods required by ServiceManager
   getServiceMetadata(name: string): ServiceMetadata | null;
   getRegisteredServices(): string[];
-  clear(): void;
+  clear(): Promise<void>;
   getReadyServices(): string[];
   getStats(): { registered: number; ready: number; failed: number };
   validateDependencies(): { isValid: boolean; errors: string[] };
@@ -95,6 +95,9 @@ export class ServiceContainer implements IServiceContainer {
   private initializationStack: string[] = [];
   private dependencyGraph = new Map<string, Set<string>>();
   private pendingPromises = new Map<string, Promise<unknown>>();
+  private lifecycleGeneration = 0;
+  private isClearing = false;
+  private clearPromise: Promise<void> | null = null;
 
   /**
    * Register service factory with optional dependencies
@@ -146,6 +149,10 @@ export class ServiceContainer implements IServiceContainer {
    * Supports regular factories, lazy factories, and IServiceFactory pattern
    */
   async get<T>(name: string): Promise<T> {
+    if (this.isClearing) {
+      throw new Error(`Service '${name}' cannot be resolved while the container is shutting down.`);
+    }
+
     // Check if already instantiated (for singletons)
     if (this.services.has(name)) {
       return this.services.get(name) as T;
@@ -177,7 +184,13 @@ export class ServiceContainer implements IServiceContainer {
     }
 
     // Create and store promise to avoid duplicate initialization
-    const promise = this.createServiceInstance<T>(name, registration, lazyFactory, serviceFactory);
+    const promise = this.createServiceInstance<T>(
+      name,
+      registration,
+      lazyFactory,
+      serviceFactory,
+      this.lifecycleGeneration
+    );
     this.pendingPromises.set(name, promise);
 
     try {
@@ -205,19 +218,21 @@ export class ServiceContainer implements IServiceContainer {
     name: string,
     registration: ServiceRegistration<T> | undefined,
     lazyFactory: LazyFactory<T> | undefined,
-    serviceFactory: IServiceFactory<T> | undefined
+    serviceFactory: IServiceFactory<T> | undefined,
+    lifecycleGeneration: number
   ): Promise<T> {
     // Add to initialization stack
     this.initializationStack.push(name);
 
     try {
       let instance: T;
+      let shouldStore = false;
 
       if (lazyFactory) {
         // Handle lazy factory (no dependency injection)
         instance = await lazyFactory();
         // Lazy factories are always treated as singletons
-        this.services.set(name, instance);
+        shouldStore = true;
       } else if (serviceFactory) {
         // Handle IServiceFactory pattern
         const dependencies = serviceFactory.getRequiredDependencies();
@@ -231,7 +246,7 @@ export class ServiceContainer implements IServiceContainer {
 
         instance = await serviceFactory.create(resolvedDependencies);
         // ServiceFactory instances are always treated as singletons
-        this.services.set(name, instance);
+        shouldStore = true;
       } else if (registration) {
         // Handle regular factory pattern
         const resolvedDependencies: Record<string, unknown> = {};
@@ -246,11 +261,24 @@ export class ServiceContainer implements IServiceContainer {
         instance = await registration.factory(resolvedDependencies);
 
         // Store if singleton
-        if (registration.singleton) {
-          this.services.set(name, instance);
-        }
+        shouldStore = registration.singleton;
       } else {
         throw new Error(`No valid factory found for service '${name}'`);
+      }
+
+      if (lifecycleGeneration !== this.lifecycleGeneration) {
+        if (isCleanableService(instance)) {
+          try {
+            await instance.cleanup();
+          } catch (error) {
+            console.error(`[ServiceContainer] Service '${name}' cleanup after cancelled initialization failed:`, error);
+          }
+        }
+        throw new Error(`Service '${name}' initialization was cancelled during container teardown.`);
+      }
+
+      if (shouldStore) {
+        this.services.set(name, instance);
       }
 
       return instance;
@@ -490,13 +518,13 @@ export class ServiceContainer implements IServiceContainer {
   /**
    * Remove a service (cleanup)
    */
-  remove(name: string): void {
+  async remove(name: string): Promise<void> {
     const instance = this.services.get(name);
     
     // Call cleanup if available
     if (isCleanableService(instance)) {
       try {
-        void instance.cleanup();
+        await instance.cleanup();
       } catch (error) {
         console.error(`[ServiceContainer] Service '${name}' cleanup failed:`, error);
       }
@@ -514,7 +542,26 @@ export class ServiceContainer implements IServiceContainer {
   /**
    * Clear all services with proper cleanup
    */
-  clear(): void {
+  clear(): Promise<void> {
+    if (this.clearPromise) return this.clearPromise;
+    if (this.isClearing) return Promise.resolve();
+
+    this.isClearing = true;
+    const clearing = this.performClear().finally(() => {
+      this.isClearing = false;
+      this.clearPromise = null;
+    });
+    this.clearPromise = clearing;
+    return clearing;
+  }
+
+  private async performClear(): Promise<void> {
+    // Invalidate factories already in flight. Existing services are cleaned
+    // first so a cleanup hook can release resources or gates those factories
+    // are awaiting; invalidated late instances clean themselves before reject.
+    this.lifecycleGeneration++;
+    const pending = Array.from(this.pendingPromises.values());
+
     // Get services in reverse dependency order for cleanup
     const allServices = Array.from(this.services.keys());
     const cleanupOrder = this.topologicalSort(allServices).reverse();
@@ -525,11 +572,15 @@ export class ServiceContainer implements IServiceContainer {
       
       if (isCleanableService(service)) {
         try {
-          void service.cleanup();
+          await service.cleanup();
         } catch (error) {
           console.error(`[ServiceContainer] ❌ Cleanup failed for service '${serviceName}':`, error);
         }
       }
+    }
+
+    if (pending.length > 0) {
+      await Promise.allSettled(pending);
     }
     
     // Clear all maps

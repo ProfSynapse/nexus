@@ -151,6 +151,8 @@ export class MessageManager {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
       temperature?: number;

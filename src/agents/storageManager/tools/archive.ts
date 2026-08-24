@@ -4,7 +4,9 @@ import { BaseTool } from '../../baseTool';
 import { ArchiveParams, ArchiveResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { normalizePath } from '../../../utils/pathUtils';
+import { resolveVaultPath } from '../../../core/vaultPath';
+import type { VaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -19,6 +21,7 @@ import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
  */
 export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
   private app: App;
+  private readonly preparedArchivePaths = new WeakMap<ArchiveParams, VaultPath>();
 
   /**
    * Create a new ArchiveTool
@@ -39,6 +42,13 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
     return labelFileOp(verbs('Archiving', 'Archived', 'Failed to archive'), params, tense);
   }
 
+  getMutationIntent(params: ArchiveParams): Promise<ToolMutationIntent> {
+    const from = resolveVaultPath(params.path);
+    const to = this.createArchivePath(from);
+    this.preparedArchivePaths.set(params, to);
+    return Promise.resolve({ kind: 'archive', from, to });
+  }
+
   /**
    * Execute the tool
    * @param params Tool parameters
@@ -48,8 +58,7 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
     const { path } = params;
 
     try {
-      // Normalize path
-      const normalizedPath = normalizePath(path);
+      const normalizedPath = resolveVaultPath(path);
 
       // Check if source exists and determine type
       const sourceItem = this.app.vault.getAbstractFileByPath(normalizedPath);
@@ -61,12 +70,9 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
         );
       }
 
-      // Generate timestamp for archive folder
-      const now = new Date();
-      const timestamp = this.formatTimestamp(now);
-
-      // Construct archive path: .archive/[YYYY-MM-DD_HH-mm-ss]/[original-path]
-      const archivePath = `.archive/${timestamp}/${normalizedPath}`;
+      // Reuse the exact target captured by getMutationIntent when available.
+      const archivePath = this.preparedArchivePaths.get(params)
+        ?? this.createArchivePath(normalizedPath);
 
       // Ensure .archive directory exists
       await FileOperations.ensureFolder(this.app, '.archive');
@@ -101,6 +107,10 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  }
+
+  private createArchivePath(path: VaultPath): VaultPath {
+    return resolveVaultPath(`.archive/${this.formatTimestamp(new Date())}/${path}`);
   }
 
   /**

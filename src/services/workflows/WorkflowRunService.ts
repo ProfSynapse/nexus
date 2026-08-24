@@ -102,26 +102,34 @@ export class WorkflowRunService {
         model: model?.modelId,
         systemPrompt: systemPrompt || undefined,
         workspaceId: request.workspaceId,
-        sessionId
+        sessionId,
+        operationOrigin: 'workflow',
+        operationScopeId: runKey,
       });
 
       if (!startedInChat) {
-        await this.deps.chatService.sendMessage(result.conversationId, kickoffMessage, {
+        const sendResult = await this.deps.chatService.sendMessage(result.conversationId, kickoffMessage, {
           provider: model?.providerId,
           model: model?.modelId,
           systemPrompt: systemPrompt || undefined,
           workspaceId: request.workspaceId,
-          sessionId
+          sessionId,
+          operationOrigin: 'workflow',
+          operationScopeId: runKey,
         });
+        if (!sendResult.success) throw new Error(sendResult.error || 'Workflow run failed');
       }
     } else {
-      await this.deps.chatService.sendMessage(result.conversationId, kickoffMessage, {
+      const sendResult = await this.deps.chatService.sendMessage(result.conversationId, kickoffMessage, {
         provider: model?.providerId,
         model: model?.modelId,
         systemPrompt: systemPrompt || undefined,
         workspaceId: request.workspaceId,
-        sessionId
+        sessionId,
+        operationOrigin: 'workflow',
+        operationScopeId: runKey,
       });
+      if (!sendResult.success) throw new Error(sendResult.error || 'Workflow run failed');
     }
 
     return {
@@ -177,6 +185,8 @@ export class WorkflowRunService {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
     }
   ): Promise<boolean> {
     const { CHAT_VIEW_TYPE } = await import('../../ui/chat/ChatView');
@@ -208,6 +218,8 @@ export class WorkflowRunService {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+      operationScopeId?: string;
     }
   ): Promise<boolean> {
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -221,6 +233,8 @@ export class WorkflowRunService {
             systemPrompt?: string;
             workspaceId?: string;
             sessionId?: string;
+            operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+            operationScopeId?: string;
           }
         ) => Promise<void>;
         openConversationById?: (id: string) => Promise<void>;

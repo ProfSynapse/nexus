@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 14;
+export const CURRENT_SCHEMA_VERSION = 15;
 
 export interface Migration {
   version: number;
@@ -509,6 +509,38 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_np_key_text ON note_properties(key, value_text)',
       'CREATE INDEX IF NOT EXISTS idx_np_key_num ON note_properties(key, value_num)',
       'CREATE INDEX IF NOT EXISTS idx_np_note ON note_properties(note_id)'
+    ]
+  },
+
+  // Version 14 -> 15: Durable operation receipts. JSONL workspace events are
+  // authoritative; this table is the query/replay cache rebuilt from them.
+  {
+    version: 15,
+    description: 'Add durable tool operation receipts for duplicate suppression',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS tool_operation_receipts (
+        operationId TEXT PRIMARY KEY,
+        signature TEXT NOT NULL,
+        status TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        workspaceId TEXT NOT NULL,
+        sessionId TEXT NOT NULL,
+        conversationId TEXT,
+        messageId TEXT,
+        turnId TEXT,
+        replayPolicy TEXT NOT NULL,
+        replayable INTEGER NOT NULL DEFAULT 0,
+        commandSummary TEXT NOT NULL,
+        resultJson TEXT,
+        resultTruncated INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        startedAt INTEGER NOT NULL,
+        completedAt INTEGER,
+        updatedAt INTEGER NOT NULL
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_tool_operation_workspace ON tool_operation_receipts(workspaceId)',
+      'CREATE INDEX IF NOT EXISTS idx_tool_operation_status ON tool_operation_receipts(status)',
+      'CREATE INDEX IF NOT EXISTS idx_tool_operation_workspace_status ON tool_operation_receipts(workspaceId, status)'
     ]
   },
 ];

@@ -470,7 +470,8 @@ export class SyncCoordinator {
 
         // Skip orphaned JSONLs that lack a workspace_created event (legacy files)
         const hasWorkspaceCreated = events.some(e => e.type === 'workspace_created');
-        if (!hasWorkspaceCreated && events.length > 0) {
+        const hasOperationReceipt = events.some(e => e.type.startsWith('tool_operation_'));
+        if (!hasWorkspaceCreated && !hasOperationReceipt && events.length > 0) {
           continue;
         }
 
@@ -483,7 +484,7 @@ export class SyncCoordinator {
           },
           {
             batchSize: Math.min(batchSize, 10),
-            delayBetweenBatches: 10,
+            yieldBetweenBatches: true,
             onProgress: (completed, total) => {
               options.onProgress?.('Processing workspace events', completed, total);
             }

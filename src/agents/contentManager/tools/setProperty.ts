@@ -2,7 +2,8 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { SetPropertyParams, SetPropertyResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { tryResolveVaultPath } from '../../../core/vaultPath';
+import { resolveVaultPath, tryResolveVaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -113,6 +114,10 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     return labelFileOp(verbs('Setting property on', 'Set property on', 'Failed to set property on'), params, tense);
+  }
+
+  getMutationIntent(params: SetPropertyParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({ kind: 'modify', path: resolveVaultPath(params.path) });
   }
 
   async execute(params: SetPropertyParams): Promise<SetPropertyResult> {

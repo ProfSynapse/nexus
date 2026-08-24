@@ -1,6 +1,7 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { CanvasData } from '../types';
-import { tryResolveVaultPath } from '../../../core/vaultPath';
+import { resolveVaultPath } from '../../../core/vaultPath';
+import type { VaultPath } from '../../../core/vaultPath';
 
 /**
  * Utility class for canvas file operations
@@ -26,12 +27,8 @@ export class CanvasOperations {
    * `.canvas` extension. Throws on an out-of-vault path so a `..` can never reach
    * `vault.create`/`vault.modify`.
    */
-  private static resolveWritePath(path: string): string {
-    const result = tryResolveVaultPath(path);
-    if (!result.ok) {
-      throw new Error(result.error);
-    }
-    return this.normalizePath(result.path);
+  static resolveWritePath(path: string): VaultPath {
+    return resolveVaultPath(this.normalizePath(path));
   }
 
   /**

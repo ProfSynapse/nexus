@@ -4,6 +4,7 @@ import { createMockBranchManager, createMockChatService } from '../mocks/chatSer
 import { LLMProviderError } from '../../src/services/llm/adapters/types';
 import { ChatService } from '../../src/services/chat/ChatService';
 import { BranchManager } from '../../src/ui/chat/services/BranchManager';
+import type { ChatRuntimeEvent } from '../../src/services/llm/runtime/ChatRuntimeEvent';
 
 jest.mock('../../src/services/llm/adapters/webllm/WebLLMLifecycleManager', () => ({
   getWebLLMLifecycleManager: () => ({
@@ -26,6 +27,10 @@ function createDeferred<T>() {
   };
 }
 
+function envelope(messageId: string, event: ChatRuntimeEvent) {
+  return { messageId, event };
+}
+
 describe('MessageManager interrupt flow', () => {
   it('waits for abort cleanup before appending a steering message', async () => {
     const conversation = createConversation({ messages: [] });
@@ -37,11 +42,10 @@ describe('MessageManager interrupt flow', () => {
       (_conversationId: string, userMessage: string, options?: { messageId?: string; abortSignal?: AbortSignal }) => {
         async function* stream() {
           if (userMessage === 'First question') {
-            yield {
-              chunk: 'Partial answer',
-              complete: false,
-              messageId: options?.messageId || 'msg_first_ai'
-            };
+            yield envelope(options?.messageId || 'msg_first_ai', {
+              type: 'assistant.delta',
+              text: 'Partial answer',
+            });
 
             while (!options?.abortSignal?.aborted) {
               await new Promise(resolve => setTimeout(resolve, 0));
@@ -50,16 +54,11 @@ describe('MessageManager interrupt flow', () => {
             throw Object.assign(new Error('Generation aborted by user'), { name: 'AbortError' });
           }
 
-          yield {
-            chunk: 'Steered answer',
-            complete: false,
-            messageId: options?.messageId || 'msg_second_ai'
-          };
-          yield {
-            chunk: '',
-            complete: true,
-            messageId: options?.messageId || 'msg_second_ai'
-          };
+          yield envelope(options?.messageId || 'msg_second_ai', {
+            type: 'assistant.delta',
+            text: 'Steered answer',
+          });
+          yield envelope(options?.messageId || 'msg_second_ai', { type: 'turn.completed' });
         }
 
         return stream();
@@ -169,8 +168,8 @@ describe('MessageManager interrupt flow', () => {
     mockChatService.generateResponseStreaming.mockImplementation(
       (_conversationId: string, _userMessage: string, options?: { messageId?: string; abortSignal?: AbortSignal }) => {
         async function* stream() {
-          yield { chunk: 'Response', complete: false, messageId: options?.messageId || 'msg_ai' };
-          yield { chunk: '', complete: true, messageId: options?.messageId || 'msg_ai' };
+          yield envelope(options?.messageId || 'msg_ai', { type: 'assistant.delta', text: 'Response' });
+          yield envelope(options?.messageId || 'msg_ai', { type: 'turn.completed' });
         }
         return stream();
       }
@@ -213,8 +212,8 @@ describe('MessageManager interrupt flow', () => {
     mockChatService.generateResponseStreaming.mockImplementation(
       (_conversationId: string, _userMessage: string, options?: { messageId?: string; abortSignal?: AbortSignal }) => {
         async function* stream() {
-          yield { chunk: 'Answer', complete: false, messageId: options?.messageId || 'msg_ai' };
-          yield { chunk: '', complete: true, messageId: options?.messageId || 'msg_ai' };
+          yield envelope(options?.messageId || 'msg_ai', { type: 'assistant.delta', text: 'Answer' });
+          yield envelope(options?.messageId || 'msg_ai', { type: 'turn.completed' });
         }
         return stream();
       }
@@ -363,7 +362,7 @@ describe('MessageManager interrupt flow', () => {
     mockChatService.generateResponseStreaming.mockImplementation(
       (_conversationId: string, _userMessage: string, options?: { messageId?: string }) => {
         async function* stream() {
-          yield { chunk: 'Partial answer', complete: false, messageId: options?.messageId || 'msg_ai' };
+          yield envelope(options?.messageId || 'msg_ai', { type: 'assistant.delta', text: 'Partial answer' });
           // Error after a token streamed: the first-token path already cleared
           // isLoading; finalizeErroredPlaceholder is then a no-op, so partial
           // content must survive.
@@ -444,7 +443,7 @@ describe('MessageManager interrupt flow', () => {
         async function* stream() {
           if (userMessage === 'first') {
             callOrder.push('first-start');
-            yield { chunk: 'Partial', complete: false, messageId: options?.messageId || 'msg_1' };
+            yield envelope(options?.messageId || 'msg_1', { type: 'assistant.delta', text: 'Partial' });
             firstChunkSeen.resolve();
 
             while (!options?.abortSignal?.aborted) {
@@ -455,8 +454,8 @@ describe('MessageManager interrupt flow', () => {
           }
 
           callOrder.push('second-start');
-          yield { chunk: 'Complete', complete: false, messageId: options?.messageId || 'msg_2' };
-          yield { chunk: '', complete: true, messageId: options?.messageId || 'msg_2' };
+          yield envelope(options?.messageId || 'msg_2', { type: 'assistant.delta', text: 'Complete' });
+          yield envelope(options?.messageId || 'msg_2', { type: 'turn.completed' });
           callOrder.push('second-done');
         }
         return stream();

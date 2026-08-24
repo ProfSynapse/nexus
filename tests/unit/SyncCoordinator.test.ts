@@ -2,6 +2,54 @@ import type { StorageEvent } from '../../src/database/interfaces/StorageEvents';
 import { SyncCoordinator, type IJSONLWriter, type ISQLiteCacheManager, type SyncState } from '../../src/database/sync/SyncCoordinator';
 
 describe('SyncCoordinator', () => {
+  it('rebuilds receipt-only default workspace streams instead of treating them as orphaned', async () => {
+    const receiptEvent: StorageEvent = {
+      id: 'receipt-event-1',
+      type: 'tool_operation_started',
+      deviceId: 'desktop-device',
+      timestamp: 1_000,
+      workspaceId: 'default',
+      data: {
+        operationId: 'external-1:0',
+        signature: 'signature-1',
+        origin: 'external-mcp',
+        workspaceId: 'default',
+        sessionId: 'nexus-cli',
+        replayPolicy: 'safe',
+        replayable: true,
+        commandSummary: 'contentManager read',
+      },
+    };
+    const jsonlWriter: IJSONLWriter = {
+      getDeviceId: jest.fn(() => 'mobile-device'),
+      listFiles: jest.fn(async category => category === 'workspaces' ? ['workspaces/ws_default.jsonl'] : []),
+      getFileModTime: jest.fn(async () => null),
+      readEvents: jest.fn(async <T extends StorageEvent>(): Promise<T[]> => [receiptEvent as T]),
+      getEventsNotFromDevice: jest.fn(async () => []),
+    };
+    const sqliteCache: ISQLiteCacheManager = {
+      getSyncState: jest.fn(async () => null),
+      updateSyncState: jest.fn(async () => undefined),
+      isEventApplied: jest.fn(async () => false),
+      markEventApplied: jest.fn(async () => undefined),
+      run: jest.fn(async () => ({ changes: 1 })),
+      query: jest.fn(async () => []),
+      queryOne: jest.fn(async () => null),
+      clearAllData: jest.fn(async () => undefined),
+      rebuildFTSIndexes: jest.fn(async () => undefined),
+      save: jest.fn(async () => undefined),
+    };
+
+    const result = await new SyncCoordinator(jsonlWriter, sqliteCache).fullRebuild();
+
+    expect(result.success).toBe(true);
+    expect(result.eventsApplied).toBe(1);
+    expect(sqliteCache.run).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT OR IGNORE INTO tool_operation_receipts'),
+      expect.any(Array)
+    );
+  });
+
   it('saves full rebuild once after replaying all JSONL files', async () => {
     const now = 1_000;
     const eventsByFile: Record<string, StorageEvent[]> = {

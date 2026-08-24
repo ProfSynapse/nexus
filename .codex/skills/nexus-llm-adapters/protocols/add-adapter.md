@@ -37,8 +37,14 @@ gated for the platforms it can actually run on.
    let the existing chain render it. You MUST NOT introduce a synthetic
    `reasoning`-typed tool call; that path loses the text at the final paint.
 
-5. **Find every wiring point by tracing an existing provider, not from a list.**
-   Pick any id already in the `SupportedProvider` union in
+5. **Register the provider driver, then trace every remaining wiring point.**
+   Provider construction and lifecycle belong in the driver registration beside
+   the existing built-ins. The registration MUST declare compatibility, validate
+   config, dynamically import the adapter only inside `createAdapter`, and let
+   its provider instance own cleanup. Keep the provider id as the implicit
+   default instance id; aliases remain compatibility fallbacks, not identities.
+
+   Then pick any id already in the `SupportedProvider` union in
    `src/services/llm/adapters/types.ts` that resembles yours, then:
 
    ```bash
@@ -46,7 +52,7 @@ gated for the platforms it can actually run on.
    ```
 
    Walk each hit and decide whether your provider needs an entry. The hits span
-   adapter construction, the supported-provider union, platform compatibility,
+   the driver registration, the supported-provider union, platform compatibility,
    settings, validation, display naming, and static model registration. Trace it
    fresh each time — a checklist of file paths here would be wrong within a
    release.

@@ -4,7 +4,8 @@ import { BaseTool } from '../../baseTool';
 import { MoveParams, MoveResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { normalizePath } from '../../../utils/pathUtils';
+import { resolveVaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileMove, verbs } from '../../utils/toolStatusLabels';
 
@@ -48,6 +49,14 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
     );
   }
 
+  getMutationIntent(params: MoveParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({
+      kind: 'move',
+      from: resolveVaultPath(params.path),
+      to: resolveVaultPath(params.newPath),
+    });
+  }
+
   /**
    * Execute the tool
    * @param params Tool parameters
@@ -57,8 +66,8 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
     const { path, newPath, overwrite } = params;
 
     try {
-      // Normalize paths
-      const normalizedPath = normalizePath(path);
+      const normalizedPath = resolveVaultPath(path);
+      const resolvedNewPath = resolveVaultPath(newPath);
 
       // Check if source exists and determine type
       const sourceItem = this.app.vault.getAbstractFileByPath(normalizedPath);
@@ -72,9 +81,9 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
 
       // Auto-detect and move accordingly
       if (sourceItem instanceof TFile) {
-        await FileOperations.moveNote(this.app, path, newPath, overwrite);
+        await FileOperations.moveNote(this.app, normalizedPath, resolvedNewPath, overwrite);
       } else if (sourceItem instanceof TFolder) {
-        await FileOperations.moveFolder(this.app, path, newPath, overwrite);
+        await FileOperations.moveFolder(this.app, normalizedPath, resolvedNewPath, overwrite);
       } else {
         return this.prepareResult(false, undefined, `Unknown item type at path: ${path}`);
       }

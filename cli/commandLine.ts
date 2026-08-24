@@ -11,7 +11,7 @@
 
 /** Context flags that take a value. Declaring them removes all value-vs-verb guessing. */
 export const CONTEXT_VALUE_FLAGS = new Set([
-    'memory', 'goal', 'workspace', 'session', 'constraints', 'vault',
+    'memory', 'goal', 'workspace', 'session', 'constraints', 'operation-id', 'vault',
 ]);
 
 /** Context flags that never take a value. */
@@ -56,7 +56,7 @@ export function isTransportFlagKey(key: string): boolean {
  * is legitimate tool syntax. It is the only such collision across all 66 tools.
  */
 export const MISPLACEABLE_CONTEXT_FLAGS = new Set([
-    'memory', 'goal', 'constraints', 'vault', 'session', 'json', 'dry-run',
+    'memory', 'goal', 'constraints', 'operation-id', 'vault', 'session', 'json', 'dry-run',
 ]);
 
 export const VERBS = ['tools', 'use', 'playbook', 'vaults', 'doctor', 'help'];

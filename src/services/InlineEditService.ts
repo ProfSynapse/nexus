@@ -178,15 +178,15 @@ export class InlineEditService {
     this.notifyStateChange();
 
     // Stream the response
-    for await (const chunk of this.llmService.generateResponseStream(messages, options)) {
+    for await (const event of this.llmService.generateResponseStream(messages, options)) {
       // Check for abort
       if (this.abortController?.signal.aborted) {
         throw new DOMException('Generation aborted by user', 'AbortError');
       }
 
       // Accumulate text
-      if (chunk.chunk) {
-        accumulatedText += chunk.chunk;
+      if (event.type === 'assistant.delta') {
+        accumulatedText += event.text;
 
         // Update state with streamed text
         this.state = {
@@ -195,13 +195,12 @@ export class InlineEditService {
           streamedText: accumulatedText
         };
         this.notifyStateChange();
-        this.callbacks.onStreamChunk?.(chunk.chunk);
+        this.callbacks.onStreamChunk?.(event.text);
       }
 
-      // Capture usage on completion
-      if (chunk.complete && chunk.usage) {
-        inputTokens = chunk.usage.promptTokens || 0;
-        outputTokens = chunk.usage.completionTokens || 0;
+      if (event.type === 'usage.updated') {
+        inputTokens = event.usage.promptTokens || 0;
+        outputTokens = event.usage.completionTokens || 0;
       }
     }
 

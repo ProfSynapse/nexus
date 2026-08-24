@@ -6,6 +6,10 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { matchWorkspaces } from '../../memoryManager/services/WorkspaceMatcher';
+import { toKebabCase } from './ToolCliNormalizer';
+import type { ToolExecutionOrigin } from '../../../types/tools/ToolOperationTypes';
+import { ToolOperationService } from './ToolOperationService';
+import { getRegisteredToolExecutionPolicy } from '../../policy/ToolExecutionPolicyCatalog';
 
 /**
  * The slice of NexusPlugin this service needs. Declared structurally to avoid
@@ -59,6 +63,12 @@ export interface ToolBatchExecutionObserver {
 export interface ToolBatchExecutionOptions {
   observer?: ToolBatchExecutionObserver;
   batchId?: string;
+  operationId?: string;
+  operationOrigin?: ToolExecutionOrigin;
+  operationReplayable?: boolean;
+  conversationId?: string;
+  messageId?: string;
+  turnId?: string;
 }
 
 /**
@@ -72,7 +82,8 @@ export class ToolBatchExecutionService {
   constructor(
     private app: App,
     private agentRegistry: Map<string, IAgent>,
-    private knownWorkspaces: ToolManagerWorkspaceInfo[] = []
+    private knownWorkspaces: ToolManagerWorkspaceInfo[] = [],
+    private operationService: ToolOperationService = new ToolOperationService()
   ) {}
 
   async execute(params: NormalizedUseToolParams, options: ToolBatchExecutionOptions = {}): Promise<UseToolResult> {
@@ -101,7 +112,15 @@ export class ToolBatchExecutionService {
       }
 
       const strategy = params.strategy || 'serial';
+      if (strategy === 'parallel') {
+        const parallelSafetyError = this.validateParallelSafety(params.calls);
+        if (parallelSafetyError) {
+          return { success: false, error: parallelSafetyError };
+        }
+      }
+
       const batchId = options.batchId || this.createBatchId();
+      const operationBaseId = options.operationId || batchId;
       const batchStartedEvent: ToolBatchStartedEvent = {
         batchId,
         context: params.context,
@@ -113,8 +132,8 @@ export class ToolBatchExecutionService {
       options.observer?.onBatchStarted?.(batchStartedEvent);
 
       const results = strategy === 'parallel'
-        ? await this.executeParallel(batchId, params.context, params.calls, options.observer)
-        : await this.executeSerial(batchId, params.context, params.calls, options.observer);
+        ? await this.executeParallel(batchId, operationBaseId, params.context, params.calls, options)
+        : await this.executeSerial(batchId, operationBaseId, params.context, params.calls, options);
 
       const success = results.every(result => result.success);
       options.observer?.onBatchCompleted?.({
@@ -134,15 +153,16 @@ export class ToolBatchExecutionService {
 
   private async executeSerial(
     batchId: string,
+    operationBaseId: string,
     context: ToolContext,
     calls: ToolCallParams[],
-    observer?: ToolBatchExecutionObserver
+    options: ToolBatchExecutionOptions
   ): Promise<ToolCallResult[]> {
     const results: ToolCallResult[] = [];
 
     for (let index = 0; index < calls.length; index++) {
       const call = calls[index];
-      const result = await this.executeSingleCall(batchId, context, call, index, calls.length, 'serial', observer);
+      const result = await this.executeSingleCall(batchId, operationBaseId, context, call, index, calls.length, 'serial', options);
       results.push(result);
 
       if (!result.success && !call.continueOnFailure) {
@@ -155,25 +175,51 @@ export class ToolBatchExecutionService {
 
   private async executeParallel(
     batchId: string,
+    operationBaseId: string,
     context: ToolContext,
     calls: ToolCallParams[],
-    observer?: ToolBatchExecutionObserver
+    options: ToolBatchExecutionOptions
   ): Promise<ToolCallResult[]> {
     return Promise.all(
       calls.map((call, index) =>
-        this.executeSingleCall(batchId, context, call, index, calls.length, 'parallel', observer)
+        this.executeSingleCall(batchId, operationBaseId, context, call, index, calls.length, 'parallel', options)
       )
     );
   }
 
+  private validateParallelSafety(calls: ToolCallParams[]): string | null {
+    const incompatible = calls
+      .filter(call => {
+        if (!call.agent || !call.tool) {
+          return true;
+        }
+        const tool = this.agentRegistry.get(call.agent)?.getTool(call.tool);
+        return !tool || !tool.getExecutionPolicy().parallelSafe;
+      })
+      .map(call => this.formatCommandName(call));
+
+    if (incompatible.length === 0) {
+      return null;
+    }
+
+    return `Parallel execution rejected because these commands are not parallel-safe: ${incompatible.join(', ')}. Retry the batch with strategy "serial".`;
+  }
+
+  private formatCommandName(call: ToolCallParams): string {
+    const agent = call.agent ? toKebabCase(call.agent) : 'unknown-agent';
+    const tool = call.tool ? toKebabCase(call.tool) : 'unknown-tool';
+    return `"${agent} ${tool}"`;
+  }
+
   private async executeSingleCall(
     batchId: string,
+    operationBaseId: string,
     context: ToolContext,
     call: ToolCallParams,
     callIndex: number,
     totalCalls: number,
     strategy: 'serial' | 'parallel',
-    observer?: ToolBatchExecutionObserver
+    options: ToolBatchExecutionOptions
   ): Promise<ToolCallResult> {
     const stepId = this.createStepId(batchId, callIndex);
     const stepEvent: ToolBatchStepEvent = {
@@ -186,11 +232,41 @@ export class ToolBatchExecutionService {
       call
     };
 
-    observer?.onStepStarted?.(stepEvent);
+    options.observer?.onStepStarted?.(stepEvent);
 
     try {
-      const result = await this.executeCall(context, call);
-      observer?.onStepCompleted?.({
+      const toolInstance = call.agent && call.tool
+        ? this.agentRegistry.get(call.agent)?.getTool(call.tool)
+        : undefined;
+      const executionPolicy = toolInstance
+        ? (typeof toolInstance.getExecutionPolicy === 'function'
+            ? toolInstance.getExecutionPolicy()
+            : getRegisteredToolExecutionPolicy(call.agent, call.tool))
+        : null;
+      // Read results can contain note bodies and other vault data. They are
+      // deliberately excluded from durable operation receipts; only mutations
+      // need replay/deduplication protection.
+      const result = toolInstance && executionPolicy?.effect !== 'read'
+        ? await this.operationService.execute(
+            {
+              operationId: `${operationBaseId}:${callIndex}`,
+              origin: options.operationOrigin ?? 'external-mcp',
+              replayable: options.operationReplayable ?? Boolean(options.operationId),
+              workspaceId: context.workspaceId,
+              sessionId: context.sessionId,
+              conversationId: options.conversationId,
+              messageId: options.messageId,
+              turnId: options.turnId,
+              agent: call.agent,
+              tool: call.tool,
+              params: call.params || {},
+              replayPolicy: executionPolicy?.replay
+                ?? getRegisteredToolExecutionPolicy(call.agent, call.tool).replay,
+            },
+            () => this.executeCall(context, call)
+          )
+        : await this.executeCall(context, call);
+      options.observer?.onStepCompleted?.({
         ...stepEvent,
         result
       });
@@ -203,7 +279,7 @@ export class ToolBatchExecutionService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
 
-      observer?.onStepCompleted?.({
+      options.observer?.onStepCompleted?.({
         ...stepEvent,
         result
       });

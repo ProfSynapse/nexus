@@ -37,6 +37,7 @@ import {
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
 import type { IMessageRepository } from '../repositories/interfaces/IMessageRepository';
+import type { IToolOperationRepository } from '../repositories/interfaces/IToolOperationRepository';
 /**
  * Extended query options for flexible data retrieval
  */
@@ -526,6 +527,9 @@ export interface IStorageAdapter {
    * check for undefined.
    */
   readonly messages?: IMessageRepository;
+
+  /** Optional durable operation-receipt surface. */
+  readonly operations?: IToolOperationRepository;
 }
 
 /**
