@@ -57,6 +57,13 @@ export class EmbeddingManager {
 
   private isEnabled: boolean;
   private isInitialized = false;
+  /**
+   * Handle for the deferred runBackgroundIndexing kick-off, so shutdown() can
+   * cancel it. A bare window.setTimeout here is unclearable: nothing else holds
+   * the id, and the callback fires ~3s later against whatever state the plugin
+   * is in by then — including an unloaded one, whose database handle is closed.
+   */
+  private backgroundIndexingTimer: number | null = null;
 
   constructor(
     app: App,
@@ -109,7 +116,8 @@ export class EmbeddingManager {
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
-      window.setTimeout(() => {
+      this.backgroundIndexingTimer = window.setTimeout(() => {
+        this.backgroundIndexingTimer = null;
         void this.runBackgroundIndexing();
       }, 3000); // 3-second delay
 
@@ -131,6 +139,14 @@ export class EmbeddingManager {
    * Called during plugin unload
    */
   async shutdown(): Promise<void> {
+    // Cleared before the isEnabled bail-out on purpose: this timer is the one
+    // thing that can still fire after shutdown() returns, so it is cancelled
+    // unconditionally rather than behind a flag that may have changed.
+    if (this.backgroundIndexingTimer !== null) {
+      window.clearTimeout(this.backgroundIndexingTimer);
+      this.backgroundIndexingTimer = null;
+    }
+
     if (!this.isEnabled) {
       return;
     }

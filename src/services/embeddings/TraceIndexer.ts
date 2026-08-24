@@ -132,7 +132,13 @@ export class TraceIndexer {
           }
 
         } catch (error) {
-          console.error(`[TraceIndexer] Failed to embed trace ${trace.id}:`, error);
+          // Not the embedding itself: embedTrace() catches its own failures and
+          // never rethrows, so the only thing that can land here is the periodic
+          // db.save() above, on every saveInterval-th item.
+          console.error(
+            `[TraceIndexer] Failed to persist embeddings around trace ${trace.id}:`,
+            error
+          );
         }
 
         // Yield to UI

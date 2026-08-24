@@ -55,6 +55,21 @@ export class IndexingQueue extends Events {
   private isPaused = false;
   private abortController: AbortController | null = null;
 
+  /**
+   * Set by destroy() at plugin unload and never cleared.
+   *
+   * Without it this queue outlives the plugin instance that owns it. `cancel()`
+   * aborts only the phase that happens to be running, but `runBackgroundIndexing`
+   * awaits three phases in sequence and each one mints a fresh AbortController,
+   * so aborting phase 1 does not stop phases 2 and 3 - they start *after* the
+   * unload and iterate against a SQLiteCacheManager whose handle close() already
+   * nulled. `isRunning` is also false during filterUnindexedNotes(), which is one
+   * db.queryOne per markdown file. The result is the "Database not initialized"
+   * burst that grows with every reload, exactly as NotesIndexBuilder.stop()
+   * documents for the notes index.
+   */
+  private destroyed = false;
+
   // Tuning parameters
   private readonly BATCH_SIZE = 1;           // Process one at a time for memory
   private readonly YIELD_INTERVAL_MS = 50;   // Yield to UI between notes
@@ -85,7 +100,7 @@ export class IndexingQueue extends Events {
    * Start initial indexing of all notes
    */
   async startFullIndex(): Promise<void> {
-    if (this.isRunning) {
+    if (this.destroyed || this.isRunning) {
       return;
     }
 
@@ -121,7 +136,7 @@ export class IndexingQueue extends Events {
     this.processedCount = 0;
     this.startTime = Date.now();
     this.processingTimes = [];
-    this.abortController = new AbortController();
+    this.abortController = this.createAbortController();
 
     await this.processQueue();
   }
@@ -131,7 +146,7 @@ export class IndexingQueue extends Events {
    * Delegates to TraceIndexer for the actual work.
    */
   async startTraceIndex(): Promise<void> {
-    if (this.isRunning) {
+    if (this.destroyed || this.isRunning) {
       return;
     }
 
@@ -140,7 +155,7 @@ export class IndexingQueue extends Events {
     }
 
     this.isRunning = true;
-    this.abortController = new AbortController();
+    this.abortController = this.createAbortController();
 
     this.traceIndexer = new TraceIndexer(
       this.db,
@@ -193,7 +208,7 @@ export class IndexingQueue extends Events {
    * Delegates to ConversationIndexer for the actual work.
    */
   async startConversationIndex(): Promise<void> {
-    if (this.isRunning) {
+    if (this.destroyed || this.isRunning) {
       return;
     }
 
@@ -202,7 +217,7 @@ export class IndexingQueue extends Events {
     }
 
     this.isRunning = true;
-    this.abortController = new AbortController();
+    this.abortController = this.createAbortController();
 
     this.conversationIndexer = new ConversationIndexer(
       this.db,
@@ -279,8 +294,25 @@ export class IndexingQueue extends Events {
   /**
    * Cancel indexing entirely
    */
+  /**
+   * A fresh controller for a phase, already aborted if the queue is destroyed.
+   *
+   * Closes the window between a phase's `destroyed` guard and its controller
+   * assignment: an unload landing in that gap aborts the outgoing controller,
+   * and without this the incoming one would come up live and run on regardless.
+   */
+  private createAbortController(): AbortController {
+    const controller = new AbortController();
+    if (this.destroyed) {
+      controller.abort();
+    }
+    return controller;
+  }
+
   cancel(): void {
-    if (!this.isRunning) return;
+    // Deliberately NOT gated on isRunning: the gap between phases, and the whole
+    // of filterUnindexedNotes(), run with isRunning === false, and those are
+    // precisely the windows an unload has to be able to interrupt.
     this.abortController?.abort();
     this.queue = [];
   }
@@ -289,6 +321,7 @@ export class IndexingQueue extends Events {
    * Clean up all resources (called on plugin unload)
    */
   destroy(): void {
+    this.destroyed = true;
     this.cancel();
     // Obsidian's Events doesn't have removeAllListeners — handled by GC after cancel()
   }
@@ -345,6 +378,7 @@ export class IndexingQueue extends Events {
     const needsIndexing: TFile[] = [];
 
     for (const note of notes) {
+      if (this.destroyed) break;
       try {
         const content = await this.app.vault.cachedRead(note);
         const contentHash = hashContent(preprocessContent(content) ?? '');
@@ -390,7 +424,7 @@ export class IndexingQueue extends Events {
       });
 
       while (this.queue.length > 0) {
-        if (this.abortController?.signal.aborted) {
+        if (this.destroyed || this.abortController?.signal.aborted) {
           this.emitProgress({
             phase: 'paused',
             totalNotes: this.totalCount,
