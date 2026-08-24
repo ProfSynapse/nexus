@@ -20,11 +20,17 @@
 import {
   describeUnusableWorkspaceId,
   workspaceStreamPath,
-  taskStreamPath
+  taskStreamPath,
+  workspaceStreamPathForRemoval
 } from '../../src/database/repositories/base/workspaceStreamPath';
 import { SessionRepository } from '../../src/database/repositories/SessionRepository';
 import { TaskRepository } from '../../src/database/repositories/TaskRepository';
+import { WorkspaceRepository } from '../../src/database/repositories/WorkspaceRepository';
 import { RepositoryDependencies } from '../../src/database/repositories/base/BaseRepository';
+import { VaultEventStore } from '../../src/database/storage/vaultRoot/VaultEventStore';
+import { JSONLWriter } from '../../src/database/storage/JSONLWriter';
+import { QueryCache } from '../../src/database/optimizations/QueryCache';
+import { createMockApp } from '../helpers/mockVaultAdapter';
 
 function createMockDeps(): RepositoryDependencies & { appendEvent: jest.Mock } {
   const appendEvent = jest.fn().mockImplementation((_path: string, ev: Record<string, unknown>) => ({
@@ -81,6 +87,26 @@ describe('workspace stream path guard (#214)', () => {
       expect(describeUnusableWorkspaceId(value)).not.toBeNull();
       expect(() => workspaceStreamPath(value, 'session')).toThrow(/Refusing to store session events/);
       expect(() => taskStreamPath(value, 'task')).toThrow(/Refusing to store task events/);
+    });
+
+    // The reason is user-facing steering copy — the model is expected to read it
+    // and self-correct — and the checks overlap enough that a deleted clause is
+    // silently covered by the next one with the WRONG wording ('' reported as
+    // 'blank', '   ' as padded). Pinning each reason is what makes those cases
+    // distinguishable.
+    it.each([
+      ['', 'it is empty'],
+      ['   ', 'it is blank'],
+      [' default ', 'it has leading or trailing whitespace'],
+      ['--workspaceId', 'it looks like a command-line flag, not a workspace'],
+      ['default/nested', 'it contains a path separator'],
+      // A traversal WITH a slash reports the separator first; '..' is the case
+      // that actually exercises the traversal clause.
+      ['..', 'it contains a path traversal segment'],
+      ['default\u0000', 'it contains control characters'],
+      ['x'.repeat(201), 'it is longer than 200 characters']
+    ])('explains %j with the reason that actually fits it', (value, reason) => {
+      expect(describeUnusableWorkspaceId(value)).toBe(reason);
     });
 
     it('names the workspace, the reason and the way out', () => {
@@ -152,6 +178,74 @@ describe('workspace stream path guard (#214)', () => {
 
       expect(deps.appendEvent).toHaveBeenCalledTimes(1);
       expect(deps.appendEvent.mock.calls[0][0]).toBe('workspaces/ws_Desenvolvedor.jsonl');
+    });
+  });
+  // ==========================================================================
+  // Removal is NOT a write (#347 interaction).
+  //
+  // #347 made permanent workspace delete purge every stream the workspace owns.
+  // Its first step appends a `workspace_deleted` tombstone, and that append used
+  // to be minted by `this.jsonlPath` — the WRITE guard. Applying the write tier
+  // to a delete throws before the purge ever runs, so the malformed streams this
+  // guard now refuses to CREATE would have become permanently undeletable —
+  // exactly the 41-of-56 phantoms in the census that motivated the guard.
+  //
+  // So removal enforces path safety only. That is still a tightening: before
+  // this, a traversal id reached `deleteStream` completely unchecked.
+  // ==========================================================================
+  describe('removal tier', () => {
+    it.each([
+      ['the empty id', ''],
+      ['a leaked flag name', '--workspaceId'],
+      ['a padded id', '  ws-real  '],
+      ['an over-long id', 'w'.repeat(250)]
+    ])('mints a removal path for %s, which the write tier refuses', (_label, value) => {
+      expect(() => workspaceStreamPath(value, 'workspace')).toThrow(/Refusing to store/);
+      expect(workspaceStreamPathForRemoval(value, 'workspace')).toBe(`workspaces/ws_${value}.jsonl`);
+    });
+
+    it.each([
+      ['a traversal id', '../../escape'],
+      ['a path separator', 'a/b']
+    ])('still refuses %s, because removal cannot escape the stream directory', (_label, value) => {
+      expect(() => workspaceStreamPathForRemoval(value, 'workspace')).toThrow(/Refusing to remove/);
+    });
+
+    it('lets a pre-existing phantom workspace actually be deleted', async () => {
+      const { app } = createMockApp({ withLocalStorage: true });
+      const vaultEventStore = new VaultEventStore({
+        app,
+        resolution: { resolvedPath: 'Nexus', dataPath: 'Nexus/data', maxShardBytes: 4096 }
+      });
+      const jsonlWriter = new JSONLWriter({
+        app,
+        basePath: '.obsidian/plugins/nexus/data',
+        readBasePaths: ['.obsidian/plugins/nexus/data'],
+        vaultEventStore
+      });
+      const deps: RepositoryDependencies = {
+        sqliteCache: {
+          run: jest.fn(async () => undefined),
+          query: jest.fn(async () => []),
+          queryOne: jest.fn(async () => null),
+          transaction: jest.fn((fn: () => Promise<unknown>) => fn())
+        } as never,
+        jsonlWriter,
+        queryCache: new QueryCache()
+      };
+
+      // A phantom that predates the write guard, as found in the real vault.
+      const phantom = '--workspaceId';
+      await jsonlWriter.appendEvents(`workspaces/ws_${phantom}.jsonl`, [
+        { type: 'workspace_created', data: { id: phantom, name: 'Phantom', rootFolder: '/', created: 1 } }
+      ] as never);
+      expect(await vaultEventStore.listFiles('workspaces')).toContain(`workspaces/ws_${phantom}.jsonl`);
+
+      await new WorkspaceRepository(deps).delete(phantom);
+
+      // With the tombstone minted by the write guard this threw
+      // "it looks like a command-line flag" and the stream survived.
+      expect(await vaultEventStore.listFiles('workspaces')).not.toContain(`workspaces/ws_${phantom}.jsonl`);
     });
   });
 });

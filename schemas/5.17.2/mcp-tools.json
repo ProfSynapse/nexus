@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "nexusVersion": "5.17.2",
-  "generatedAt": "2026-08-21T15:43:30.479Z",
+  "generatedAt": "2026-08-24T15:25:30.810Z",
   "toolCount": 2,
   "tools": [
     {
@@ -12,7 +12,7 @@
         "properties": {
           "workspaceId": {
             "type": "string",
-            "description": "Workspace ID. Optional. Defaults to \"default\"."
+            "description": "Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as \"default\". Pass \"default\" for the global workspace, or an exact value from the availableWorkspaces list this call returns."
           },
           "sessionId": {
             "type": "string",
@@ -52,7 +52,7 @@
         "properties": {
           "workspaceId": {
             "type": "string",
-            "description": "Workspace ID. Optional. Defaults to \"default\"."
+            "description": "Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as \"default\". Pass \"default\" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools."
           },
           "sessionId": {
             "type": "string",
