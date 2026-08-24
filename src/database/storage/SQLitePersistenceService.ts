@@ -66,9 +66,14 @@ export class SQLitePersistenceService {
    * re-hide the event. A `Notice` is not raised here: this runs during cache
    * open, well before the workspace is ready, and this class is pure
    * persistence with no Obsidian dependency. `console.error` is what the
-   * Obsidian developer console and `obsidian-cli dev:errors` both read, which
-   * is where a bug report gets written from. If a user-facing surface is ever
-   * wanted, it belongs to a caller that already owns UI, not here.
+   * Obsidian developer console and `obsidian-cli dev:console` read, which is
+   * where a bug report gets written from. Note it does NOT reach
+   * `obsidian-cli dev:errors`: that surface reports uncaught exceptions, not
+   * `console.error` calls - verified live on 2026-08-24 by corrupting a real
+   * cache, where this line appeared in `dev:console` while `dev:errors` stayed
+   * empty. So the release verification gate does not fail on this line; it is
+   * discoverable, not alarming. If a user-facing surface is ever wanted, it
+   * belongs to a caller that already owns UI, not here.
    *
    * This reports; it does not decide. Recovery itself is unchanged.
    */
