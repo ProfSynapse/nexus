@@ -337,6 +337,22 @@ export class PluginLifecycleManager {
             this.embeddingManager.initialize();
             (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
 
+            // "Nexus: Rebuild cache" DROPs conversation_embeddings and clears
+            // embedding_backfill_state, and the JSONL replay does not restore
+            // them — the same hazard the notes index subscribes for. Without
+            // this a mid-session rebuild leaves chat search dead until the next
+            // plugin load. registerEvent so the ref is dropped on unload.
+            //
+            // Only the mid-session rebuild needs the signal: the startup rebuild
+            // runs before embeddings exist, and initialize()'s own background
+            // pass (conversations first) already covers that case.
+            const manager = this.embeddingManager;
+            this.config.plugin.registerEvent(
+                storageAdapter.onCacheRebuilt(() => {
+                    void manager.reindexAfterCacheRebuild();
+                })
+            );
+
             // Wire embedding service into ChatTraceService
             const embeddingService = this.embeddingManager.getService();
             if (embeddingService) {

@@ -185,6 +185,46 @@ export class EmbeddingManager {
   }
 
   /**
+   * Re-derive embeddings after the cache database was thrown away and rebuilt.
+   *
+   * `SQLiteMaintenanceService.clearAllData()` DROPs `conversation_embeddings`
+   * and clears `embedding_backfill_state` at the start of every full rebuild.
+   * The JSONL replay restores conversations and messages but knows nothing
+   * about their embeddings, so without this a mid-session "Nexus: Rebuild
+   * cache" silently leaves chat search dead for the rest of the session.
+   *
+   * The in-flight phase is cancelled first: the phases are gated on
+   * `isRunning`, so a re-index requested while the long note walk is running
+   * would otherwise no-op. `cancel()` does not set the queue's `destroyed`
+   * flag, which is what makes the restart below legal.
+   */
+  async reindexAfterCacheRebuild(): Promise<void> {
+    if (!this.isEnabled || !this.queue) {
+      return;
+    }
+
+    try {
+      this.queue.cancel();
+      await this.waitForQueueIdle();
+      await this.runBackgroundIndexing();
+    } catch (error) {
+      console.error('[EmbeddingManager] Re-index after cache rebuild failed:', error);
+    }
+  }
+
+  /**
+   * Wait for the queue to observe its own cancellation. Bounded: if the phase
+   * refuses to settle we start anyway, and the `isRunning` guards make the
+   * re-index a no-op rather than letting two walks run at once.
+   */
+  private async waitForQueueIdle(timeoutMs = 10_000): Promise<void> {
+    const startedAt = Date.now();
+    while (this.queue?.isIndexing() && Date.now() - startedAt < timeoutMs) {
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
+  }
+
+  /**
    * Get the embedding service (for external use)
    */
   getService(): EmbeddingService | null {
@@ -315,15 +355,27 @@ export class EmbeddingManager {
     }
 
     try {
-      // Phase 1: Index all notes
-      await this.queue.startFullIndex();
+      // Cheapest-first, and deliberately so.
+      //
+      // The three phases are independent - conversations read conversations/
+      // messages, traces read memory_traces, notes read the vault - so the order
+      // is free, and it should be driven by how long each phase makes the others
+      // wait. A vault with 18k notes takes hours to index; the few hundred
+      // conversations behind it then have no chat search for that whole time.
+      // Since clearAllData() drops conversation embeddings on every full
+      // rebuild, that is exactly the window a rebuild opens, every time.
+      //
+      // Conversations first, notes last: the small, high-value indexes come back
+      // in seconds and the long vault walk runs behind them.
+
+      // Phase 1: Backfill existing conversations (idempotent, resumable)
+      await this.queue.startConversationIndex();
 
       // Phase 2: Backfill existing traces (from migration)
       await this.queue.startTraceIndex();
 
-      // Phase 3: Backfill existing conversations
-      // Runs after notes and traces; idempotent and resumable on interrupt
-      await this.queue.startConversationIndex();
+      // Phase 3: Index all notes - longest by far, so it goes last
+      await this.queue.startFullIndex();
     } catch (error) {
       console.error('[EmbeddingManager] Background indexing failed:', error);
     }
