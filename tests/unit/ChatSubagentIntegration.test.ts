@@ -79,9 +79,9 @@ describe('ChatSubagentIntegration', () => {
     const integration = new ChatSubagentIntegration({
       app: {} as App,
       component: {} as Component,
-      chatService: {
+      getChatService: () => ({
         getLLMService: jest.fn(() => llmService),
-      } as never,
+      }) as never,
       getConversationManager: () => conversationManager,
       getModelAgentManager: () => modelAgentManager,
       getStreamingController: () => streamingController,
@@ -165,9 +165,9 @@ describe('ChatSubagentIntegration', () => {
     const integration = new ChatSubagentIntegration({
       app: {} as App,
       component: {} as Component,
-      chatService: {
+      getChatService: () => ({
         getLLMService: jest.fn(() => ({ name: 'llm-service' })),
-      } as never,
+      }) as never,
       getConversationManager: () => null,
       getModelAgentManager: () => null,
       getStreamingController: () => null,

@@ -2,7 +2,7 @@
  * Obsidian view/lifecycle mocks: Modal, Scope, Component, Plugin, Menu.
  */
 
-import { createMockElement, App, EventRef } from './core';
+import { createMockElement, App, EventRef, WorkspaceLeaf } from './core';
 
 // Scope mock
 export class Scope {
@@ -142,6 +142,52 @@ export class Component {
 
   registerEvent(eventRef: EventRef): void {
     void eventRef;
+  }
+}
+
+/**
+ * ItemView mock.
+ *
+ * Deliberately minimal: `leaf`, `app`, `containerEl` and the Component
+ * lifecycle it inherits — the only ItemView surface the plugin's views touch.
+ *
+ * `containerEl.children` is left EMPTY on purpose. Real Obsidian puts the
+ * content host at `containerEl.children[1]`, and the plugin reads exactly that.
+ * A test that needs the content host must populate `children` itself, so that
+ * the "no container" early-return is never taken by accident and never
+ * mistaken for the real path.
+ */
+export class ItemView extends Component {
+  leaf: WorkspaceLeaf;
+  app: App;
+  containerEl: HTMLElement;
+  icon = '';
+
+  constructor(leaf: WorkspaceLeaf) {
+    super();
+    this.leaf = leaf;
+    this.app = (leaf as unknown as { app?: App })?.app ?? new App();
+    this.containerEl = createMockElement('div');
+  }
+
+  getViewType(): string {
+    return 'mock-view';
+  }
+
+  getDisplayText(): string {
+    return 'Mock view';
+  }
+
+  getIcon(): string {
+    return this.icon;
+  }
+
+  onOpen(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  onClose(): Promise<void> {
+    return Promise.resolve();
   }
 }
 

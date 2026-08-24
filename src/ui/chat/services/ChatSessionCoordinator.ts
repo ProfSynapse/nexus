@@ -65,7 +65,12 @@ interface UIStateControllerLike {
 }
 
 interface ChatSessionCoordinatorDependencies {
-  chatService: ChatService;
+  /**
+   * Resolved lazily — see the note on ChatSubagentIntegration's getChatService.
+   * ChatView is constructed before the plugin's service graph produces
+   * chatService, so this dependency must never be captured by value.
+   */
+  getChatService: () => ChatService | null;
   component: Component;
   getContainerEl: () => HTMLElement;
   getChatTitleEl: () => HTMLElement | null;
@@ -113,7 +118,12 @@ export class ChatSessionCoordinator {
       return;
     }
 
-    const conversation = await this.deps.chatService.getConversation(conversationId);
+    const chatService = this.deps.getChatService();
+    if (!chatService) {
+      return;
+    }
+
+    const conversation = await chatService.getConversation(conversationId);
     if (!conversation) {
       return;
     }
@@ -235,7 +245,7 @@ export class ChatSessionCoordinator {
 
     await modelAgentManager.initializeDefaults();
 
-    const hasProviders = this.deps.chatService.hasConfiguredProviders();
+    const hasProviders = this.deps.getChatService()?.hasConfiguredProviders() ?? false;
     uiStateController.showWelcomeState(hasProviders);
 
     const chatTitle = this.deps.getChatTitleEl();

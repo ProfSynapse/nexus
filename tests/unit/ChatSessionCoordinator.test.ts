@@ -101,7 +101,7 @@ function createCoordinatorHarness() {
   const onClearAgentStatus = jest.fn();
 
   const coordinator = new ChatSessionCoordinator({
-    chatService: chatService as never,
+    getChatService: () => chatService as never,
     component,
       getContainerEl: () => containerEl as unknown as HTMLElement,
       getChatTitleEl: () => chatTitleEl as unknown as HTMLElement,
