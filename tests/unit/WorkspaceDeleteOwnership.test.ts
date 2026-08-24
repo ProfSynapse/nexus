@@ -85,9 +85,38 @@ describe('permanent workspace delete removes everything the workspace owns', () 
           'states',
           'sessions',
           'workspaces',
-          'trace_embedding_metadata'
+          'trace_embedding_metadata',
+          'tool_operation_receipts'
         ])
       );
+    });
+
+    it('purges tool operation receipts, which are workspace-owned on both sides', async () => {
+      // `tool_operation_receipts` arrived with the agent-runtime work (#356),
+      // after this fix was first written. It belongs to the workspace by the
+      // same test the rest of this module applies: a NOT NULL `workspaceId`,
+      // and events appended to the workspace's own stream
+      // (`ToolOperationRepository.path` → `workspaces/ws_<id>.jsonl`). That
+      // makes it unlike `conversations`, whose workspaceId is a nullable
+      // back-reference. Removing the stream covers the JSONL half; this covers
+      // the cache half, which would otherwise be orphaned exactly as every
+      // other child table was before this fix.
+      const { cache, statements } = createRecordingSqlite();
+      const applier = new WorkspaceEventApplier(cache as unknown as ISQLiteCacheManager);
+
+      await applier.apply({
+        id: 'evt-del',
+        type: 'workspace_deleted',
+        deviceId: 'dev',
+        timestamp: 10,
+        workspaceId: WS
+      } as never);
+
+      const receiptDelete = statements.find(s =>
+        /DELETE FROM tool_operation_receipts/i.test(s.sql)
+      );
+      expect(receiptDelete).toBeDefined();
+      expect(receiptDelete?.params).toEqual([WS]);
     });
 
     it('deletes children before the parent rows they are reached through', async () => {

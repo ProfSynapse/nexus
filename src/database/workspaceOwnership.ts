@@ -68,6 +68,12 @@ const WORKSPACE_OWNED_DELETES: readonly string[] = [
   'DELETE FROM memory_traces WHERE workspaceId = ?',
   'DELETE FROM states WHERE workspaceId = ?',
   'DELETE FROM sessions WHERE workspaceId = ?',
+  // Tool operation receipts carry a NOT NULL workspaceId and are appended to the
+  // workspace's own stream (`ToolOperationRepository.path`), so they are owned on
+  // both sides — unlike `conversations`, whose workspaceId is nullable. Removing
+  // the stream already handles the JSONL half; without this line the SQLite half
+  // would be left behind exactly like the other children were.
+  'DELETE FROM tool_operation_receipts WHERE workspaceId = ?',
   'DELETE FROM workspaces WHERE id = ?'
 ];
 
