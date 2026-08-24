@@ -61,10 +61,30 @@ export interface SessionPurgeTarget {
  *
  * No FTS table is keyed to a session (`workspace_fts` tracks workspaces and is
  * maintained by a trigger that does fire), so none is listed.
+ *
+ * The list is meant to be complete against the schema, and completeness has a
+ * mechanical test: every table declaring a NOT NULL `sessionId` is owned and
+ * must appear here. As of schema 15 that is exactly `states`, `memory_traces`
+ * and `tool_operation_receipts`. The three tables whose `sessionId` is NULLABLE
+ * — `conversations`, `trace_embedding_metadata` and
+ * `conversation_embedding_metadata` — are back-references rather than ownership;
+ * see the block above for the first and `purgeSessionRows` for the second.
+ * `SessionDeleteOwnership.test.ts` asserts that correspondence against
+ * `SCHEMA_SQL` so a new table cannot be added without this list noticing.
  */
 const SESSION_OWNED_DELETES: readonly string[] = [
   'DELETE FROM states WHERE sessionId = ?',
   'DELETE FROM memory_traces WHERE sessionId = ?',
+  // Tool operation receipts (schema 15) carry a NOT NULL sessionId and are
+  // appended to the workspace's own stream — the SAME stream the session's own
+  // events live in (`ToolOperationRepository.path`) — so the `session_deleted`
+  // tombstone is their JSONL-side removal too, exactly as it is for states and
+  // traces. Without this line a session delete left every receipt behind as an
+  // orphan pointing at a session that no longer exists, and every rebuild
+  // faithfully reproduced them: replay re-applies `tool_operation_started`
+  // before it reaches the tombstone. This is the session-side twin of the same
+  // line in `workspaceOwnership.ts`.
+  'DELETE FROM tool_operation_receipts WHERE sessionId = ?',
   'DELETE FROM sessions WHERE id = ?'
 ];
 

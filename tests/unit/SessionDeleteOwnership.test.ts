@@ -22,6 +22,8 @@ import { VaultEventStore } from '../../src/database/storage/vaultRoot/VaultEvent
 import { JSONLWriter } from '../../src/database/storage/JSONLWriter';
 import { SyncCoordinator, type ISQLiteCacheManager } from '../../src/database/sync/SyncCoordinator';
 import { QueryCache } from '../../src/database/optimizations/QueryCache';
+import { purgeSessionRows } from '../../src/database/sessionOwnership';
+import { SCHEMA_SQL } from '../../src/database/schema/schema';
 import { createMockApp } from '../helpers/mockVaultAdapter';
 
 const WS = 'ws-owner';
@@ -86,6 +88,28 @@ function build() {
   return { app, vaultEventStore, jsonlWriter, cache, statements, tablesTouchedBy, deps };
 }
 
+/**
+ * A `tool_operation_started` event, as `ToolOperationRepository.start` writes it
+ * — into `workspaces/ws_<id>.jsonl`, the SAME stream the session's own events
+ * live in.
+ */
+function receiptStarted(operationId: string, sessionId: string) {
+  return {
+    type: 'tool_operation_started',
+    workspaceId: WS,
+    data: {
+      operationId,
+      signature: `sig-${operationId}`,
+      origin: 'native-chat',
+      workspaceId: WS,
+      sessionId,
+      replayPolicy: 'never',
+      replayable: false,
+      commandSummary: 'content write --path a.md'
+    }
+  };
+}
+
 /** The events a real workspace stream carries for a session with children. */
 async function seedWorkspaceStream(jsonlWriter: JSONLWriter) {
   await jsonlWriter.appendEvents(`workspaces/ws_${WS}.jsonl`, [
@@ -95,9 +119,122 @@ async function seedWorkspaceStream(jsonlWriter: JSONLWriter) {
     { type: 'state_saved', workspaceId: WS, sessionId: SESSION, data: { id: 'st-1', name: 'St1', created: 4, stateJson: '{}' } },
     { type: 'state_saved', workspaceId: WS, sessionId: SESSION, data: { id: 'st-2', name: 'St2', created: 5, stateJson: '{}' } },
     { type: 'trace_added', workspaceId: WS, sessionId: SESSION, data: { id: 'tr-1', content: 'trace', traceType: 'note' } },
-    { type: 'state_saved', workspaceId: WS, sessionId: BYSTANDER, data: { id: 'st-3', name: 'St3', created: 6, stateJson: '{}' } }
+    { type: 'state_saved', workspaceId: WS, sessionId: BYSTANDER, data: { id: 'st-3', name: 'St3', created: 6, stateJson: '{}' } },
+    receiptStarted('op-target', SESSION),
+    receiptStarted('op-bystander', BYSTANDER)
   ] as never);
 }
+
+/**
+ * Every table `SCHEMA_SQL` declares, with the `sessionId` column declaration if
+ * it has one. Parsed rather than hand-listed so a table added later cannot slip
+ * past the completeness test below.
+ */
+function sessionKeyedTables(): Array<{ table: string; notNull: boolean }> {
+  const found: Array<{ table: string; notNull: boolean }> = [];
+  const createTable = /CREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)([^;]*);/gi;
+  for (const match of SCHEMA_SQL.matchAll(createTable)) {
+    const [, table, body] = match;
+    for (const line of body.split('\n')) {
+      if (line.includes('FOREIGN KEY')) continue;
+      const column = line.trim().match(/^sessionId\s+TEXT(\s+NOT\s+NULL)?/i);
+      if (column) {
+        found.push({ table, notNull: Boolean(column[1]) });
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * The purge list has to be complete against the schema, and "complete" has a
+ * mechanical definition here: a NOT NULL `sessionId` means the row cannot exist
+ * without the session, so the session owns it and deleting the session must
+ * delete it. A nullable `sessionId` is a back-reference to an entity that
+ * outlives the session, and purging it would destroy data nobody asked to
+ * delete.
+ *
+ * This is the check that would have caught `tool_operation_receipts`: it arrived
+ * with schema 15, after this branch was cut, and merged in with no textual
+ * conflict at all.
+ */
+describe('the session purge list is complete against SCHEMA_SQL', () => {
+  /**
+   * Nullable `sessionId`, deliberately NOT purged as ownership. Each entry
+   * carries the reason it is excluded, so adding one is a decision rather than
+   * an omission.
+   */
+  const DELIBERATE_EXCLUSIONS: Record<string, string> = {
+    conversations:
+      'first-class entity with its own event stream; sessionId is a nullable ' +
+      'back-reference and the conversation outlives the session',
+    conversation_embedding_metadata:
+      'keyed to conversations, which are excluded above, and embeddings are not ' +
+      'replayable from JSONL'
+  };
+
+  /**
+   * Nullable `sessionId`, but purged anyway — the rows are derived from
+   * `memory_traces`, which the session does own, so leaving them would strand
+   * embeddings pointing at traces that no longer exist.
+   */
+  const PURGED_DESPITE_NULLABLE = ['trace_embedding_metadata'];
+
+  function tablesPurgedBySession(): Promise<string[]> {
+    const touched: string[] = [];
+    const sqlite = {
+      run: async (sql: string) => {
+        const match = sql.match(/DELETE FROM\s+(\w+)/i);
+        if (match) touched.push(match[1]);
+      },
+      query: async () => []
+    };
+    return purgeSessionRows(sqlite, SESSION).then(() => touched);
+  }
+
+  it('purges every table whose sessionId is NOT NULL', async () => {
+    const owned = sessionKeyedTables()
+      .filter(t => t.notNull)
+      .map(t => t.table);
+    const purged = await tablesPurgedBySession();
+
+    // Not an empty-set tautology: if the parse ever stops finding tables this
+    // test would pass vacuously.
+    expect(owned.length).toBeGreaterThanOrEqual(3);
+    expect(owned).toEqual(
+      expect.arrayContaining(['states', 'memory_traces', 'tool_operation_receipts'])
+    );
+    for (const table of owned) {
+      expect(purged).toContain(table);
+    }
+  });
+
+  it('purges nothing whose sessionId is nullable except the documented cases', async () => {
+    const nullable = sessionKeyedTables()
+      .filter(t => !t.notNull)
+      .map(t => t.table);
+    const purged = await tablesPurgedBySession();
+
+    expect(nullable.length).toBeGreaterThan(0);
+    for (const table of nullable) {
+      if (PURGED_DESPITE_NULLABLE.includes(table)) {
+        expect(purged).toContain(table);
+        continue;
+      }
+      // A nullable sessionId that is neither purged nor documented means
+      // somebody added a table and nobody decided what a delete should do
+      // with it.
+      expect(Object.keys(DELIBERATE_EXCLUSIONS)).toContain(table);
+      expect(purged).not.toContain(table);
+    }
+  });
+
+  it('purges the sessions row itself, last', async () => {
+    const purged = await tablesPurgedBySession();
+    expect(purged[purged.length - 1]).toBe('sessions');
+  });
+});
 
 describe('permanent session delete removes everything the session owns', () => {
   // ==========================================================================
@@ -126,9 +263,32 @@ describe('permanent session delete removes everything the session owns', () => {
           'trace_embedding_metadata',
           'states',
           'memory_traces',
+          'tool_operation_receipts',
           'sessions'
         ])
       );
+    });
+
+    /**
+     * `tool_operation_receipts` (schema 15) landed after this branch was cut and
+     * merged into it without a single textual conflict, which is exactly how a
+     * purge list goes stale. Its `sessionId` is TEXT NOT NULL, so a session owns
+     * its receipts by the same rule that makes it own its states and traces —
+     * and its events are appended to the same workspace stream, so replay
+     * re-creates them right before it reaches the tombstone.
+     */
+    it('purges the tool operation receipts the session owns', async () => {
+      const { cache, statements } = createRecordingSqlite();
+      const applier = new WorkspaceEventApplier(cache as unknown as ISQLiteCacheManager);
+
+      await applier.apply(tombstone as never);
+
+      const receiptPurge = statements.find(s =>
+        /DELETE FROM tool_operation_receipts/i.test(s.sql)
+      );
+      expect(receiptPurge).toBeDefined();
+      expect(receiptPurge?.sql).toMatch(/WHERE\s+sessionId\s*=\s*\?/i);
+      expect(receiptPurge?.params).toEqual([SESSION]);
     });
 
     it('deletes the sessions row last, so nothing is orphaned mid-purge', async () => {
@@ -141,6 +301,7 @@ describe('permanent session delete removes everything the session owns', () => {
       expect(deleted.indexOf('sessions')).toBe(deleted.length - 1);
       expect(deleted.indexOf('states')).toBeLessThan(deleted.indexOf('sessions'));
       expect(deleted.indexOf('memory_traces')).toBeLessThan(deleted.indexOf('sessions'));
+      expect(deleted.indexOf('tool_operation_receipts')).toBeLessThan(deleted.indexOf('sessions'));
     });
 
     it('scopes every statement to the session, never to the workspace', async () => {
@@ -219,7 +380,12 @@ describe('permanent session delete removes everything the session owns', () => {
 
       // Pre-fix this array was exactly ['sessions'].
       expect(tablesTouchedBy('DELETE')).toEqual(
-        expect.arrayContaining(['states', 'memory_traces', 'sessions'])
+        expect.arrayContaining([
+          'states',
+          'memory_traces',
+          'tool_operation_receipts',
+          'sessions'
+        ])
       );
     });
 
@@ -313,10 +479,36 @@ describe('permanent session delete removes everything the session owns', () => {
       expect(lastInsert).toBeDefined();
       expect(firstPurge).toBeGreaterThan((lastInsert as { i: number }).i);
 
+      // The receipts specifically: replay re-inserts the target session's
+      // receipt from `tool_operation_started` in the same stream, and the
+      // tombstone has to remove it again. Without the purge line the row is
+      // reproduced on every single rebuild.
+      const receiptInsert = touchingSession.findIndex(s =>
+        /INSERT[\s\S]*INTO tool_operation_receipts/i.test(s.sql)
+      );
+      const receiptPurge = touchingSession.findIndex(s =>
+        /DELETE FROM tool_operation_receipts/i.test(s.sql)
+      );
+      expect(receiptInsert).toBeGreaterThanOrEqual(0);
+      expect(receiptPurge).toBeGreaterThan(receiptInsert);
+
       // The rebuild must still restore the rest of the workspace.
       const writes = statements.filter(s => /^\s*INSERT/i.test(s.sql));
       expect(writes.some(s => JSON.stringify(s.params).includes(BYSTANDER))).toBe(true);
       expect(writes.some(s => JSON.stringify(s.params).includes(WS))).toBe(true);
+
+      // The bystander session's receipt is a bystander too.
+      const survivingReceipts = statements.filter(
+        s => /INSERT[\s\S]*INTO tool_operation_receipts/i.test(s.sql)
+          && JSON.stringify(s.params).includes(BYSTANDER)
+      );
+      expect(survivingReceipts.length).toBe(1);
+      expect(
+        statements.some(
+          s => /DELETE FROM tool_operation_receipts/i.test(s.sql)
+            && JSON.stringify(s.params).includes(BYSTANDER)
+        )
+      ).toBe(false);
     });
   });
 });
