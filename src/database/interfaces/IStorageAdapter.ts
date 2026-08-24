@@ -285,6 +285,16 @@ export interface IStorageAdapter {
    * @param options - Pagination and archive-filter options
    * @returns Paginated list of state metadata
    */
+  /**
+   * Resolve one state by name or id within a workspace, in SQL.
+   * Paginated list scans cannot see past the newest page; this can.
+   */
+  findState(
+    workspaceId: string,
+    identifier: string,
+    options?: { matchId?: boolean; caseSensitiveName?: boolean }
+  ): Promise<StateMetadata | null>;
+
   getStates(
     workspaceId: string,
     sessionId?: string,

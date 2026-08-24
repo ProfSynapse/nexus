@@ -179,10 +179,8 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
      */
     private async loadStateData(workspaceId: string, stateName: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: LoadedStateResult}> {
         try {
-            const statesResult = await memoryService.getStates(workspaceId, undefined, { pageSize: 100 });
-            const matchingState = statesResult.items.find(state =>
-                state.id === stateName || state.name?.toLowerCase() === stateName.toLowerCase()
-            );
+            // Resolve in SQL: a pageSize scan could not see past its own page.
+            const matchingState = await memoryService.findState(workspaceId, stateName, { caseSensitiveName: false });
             if (!matchingState?.sessionId) {
                 return { success: false, error: `State "${stateName}" not found. Use listStates to see available states.` };
             }

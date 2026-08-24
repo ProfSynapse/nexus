@@ -623,6 +623,7 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       adapter.stateRepo = {
         getStateData: jest.fn().mockResolvedValue(null),
         getStates: jest.fn().mockResolvedValue({ items: [] }),
+        findState: jest.fn().mockResolvedValue(null),
         saveState: jest.fn().mockResolvedValue('state-id'),
         updateState: jest.fn().mockResolvedValue(undefined),
         delete: jest.fn().mockResolvedValue(undefined),

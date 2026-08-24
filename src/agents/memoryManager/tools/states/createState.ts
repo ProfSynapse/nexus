@@ -114,8 +114,11 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
 
             // Phase 3.5: Check state name uniqueness within the workspace
             const workspaceData = workspaceResult.data;
-            const existingStates = await memoryService.getStates(workspaceData.workspaceId);
-            const nameExists = existingStates.items.some(state => state.name === params.name);
+            // Name-only lookup in SQL. The old scan saw just the newest 25
+            // states, so past that this check passed and let duplicate names in.
+            const nameExists = (await memoryService.findState(
+                workspaceData.workspaceId, params.name, { matchId: false }
+            )) !== null;
             if (nameExists) {
                 return this.prepareResult(
                     false,

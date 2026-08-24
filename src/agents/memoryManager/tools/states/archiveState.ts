@@ -15,13 +15,6 @@ import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes
 import { GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
 import type { WorkspaceState } from '../../../../database/types/session/SessionTypes';
 
-interface StateListItem {
-    id: string;
-    name: string;
-    sessionId?: string;
-    state?: WorkspaceState;
-}
-
 export interface ArchiveStateParameters extends CommonParameters {
     name: string;
     restore?: boolean;
@@ -63,15 +56,15 @@ export class ArchiveStateTool extends BaseTool<ArchiveStateParameters, ArchiveSt
                 return this.prepareResult(false, undefined, `Workspace not found: ${workspaceIdentifier}`);
             }
 
-            const statesResult = await memoryService.getStates(workspace.id);
-            const match = (statesResult.items as unknown as StateListItem[]).find(
-                (s) => s.id === params.name || s.name === params.name
-            );
+            // Resolve in SQL. Scanning getStates() only ever saw the newest
+            // page (default 25), so every older state was unarchivable.
+            const match = await memoryService.findState(workspace.id, params.name);
             if (!match) {
                 return this.prepareResult(false, undefined, `State "${params.name}" not found. Use listStates to see available states.`);
             }
 
-            const sessionId = match.sessionId || match.state?.sessionId;
+            // states.sessionId is NOT NULL, so the resolved row always carries it.
+            const sessionId = match.sessionId;
             if (!sessionId) {
                 return this.prepareResult(false, undefined, `State "${params.name}" has no session ID; cannot update.`);
             }

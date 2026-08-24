@@ -54,6 +54,13 @@ describe('LoadStateTool', () => {
       }
     };
     const memoryService = {
+      findState: jest.fn(async (_ws: string, identifier: string, options?: { matchId?: boolean; caseSensitiveName?: boolean }) => {
+        const matchId = options?.matchId !== false;
+        const cs = options?.caseSensitiveName !== false;
+        const same = (n?: string) => (cs ? n === identifier : n?.toLowerCase() === identifier.toLowerCase());
+        const pool = [matchingState] as Array<{ id: string; name?: string }>;
+        return pool.find(s => matchId && s.id === identifier) ?? pool.find(s => same(s.name)) ?? null;
+      }),
       getStates: jest.fn().mockResolvedValue({
         items: [matchingState],
         page: 0,
@@ -90,7 +97,9 @@ describe('LoadStateTool', () => {
 
     expect(result.success).toBe(true);
     expect(workspaceService.getWorkspaceByNameOrId).toHaveBeenCalledWith('Workspace Name');
-    expect(memoryService.getStates).toHaveBeenCalledWith('workspace-uuid', undefined, { pageSize: 100 });
+    // Resolved in SQL, not by scanning a page: a pageSize scan could not see
+    // a state older than its own page.
+    expect(memoryService.findState).toHaveBeenCalledWith('workspace-uuid', 'Checkpoint', { caseSensitiveName: false });
     expect(memoryService.getState).toHaveBeenCalledWith('workspace-uuid', 'session-1', 'state-1');
     expect(result.data).toMatchObject({
       name: 'Checkpoint',
@@ -105,6 +114,13 @@ describe('LoadStateTool', () => {
 
   it('keeps an empty current tag list instead of restoring stale snapshot tags', async () => {
     const memoryService = {
+      findState: jest.fn(async (_ws: string, identifier: string, options?: { matchId?: boolean; caseSensitiveName?: boolean }) => {
+        const matchId = options?.matchId !== false;
+        const cs = options?.caseSensitiveName !== false;
+        const same = (n?: string) => (cs ? n === identifier : n?.toLowerCase() === identifier.toLowerCase());
+        const pool = [{ id: 'state-1', name: 'Checkpoint', sessionId: 'session-1', workspaceId: 'workspace-uuid', tags: [] }] as Array<{ id: string; name?: string }>;
+        return pool.find(s => matchId && s.id === identifier) ?? pool.find(s => same(s.name)) ?? null;
+      }),
       getStates: jest.fn().mockResolvedValue({
         items: [{
           id: 'state-1',

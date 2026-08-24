@@ -181,6 +181,7 @@ export function createMockAdapter(ready: boolean): MockStorageAdapter {
     deleteState: jest.fn(),
     getState: jest.fn().mockResolvedValue(null),
     getStates: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),
+    findState: jest.fn().mockResolvedValue(null),
     getConversations: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),
     getConversation: jest.fn().mockResolvedValue(null),
     getMessages: jest.fn().mockResolvedValue({ ...EMPTY_MSG_PAGE }),

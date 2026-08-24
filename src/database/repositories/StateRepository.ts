@@ -218,6 +218,61 @@ export class StateRepository
     };
   }
 
+  /**
+   * Resolve a single state by name or id within one workspace.
+   *
+   * This is a lookup, not a list, and it deliberately does NOT go through
+   * `queryPaginated`: that defaults `pageSize` to 25 and caps it at 200, so a
+   * caller resolving a name through `getStates` sees only the newest page and
+   * silently fails to find anything older. Paging until a match appears would
+   * reintroduce the per-state JSONL cost that #219/#346 removed, so the match
+   * is resolved in SQL and returns at most one row.
+   *
+   * Archived rows are included on purpose: restoring an archived state and
+   * renaming one both have to resolve a row that a list would hide.
+   *
+   * @param workspaceId - Workspace that owns the state
+   * @param identifier - State id, or state name
+   * @param options.matchId - Also match `identifier` against `id` (default true)
+   * @param options.caseSensitiveName - Exact-case name match (default true). When
+   *   false, matching is ASCII-case-insensitive via SQLite's NOCASE collation;
+   *   SQLite does not case-fold non-ASCII text without ICU.
+   * @returns Matching state metadata, or null when nothing matches
+   */
+  async findState(
+    workspaceId: string,
+    identifier: string,
+    options?: { matchId?: boolean; caseSensitiveName?: boolean }
+  ): Promise<StateMetadata | null> {
+    const matchId = options?.matchId !== false;
+    const nameClause = options?.caseSensitiveName === false
+      ? "name = ? COLLATE NOCASE"
+      : "name = ?";
+
+    const params: QueryParams = [workspaceId];
+    const clauses: string[] = [];
+    if (matchId) {
+      clauses.push("id = ?");
+      params.push(identifier);
+    }
+    clauses.push(nameClause);
+    params.push(identifier);
+
+    let sql = `SELECT * FROM states WHERE workspaceId = ? AND (${clauses.join(" OR ")})`;
+    if (matchId) {
+      // An id match beats a name match, and among same-named rows the newest
+      // wins - the same answer the old `find()` over a `created DESC` page gave.
+      sql += " ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, created DESC";
+      params.push(identifier);
+    } else {
+      sql += " ORDER BY created DESC";
+    }
+    sql += " LIMIT 1";
+
+    const row = await this.sqliteCache.queryOne<StateRow>(sql, params);
+    return row ? this.rowToEntity(row) : null;
+  }
+
   async getStateData(id: string): Promise<StateData | null> {
     // Check content cache first
     if (this.stateContentCache.has(id)) {

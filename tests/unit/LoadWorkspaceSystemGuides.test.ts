@@ -76,7 +76,8 @@ describe('LoadWorkspaceTool system guides workspace', () => {
     const memoryService = {
       getMemoryTraces: jest.fn().mockResolvedValue(emptyPage),
       getSessions: jest.fn().mockResolvedValue(emptyPage),
-      getStates: jest.fn().mockResolvedValue(emptyPage)
+      getStates: jest.fn().mockResolvedValue(emptyPage),
+      findState: jest.fn().mockResolvedValue(null)
     };
     const app = {
       vault: {

@@ -45,6 +45,7 @@ import { ExportService } from '../services/ExportService';
 
 type ExportServiceStateRepo = {
   getStates(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: StateData[] }>;
+  findState(workspaceId: string, identifier: string, options?: { matchId?: boolean; caseSensitiveName?: boolean }): Promise<unknown>;
 };
 
 /**

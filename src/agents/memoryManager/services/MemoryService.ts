@@ -610,6 +610,60 @@ export class MemoryService {
     );
   }
 
+  /**
+   * Resolve one state by name or id within a workspace.
+   *
+   * Prefer this over scanning `getStates` for a match. `getStates` is a
+   * paginated list (default 25, hard cap 200 in `BaseRepository`), so a scan
+   * silently cannot see states older than the newest page - which made every
+   * state past the 25th unarchivable and unrestorable. Resolving in SQL also
+   * avoids paging, which would reintroduce the per-state JSONL reads that
+   * #219/#346 removed.
+   *
+   * Archived states are included: restore and rename both need them.
+   *
+   * @param workspaceId - Workspace that owns the state
+   * @param identifier - State id, or state name
+   * @param options.matchId - Also match against the state id (default true)
+   * @param options.caseSensitiveName - Exact-case name match (default true)
+   * @returns Matching state, or null
+   */
+  async findState(
+    workspaceId: string,
+    identifier: string,
+    options?: { matchId?: boolean; caseSensitiveName?: boolean }
+  ): Promise<{ id: string; name: string; sessionId?: string; tags?: string[] } | null> {
+    return withReadableBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const match = await adapter.findState(workspaceId, identifier, options);
+        return match
+          ? { id: match.id, name: match.name, sessionId: match.sessionId, tags: match.tags }
+          : null;
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
+        if (!workspace) {
+          return null;
+        }
+        const matchId = options?.matchId !== false;
+        const caseSensitive = options?.caseSensitiveName !== false;
+        const sameName = (name?: string) => caseSensitive
+          ? name === identifier
+          : name?.toLowerCase() === identifier.toLowerCase();
+
+        const all = Object.values(workspace.sessions)
+          .flatMap(session => Object.values(session.states)) as Array<{
+            id: string; name: string; sessionId?: string; created?: number; tags?: string[];
+          }>;
+        const sorted = [...all].sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+        return sorted.find(s => matchId && s.id === identifier)
+          ?? sorted.find(s => sameName(s.name))
+          ?? null;
+      }
+    );
+  }
+
   private extractStateTags(state: WorkspaceState): string[] | undefined {
     const tags = state.state?.metadata?.tags;
     return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : undefined;

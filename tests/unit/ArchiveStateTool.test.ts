@@ -35,12 +35,20 @@ function buildAgentMocks(opts: {
   agent: MemoryManagerAgent;
   memoryService: {
     getStates: jest.Mock;
+    findState: jest.Mock;
     getState: jest.Mock;
     updateState: jest.Mock;
   };
   workspaceService: { getWorkspaceByNameOrId: jest.Mock };
 } {
   const memoryService = {
+    findState: jest.fn(async (_ws: string, identifier: string, options?: { matchId?: boolean; caseSensitiveName?: boolean }) => {
+      const matchId = options?.matchId !== false;
+      const cs = options?.caseSensitiveName !== false;
+      const same = (n?: string) => (cs ? n === identifier : n?.toLowerCase() === identifier.toLowerCase());
+      return opts.listItems.find(s => matchId && s.id === identifier)
+        ?? opts.listItems.find(s => same(s.name)) ?? null;
+    }),
     getStates: jest.fn().mockResolvedValue({
       items: opts.listItems,
       page: 0,
@@ -152,8 +160,11 @@ describe('ArchiveStateTool', () => {
     const result = await tool.execute({ context: archiveContext(), name: 'Checkpoint', restore: true });
 
     expect(result.success).toBe(true);
-    const options = memoryService.getStates.mock.calls[0][2];
-    expect(options?.includeArchived).not.toBe(false);
+    // Restore has to resolve a row that a list would hide, which is exactly why
+    // the lookup goes through findState: it applies no archive filter at all,
+    // and it is not bounded by a page.
+    expect(memoryService.findState).toHaveBeenCalledWith('workspace-1', 'Checkpoint');
+    expect(memoryService.getStates).not.toHaveBeenCalled();
   });
 
   it('restores an archived state by toggling metadata.isArchived to false, preserving tags', async () => {
