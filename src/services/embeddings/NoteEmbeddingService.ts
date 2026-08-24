@@ -54,6 +54,52 @@ export interface SimilarNote {
   distance: number;
 }
 
+/**
+ * Escape character used for the `LIKE` patterns built from caller path scopes.
+ *
+ * Vault folders legitimately contain `%` and `_` (`_Base/` is a real example),
+ * both of which are LIKE wildcards. Without an ESCAPE clause `_Base%` would
+ * also match `xBase/…`, quietly widening the very scope the caller asked to
+ * narrow.
+ */
+const LIKE_ESCAPE = '\\';
+
+function escapeLikeLiteral(value: string): string {
+  return value.replace(/[\\%_]/g, character => LIKE_ESCAPE + character);
+}
+
+/**
+ * Build the optional `WHERE` clause that confines the candidate scan to a set
+ * of path prefixes.
+ *
+ * The clause is deliberately a SUPERSET of what the caller ultimately wants: it
+ * matches on `startsWith` semantics only, so a caller scoping to `_Base` still
+ * sees `_Baseball/` rows here. Anchoring to a folder boundary — and matching
+ * globs that do not reduce to a prefix at all — stays with the caller's own
+ * second pass. The job of this clause is narrower: keep the `ORDER BY distance
+ * LIMIT n` candidate window from being spent entirely on rows that are out of
+ * scope, which is what made a scoped search return nothing.
+ *
+ * An empty prefix means "anywhere in the vault". Because the prefixes are OR'd,
+ * a single unbounded entry makes the whole union unbounded, so scoping is
+ * dropped rather than applied partially.
+ */
+function buildPathPrefixScope(pathPrefixes?: string[]): { where: string; params: string[] } {
+  if (!pathPrefixes || pathPrefixes.length === 0) {
+    return { where: '', params: [] };
+  }
+
+  if (pathPrefixes.some(prefix => prefix.length === 0)) {
+    return { where: '', params: [] };
+  }
+
+  const clauses = pathPrefixes.map(() => `em.notePath LIKE ? ESCAPE '${LIKE_ESCAPE}'`);
+  return {
+    where: `WHERE ${clauses.join(' OR ')}`,
+    params: pathPrefixes.map(prefix => `${escapeLikeLiteral(prefix)}%`)
+  };
+}
+
 export class NoteEmbeddingService {
   private app: App;
   private db: SQLiteCacheManager;
@@ -205,9 +251,12 @@ export class NoteEmbeddingService {
    *
    * @param query - Search query
    * @param limit - Maximum number of results (default: 10)
+   * @param pathPrefixes - Optional path prefixes to confine the candidate scan
+   *   to. Omitted (the default) searches the whole vault, so existing callers
+   *   are unaffected.
    * @returns Array of matching notes with distance scores
    */
-  async semanticSearch(query: string, limit = 10): Promise<SimilarNote[]> {
+  async semanticSearch(query: string, limit = 10, pathPrefixes?: string[]): Promise<SimilarNote[]> {
     try {
       // Generate query embedding, then apply the query-side adapter.
       // Identity adapter returns the vector untouched (zero behavior change).
@@ -219,6 +268,14 @@ export class NoteEmbeddingService {
       // Fetch 3x the limit to allow for re-ranking
       const candidateLimit = limit * 3;
 
+      // The scope has to be IN the query. This window is `ORDER BY distance
+      // LIMIT n` over the whole vault, so filtering its output afterwards is
+      // not a filter at all — it is a filter applied to whatever the global
+      // ranking happened to leave behind. Notes under a requested folder that
+      // rank below the window are simply never seen, and the caller gets an
+      // empty list indistinguishable from "nothing matches" (#323).
+      const scope = buildPathPrefixScope(pathPrefixes);
+
       const candidates = await this.db.query<{ notePath: string; distance: number; updated: number }>(`
         SELECT
           em.notePath,
@@ -226,9 +283,10 @@ export class NoteEmbeddingService {
           vec_distance_l2(ne.embedding, ?) as distance
         FROM note_embeddings ne
         JOIN embedding_metadata em ON em.rowid = ne.rowid
+        ${scope.where}
         ORDER BY distance
         LIMIT ?
-      `, asQueryParams([queryBuffer, candidateLimit]));
+      `, asQueryParams([queryBuffer, ...scope.params, candidateLimit]));
 
       // 2. RE-RANKING LOGIC
       const now = Date.now();

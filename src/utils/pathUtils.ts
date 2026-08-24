@@ -193,6 +193,39 @@ export function isValidPath(path: string): boolean {
 }
 
 /**
+ * Is `path` the scope itself, or inside it?
+ *
+ * A bare `startsWith` is not this test. `"_Baseball/roster.md".startsWith("_Base")`
+ * is true, so scoping a search to `_Base` also dragged in every sibling folder
+ * whose name merely begins the same way — silently, since the extra results
+ * look like ordinary hits.
+ *
+ * The comparison is therefore anchored to a folder boundary: a path matches
+ * when it IS the scope, or when it continues past it with a separator. A
+ * trailing slash on the scope is accepted and means the same thing, and an
+ * empty scope (what `"/"` normalizes to) still means the whole vault.
+ *
+ * NOT A CONFINEMENT GUARD. This is a string test over paths that are already
+ * resolved — `TFile.path` and `embedding_metadata.notePath`, neither of which
+ * can contain a `..` segment. It does no traversal resolution of its own, so
+ * `isWithinPathScope('A/../B/x.md', 'A')` is `true`. Do not reach for it to
+ * decide whether a caller-supplied path may be read or written; `normalizePath`
+ * does not strip `..` either, so such a caller needs its own explicit check.
+ *
+ * @param path Vault-relative path to test. Must already be resolved.
+ * @param scope Vault-relative folder or file path to confine to
+ */
+export function isWithinPathScope(path: string, scope: string): boolean {
+    const trimmedScope = scope.endsWith('/') ? scope.slice(0, -1) : scope;
+
+    if (trimmedScope === '') {
+        return true;
+    }
+
+    return path === trimmedScope || path.startsWith(trimmedScope + '/');
+}
+
+/**
  * Checks if a string contains glob characters
  */
 export function isGlobPattern(pattern: string): boolean {
