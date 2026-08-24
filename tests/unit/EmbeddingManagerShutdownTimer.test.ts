@@ -112,6 +112,9 @@ describe('EmbeddingManager deferred background indexing', () => {
     jest.advanceTimersByTime(3_000);
     await Promise.resolve();
 
-    expect(startFullIndex).toHaveBeenCalled();
+    // Conversations are the first phase (cheapest-first ordering), so this is
+    // the call that proves the timer fired. Asserting on the note phase would
+    // only prove the whole chain had drained.
+    expect(startConversationIndex).toHaveBeenCalled();
   });
 });
