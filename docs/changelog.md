@@ -2,7 +2,7 @@
 
 ## August 2026
 
-**Unreleased** — thinking you can actually see, retries that cannot double-write, and two new models
+**v5.18.0** — deletes that stick, search that respects the scope you gave it, and thinking you can actually see
 
 **Reasoning shows up the same way on every provider**
 - Models that think before answering now surface that thinking consistently across Anthropic, Gemini, OpenAI, OpenRouter and LM Studio. Each provider reports reasoning in its own shape, and Nexus only understood some of them, so whether you saw a model's reasoning depended on which provider you happened to be using ([#354](https://github.com/ProfSynapse/nexus/pull/354)).
@@ -14,17 +14,35 @@
 - Agents that batch several commands to run at once are now stopped when the batch mixes reads with writes. Nexus names the command that is unsafe to parallelise and asks for the batch to be retried in order, so two commands can no longer race over the same note.
 - **Nothing about read-only commands is recorded.** Receipts cover commands that change things; reading a note never copies its contents into the event log.
 
+**Deleting something now removes everything it owned**
+- Permanently deleting a workspace removed the workspace and nothing else. Its sessions, saved states, memory traces, projects and tasks all survived, and rebuilding the cache brought the entire orphaned set back — so a workspace stayed deleted only until the next rebuild. Deletion now removes everything the workspace owned, including its event streams ([#347](https://github.com/ProfSynapse/nexus/pull/347)).
+- Deleting a session did not survive a rebuild at all. Nothing recorded that the deletion had happened, so the session reappeared the next time the cache was rebuilt, bringing its states and traces with it. Session deletion is now written to your vault's event log like every other change ([#348](https://github.com/ProfSynapse/nexus/pull/348)).
+- **Permanent deletion remains something only you can do, from the interface.** Agents still get the reversible archive, never a destructive delete.
+
+**Search respects the scope you gave it**
+- Scoping a semantic search to a folder could return nothing at all, with no hint as to why. The scope was applied *after* the results had been chosen: Nexus took the strongest matches from the whole vault, trimmed them, and only then filtered down to your folder — so if nothing in that folder happened to rank near the top of the vault, you got an empty answer for a folder full of relevant notes. The scope is now part of the search itself ([#340](https://github.com/ProfSynapse/nexus/pull/340)).
+
+**Chat search comes back in seconds after a cache rebuild**
+- Rebuilding the cache discards the embeddings that make your chat history searchable, and rebuilding them used to be the *last* thing Nexus did — queued behind every note in the vault. On a large vault that left chat search dead for hours after a rebuild. Conversations are now rebuilt first, ahead of traces and notes, so they come back in seconds; and a rebuild you trigger mid-session now re-derives them straight away instead of waiting for the next restart ([#361](https://github.com/ProfSynapse/nexus/pull/361)).
+
 **Fixes**
-- **Subagents work again after a plugin reload.** Chat is rebuilt by Obsidian before Nexus has finished starting its services, and the chat view was holding on to the empty slot where the chat service would later appear. Subagent setup then failed every time the plugin reloaded, so asking an agent to delegate work answered "Subagent executor not initialized" and the agent status panel stayed empty until the chat tab was closed and reopened. Chat now looks the service up when it needs it.
-- **Gemini's thinking is now actually visible.** Reasoning displayed for every other provider but never for Gemini: Google only returns a model's thought summaries when the request asks for them, and Nexus never asked. Gemini models now stream their reasoning into chat like the rest.
+- **Subagents work again after a plugin reload.** Chat is rebuilt by Obsidian before Nexus has finished starting its services, and the chat view was holding on to the empty slot where the chat service would later appear. Subagent setup then failed every time the plugin reloaded, so asking an agent to delegate work answered "Subagent executor not initialized" and the agent status panel stayed empty until the chat tab was closed and reopened. Chat now looks the service up when it needs it ([#358](https://github.com/ProfSynapse/nexus/pull/358)).
+- **Gemini's thinking is now actually visible.** Reasoning displayed for every other provider but never for Gemini: Google only returns a model's thought summaries when the request asks for them, and Nexus never asked. Gemini models now stream their reasoning into chat like the rest ([#357](https://github.com/ProfSynapse/nexus/pull/357)).
 - Saved states could disappear after a storage migration that had not finished. Nexus stopped reading the destination folder until the migration was verified, while already writing there — so a state's metadata was listed but its contents could not be loaded, and fresh states only appeared to work because they were still held in memory ([#355](https://github.com/ProfSynapse/nexus/pull/355)).
 - Switching between providers is more reliable. Each provider now owns its own setup and cleanup, so disposing of one can no longer interfere with the one replacing it.
+- **Nexus no longer keeps indexing after you reload it.** Background indexing belonging to the previous instance carried on running against a database that had already closed, logging a failure per item for minutes — and the burst grew with every reload ([#360](https://github.com/ProfSynapse/nexus/pull/360)).
+- A stalled startup rebuild could leave chat and search unavailable indefinitely, with nothing reported. The watchdog meant to catch exactly that was armed on only one of the two startup paths; it now covers both ([#341](https://github.com/ProfSynapse/nexus/pull/341)).
+- Recovering from a corrupt cache reported success even when the recovery had failed, so a vault could look healthy while its cache was not ([#342](https://github.com/ProfSynapse/nexus/pull/342)).
+- An empty `workspaceId` now fails the same way an omitted one does. It previously fell through to the default workspace, so a template that rendered to an empty value behaved completely differently from one that left the field out ([#345](https://github.com/ProfSynapse/nexus/pull/345)).
+- Looking up a saved state by name searched only the first page of states, so a state beyond that page appeared not to exist ([#359](https://github.com/ProfSynapse/nexus/pull/359)).
+- Listing saved states no longer re-reads every state's full history. On a workspace with 200 states the first listing after a restart took half a second and parsed 180,000 events; it now takes about 6 ms and reads none ([#346](https://github.com/ProfSynapse/nexus/pull/346)).
 
 **Models**
 - **GLM 5.3** (OpenRouter and Requesty) and **Qwen3.8 27B** (OpenRouter) ([#353](https://github.com/ProfSynapse/nexus/pull/353)).
 
 **Under the hood**
 - Nexus's tool catalogue is now generated from the running code and versioned with each release, and the build fails if the two drift apart. This does not change any command you type — it means the documentation an agent reads can no longer disagree with what the tools actually accept ([#353](https://github.com/ProfSynapse/nexus/pull/353)).
+- When the storage layer is unavailable at startup, Nexus now says so instead of leaving embeddings silently uninitialised — an absent index used to be indistinguishable from one that was still warming up ([#363](https://github.com/ProfSynapse/nexus/pull/363)).
 - Streaming was rebuilt on a typed event contract with a single place that decides what a turn looks like, replacing envelopes that each provider filled in slightly differently. A turn that fails or is aborted is now recorded as failed instead of quietly reported as success.
 
 ---
