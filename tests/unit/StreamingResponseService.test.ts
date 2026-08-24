@@ -265,3 +265,55 @@ describe('StreamingResponseService — applyCompactionBoundary', () => {
     expect(result).toBe(conv);
   });
 });
+
+describe('StreamingResponseService terminal persistence', () => {
+  it('persists an in-band failed turn as invalid before yielding it', async () => {
+    const assistant = makeMsg({ id: 'assistant-1', role: 'assistant', content: '', state: 'draft' });
+    const conversation = makeConversation([
+      makeMsg({ id: 'user-1', role: 'user', content: 'hello' }),
+      assistant,
+    ]);
+    const updateConversation = jest.fn().mockResolvedValue(undefined);
+    const service = new StreamingResponseService({
+      llmService: {
+        getDefaultModel: () => ({ provider: 'test', model: 'test-model' }),
+        generateResponseStream: async function* () {
+          yield { type: 'assistant.delta' as const, text: 'partial' };
+          yield { type: 'turn.failed' as const, error: { message: 'provider failed', provider: 'test' } };
+        },
+      },
+      conversationService: {
+        getConversation: jest.fn(async () => conversation),
+        addMessage: jest.fn().mockResolvedValue(undefined),
+        updateConversation,
+      },
+      toolCallService: {
+        getAvailableTools: jest.fn().mockReturnValue([]),
+        resetDetectedTools: jest.fn(),
+        handleToolCallDetection: jest.fn(),
+        fireToolEvent: jest.fn(),
+      } as any,
+      costTrackingService: {
+        createUsageCallback: jest.fn(),
+        extractUsage: jest.fn(),
+        trackMessageUsage: jest.fn(),
+      } as any,
+    });
+
+    const events = [];
+    for await (const envelope of service.generateResponse('conv-test', 'hello', { messageId: 'assistant-1' })) {
+      events.push(envelope.event.type);
+    }
+
+    expect(events).toEqual(['assistant.delta', 'turn.failed']);
+    expect(assistant).toEqual(expect.objectContaining({
+      content: 'partial',
+      state: 'invalid',
+      isLoading: false,
+      metadata: expect.objectContaining({
+        runtimeError: expect.objectContaining({ message: 'provider failed' }),
+      }),
+    }));
+    expect(updateConversation).toHaveBeenCalledTimes(1);
+  });
+});

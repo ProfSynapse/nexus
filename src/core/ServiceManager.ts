@@ -62,8 +62,8 @@ export interface IServiceManager {
     
     // Lifecycle operations
     start(): Promise<void>;
-    stop(): void;
-    cleanup(): void;
+    stop(): Promise<void>;
+    cleanup(): Promise<void>;
 }
 
 export interface ServiceRegistrationOptions {
@@ -343,7 +343,7 @@ export class ServiceManager implements IServiceManager {
     /**
      * Stop the service manager
      */
-    stop(): void {
+    async stop(): Promise<void> {
         if (!this.isStarted) {
             return;
         }
@@ -351,7 +351,7 @@ export class ServiceManager implements IServiceManager {
         // Service manager stopping
         
         // Stop services in reverse dependency order
-        this.cleanup();
+        await this.cleanup();
         
         this.isStarted = false;
     }
@@ -359,10 +359,10 @@ export class ServiceManager implements IServiceManager {
     /**
      * Cleanup all services
      */
-    cleanup(): void {
+    async cleanup(): Promise<void> {
         try {
             // Container handles cleanup in proper dependency order
-            this.container.clear();
+            await this.container.clear();
             
             // Clear stage mappings
             this.serviceStages.clear();

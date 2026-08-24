@@ -26,6 +26,8 @@ export interface BatchOptions<R = unknown> {
   stopOnError?: boolean;
   /** Delay between batches in ms (for rate limiting) */
   delayBetweenBatches?: number;
+  /** Yield one browser task between batches without timer throttling */
+  yieldBetweenBatches?: boolean;
 }
 
 /**
@@ -98,7 +100,8 @@ export class BatchOperations {
       onProgress,
       onBatchComplete,
       stopOnError = false,
-      delayBetweenBatches = 0
+      delayBetweenBatches = 0,
+      yieldBetweenBatches = false,
     } = options;
 
     const results: R[] = [];
@@ -157,6 +160,8 @@ export class BatchOperations {
 
       if (delayBetweenBatches > 0 && batchNum < totalBatches - 1) {
         await new Promise(resolve => window.setTimeout(resolve, delayBetweenBatches));
+      } else if (yieldBetweenBatches && batchNum < totalBatches - 1) {
+        await yieldBrowserTask();
       }
     }
 
@@ -320,4 +325,24 @@ export class BatchOperations {
     }
     return batches;
   }
+}
+
+/**
+ * Yield to the browser event loop without relying on background-throttled
+ * timers. MessageChannel posts a task in desktop and mobile browsers; the
+ * timeout fallback keeps non-browser test environments functional.
+ */
+function yieldBrowserTask(): Promise<void> {
+  if (typeof MessageChannel === 'undefined') {
+    return new Promise(resolve => window.setTimeout(resolve, 0));
+  }
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(undefined);
+  });
 }

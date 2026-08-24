@@ -584,9 +584,9 @@ describe('InlineEditService', () => {
       // The mock needs multiple chunks configured, with error thrown after first chunk
       mockLLMService = createMockLLMService({
         chunks: [
-          { chunk: 'Partial ' },
-          { chunk: 'content ' },  // This chunk won't be reached
-          { complete: true }       // This won't be reached either
+          { type: 'assistant.delta', text: 'Partial ' },
+          { type: 'assistant.delta', text: 'content ' }, // This event won't be reached
+          { type: 'turn.completed' } // This won't be reached either
         ],
         error: new Error('Connection lost mid-stream'),
         errorAfterChunks: 1  // Throw after yielding first chunk (index 0)

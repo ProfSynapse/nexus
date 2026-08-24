@@ -16,7 +16,7 @@ not silently rotting any document that names it.
    what a caller types — if the string is not what you expected, the kebab
    transform changed it:
    ```bash
-   npm run schemas:tools -- --output cli-first-tool-schemas.json
+   npm run schemas:release
    grep '"command"' cli-first-tool-schemas.json | grep <your-tool>
    ```
 3. Run the unit lanes that encode this surface, plus any test for the agent you

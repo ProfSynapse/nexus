@@ -347,12 +347,12 @@ describe('Nexus CLI context-flag parsing hardening', () => {
         const { positionals, flags } = parseOuterArgs([
             '--vault', 'V', 'use',
             '--memory', 'm', '--goal', 'g', '--workspace', 'w',
-            '--session', 's', '--constraints', 'c', '--json', '--dry-run',
+            '--session', 's', '--constraints', 'c', '--operation-id', 'retry-1', '--json', '--dry-run',
         ]);
         expect(positionals).toEqual(['use']);
         expect(flags).toEqual({
             vault: 'V', memory: 'm', goal: 'g', workspace: 'w',
-            session: 's', constraints: 'c', json: true, 'dry-run': true,
+            session: 's', constraints: 'c', 'operation-id': 'retry-1', json: true, 'dry-run': true,
         });
     });
 

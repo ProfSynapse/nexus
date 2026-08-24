@@ -460,7 +460,13 @@ export class AgentInitializationService {
       this.app,
       agentRegistry,
       schemaData,
-      () => this.listWorkspaceSummariesLive()
+      () => this.listWorkspaceSummariesLive(),
+      async () => {
+        const adapter = this.serviceManager
+          ? await this.serviceManager.getService<IStorageAdapter>('hybridStorageAdapter')
+          : null;
+        return adapter ?? null;
+      }
     );
 
     this.agentManager.registerAgent(toolManagerAgent);

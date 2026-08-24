@@ -1,472 +1,204 @@
 /**
- * AdapterRegistry - Manages adapter lifecycle and provider availability
+ * AdapterRegistry - compatibility facade over provider drivers and instances.
  *
- * Extracted from LLMService.ts to follow Single Responsibility Principle.
- * This service is responsible ONLY for:
- * - Initializing adapters for configured providers
- * - Managing adapter instances
- * - Providing adapter availability checks
- * - Handling adapter cleanup
- *
- * MOBILE COMPATIBILITY:
- * - Remote HTTP providers initialize on both desktop and mobile
- * - Desktop-only providers are limited to local runtimes and desktop OAuth flows
- * - Use platform.ts `isProviderCompatible()` to check before initializing
+ * Existing provider IDs remain the implicit default instance IDs in v1. This
+ * keeps saved conversations, defaults, aliases, and settings stable while the
+ * registry gains an explicit lifecycle boundary for future multi-instance use.
  */
 
-import { Vault } from 'obsidian';
-import { BaseAdapter } from '../adapters/BaseAdapter';
-import { LLMProviderSettings, LLMProviderConfig } from '../../../types';
+import type { Vault } from 'obsidian';
+import type { LLMProviderSettings } from '../../../types';
 import { isMobile } from '../../../utils/platform';
-
-// Type imports for TypeScript (don't affect bundling)
+import type { BaseAdapter } from '../adapters/BaseAdapter';
 import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebLLMAdapter';
-import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
+import {
+  createBuiltinProviderDrivers,
+  type BuiltinProviderDriverRegistration,
+} from '../providers/BuiltinProviderDrivers';
+import {
+  defaultProviderInstanceId,
+  providerDriverKind,
+  providerInstanceId,
+  type ProviderDriver,
+  type ProviderInstance,
+} from '../providers/ProviderDriver';
+import { ProviderDriverRegistry } from '../providers/ProviderDriverRegistry';
 
-/**
- * Provider alias pairs: API-key providers ↔ OAuth/CLI counterparts.
- * When getAdapter() can't find the requested provider, it checks this map
- * for a counterpart that may be registered instead.
- */
-const PROVIDER_ALIASES: Record<string, string> = {
-  'openai': 'openai-codex',
+/** API-key providers ↔ OAuth/CLI compatibility counterparts. */
+const PROVIDER_ALIASES: Readonly<Record<string, string>> = {
+  openai: 'openai-codex',
   'openai-codex': 'openai',
-  'anthropic': 'anthropic-claude-code',
+  anthropic: 'anthropic-claude-code',
   'anthropic-claude-code': 'anthropic',
-  'google': 'google-gemini-cli',
+  google: 'google-gemini-cli',
   'google-gemini-cli': 'google',
 };
 
-/**
- * Interface for adapter registry operations
- */
 export interface IAdapterRegistry {
-  /**
-   * Initialize all adapters based on provider settings
-   */
   initialize(settings: LLMProviderSettings, vault?: Vault): void;
-
-  /**
-   * Update settings and reinitialize adapters
-   */
   updateSettings(settings: LLMProviderSettings): void;
-
-  /**
-   * Get adapter instance for a provider
-   */
   getAdapter(providerId: string): BaseAdapter | undefined;
-
-  /**
-   * Get all available provider IDs
-   */
   getAvailableProviders(): string[];
-
-  /**
-   * Check if a provider is initialized and available
-   */
   isProviderAvailable(providerId: string): boolean;
-
-  /**
-   * Clear all adapters (for cleanup)
-   */
   clear(): void;
 }
 
-/**
- * AdapterRegistry implementation
- * Manages the lifecycle of LLM provider adapters
- *
- * Note: Tool execution is now handled separately by IToolExecutor.
- * Adapters only handle LLM communication - they don't need mcpConnector.
- */
 export class AdapterRegistry implements IAdapterRegistry {
-  private adapters: Map<string, BaseAdapter> = new Map();
-  private settings: LLMProviderSettings;
   private vault?: Vault;
-  private webllmAdapter?: WebLLMAdapterType;
-  private initPromise?: Promise<void>;
-  private _onSettingsDirty?: () => void;
+  private readonly providerRegistry = new ProviderDriverRegistry();
+  private readonly registrations: BuiltinProviderDriverRegistration[];
+  private lifecycleTail: Promise<void> = Promise.resolve();
+  private initPromise: Promise<void> = Promise.resolve();
+  private onSettingsDirty?: () => void;
 
-  constructor(settings: LLMProviderSettings, vault?: Vault) {
-    this.settings = settings;
+  constructor(_settings: LLMProviderSettings, vault?: Vault) {
     this.vault = vault;
-  }
-
-  /**
-   * Initialize all adapters based on provider settings
-   * Now async to support dynamic imports for mobile compatibility
-   */
-  initialize(settings: LLMProviderSettings, vault?: Vault): void {
-    this.settings = settings;
-    if (vault) this.vault = vault;
-    this.adapters.clear();
-    // Start async initialization
-    this.initPromise = this.initializeAdaptersAsync();
-  }
-
-  /**
-   * Wait for initialization to complete (call after initialize if you need adapters immediately)
-   */
-  async waitForInit(): Promise<void> {
-    if (this.initPromise) {
-      await this.initPromise;
+    this.registrations = createBuiltinProviderDrivers();
+    for (const registration of this.registrations) {
+      this.providerRegistry.registerDriver(registration.driver);
     }
   }
 
-  /**
-   * Set a callback invoked when adapter-level changes (e.g. token refresh) dirty the settings.
-   * The callback should persist settings to disk.
-   */
-  setOnSettingsDirty(cb: () => void): void {
-    this._onSettingsDirty = cb;
+  initialize(settings: LLMProviderSettings, vault?: Vault): void {
+    if (vault) this.vault = vault;
+
+    const settingsSnapshot = settings;
+    const vaultSnapshot = this.vault;
+    this.initPromise = this.enqueueLifecycle(async () => {
+      try {
+        await this.providerRegistry.clear();
+      } catch (error) {
+        this.logError('lifecycle', error);
+      }
+      await this.initializeAdaptersAsync(settingsSnapshot, vaultSnapshot);
+    });
   }
 
-  /**
-   * Update settings and reinitialize all adapters
-   */
+  async waitForInit(): Promise<void> {
+    await this.initPromise;
+  }
+
+  setOnSettingsDirty(callback: () => void): void {
+    this.onSettingsDirty = callback;
+  }
+
   updateSettings(settings: LLMProviderSettings): void {
     this.initialize(settings, this.vault);
   }
 
-  /**
-   * Get adapter instance for a specific provider.
-   * Falls back to the provider's alias counterpart if the requested one
-   * isn't registered (e.g. 'openai' → 'openai-codex' and vice versa).
-   */
   getAdapter(providerId: string): BaseAdapter | undefined {
-    const adapter = this.adapters.get(providerId);
-    if (adapter) return adapter;
+    const direct = this.getProviderInstance(providerId)?.adapter;
+    if (direct) return direct;
 
     const alias = PROVIDER_ALIASES[providerId];
-    if (alias) {
-      const fallback = this.adapters.get(alias);
-      if (fallback) {
-        console.warn(`AdapterRegistry: '${providerId}' not found, falling back to '${alias}'`);
-        return fallback;
-      }
+    const fallback = alias ? this.getProviderInstance(alias)?.adapter : undefined;
+    if (fallback) {
+      console.warn(`AdapterRegistry: '${providerId}' not found, falling back to '${alias}'`);
     }
-
-    return undefined;
+    return fallback;
   }
 
-  /**
-   * Get all available (initialized) provider IDs
-   */
   getAvailableProviders(): string[] {
-    return Array.from(this.adapters.keys());
+    return this.providerRegistry.getInstances().map((instance) => instance.id);
   }
 
-  /**
-   * Check if a provider is available (includes alias fallback)
-   */
   isProviderAvailable(providerId: string): boolean {
-    if (this.adapters.has(providerId)) return true;
+    if (this.getProviderInstance(providerId)) return true;
     const alias = PROVIDER_ALIASES[providerId];
-    return alias ? this.adapters.has(alias) : false;
+    return alias ? Boolean(this.getProviderInstance(alias)) : false;
   }
 
-  /**
-   * Clear all adapters
-   */
+  /** Compatibility API: schedule lifecycle-owned cleanup without exposing a promise. */
   clear(): void {
-    // Dispose Nexus adapter properly (cleanup GPU resources)
-    if (this.webllmAdapter) {
-      // Clear lifecycle manager reference first (dynamic import)
-      import('../adapters/webllm/WebLLMLifecycleManager').then(({ getWebLLMLifecycleManager }) => {
-        const lifecycleManager = getWebLLMLifecycleManager();
-        lifecycleManager.setAdapter(null);
-      }).catch(() => undefined);
-
-      this.webllmAdapter.dispose().catch((_error) => undefined);
-      this.webllmAdapter = undefined;
-    }
-    this.adapters.clear();
+    const cleanup = this.enqueueLifecycle(() => this.providerRegistry.clear());
+    this.initPromise = cleanup.catch((error) => {
+      this.logError('lifecycle', error);
+    });
   }
 
-  /**
-   * Get the WebLLM adapter instance (for model management)
-   */
+  /** Awaitable cleanup used by the plugin service lifecycle. */
+  async dispose(): Promise<void> {
+    const cleanup = this.enqueueLifecycle(() => this.providerRegistry.clear());
+    this.initPromise = cleanup;
+    await cleanup;
+  }
+
+  getProviderInstance(instanceId: string): ProviderInstance | undefined {
+    const normalized = this.tryProviderInstanceId(instanceId);
+    return normalized ? this.providerRegistry.getInstance(normalized) : undefined;
+  }
+
+  getProviderDriver(driverKind: string): ProviderDriver<unknown> | undefined {
+    const normalized = this.tryProviderDriverKind(driverKind);
+    return normalized ? this.providerRegistry.getDriver(normalized) : undefined;
+  }
+
   getWebLLMAdapter(): WebLLMAdapterType | undefined {
-    return this.webllmAdapter;
+    return this.getProviderInstance('webllm')?.adapter as WebLLMAdapterType | undefined;
   }
 
-  /**
-   * Initialize adapters for all configured providers using dynamic imports
-   * MOBILE: Only initializes fetch-based providers (OpenRouter, Requesty, Perplexity)
-   * DESKTOP: Initializes all providers including SDK-based ones
-   */
-  private async initializeAdaptersAsync(): Promise<void> {
-    const providers = this.settings?.providers;
+  private enqueueLifecycle(operation: () => Promise<void>): Promise<void> {
+    const next = this.lifecycleTail
+      .catch((error) => {
+        this.logError('lifecycle', error);
+      })
+      .then(operation);
+    this.lifecycleTail = next;
+    return next;
+  }
 
-    if (!providers) {
-      return;
-    }
+  private async initializeAdaptersAsync(
+    settings: LLMProviderSettings,
+    vault?: Vault
+  ): Promise<void> {
+    const providers = settings?.providers;
+    if (!providers) return;
 
     const onMobile = isMobile();
+    for (const registration of this.registrations) {
+      const { driver } = registration;
+      if (onMobile && driver.compatibility === 'desktop-only') continue;
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // REMOTE HTTP PROVIDERS (available on desktop and mobile)
-    // These work on all platforms
-    // ═══════════════════════════════════════════════════════════════════════════
-    await this.initializeProviderAsync('openrouter', providers.openrouter, async (config) => {
-      const { OpenRouterAdapter } = await import('../adapters/openrouter/OpenRouterAdapter');
-      return new OpenRouterAdapter(config.apiKey, {
-        httpReferer: config.httpReferer,
-        xTitle: config.xTitle
-      });
-    });
+      const config = providers[driver.kind];
+      if (!registration.shouldInitialize(config, vault)) continue;
 
-    await this.initializeProviderAsync('requesty', providers.requesty, async (config) => {
-      const { RequestyAdapter } = await import('../adapters/requesty/RequestyAdapter');
-      return new RequestyAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('perplexity', providers.perplexity, async (config) => {
-      const { PerplexityAdapter } = await import('../adapters/perplexity/PerplexityAdapter');
-      return new PerplexityAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('openai', providers.openai, async (config) => {
-      const { OpenAIAdapter } = await import('../adapters/openai/OpenAIAdapter');
-      return new OpenAIAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('anthropic', providers.anthropic, async (config) => {
-      const { AnthropicAdapter } = await import('../adapters/anthropic/AnthropicAdapter');
-      return new AnthropicAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('google', providers.google, async (config) => {
-      const { GoogleAdapter } = await import('../adapters/google/GoogleAdapter');
-      return new GoogleAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('mistral', providers.mistral, async (config) => {
-      const { MistralAdapter } = await import('../adapters/mistral/MistralAdapter');
-      return new MistralAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('groq', providers.groq, async (config) => {
-      const { GroqAdapter } = await import('../adapters/groq/GroqAdapter');
-      return new GroqAdapter(config.apiKey);
-    });
-
-    await this.initializeProviderAsync('deepseek', providers.deepseek, async (config) => {
-      const { DeepSeekAdapter } = await import('../adapters/deepseek/DeepSeekAdapter');
-      return new DeepSeekAdapter(config.apiKey);
-    });
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DESKTOP-ONLY PROVIDERS
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (!onMobile) {
-      await this.initializeCodexAdapter(providers['openai-codex']);
-      await this.initializeClaudeCodeAdapter(providers['anthropic-claude-code']);
-      await this.initializeGeminiCliAdapter(providers['google-gemini-cli']);
-      await this.initializeGithubCopilotAdapter(providers['github-copilot']);
-
-      // Ollama - apiKey is actually the server URL. Models are discovered from
-      // the server, so the adapter is created whenever a server URL is set.
-      if (providers.ollama?.enabled && providers.ollama.apiKey) {
-        try {
-          const { OllamaAdapter } = await import('../adapters/ollama/OllamaAdapter');
-          this.adapters.set('ollama', new OllamaAdapter(
-            providers.ollama.apiKey,
-            providers.ollama.ollamaModel || '',
-            providers.ollama.ollamaContextLength,
-            providers.ollama.ollamaSpeculativeDecoding,
-            providers.ollama.ollamaDraftNumPredict
-          ));
-        } catch (error) {
-          console.error('AdapterRegistry: Failed to initialize Ollama adapter:', error);
-          this.logError('ollama', error);
-        }
-      }
-
-      // LM Studio - apiKey is actually the server URL
-      if (providers.lmstudio?.enabled && providers.lmstudio.apiKey) {
-        try {
-          const { LMStudioAdapter } = await import('../adapters/lmstudio/LMStudioAdapter');
-          this.adapters.set('lmstudio', new LMStudioAdapter(providers.lmstudio.apiKey, {
-            contextLength: providers.lmstudio.lmstudioContextLength,
-            flashAttention: providers.lmstudio.lmstudioFlashAttention,
-            draftModel: providers.lmstudio.lmstudioDraftModel,
-          }));
-        } catch (error) {
-          console.error('AdapterRegistry: Failed to initialize LM Studio adapter:', error);
-          this.logError('lmstudio', error);
-        }
-      }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // NEXUS/WEBLLM (Re-enabled Dec 2025)
-    // ═══════════════════════════════════════════════════════════════════════════
-    // WebLLM adapter for local LLM inference via WebGPU
-    // Note: Nexus models are fine-tuned on the toolset - they skip getTools and
-    // output tool calls that are converted to useTool format automatically.
-    //
-    // TEMPORARILY DISABLED: WebLLM initialization was causing vault startup hangs.
-    // The prefetcher HTTP requests to HuggingFace may be blocking.
-    // TODO: Fix prefetcher and re-enable
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (!onMobile && providers.webllm?.enabled) {
-      // Defer WebLLM initialization - don't block startup
-      // Model will be loaded on-demand when user sends first message
-      // We still need to register a placeholder so the provider shows in UI
-      // but we won't actually load the model until it's used
-      if (this.vault) {
-        try {
-          const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
-          const adapter = new WebLLMAdapter(this.vault);
-          // DON'T call adapter.initialize() here - it blocks on WebGPU detection
-          // The adapter will auto-initialize on first generate() call
-          this.webllmAdapter = adapter;
-          this.adapters.set('webllm', adapter);
-        } catch (error) {
-          console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
-          this.logError('webllm', error);
-        }
-      }
-    }
-  }
-
-  /**
-   * Initialize the OpenAI Codex adapter from OAuth state.
-   * Unlike API-key providers, Codex uses OAuth tokens stored in config.oauth.
-   * The adapter handles proactive token refresh and calls back to persist new tokens.
-   */
-  private async initializeCodexAdapter(config: LLMProviderConfig | undefined): Promise<void> {
-    if (!config?.enabled) return;
-
-    const oauth = config.oauth;
-    if (!oauth?.connected || !config.apiKey || !oauth.refreshToken || !oauth.metadata?.accountId) {
-      return; // Not connected via OAuth — skip initialization
-    }
-
-    try {
-      const { OpenAICodexAdapter } = await import('../adapters/openai-codex/OpenAICodexAdapter');
-
-      const tokens: CodexOAuthTokens = {
-        accessToken: config.apiKey, // OAuth access token is stored as apiKey
-        refreshToken: oauth.refreshToken,
-        expiresAt: oauth.expiresAt || 0,
-        accountId: oauth.metadata.accountId
-      };
-
-      // Token refresh callback: updates the settings so refreshed tokens
-      // persist across plugin restarts, then triggers a settings save.
-      const onTokenRefresh = (newTokens: CodexOAuthTokens): void => {
-        // Update the config object in-place (settings reference)
-        config.apiKey = newTokens.accessToken;
-        const oauthState = config.oauth;
-        if (oauthState) {
-          oauthState.refreshToken = newTokens.refreshToken;
-          oauthState.expiresAt = newTokens.expiresAt;
-        }
-        // Persist to disk immediately so rotated tokens survive a crash
-        this._onSettingsDirty?.();
-      };
-
-      const adapter = new OpenAICodexAdapter(tokens, onTokenRefresh);
-      this.adapters.set('openai-codex', adapter);
-    } catch (error) {
-      console.error('AdapterRegistry: Failed to initialize OpenAI Codex adapter:', error);
-      this.logError('openai-codex', error);
-    }
-  }
-
-  /**
-   * Initialize the Claude Code adapter from local CLI auth state.
-   */
-  private async initializeClaudeCodeAdapter(config: LLMProviderConfig | undefined): Promise<void> {
-    if (!config?.enabled) return;
-
-    const oauth = config.oauth;
-    if (!oauth?.connected || !this.vault) {
-      return;
-    }
-
-    try {
-      const { AnthropicClaudeCodeAdapter } = await import('../adapters/anthropic-claude-code/AnthropicClaudeCodeAdapter');
-      const adapter = new AnthropicClaudeCodeAdapter(this.vault);
-      this.adapters.set('anthropic-claude-code', adapter);
-    } catch (error) {
-      console.error('AdapterRegistry: Failed to initialize Claude Code adapter:', error);
-      this.logError('anthropic-claude-code', error);
-    }
-  }
-
-  /**
-   * Initialize the Gemini CLI adapter from local CLI auth state.
-   */
-  private async initializeGeminiCliAdapter(config: LLMProviderConfig | undefined): Promise<void> {
-    if (!config?.enabled) return;
-
-    const oauth = config.oauth;
-    if (!oauth?.connected || !this.vault) {
-      return;
-    }
-
-    try {
-      const { GoogleGeminiCliAdapter } = await import('../adapters/google-gemini-cli/GoogleGeminiCliAdapter');
-      const adapter = new GoogleGeminiCliAdapter(this.vault);
-      this.adapters.set('google-gemini-cli', adapter);
-    } catch (error) {
-      console.error('AdapterRegistry: Failed to initialize Gemini CLI adapter:', error);
-      this.logError('google-gemini-cli', error);
-    }
-  }
-
-  /**
-   * Initialize the GitHub Copilot adapter.
-   */
-  private async initializeGithubCopilotAdapter(config: LLMProviderConfig | undefined): Promise<void> {
-    if (!config?.enabled) return;
-
-    const oauth = config.oauth;
-    if (!oauth?.connected || !config.apiKey) {
-      return; // Not connected via OAuth or no token — skip initialization
-    }
-
-    try {
-      const { GithubCopilotAdapter } = await import('../adapters/github-copilot/GithubCopilotAdapter');
-      const adapter = new GithubCopilotAdapter(config.apiKey);
-      this.adapters.set('github-copilot', adapter);
-    } catch (error) {
-      console.error('AdapterRegistry: Failed to initialize GitHub Copilot adapter:', error);
-      this.logError('github-copilot', error);
-    }
-  }
-
-  /**
-   * Initialize a single provider adapter using async factory pattern
-   * Handles common validation and error logging with dynamic import support
-   */
-  private async initializeProviderAsync(
-    providerId: string,
-    config: LLMProviderConfig | undefined,
-    factory: (config: LLMProviderConfig) => Promise<BaseAdapter>
-  ): Promise<void> {
-    if (config?.apiKey && config.enabled) {
       try {
-        const adapter = await factory(config);
-        this.adapters.set(providerId, adapter);
+        await this.providerRegistry.createInstance({
+          driverKind: driver.kind,
+          instanceId: defaultProviderInstanceId(driver.kind),
+          displayName: driver.displayName,
+          config,
+          vault,
+          onSettingsDirty: () => this.onSettingsDirty?.(),
+        });
       } catch (error) {
-        console.error(`AdapterRegistry: Failed to initialize ${providerId} adapter:`, error);
-        this.logError(providerId, error);
+        console.error(`AdapterRegistry: Failed to initialize ${driver.kind} adapter:`, error);
+        this.logError(driver.kind, error);
       }
     }
   }
 
-  /**
-   * Log detailed error information for debugging
-   */
+  private tryProviderDriverKind(value: string) {
+    try {
+      return providerDriverKind(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private tryProviderInstanceId(value: string) {
+    try {
+      return providerInstanceId(value);
+    } catch {
+      return undefined;
+    }
+  }
+
   private logError(providerId: string, error: unknown): void {
     console.error(`AdapterRegistry: Error details for ${providerId}:`, {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
-      name: error instanceof Error ? error.name : undefined
+      name: error instanceof Error ? error.name : undefined,
     });
   }
 }

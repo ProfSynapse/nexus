@@ -6,6 +6,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 
 /**
  * Update an EXISTING canvas file (fails if doesn't exist)
@@ -27,6 +28,13 @@ export class UpdateCanvasTool extends BaseTool<UpdateCanvasParams, UpdateCanvasR
     return labelFileOp(verbs('Updating canvas', 'Updated canvas', 'Failed to update canvas'), params, tense, {
       keys: ['path'],
       fallback: 'canvas',
+    });
+  }
+
+  getMutationIntent(params: UpdateCanvasParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({
+      kind: 'modify',
+      path: CanvasOperations.resolveWritePath(params.path),
     });
   }
 

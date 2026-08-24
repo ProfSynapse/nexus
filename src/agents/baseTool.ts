@@ -9,6 +9,8 @@ import {
 import { parseWorkspaceContext } from '../utils/contextUtils';
 import { enhanceSchemaDocumentation } from '../utils/validationUtils';
 import { JSONSchema } from '../types/schema/JSONSchemaTypes';
+import type { ToolExecutionPolicy } from './policy/ToolExecutionPolicy';
+import { CONSERVATIVE_TOOL_EXECUTION_POLICY } from './policy/ToolExecutionPolicy';
 
 // Import new validation utilities
 import {
@@ -30,6 +32,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
   name: string;
   description: string;
   version: string;
+  private executionPolicy: Readonly<ToolExecutionPolicy> = CONSERVATIVE_TOOL_EXECUTION_POLICY;
 
   /** Parent workspace context for session tracking */
   protected parentContext?: CommonResult['workspaceContext'];
@@ -63,6 +66,15 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * @returns JSON schema object
    */
   abstract getParameterSchema(): JSONSchema;
+
+  getExecutionPolicy(): Readonly<ToolExecutionPolicy> {
+    return this.executionPolicy;
+  }
+
+  /** @internal Policies are bound from the source-owned registry inventory. */
+  setExecutionPolicy(policy: Readonly<ToolExecutionPolicy>): void {
+    this.executionPolicy = policy;
+  }
 
   /**
    * Get common parameter schema elements for workspace context

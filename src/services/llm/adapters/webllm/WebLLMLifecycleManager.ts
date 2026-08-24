@@ -67,6 +67,13 @@ export class WebLLMLifecycleManager {
     this.adapter = adapter;
   }
 
+  /** Clear only the adapter being disposed, preserving a newer replacement. */
+  clearAdapter(adapter: WebLLMAdapter): void {
+    if (this.adapter === adapter) {
+      this.adapter = null;
+    }
+  }
+
   /**
    * Set callbacks for lifecycle events
    */

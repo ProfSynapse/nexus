@@ -3,7 +3,9 @@ import { BaseTool } from '../../baseTool';
 import { WriteParams, WriteResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { tryResolveVaultPath } from '../../../core/vaultPath';
+import { resolveVaultPath, tryResolveVaultPath } from '../../../core/vaultPath';
+import type { VaultPath } from '../../../core/vaultPath';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
@@ -78,6 +80,7 @@ function formatFrontmatterError(error: unknown, frontmatterBody: string): string
  */
 export class WriteTool extends BaseTool<WriteParams, WriteResult> {
   private app: App;
+  private readonly preparedMutationPaths = new WeakMap<WriteParams, VaultPath>();
 
   /**
    * Create a new WriteTool
@@ -96,6 +99,30 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
     return labelFileOp(verbs('Updating', 'Updated', 'Failed to update'), params, tense);
+  }
+
+  getMutationIntent(params: WriteParams): Promise<ToolMutationIntent> {
+    const path = this.resolveRequestedPath(params.path);
+    this.preparedMutationPaths.set(params, path);
+    const intent: ToolMutationIntent = this.app.vault.getAbstractFileByPath(path)
+      ? { kind: 'modify', path }
+      : { kind: 'create', path };
+    return Promise.resolve(intent);
+  }
+
+  private resolveRequestedPath(rawPath: string): VaultPath {
+    if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+      throw new Error('path must be a non-empty string.');
+    }
+
+    let path = rawPath;
+    if (path === '/' || path === '.') {
+      path = `untitled-${Date.now()}.md`;
+    } else if (path.endsWith('/') || path.endsWith('.')) {
+      const dir = path.endsWith('.') ? '' : path.slice(0, -1);
+      path = dir ? `${dir}/untitled-${Date.now()}.md` : `untitled-${Date.now()}.md`;
+    }
+    return resolveVaultPath(path);
   }
 
   /**
@@ -117,15 +144,9 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         );
       }
 
-      // Normalize root/dot paths - generate a filename if only directory is specified
-      if (path === '/' || path === '.') {
-        const timestamp = Date.now();
-        path = `untitled-${timestamp}.md`;
-      } else if (path.endsWith('/') || path.endsWith('.')) {
-        const dir = path.endsWith('.') ? '' : path.slice(0, -1);
-        const timestamp = Date.now();
-        path = dir ? `${dir}/untitled-${timestamp}.md` : `untitled-${timestamp}.md`;
-      }
+      // Reuse the exact path prepared for receipt/preimage capture when present.
+      // Otherwise preserve the standalone tool behavior.
+      path = this.preparedMutationPaths.get(params) ?? this.resolveRequestedPath(path);
 
       if (content === undefined || content === null) {
         return this.prepareResult(false, undefined, 'Content is required');

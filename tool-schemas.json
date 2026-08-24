@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "nexusVersion": "5.17.2",
-  "generatedAt": "2026-08-19T15:18:30.957Z",
+  "generatedAt": "2026-08-21T15:43:30.479Z",
   "toolCount": 2,
   "tools": [
     {
@@ -81,6 +81,13 @@
               "parallel"
             ],
             "description": "Execution strategy for multiple CLI commands. Defaults to serial. Use \"parallel\" for independent read-only commands (e.g. batched content reads) to avoid wasted round-trips."
+          },
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "description": "Optional stable retry identity. Reuse the same value only for an exact retry; reusing it with different command parameters is rejected. Calls without it receive a non-replayable generated receipt and cannot be deduplicated across retries."
           },
           "values": {
             "type": "object",

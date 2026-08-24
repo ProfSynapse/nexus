@@ -466,7 +466,7 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
     it('rejects every CONTEXT_FLAG_NAME variant placed inside the tool string', () => {
       const normalizer = makeNormalizer();
       const contextFlags = [
-        'workspace-id', 'session-id', 'memory', 'goal', 'constraints',
+        'workspace-id', 'session-id', 'memory', 'goal', 'constraints', 'operation-id',
         'image-provider', 'image-model', 'transcription-provider', 'transcription-model',
       ];
       for (const flag of contextFlags) {

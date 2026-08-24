@@ -408,7 +408,7 @@ export class PluginLifecycleManager {
 
             // Cleanup service manager (handles all service cleanup)
             if (this.config.serviceManager) {
-                this.config.serviceManager.stop();
+                await this.config.serviceManager.stop();
             }
 
             // Stop the MCP connector

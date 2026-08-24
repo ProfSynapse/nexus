@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus chat runtime safety — rejected exploration</title>
+  <link rel="stylesheet" href="./chat-runtime-safety.css">
+</head>
+<body class="mock-page theme-dark">
+  <main class="mock-layout">
+    <header class="mock-intro">
+      <div>
+        <div class="mock-eyebrow">Rejected exploration · 2026-08-21</div>
+        <h1>Chat runtime safety exploration</h1>
+        <p>Permission modes, one-operation approvals, change summaries, diff inspection, and conflict-safe undo inside the existing Nexus chat.</p>
+      </div>
+      <div class="mock-simulation-note" role="note">
+        Not accepted as a visual contract. Do not implement from this artifact. Interactions and persistence are simulated.
+      </div>
+    </header>
+
+    <div class="mock-toolbar" aria-label="Mockup controls">
+      <label class="mock-control">
+        <span>State</span>
+        <select id="mock-state-select" aria-label="Choose runtime safety state">
+          <option value="permission-modes">Permission modes</option>
+          <option value="approval" selected>Approval needed</option>
+          <option value="mixed-batch">Mixed read + write batch</option>
+          <option value="approved">Approved</option>
+          <option value="denied">Denied</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="stale">Stale request</option>
+          <option value="error">Approval error</option>
+          <option value="running">Tool running</option>
+          <option value="completed">Tool completed</option>
+          <option value="one-change">One changed file</option>
+          <option value="multi-change">Multi-file summary</option>
+          <option value="diff">Text diff</option>
+          <option value="undo-confirm">Undo confirmation</option>
+          <option value="undo-success">Undo success</option>
+          <option value="undo-conflict">Undo conflict</option>
+          <option value="missing-preimage">Missing preimage</option>
+          <option value="keyboard-focus">Keyboard focus</option>
+        </select>
+      </label>
+      <button type="button" class="mock-toolbar-button" id="mock-theme-toggle" aria-pressed="false">Light theme</button>
+      <button type="button" class="mock-toolbar-button" id="mock-device-toggle" aria-pressed="false">Phone width</button>
+      <span class="mock-state-caption" id="mock-state-caption" aria-live="polite">A reversible vault edit is waiting for one-operation approval.</span>
+    </div>
+
+    <section class="mock-stage" aria-label="Nexus chat preview">
+      <div class="mock-device">
+        <div class="mock-device-topbar">
+          <span id="mock-device-label">Desktop chat · 900 px</span>
+          <span>Sample conversation</span>
+        </div>
+
+        <div class="chat-view-container">
+          <div class="chat-main">
+            <header class="chat-header">
+              <button type="button" class="chat-hamburger-button clickable-icon" aria-label="Toggle conversations" data-icon="menu">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+              </button>
+              <div class="chat-title">Runtime safety review</div>
+              <button type="button" class="chat-settings-button clickable-icon" aria-label="Chat settings" data-icon="settings-2">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"></path><circle cx="16" cy="7" r="2"></circle><circle cx="8" cy="17" r="2"></circle></svg>
+              </button>
+            </header>
+
+            <div class="message-display-container">
+              <div class="message-display">
+                <div class="messages-container">
+                  <div class="message-container message-user">
+                    <div class="message-bubble">
+                      <div class="message-content"><p>Update the Nexus roadmap note with the receipt work and archive the old draft.</p></div>
+                    </div>
+                    <div class="message-actions-external">
+                      <button type="button" class="message-action-btn clickable-icon" aria-label="Edit message" data-icon="edit-3">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="message-container message-assistant">
+                    <div class="message-bubble">
+                      <div class="message-content"><p>I found the roadmap and the draft. The read is safe; the edits depend on this conversation’s permission mode.</p></div>
+
+                      <div class="runtime-state" data-state="permission-modes">
+                        <section class="chat-permission-explainer" aria-label="Permission mode descriptions">
+                          <div class="chat-permission-explainer__header">
+                            <span class="chat-permission-explainer__icon" data-icon="shield-check">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                            </span>
+                            <div><strong>Choose how Nexus uses tools</strong><span>Saved for this conversation. This mock does not persist changes.</span></div>
+                          </div>
+                          <div class="chat-permission-options">
+                            <button type="button" class="chat-permission-option is-selected" data-mode-choice="supervised">
+                              <span><strong>Supervised</strong><small>Ask before every write or external action.</small></span><span class="chat-permission-option__check">Selected</span>
+                            </button>
+                            <button type="button" class="chat-permission-option" data-mode-choice="allow-vault-edits">
+                              <span><strong>Allow vault edits</strong><small>Run reversible, preimage-capable vault edits. Ask for everything else.</small></span>
+                            </button>
+                            <button type="button" class="chat-permission-option" data-mode-choice="full-access">
+                              <span><strong>Full access</strong><small>Run registered tools without prompts. Path, platform, archive, and receipt guards still apply.</small></span>
+                            </button>
+                          </div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="approval">
+                        <section class="tool-approval-card" aria-label="Tool approval required">
+                          <div class="tool-approval-card__header">
+                            <span class="tool-approval-card__icon" data-icon="file-pen-line">
+                              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M9 15l5.5-5.5 2 2L11 17l-3 1Z"></path></svg>
+                            </span>
+                            <div class="tool-approval-card__title"><strong>Approval needed</strong><span>One reversible vault edit</span></div>
+                            <span class="tool-policy-pill tool-policy-pill--vault">Vault edit</span>
+                          </div>
+                          <div class="tool-approval-card__intent">
+                            <span>Update</span><code>Projects/Nexus roadmap.md</code>
+                          </div>
+                          <p class="tool-approval-card__reason">Adds the durable-receipt milestone under “Runtime reliability.” Nexus captured the current note before asking.</p>
+                          <details class="tool-approval-card__details">
+                            <summary>Review exact operation</summary>
+                            <dl><div><dt>Tool</dt><dd><code>content replace</code></dd></div><div><dt>Scope</dt><dd>1 note · 184 characters</dd></div><div><dt>Undo</dt><dd>Available after completion</dd></div></dl>
+                          </details>
+                          <div class="tool-approval-card__actions">
+                            <button type="button" class="tool-approval-button" data-action="deny">Deny</button>
+                            <button type="button" class="tool-approval-button mod-cta" data-action="approve">Allow once</button>
+                          </div>
+                          <div class="tool-approval-card__scope"><span>Applies only to this operation and these parameters.</span><button type="button" class="tool-approval-link" data-action="show-modes">Change mode</button></div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="mixed-batch">
+                        <section class="tool-approval-card" aria-label="Mixed tool batch">
+                          <div class="tool-approval-card__header">
+                            <span class="tool-approval-card__icon" data-icon="list-checks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 2 2 4-4M11 7h10M3 17l2 2 4-4M11 17h10"></path></svg></span>
+                            <div class="tool-approval-card__title"><strong>1 of 2 operations needs approval</strong><span>The safe read can run independently.</span></div>
+                          </div>
+                          <ol class="tool-batch-list">
+                            <li><span class="tool-batch-status tool-batch-status--complete" aria-label="Completed">✓</span><span><strong>Read Nexus roadmap</strong><small><code>content read</code> · Allowed in every mode</small></span></li>
+                            <li><span class="tool-batch-status tool-batch-status--waiting" aria-label="Waiting">2</span><span><strong>Update Nexus roadmap</strong><small><code>content replace</code> · Waiting for approval</small></span></li>
+                          </ol>
+                          <div class="tool-approval-card__actions"><button type="button" class="tool-approval-button" data-action="deny">Deny write</button><button type="button" class="tool-approval-button mod-cta" data-action="approve">Allow write once</button></div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="approved">
+                        <div class="tool-operation-status tool-operation-status--approved"><span data-icon="check-circle-2"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg></span><div><strong>Approved once</strong><small>Updating <code>Projects/Nexus roadmap.md</code></small></div></div>
+                      </div>
+                      <div class="runtime-state" data-state="denied">
+                        <div class="tool-operation-status tool-operation-status--neutral"><span data-icon="ban"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m6 6 12 12"></path></svg></span><div><strong>Not allowed</strong><small>The note was not changed. Nexus can continue with a read-only answer.</small></div></div>
+                      </div>
+                      <div class="runtime-state" data-state="cancelled">
+                        <div class="tool-operation-status tool-operation-status--neutral"><span data-icon="circle-slash-2"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 8 8 8"></path></svg></span><div><strong>Approval cancelled</strong><small>The conversation changed before you answered. Nothing ran.</small></div></div>
+                      </div>
+                      <div class="runtime-state" data-state="stale">
+                        <div class="tool-operation-status tool-operation-status--warning"><span data-icon="clock-alert"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2M19 3v4h-4"></path></svg></span><div><strong>This request is stale</strong><small>The tool parameters changed after approval was requested. Review the new operation instead.</small></div></div>
+                      </div>
+                      <div class="runtime-state" data-state="error">
+                        <div class="tool-operation-status tool-operation-status--error"><span data-icon="triangle-alert"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.8 2.4 18a2 2 0 0 0 1.8 3h15.6a2 2 0 0 0 1.8-3L13.7 3.8a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4M12 17h.01"></path></svg></span><div><strong>Couldn’t resolve approval</strong><small>The request was cancelled safely. Retry the assistant turn to create a new operation.</small></div></div>
+                      </div>
+                      <div class="runtime-state" data-state="running">
+                        <div class="tool-operation-status tool-operation-status--running"><span class="tool-operation-spinner" aria-hidden="true"></span><div><strong>Updating Nexus roadmap</strong><small>Capturing the post-edit state…</small></div><span class="tool-policy-pill">Running</span></div>
+                      </div>
+                      <div class="runtime-state" data-state="completed">
+                        <div class="tool-operation-status tool-operation-status--complete"><span data-icon="check-circle-2"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg></span><div><strong>Updated Nexus roadmap</strong><small>Completed · Receipt recorded · Undo available</small></div><span class="tool-policy-pill tool-policy-pill--complete">Done</span></div>
+                      </div>
+
+                      <div class="runtime-state" data-state="one-change">
+                        <section class="turn-change-summary">
+                          <div class="turn-change-summary__header"><div><span data-icon="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"></path><path d="M10 6h10v14a2 2 0 0 1-2 2H8"></path></svg></span><strong>Changed 1 file</strong></div><span class="tool-policy-pill tool-policy-pill--complete">Undo available</span></div>
+                          <div class="turn-change-entry"><span class="turn-change-entry__mark turn-change-entry__mark--modified">M</span><div><strong>Projects/Nexus roadmap.md</strong><small>+4 lines · −1 line · Preimage captured</small></div></div>
+                          <div class="turn-change-summary__actions"><button type="button" class="tool-approval-button" data-action="show-diff">View diff</button><button type="button" class="tool-approval-button" data-action="undo">Undo changes</button></div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="multi-change">
+                        <section class="turn-change-summary">
+                          <div class="turn-change-summary__header"><div><span data-icon="files"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"></path><path d="M10 6h10v14a2 2 0 0 1-2 2H8"></path></svg></span><strong>Changed 3 files</strong></div><span class="tool-policy-pill tool-policy-pill--warning">2 undoable</span></div>
+                          <div class="turn-change-entry"><span class="turn-change-entry__mark turn-change-entry__mark--modified">M</span><div><strong>Projects/Nexus roadmap.md</strong><small>Text preimage captured</small></div></div>
+                          <div class="turn-change-entry"><span class="turn-change-entry__mark turn-change-entry__mark--archived">A</span><div><strong>Drafts/old-roadmap.md</strong><small>Archived to .archive · Restore available</small></div></div>
+                          <div class="turn-change-entry turn-change-entry--limited"><span class="turn-change-entry__mark">—</span><div><strong>Assets/roadmap-preview.png</strong><small>Not captured · Binary files are not undoable in v1</small></div></div>
+                          <div class="turn-change-summary__actions"><button type="button" class="tool-approval-button" data-action="show-diff">Inspect changes</button><button type="button" class="tool-approval-button" data-action="undo">Undo 2 captured changes</button></div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="missing-preimage">
+                        <section class="turn-change-summary turn-change-summary--warning">
+                          <div class="turn-change-summary__header"><div><span data-icon="file-warning"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6M12 12v4M12 19h.01"></path></svg></span><strong>Undo unavailable</strong></div><span class="tool-policy-pill tool-policy-pill--warning">Artifact missing</span></div>
+                          <p>The change record is intact, but its saved preimage is missing or corrupt on this device. Nexus will not guess at the previous content.</p>
+                          <div class="turn-change-entry"><span class="turn-change-entry__mark">M</span><div><strong>Projects/Nexus roadmap.md</strong><small>Current file is unchanged since the turn · Manual review required</small></div></div>
+                          <div class="turn-change-summary__actions"><button type="button" class="tool-approval-button">Open current note</button></div>
+                        </section>
+                      </div>
+
+                      <div class="runtime-state" data-state="keyboard-focus">
+                        <section class="tool-approval-card">
+                          <div class="tool-approval-card__header"><div class="tool-approval-card__title"><strong>Keyboard review</strong><span>Tab reaches details, deny, allow once, then change mode.</span></div></div>
+                          <div class="tool-approval-card__actions"><button type="button" class="tool-approval-button">Deny</button><button type="button" class="tool-approval-button mod-cta mock-force-focus" autofocus>Allow once</button></div>
+                        </section>
+                      </div>
+                    </div>
+                    <div class="message-actions-external"><button type="button" class="message-action-btn clickable-icon" aria-label="Copy message" data-icon="copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tool-status-bar-container">
+              <div class="tool-status-bar">
+                <div class="tool-status-row--primary"><div class="tool-status-slot"><span class="tool-status-text-past active" id="mock-status-text">Waiting for approval</span></div></div>
+                <div class="tool-status-row--meta"><div><button type="button" aria-label="Tool history" data-icon="eye"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg></button><button type="button" aria-label="Task board" data-icon="clipboard-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h6M9 3h6v4H9zM7 5H5v16h14V5h-2"></path><path d="m8 14 2 2 4-4"></path></svg></button></div><div><span class="tool-status-cost">$0.03</span><span class="context-badge context-badge-safe">18%</span></div></div>
+              </div>
+            </div>
+
+            <div class="chat-input-container">
+              <div class="chat-input">
+                <div class="chat-input-wrapper">
+                  <textarea class="chat-textarea" rows="1" aria-label="Message" placeholder="Type your message…"></textarea>
+                  <button type="button" class="chat-send-button clickable-icon" aria-label="Send message" data-icon="arrow-up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg></button>
+                </div>
+                <div class="chat-composer-footer">
+                  <div class="chat-permission-control">
+                    <button type="button" class="chat-permission-trigger" id="chat-permission-trigger" aria-haspopup="menu" aria-expanded="false">
+                      <span data-icon="shield-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6Z"></path><path d="m9 12 2 2 4-4"></path></svg></span><span id="chat-permission-label">Supervised</span><span data-icon="chevron-up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg></span>
+                    </button>
+                    <div class="chat-permission-menu" id="chat-permission-menu" role="menu" hidden>
+                      <button type="button" role="menuitemradio" aria-checked="true" data-mode-choice="supervised"><strong>Supervised</strong><small>Ask before writes and external actions</small></button>
+                      <button type="button" role="menuitemradio" aria-checked="false" data-mode-choice="allow-vault-edits"><strong>Allow vault edits</strong><small>Run reversible captured vault edits</small></button>
+                      <button type="button" role="menuitemradio" aria-checked="false" data-mode-choice="full-access"><strong>Full access</strong><small>Run registered tools without prompts</small></button>
+                      <p>Hard Nexus guards always apply.</p>
+                    </div>
+                  </div>
+                  <span class="chat-composer-hint">Shift + Enter for a new line</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="mock-modal-layer" id="mock-modal-layer" hidden>
+    <div class="modal-container">
+      <div class="modal-bg" data-action="close-modal"></div>
+      <section class="modal tool-change-modal" role="dialog" aria-modal="true" aria-labelledby="mock-modal-title">
+        <div class="modal-content">
+          <div class="tool-change-modal__header"><div><h2 id="mock-modal-title">Review changes</h2><p id="mock-modal-subtitle">Projects/Nexus roadmap.md</p></div><button type="button" class="clickable-icon tool-change-modal__close" data-action="close-modal" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button></div>
+
+          <div class="modal-state" data-modal-state="diff">
+            <div class="tool-diff-stats"><span class="tool-diff-add">+4</span><span class="tool-diff-remove">−1</span><span>Text · 184 characters</span></div>
+            <div class="tool-diff" role="region" aria-label="Text diff">
+              <div class="tool-diff-line tool-diff-line--context"><span>18</span><code>## Runtime reliability</code></div>
+              <div class="tool-diff-line tool-diff-line--remove"><span>19</span><code>- Durable tool retries (planned)</code></div>
+              <div class="tool-diff-line tool-diff-line--add"><span>19</span><code>+ Durable operation receipts (implemented)</code></div>
+              <div class="tool-diff-line tool-diff-line--add"><span>20</span><code>+ - JSONL-first receipt events</code></div>
+              <div class="tool-diff-line tool-diff-line--add"><span>21</span><code>+ - Conflict-safe retry suppression</code></div>
+              <div class="tool-diff-line tool-diff-line--add"><span>22</span><code>+ - Cache rebuild verification</code></div>
+            </div>
+            <div class="tool-change-modal__actions"><button type="button" class="tool-approval-button" data-action="close-modal">Close</button><button type="button" class="tool-approval-button" data-action="undo">Undo changes</button></div>
+          </div>
+
+          <div class="modal-state" data-modal-state="undo-confirm">
+            <div class="tool-undo-confirm"><span data-icon="undo-2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-3"></path></svg></span><div><strong>Undo this turn’s captured changes?</strong><p>Nexus will restore the saved note and move the unchanged archived draft back. The binary preview was not captured and will remain as-is.</p></div></div>
+            <div class="tool-undo-preflight"><span>2 changes ready</span><span>1 unsupported entry skipped</span></div>
+            <div class="tool-change-modal__actions"><button type="button" class="tool-approval-button" data-action="close-modal">Keep changes</button><button type="button" class="tool-approval-button mod-warning" data-action="confirm-undo">Undo 2 changes</button></div>
+          </div>
+
+          <div class="modal-state" data-modal-state="undo-success">
+            <div class="tool-undo-result tool-undo-result--success"><span data-icon="check-circle-2"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m8 12 3 3 5-6"></path></svg></span><div><strong>Changes undone</strong><p>Restored <code>Projects/Nexus roadmap.md</code> and moved the archived draft back to its original path.</p></div></div>
+            <div class="tool-change-modal__actions"><button type="button" class="tool-approval-button mod-cta" data-action="close-modal">Done</button></div>
+          </div>
+
+          <div class="modal-state" data-modal-state="undo-conflict">
+            <div class="tool-undo-result tool-undo-result--conflict"><span data-icon="shield-alert"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6Z"></path><path d="M12 8v5M12 17h.01"></path></svg></span><div><strong>Undo stopped to protect a later edit</strong><p><code>Projects/Nexus roadmap.md</code> changed after this turn. Nexus did not restore or move any files.</p></div></div>
+            <div class="tool-conflict-path"><strong>Conflicting file</strong><code>Projects/Nexus roadmap.md</code><span>Current content no longer matches the recorded post-state.</span></div>
+            <div class="tool-change-modal__actions"><button type="button" class="tool-approval-button" data-action="close-modal">Close</button><button type="button" class="tool-approval-button">Open current note</button></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="./chat-runtime-safety.js"></script>
+</body>
+</html>

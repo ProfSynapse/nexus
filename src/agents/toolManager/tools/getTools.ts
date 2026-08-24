@@ -1,4 +1,6 @@
 import { ITool } from '../../interfaces/ITool';
+import type { ToolExecutionPolicy } from '../../policy/ToolExecutionPolicy';
+import { CONSERVATIVE_TOOL_EXECUTION_POLICY } from '../../policy/ToolExecutionPolicy';
 import { IAgent } from '../../interfaces/IAgent';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData, WorkspaceNameProvider } from '../toolManager';
@@ -27,6 +29,10 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   private schemaData: SchemaData;
   private workspaceProvider?: WorkspaceNameProvider;
   private workspaceCache: { names: string[]; fetchedAt: number } | null = null;
+
+  getExecutionPolicy(): Readonly<ToolExecutionPolicy> {
+    return CONSERVATIVE_TOOL_EXECUTION_POLICY;
+  }
 
   constructor(
     agentRegistry: Map<string, IAgent>,

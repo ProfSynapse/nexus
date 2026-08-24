@@ -6,6 +6,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
+import type { ToolMutationIntent } from '../../policy/ToolExecutionPolicy';
 
 /**
  * Create a NEW canvas file (fails if already exists)
@@ -27,6 +28,13 @@ export class WriteCanvasTool extends BaseTool<WriteCanvasParams, WriteCanvasResu
     return labelFileOp(verbs('Creating canvas', 'Created canvas', 'Failed to create canvas'), params, tense, {
       keys: ['path'],
       fallback: 'canvas',
+    });
+  }
+
+  getMutationIntent(params: WriteCanvasParams): Promise<ToolMutationIntent> {
+    return Promise.resolve({
+      kind: 'create',
+      path: CanvasOperations.resolveWritePath(params.path),
     });
   }
 

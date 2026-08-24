@@ -20,6 +20,7 @@
  */
 
 import type { ConversationData } from '../../types/chat/ChatTypes';
+import type { StartToolOperationData } from '../../types/tools/ToolOperationTypes';
 
 // ============================================================================
 // Base Event Interface
@@ -261,6 +262,44 @@ export interface TraceAddedEvent extends BaseStorageEvent {
     /** JSON-serialized metadata */
     metadataJson?: string;
   };
+}
+
+// ============================================================================
+// Durable Tool Operation Receipt Events
+// ============================================================================
+
+export interface ToolOperationStartedEvent extends BaseStorageEvent {
+  type: 'tool_operation_started';
+  workspaceId: string;
+  data: StartToolOperationData;
+}
+
+export interface ToolOperationCompletedEvent extends BaseStorageEvent {
+  type: 'tool_operation_completed';
+  workspaceId: string;
+  operationId: string;
+  signature: string;
+  resultJson: string;
+  resultTruncated: boolean;
+  completedAt: number;
+}
+
+export interface ToolOperationFailedEvent extends BaseStorageEvent {
+  type: 'tool_operation_failed';
+  workspaceId: string;
+  operationId: string;
+  signature: string;
+  error: string;
+  completedAt: number;
+}
+
+export interface ToolOperationIndeterminateEvent extends BaseStorageEvent {
+  type: 'tool_operation_indeterminate';
+  workspaceId: string;
+  operationId: string;
+  signature: string;
+  error: string;
+  completedAt: number;
 }
 
 // ============================================================================
@@ -710,7 +749,11 @@ export type WorkspaceEvent =
   | StateSavedEvent
   | StateUpdatedEvent
   | StateDeletedEvent
-  | TraceAddedEvent;
+  | TraceAddedEvent
+  | ToolOperationStartedEvent
+  | ToolOperationCompletedEvent
+  | ToolOperationFailedEvent
+  | ToolOperationIndeterminateEvent;
 
 /**
  * Union of all conversation-related events
@@ -761,6 +804,10 @@ export function isWorkspaceEvent(event: StorageEvent): event is WorkspaceEvent {
     'state_updated',
     'state_deleted',
     'trace_added',
+    'tool_operation_started',
+    'tool_operation_completed',
+    'tool_operation_failed',
+    'tool_operation_indeterminate',
   ].includes(event.type);
 }
 

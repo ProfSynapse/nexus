@@ -16,6 +16,10 @@ import {
   StateUpdatedEvent,
   StateDeletedEvent,
   TraceAddedEvent,
+  ToolOperationStartedEvent,
+  ToolOperationCompletedEvent,
+  ToolOperationFailedEvent,
+  ToolOperationIndeterminateEvent,
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
 
@@ -37,7 +41,7 @@ export class WorkspaceEventApplier {
   /**
    * Apply a workspace-related event to SQLite cache.
    */
-  async apply(event: WorkspaceEvent): Promise<void> {
+  async apply(event: WorkspaceEvent): Promise<boolean | void> {
     switch (event.type) {
       case 'workspace_created':
         await this.applyWorkspaceCreated(event);
@@ -65,6 +69,17 @@ export class WorkspaceEventApplier {
         break;
       case 'trace_added':
         await this.applyTraceAdded(event);
+        break;
+      case 'tool_operation_started':
+        return this.applyToolOperationStarted(event);
+      case 'tool_operation_completed':
+        await this.applyToolOperationCompleted(event);
+        break;
+      case 'tool_operation_failed':
+        await this.applyToolOperationFailed(event);
+        break;
+      case 'tool_operation_indeterminate':
+        await this.applyToolOperationIndeterminate(event);
         break;
     }
   }
@@ -257,4 +272,84 @@ export class WorkspaceEventApplier {
       ]
     );
   }
+
+  private async applyToolOperationStarted(event: ToolOperationStartedEvent): Promise<boolean> {
+    const data = event.data;
+    if (!data?.operationId || !data.signature || !this.isValidWorkspaceId(data.workspaceId)) {
+      return false;
+    }
+
+    // The first signature observed for an operation id wins. A conflicting
+    // replay remains visible to the execution layer instead of overwriting the
+    // original receipt during multi-device reconciliation.
+    const result = await this.sqliteCache.run(
+      `INSERT OR IGNORE INTO tool_operation_receipts
+       (operationId, signature, status, origin, workspaceId, sessionId,
+        conversationId, messageId, turnId, replayPolicy, replayable,
+        commandSummary, resultJson, resultTruncated, error, startedAt,
+        completedAt, updatedAt)
+       VALUES (?, ?, 'started', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL, ?, NULL, ?)`,
+      [
+        data.operationId,
+        data.signature,
+        data.origin,
+        data.workspaceId,
+        data.sessionId,
+        data.conversationId ?? null,
+        data.messageId ?? null,
+        data.turnId ?? null,
+        data.replayPolicy,
+        data.replayable ? 1 : 0,
+        data.commandSummary,
+        event.timestamp,
+        event.timestamp,
+      ]
+    );
+    return hasRunChanges(result) && result.changes === 1;
+  }
+
+  private async applyToolOperationCompleted(event: ToolOperationCompletedEvent): Promise<void> {
+    await this.applyToolOperationTerminal(event, 'completed', event.resultJson, event.resultTruncated, null);
+  }
+
+  private async applyToolOperationFailed(event: ToolOperationFailedEvent): Promise<void> {
+    await this.applyToolOperationTerminal(event, 'failed', null, false, event.error);
+  }
+
+  private async applyToolOperationIndeterminate(event: ToolOperationIndeterminateEvent): Promise<void> {
+    await this.applyToolOperationTerminal(event, 'indeterminate', null, false, event.error);
+  }
+
+  private async applyToolOperationTerminal(
+    event: ToolOperationCompletedEvent | ToolOperationFailedEvent | ToolOperationIndeterminateEvent,
+    status: 'completed' | 'failed' | 'indeterminate',
+    resultJson: string | null,
+    resultTruncated: boolean,
+    error: string | null
+  ): Promise<void> {
+    if (!event.operationId || !event.signature || !this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
+    await this.sqliteCache.run(
+      `UPDATE tool_operation_receipts
+       SET status = ?, resultJson = ?, resultTruncated = ?, error = ?, completedAt = ?, updatedAt = ?
+       WHERE operationId = ? AND signature = ?`,
+      [
+        status,
+        resultJson,
+        resultTruncated ? 1 : 0,
+        error,
+        event.completedAt,
+        event.timestamp,
+        event.operationId,
+        event.signature,
+      ]
+    );
+  }
+}
+
+function hasRunChanges(value: unknown): value is { changes: number } {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as { changes?: unknown }).changes === 'number';
 }

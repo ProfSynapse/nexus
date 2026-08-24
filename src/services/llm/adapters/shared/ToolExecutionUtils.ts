@@ -9,6 +9,7 @@
  */
 
 import { SupportedProvider } from '../types';
+import type { ToolExecutionOrigin } from '../../../../types/tools/ToolOperationTypes';
 
 export interface ToolCall {
   id: string;
@@ -70,6 +71,13 @@ export interface ToolExecutionContext {
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;
+  operationOrigin?: ToolExecutionOrigin;
+  operationScopeId?: string;
+  /** Zero-based provider response index within one logical assistant turn. */
+  operationSequence?: number;
+  conversationId?: string;
+  messageId?: string;
+  turnId?: string;
 }
 
 /**

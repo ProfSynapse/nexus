@@ -13,6 +13,8 @@
 
 import { ConversationData, CreateConversationParams, ToolCall } from '../../types/chat/ChatTypes';
 import { generateSessionId } from '../../utils/sessionUtils';
+import type { ChatRuntimeEnvelope } from '../llm/runtime/ChatRuntimeEvent';
+import type { ToolExecutionOrigin } from '../../types/tools/ToolOperationTypes';
 
 /** Streaming options for message generation */
 interface StreamingOptions {
@@ -23,14 +25,8 @@ interface StreamingOptions {
   sessionId?: string;
   messageId?: string;
   abortSignal?: AbortSignal;
-}
-
-/** Streaming chunk result */
-interface StreamingChunk {
-  chunk: string;
-  complete: boolean;
-  messageId: string;
-  toolCalls?: ToolCall[];
+  operationOrigin?: ToolExecutionOrigin;
+  operationScopeId?: string;
 }
 
 /** Conversation service interface */
@@ -48,7 +44,7 @@ export interface ConversationManagerDependencies {
     conversationId: string,
     userMessage: string,
     options?: StreamingOptions
-  ) => AsyncGenerator<StreamingChunk, void, unknown>;
+  ) => AsyncGenerator<ChatRuntimeEnvelope, void, unknown>;
 }
 
 export class ConversationManager {
@@ -104,7 +100,7 @@ export class ConversationManager {
     conversationId: string,
     message: string,
     options?: StreamingOptions
-  ): AsyncGenerator<StreamingChunk, void, unknown> {
+  ): AsyncGenerator<ChatRuntimeEnvelope, void, unknown> {
     // Save user message first
     await this.dependencies.conversationService.addMessage({
       conversationId,

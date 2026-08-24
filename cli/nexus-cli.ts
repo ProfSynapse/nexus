@@ -149,6 +149,7 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --workspace <id>        scope for traces/memory (default: "default")
   --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
   --constraints "<text>"  optional guardrails
+  --operation-id <id>     optional stable retry identity; reuse only for the exact same command
   --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
@@ -193,7 +194,7 @@ GOTCHAS
   • \`content read\` requires a start line: content read --path X --start-line 1 (1 = top).
   • ALL flags are kebab-case — camelCase (e.g. --newPath, --activeTask) is rejected as
     an unknown flag; use --new-path, --active-task. Get exact flags from \`nexus tools <tool>\`.
-  • Context fields (--memory/--goal/--session/--constraints/--vault) go before \`--\`.
+  • Context fields (--memory/--goal/--session/--constraints/--operation-id/--vault) go before \`--\`.
     Putting one after it is rejected with a steer. \`--workspace\` is the one exception
     (it is also a real tool flag) — so pass tool values positionally and it can never
     be misread as context.
@@ -425,6 +426,7 @@ async function main(): Promise<number> {
             goal,
         };
         if (typeof flags.constraints === 'string') args.constraints = flags.constraints;
+        if (typeof flags['operation-id'] === 'string') args.operationId = flags['operation-id'];
         if (flags['dry-run'] === true) {
             process.stdout.write('DRY RUN — no vault connection and no tool execution.\n');
             process.stdout.write(JSON.stringify(args, null, 2) + '\n');

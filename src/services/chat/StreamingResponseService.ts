@@ -18,7 +18,7 @@
  * Follows Single Responsibility Principle - only handles streaming coordination.
  */
 
-import { ConversationData, ConversationMessage, MessageCost, MessageUsage, ToolCall } from '../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage, MessageCost } from '../../types/chat/ChatTypes';
 import type { ConversationMessage as LLMConversationMessage } from '../llm/core/ProviderMessageBuilder';
 import { ConversationContextBuilder } from './ConversationContextBuilder';
 import { ToolCallService } from './ToolCallService';
@@ -27,6 +27,16 @@ import type { MessageQueueService } from './MessageQueueService';
 import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
 import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
 import { ContextCompactionService } from './ContextCompactionService';
+import type {
+  ChatRuntimeEnvelope,
+  ChatRuntimeEvent,
+} from '../llm/runtime/ChatRuntimeEvent';
+import {
+  createInitialChatTurnState,
+  reduceChatTurn,
+  type ChatTurnState,
+} from '../llm/runtime/ChatTurnReducer';
+import type { ToolExecutionOrigin } from '../../types/tools/ToolOperationTypes';
 
 export interface StreamingOptions {
   provider?: string;
@@ -35,6 +45,8 @@ export interface StreamingOptions {
   workspaceId?: string;
   sessionId?: string;
   messageId?: string;
+  operationOrigin?: ToolExecutionOrigin;
+  operationScopeId?: string;
   abortSignal?: AbortSignal;
   excludeFromMessageId?: string; // Exclude this message and everything after from context (for retry)
   enableThinking?: boolean;
@@ -46,46 +58,11 @@ export interface StreamingOptions {
   transcriptionModel?: string;
 }
 
-export interface StreamingChunk {
-  chunk: string;
-  complete: boolean;
-  messageId: string;
-  toolCalls?: StreamingToolCall[];
-  metadata?: Record<string, unknown>;
-  // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
-  reasoning?: string;           // Incremental reasoning text
-  reasoningComplete?: boolean;  // True when reasoning finished
-  // Token usage (available on complete chunk)
-  usage?: MessageUsage;
-  // Available on final chunk only — lets the consumer persist these
-  // without requiring a second full-conversation save.
-  provider?: string;
-  model?: string;
-  cost?: MessageCost;
-}
-
-interface StreamingToolCall extends ToolCall {
-  arguments?: string;
-  function: {
-    name: string;
-    arguments: string;
-  };
-}
+export type StreamingChunk = ChatRuntimeEnvelope;
 
 interface LLMDefaultModel {
   provider: string;
   model: string;
-}
-
-interface LLMChunkLike {
-  chunk: string;
-  complete: boolean;
-  toolCalls?: StreamingToolCall[];
-  toolCallsReady?: boolean;
-  metadata?: Record<string, unknown>;
-  reasoning?: string;
-  reasoningComplete?: boolean;
-  usage?: unknown;
 }
 
 interface LLMServiceLike {
@@ -94,7 +71,7 @@ interface LLMServiceLike {
   // Previously narrowed to `{role, content}[]`, which hid type errors at the
   // boundary — notably, buildLLMMessages produced richer objects than the
   // duck type admitted, masking the vestigial remap we just removed.
-  generateResponseStream(messages: LLMConversationMessage[], options: Record<string, unknown>): AsyncGenerator<LLMChunkLike, void, unknown>;
+  generateResponseStream(messages: LLMConversationMessage[], options: Record<string, unknown>): AsyncGenerator<ChatRuntimeEvent, void, unknown>;
 }
 
 interface ConversationServiceLike {
@@ -130,11 +107,12 @@ export class StreamingResponseService {
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Notify queue service that generation is starting (pauses processing)
     void this.dependencies.messageQueueService?.onGenerationStart?.();
+    const messageId = options?.messageId || `msg_${Date.now()}_ai`;
+    let turnState = createInitialChatTurnState();
+    let persistedProvider = options?.provider ?? 'unknown';
+    let persistedModel = options?.model ?? 'unknown';
 
     try {
-      const messageId = options?.messageId || `msg_${Date.now()}_ai`;
-      let accumulatedContent = '';
-
       // Get defaults from LLMService if user didn't select provider/model
       const defaultModel = this.dependencies.llmService.getDefaultModel();
 
@@ -154,6 +132,7 @@ export class StreamingResponseService {
 
       // Get provider for context building
       const provider = options?.provider || defaultModel.provider;
+      persistedProvider = provider;
       this.currentProvider = provider; // Store for context building
 
       // ALWAYS load conversation from storage to get complete history including tool calls
@@ -208,6 +187,10 @@ export class StreamingResponseService {
         sessionId: options?.sessionId,
         workspaceId: options?.workspaceId,
         conversationId, // CRITICAL: Required for OpenAI Responses API response ID tracking
+        messageId,
+        turnId: messageId,
+        operationOrigin: options?.operationOrigin ?? 'native-chat',
+        operationScopeId: options?.operationScopeId,
         enableThinking: options?.enableThinking,
         thinkingEffort: options?.thinkingEffort,
         temperature: options?.temperature,
@@ -242,131 +225,114 @@ export class StreamingResponseService {
       };
 
       // Stream the response from LLM service with MCP tools
-      let toolCalls: StreamingToolCall[] | undefined = undefined;
-      let finalMetadata: Record<string, unknown> | undefined = undefined;
       this.dependencies.toolCallService.resetDetectedTools(); // Reset tool detection state for new message
 
       // Track usage and cost for conversation tracking
       let finalUsage: NormalizedTokenUsage | undefined = undefined;
       let finalCost: MessageCost | undefined = undefined;
       const selectedModel = typeof llmOptions.model === 'string' ? llmOptions.model : defaultModel.model;
+      persistedModel = selectedModel;
 
-      for await (const chunk of this.dependencies.llmService.generateResponseStream(messages, llmOptions)) {
+      for await (const event of this.dependencies.llmService.generateResponseStream(messages, llmOptions)) {
         // Check if aborted FIRST before processing chunk
         if (options?.abortSignal?.aborted) {
           throw new DOMException('Generation aborted by user', 'AbortError');
         }
 
-        accumulatedContent += chunk.chunk;
-
-        // Extract usage for cost calculation
-        if (chunk.usage) {
-          const normalizedUsage = ContextBudgetService.normalizeUsage(chunk.usage);
+        if (event.type === 'usage.updated') {
+          const normalizedUsage = ContextBudgetService.normalizeUsage(event.usage);
           if (normalizedUsage) {
             finalUsage = normalizedUsage;
           }
         }
 
-        if (chunk.metadata) {
-          finalMetadata = {
-            ...(finalMetadata || {}),
-            ...chunk.metadata
-          };
-        }
-
         // Extract tool calls when available and handle progressive display
-        if (chunk.toolCalls) {
-          toolCalls = chunk.toolCalls;
-
-      // Handle progressive tool call detection (fires 'detected' and 'updated' events)
-      if (toolCalls) {
-        // Only emit once we have non-empty argument content to reduce duplicate spam
-        const hasMeaningfulArgs = toolCalls.some((tc) => {
-          const args = tc.function?.arguments || tc.arguments || '';
-          return typeof args === 'string' ? args.trim().length > 0 : true;
-        });
-        if (hasMeaningfulArgs) {
-          this.dependencies.toolCallService.handleToolCallDetection(
-            messageId,
-            toolCalls,
-            chunk.toolCallsReady || false,
-            conversationId
-          );
-        }
-      }
+        if (event.type === 'tool.snapshot') {
+          const toolCalls = event.calls;
+          const hasMeaningfulArgs = toolCalls.some((tc) => {
+            const args = tc.function.arguments;
+            return args.trim().length > 0;
+          });
+          if (hasMeaningfulArgs) {
+            this.dependencies.toolCallService.handleToolCallDetection(
+              messageId,
+              toolCalls,
+              event.ready,
+              conversationId
+            );
+          }
         }
 
-        // On final chunk: calculate cost, persist the completed message, then yield.
-        // The save goes through MessageRepository.update() which has dirty-checking,
-        // so only the AI message that actually changed gets a JSONL write — not
-        // every message in the conversation (fixes O(N) write amplification).
-        if (chunk.complete) {
-          // Calculate cost from final usage using CostTrackingService
+        // Cost is a runtime event too, and must precede the terminal event so
+        // the reducer can reject every late mutation after terminal state.
+        if (event.type === 'turn.completed') {
           if (finalUsage) {
             const usageData = this.dependencies.costTrackingService.extractUsage(finalUsage);
             if (usageData) {
               finalCost = await this.dependencies.costTrackingService.trackMessageUsage(
                 conversationId,
                 messageId,
-                provider,
-                selectedModel,
+                turnState.provider || provider,
+                turnState.model || selectedModel,
                 usageData
               ) ?? undefined;
             }
           }
 
-          // Update the placeholder message with final content
-          const conv = await this.dependencies.conversationService.getConversation(conversationId);
-          if (conv) {
-            const msg = conv.messages.find((m) => m.id === messageId);
-            if (msg) {
-              msg.content = accumulatedContent;
-              msg.state = 'complete';
-              if (toolCalls) {
-                msg.toolCalls = toolCalls;
-              }
-              if (finalMetadata && Object.keys(finalMetadata).length > 0) {
-                msg.metadata = finalMetadata;
-              }
-              if (finalCost) {
-                msg.cost = finalCost;
-              }
-              if (finalUsage) {
-                msg.usage = finalUsage;
-              }
-              msg.provider = provider;
-              msg.model = selectedModel;
-
-              await this.dependencies.conversationService.updateConversation(conversationId, {
-                messages: conv.messages,
-                metadata: conv.metadata
-              });
-            }
+          if (finalCost) {
+            const costEvent: ChatRuntimeEvent = { type: 'cost.updated', cost: finalCost };
+            turnState = reduceChatTurn(turnState, costEvent);
+            yield { messageId, event: costEvent };
           }
         }
 
-        yield {
-          chunk: chunk.chunk,
-          complete: chunk.complete,
-          messageId,
-          toolCalls: toolCalls,
-          metadata: chunk.complete ? finalMetadata : undefined,
-          reasoning: chunk.reasoning,
-          reasoningComplete: chunk.reasoningComplete,
-          usage: chunk.complete ? finalUsage : undefined,
-          // Final chunk carries provider/model/cost so the consumer can
-          // set them on the in-memory message (avoids needing to re-fetch).
-          provider: chunk.complete ? provider : undefined,
-          model: chunk.complete ? selectedModel : undefined,
-          cost: chunk.complete ? finalCost : undefined,
-        };
+        turnState = reduceChatTurn(turnState, event);
 
-        if (chunk.complete) {
-          break;
+        // Persist every terminal state before exposing it to consumers. This
+        // prevents failed/aborted turns from surviving as draft placeholders.
+        if (event.type === 'turn.completed' || event.type === 'turn.aborted' || event.type === 'turn.failed') {
+          await this.persistTerminalMessage(
+            conversationId,
+            messageId,
+            turnState,
+            provider,
+            selectedModel
+          );
+        }
+
+        yield { messageId, event };
+
+        if (event.type === 'turn.completed' || event.type === 'turn.aborted' || event.type === 'turn.failed') {
+          return;
         }
       }
 
+      throw new Error('LLM runtime stream ended without a terminal turn event.');
+
     } catch (error) {
+      const terminalEvent: ChatRuntimeEvent = error instanceof Error && error.name === 'AbortError'
+        ? { type: 'turn.aborted', reason: error.message }
+        : {
+            type: 'turn.failed',
+            error: { message: error instanceof Error ? error.message : String(error) },
+          };
+
+      if (!turnState.terminalEvent) {
+        turnState = reduceChatTurn(turnState, terminalEvent);
+      }
+      try {
+        await this.persistTerminalMessage(
+          conversationId,
+          messageId,
+          turnState,
+          persistedProvider,
+          persistedModel
+        );
+      } catch (persistenceError) {
+        console.error('[StreamingResponseService] Failed to persist terminal message:', persistenceError);
+      }
+      yield { messageId, event: terminalEvent };
+
       const response = error instanceof Error && 'response' in error
         ? (error as Error & { response?: { data?: unknown; json?: unknown; text?: unknown } }).response
         : undefined;
@@ -377,6 +343,41 @@ export class StreamingResponseService {
       // Notify queue service that generation is complete (resumes processing)
       void this.dependencies.messageQueueService?.onGenerationComplete?.();
     }
+  }
+
+  private async persistTerminalMessage(
+    conversationId: string,
+    messageId: string,
+    turnState: ChatTurnState,
+    provider: string,
+    model: string
+  ): Promise<void> {
+    const conv = await this.dependencies.conversationService.getConversation(conversationId);
+    const msg = conv?.messages.find(candidate => candidate.id === messageId);
+    if (!conv || !msg) return;
+
+    msg.content = turnState.content;
+    msg.state = turnState.phase === 'complete'
+      ? 'complete'
+      : turnState.phase === 'aborted'
+        ? 'aborted'
+        : 'invalid';
+    msg.isLoading = false;
+    msg.toolCalls = turnState.toolCalls.length > 0 ? turnState.toolCalls : undefined;
+    const metadata = turnState.error
+      ? { ...turnState.metadata, runtimeError: turnState.error }
+      : turnState.metadata;
+    msg.metadata = Object.keys(metadata).length > 0 ? metadata : undefined;
+    msg.cost = turnState.cost;
+    msg.usage = turnState.usage;
+    msg.reasoning = turnState.reasoning.text || undefined;
+    msg.provider = turnState.provider || provider;
+    msg.model = turnState.model || model;
+
+    await this.dependencies.conversationService.updateConversation(conversationId, {
+      messages: conv.messages,
+      metadata: conv.metadata
+    });
   }
 
   /**

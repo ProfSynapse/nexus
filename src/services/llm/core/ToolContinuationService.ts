@@ -12,7 +12,7 @@ import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { MCPToolExecution, IToolExecutor, ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { ProviderHttpError } from '../adapters/shared/ProviderHttpClient';
-import { TokenUsage, SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions, LLMProviderError } from '../adapters/types';
+import { SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions, LLMProviderError } from '../adapters/types';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import { checkForTerminalTool } from './TerminalToolHandler';
 import {
@@ -21,21 +21,13 @@ import {
   GenerateOptionsInternal,
   StreamingOptions
 } from './ProviderMessageBuilder';
+import type { ChatRuntimeEvent } from '../runtime/ChatRuntimeEvent';
+import { mapProviderStreamChunk } from '../runtime/ProviderStreamEventMapper';
 
 // Union type for tool calls from different sources
 type ToolCallUnion = AdapterToolCall | ChatToolCall;
 
-export interface StreamYield {
-  chunk: string;
-  complete: boolean;
-  content: string;
-  toolCalls?: ChatToolCall[];
-  toolCallsReady?: boolean;
-  usage?: TokenUsage;
-  metadata?: Record<string, unknown>;
-  reasoning?: string;
-  reasoningComplete?: boolean;
-}
+export type StreamYield = ChatRuntimeEvent;
 
 export class ToolContinuationService {
   // Safety limit for recursive tool calls
@@ -81,13 +73,19 @@ export class ToolContinuationService {
     previousMessages: ConversationMessage[],
     userPrompt: string,
     generateOptions: GenerateOptionsInternal,
-    options: StreamingOptions | undefined,
-    initialUsage: TokenUsage | undefined
+    options: StreamingOptions | undefined
   ): AsyncGenerator<StreamYield, void, unknown> {
     let completeToolCallsWithResults: ChatToolCall[] = [];
-    let toolIterationCount = 1;
 
     try {
+      for (const toolCall of detectedToolCalls) {
+        yield {
+          type: 'tool.execution.started',
+          operationId: toolCall.id,
+          call: toolCall,
+        };
+      }
+
       // Step 1: Execute tools via MCP to get results
       const mcpToolCalls = detectedToolCalls.map((tc) => ({
         id: tc.id,
@@ -108,7 +106,13 @@ export class ToolContinuationService {
           imageProvider: options?.imageProvider,
           imageModel: options?.imageModel,
           transcriptionProvider: options?.transcriptionProvider,
-          transcriptionModel: options?.transcriptionModel
+          transcriptionModel: options?.transcriptionModel,
+          operationOrigin: options?.operationOrigin,
+          operationScopeId: options?.operationScopeId,
+          operationSequence: 0,
+          conversationId: options?.conversationId,
+          messageId: options?.messageId,
+          turnId: options?.turnId,
         }
       );
 
@@ -129,24 +133,23 @@ export class ToolContinuationService {
 	          executionTime: result?.executionTime,
 	          function: originalCall.function
         };
-      });
+	      });
+
+      for (const toolCall of completeToolCallsWithResults) {
+        yield {
+          type: 'tool.execution.completed',
+          operationId: toolCall.id,
+          call: toolCall,
+          success: toolCall.success === true,
+        };
+      }
 
       // Step 1.5: Check for terminal tools (like subagent) that should stop the pingpong loop
       const terminalToolResult = checkForTerminalTool(completeToolCallsWithResults);
       if (terminalToolResult) {
-        yield {
-          chunk: terminalToolResult.message,
-          complete: false,
-          content: terminalToolResult.message,
-          toolCalls: completeToolCallsWithResults
-        };
-        yield {
-          chunk: '',
-          complete: true,
-          content: terminalToolResult.message,
-          toolCalls: completeToolCallsWithResults,
-          usage: initialUsage
-        };
+        yield { type: 'assistant.delta', text: terminalToolResult.message };
+        yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+        yield { type: 'turn.completed' };
         return;
       }
 
@@ -169,26 +172,12 @@ export class ToolContinuationService {
       );
 
       // Step 3: Start NEW stream with continuation (pingpong)
-      yield {
-        chunk: '\n\n',
-        complete: false,
-        content: '\n\n',
-        toolCalls: undefined
-      };
-
-      let fullContent = '\n\n';
+      yield { type: 'assistant.delta', text: '\n\n' };
+      let responseCompleted = false;
 
       for await (const chunk of adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions)) {
-        if (chunk.content) {
-          fullContent += chunk.content;
-
-          yield {
-            chunk: chunk.content,
-            complete: false,
-            content: fullContent,
-            toolCalls: undefined,
-            metadata: chunk.metadata
-          };
+        for (const event of mapProviderStreamChunk(chunk)) {
+          yield event;
         }
 
         // Handle recursive tool calls (another pingpong iteration)
@@ -199,15 +188,6 @@ export class ToolContinuationService {
             function: tc.function || { name: '', arguments: '{}' }
           }));
 
-          yield {
-            chunk: '',
-            complete: false,
-            content: fullContent,
-            toolCalls: chatToolCalls,
-            toolCallsReady: chunk.complete || false,
-            metadata: chunk.metadata
-          };
-
           if (!chunk.complete) {
             continue;
           }
@@ -216,13 +196,6 @@ export class ToolContinuationService {
           // next function_call_output continuation is attached to the response
           // that actually produced these tool calls.
           this.persistLatestResponseId(provider, chunk, options);
-
-          // Check iteration limit before recursing
-          toolIterationCount++;
-          if (toolIterationCount > this.TOOL_ITERATION_LIMIT) {
-            yield* this.yieldToolLimitMessage(fullContent);
-            break;
-          }
 
           // Execute recursive tool calls
           yield* this.handleRecursiveToolCalls(
@@ -233,14 +206,20 @@ export class ToolContinuationService {
             userPrompt,
             generateOptions,
             options,
-            completeToolCallsWithResults
+            completeToolCallsWithResults,
+            1
           );
         }
 
         if (chunk.complete) {
+          responseCompleted = true;
           this.persistLatestResponseId(provider, chunk, options);
           break;
         }
+      }
+
+      if (!responseCompleted) {
+        throw new Error(`Provider '${provider}' ended a tool continuation without a response boundary.`);
       }
 
     } catch (toolError) {
@@ -257,22 +236,23 @@ export class ToolContinuationService {
       });
 
       yield {
-        chunk: `\n\n❌ Tool execution failed: ${toolError instanceof Error ? toolError.message : String(toolError)}`,
-        complete: true,
-        content: `Tool execution failed: ${toolError instanceof Error ? toolError.message : String(toolError)}`,
-        toolCalls: undefined
+        type: 'assistant.delta',
+        text: `\n\n❌ Tool execution failed: ${toolError instanceof Error ? toolError.message : String(toolError)}`,
+      };
+      yield {
+        type: 'turn.failed',
+        error: {
+          message: toolError instanceof Error ? toolError.message : String(toolError),
+          provider,
+        },
       };
       return;
     }
 
-    // Yield final completion with complete tool calls and usage
-    yield {
-      chunk: '',
-      complete: true,
-      content: '',
-      toolCalls: completeToolCallsWithResults.length > 0 ? completeToolCallsWithResults : undefined,
-      usage: initialUsage
-    };
+    if (completeToolCallsWithResults.length > 0) {
+      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+    }
+    yield { type: 'turn.completed' };
   }
 
   /**
@@ -286,167 +266,156 @@ export class ToolContinuationService {
     userPrompt: string,
     generateOptions: GenerateOptionsInternal,
     options: StreamingOptions | undefined,
-    completeToolCallsWithResults: ChatToolCall[]
+    completeToolCallsWithResults: ChatToolCall[],
+    operationSequence: number
   ): AsyncGenerator<StreamYield, void, unknown> {
-    try {
-      // Convert recursive tool calls to MCP format
-      const recursiveMcpToolCalls = recursiveToolCalls.map((tc) => {
-        let argumentsStr = '';
+    // Sequence zero is the initial tool response. Refuse sequence 15 before
+    // dispatch so at most 15 tool-bearing provider responses can execute.
+    if (operationSequence >= this.TOOL_ITERATION_LIMIT) {
+      yield* this.yieldToolLimitMessage();
+      return;
+    }
 
-        if (tc.function?.arguments) {
-          argumentsStr = tc.function.arguments;
-        } else if (tc.parameters) {
-          argumentsStr = JSON.stringify(tc.parameters);
-        } else {
-          argumentsStr = '{}';
-        }
+    for (const toolCall of recursiveToolCalls) {
+      yield {
+        type: 'tool.execution.started',
+        operationId: toolCall.id,
+        call: toolCall,
+      };
+    }
 
-        return {
-          id: tc.id,
-          function: {
-            name: tc.function?.name || tc.name || '',
-            arguments: argumentsStr
-          }
-        };
-      });
+    const recursiveMcpToolCalls = recursiveToolCalls.map((tc) => {
+      let argumentsStr = '';
 
-      const recursiveToolResults = await MCPToolExecution.executeToolCalls(
-        this.toolExecutor,
-        recursiveMcpToolCalls,
-        provider as SupportedProvider,
-        generateOptions.onToolEvent,
-        {
-          sessionId: options?.sessionId,
-          workspaceId: options?.workspaceId,
-          imageProvider: options?.imageProvider,
-          imageModel: options?.imageModel,
-          transcriptionProvider: options?.transcriptionProvider,
-          transcriptionModel: options?.transcriptionModel
-        }
-      );
-
-      // Small delay to allow file system operations to complete
-      await new Promise(resolve => window.setTimeout(resolve, 100));
-
-      // Build complete tool calls with recursive results
-      const recursiveCompleteToolCalls: ChatToolCall[] = recursiveToolCalls.map((tc, index) => ({
-        ...tc,
-        result: recursiveToolResults[index]?.result,
-        success: recursiveToolResults[index]?.success || false,
-        error: recursiveToolResults[index]?.error,
-        executionTime: recursiveToolResults[index]?.executionTime
-      }));
-
-      // Add recursive results to complete tool calls
-      completeToolCallsWithResults.push(...recursiveCompleteToolCalls);
-
-      // Check for terminal tools - stop recursion if found
-      const terminalToolResult = checkForTerminalTool(recursiveCompleteToolCalls);
-      if (terminalToolResult) {
-        yield {
-          chunk: terminalToolResult.message,
-          complete: false,
-          content: terminalToolResult.message,
-          toolCalls: completeToolCallsWithResults
-        };
-        yield {
-          chunk: '',
-          complete: true,
-          content: terminalToolResult.message,
-          toolCalls: completeToolCallsWithResults
-        };
-        return;
+      if (tc.function?.arguments) {
+        argumentsStr = tc.function.arguments;
+      } else if (tc.parameters) {
+        argumentsStr = JSON.stringify(tc.parameters);
+      } else {
+        argumentsStr = '{}';
       }
 
-      // Build continuation for recursive pingpong
-      const recursiveContinuationOptions = this.messageBuilder.buildContinuationOptions(
-        provider,
-        userPrompt,
-        recursiveToolCalls,
-        recursiveToolResults,
-        previousMessages,
-        generateOptions,
-        options
-      );
-
-      // Update previousMessages with this tool execution for next recursion
-      const updatedPreviousMessages = this.updatePreviousMessagesWithToolExecution(
-        provider,
-        previousMessages,
-        recursiveToolCalls,
-        recursiveToolResults
-      );
-
-      // Continue with another recursive stream
-      yield {
-        chunk: '\n\n',
-        complete: false,
-        content: '\n\n',
-        toolCalls: undefined
+      return {
+        id: tc.id,
+        function: {
+          name: tc.function?.name || tc.name || '',
+          arguments: argumentsStr
+        }
       };
+    });
 
-      let fullContent = '\n\n';
-      let recursiveToolCallsDetected: ChatToolCall[] = [];
+    const recursiveToolResults = await MCPToolExecution.executeToolCalls(
+      this.toolExecutor,
+      recursiveMcpToolCalls,
+      provider as SupportedProvider,
+      generateOptions.onToolEvent,
+      {
+        sessionId: options?.sessionId,
+        workspaceId: options?.workspaceId,
+        imageProvider: options?.imageProvider,
+        imageModel: options?.imageModel,
+        transcriptionProvider: options?.transcriptionProvider,
+        transcriptionModel: options?.transcriptionModel,
+        operationOrigin: options?.operationOrigin,
+        operationScopeId: options?.operationScopeId,
+        operationSequence,
+        conversationId: options?.conversationId,
+        messageId: options?.messageId,
+        turnId: options?.turnId,
+      }
+    );
 
-      for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
-        if (recursiveChunk.content) {
-          fullContent += recursiveChunk.content;
-          yield {
-            chunk: recursiveChunk.content,
-            complete: false,
-            content: fullContent,
-            toolCalls: undefined,
-            metadata: recursiveChunk.metadata
-          };
-        }
+    await new Promise(resolve => window.setTimeout(resolve, 100));
 
-        // Handle nested recursive tool calls if any
-        if (recursiveChunk.toolCalls) {
-          const nestedChatToolCalls: ChatToolCall[] = recursiveChunk.toolCalls.map(tc => ({
-            ...tc,
-            type: tc.type || 'function',
-            function: tc.function || { name: '', arguments: '{}' }
-          }));
+    const recursiveCompleteToolCalls: ChatToolCall[] = recursiveToolCalls.map((tc, index) => ({
+      ...tc,
+      result: recursiveToolResults[index]?.result,
+      success: recursiveToolResults[index]?.success || false,
+      error: recursiveToolResults[index]?.error,
+      executionTime: recursiveToolResults[index]?.executionTime
+    }));
 
-          yield {
-            chunk: '',
-            complete: false,
-            content: fullContent,
-            toolCalls: nestedChatToolCalls,
-            toolCallsReady: recursiveChunk.complete || false,
-            metadata: recursiveChunk.metadata
-          };
+    completeToolCallsWithResults.push(...recursiveCompleteToolCalls);
 
-          // Store for execution after stream completes
-          if (recursiveChunk.complete && recursiveChunk.toolCallsReady) {
-            recursiveToolCallsDetected = nestedChatToolCalls;
-          }
-        }
+    for (const toolCall of recursiveCompleteToolCalls) {
+      yield {
+        type: 'tool.execution.completed',
+        operationId: toolCall.id,
+        call: toolCall,
+        success: toolCall.success === true,
+      };
+    }
+
+    const terminalToolResult = checkForTerminalTool(recursiveCompleteToolCalls);
+    if (terminalToolResult) {
+      yield { type: 'assistant.delta', text: terminalToolResult.message };
+      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+      return;
+    }
+
+    const recursiveContinuationOptions = this.messageBuilder.buildContinuationOptions(
+      provider,
+      userPrompt,
+      recursiveToolCalls,
+      recursiveToolResults,
+      previousMessages,
+      generateOptions,
+      options
+    );
+
+    const updatedPreviousMessages = this.updatePreviousMessagesWithToolExecution(
+      provider,
+      previousMessages,
+      recursiveToolCalls,
+      recursiveToolResults
+    );
+
+    yield { type: 'assistant.delta', text: '\n\n' };
+    let recursiveToolCallsDetected: ChatToolCall[] = [];
+    let responseCompleted = false;
+
+    for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
+      for (const event of mapProviderStreamChunk(recursiveChunk)) {
+        yield event;
+      }
+
+      if (recursiveChunk.toolCalls) {
+        const nestedChatToolCalls: ChatToolCall[] = recursiveChunk.toolCalls.map(tc => ({
+          ...tc,
+          type: tc.type || 'function',
+          function: tc.function || { name: '', arguments: '{}' }
+        }));
 
         if (recursiveChunk.complete) {
-          this.persistLatestResponseId(provider, recursiveChunk, options);
-          break;
+          recursiveToolCallsDetected = nestedChatToolCalls;
         }
       }
 
-      // If the recursive stream ended with tool calls, handle them (nested recursion)
-      if (recursiveToolCallsDetected.length > 0) {
-        yield* this.handleRecursiveToolCalls(
-          adapter,
-          provider,
-          recursiveToolCallsDetected,
-          updatedPreviousMessages,
-          userPrompt,
-          generateOptions,
-          options,
-          completeToolCallsWithResults
-        );
+      if (recursiveChunk.complete) {
+        responseCompleted = true;
+        this.persistLatestResponseId(provider, recursiveChunk, options);
+        break;
       }
+    }
 
-	    } catch {
-	      // Swallow expected errors during streaming (incomplete JSON)
-	    }
-	  }
+    if (!responseCompleted) {
+      throw new Error(`Provider '${provider}' ended a recursive tool continuation without a response boundary.`);
+    }
+
+    if (recursiveToolCallsDetected.length > 0) {
+      yield* this.handleRecursiveToolCalls(
+        adapter,
+        provider,
+        recursiveToolCallsDetected,
+        updatedPreviousMessages,
+        userPrompt,
+        generateOptions,
+        options,
+        completeToolCallsWithResults,
+        operationSequence + 1
+      );
+    }
+  }
 
   private parseToolArguments(argumentsJson: string | undefined): Record<string, unknown> {
     if (!argumentsJson) {
@@ -483,14 +452,9 @@ export class ToolContinuationService {
   /**
    * Yield tool iteration limit message
    */
-  private async* yieldToolLimitMessage(fullContent: string): AsyncGenerator<StreamYield, void, unknown> {
+  private async* yieldToolLimitMessage(): AsyncGenerator<StreamYield, void, unknown> {
     await Promise.resolve();
     const limitMessage = `\n\nTOOL_LIMIT_REACHED: You have used ${this.TOOL_ITERATION_LIMIT} tool iterations. You must now ask the user if they want to continue with more tool calls. Explain what you've accomplished so far and what you still need to do.`;
-    yield {
-      chunk: limitMessage,
-      complete: false,
-      content: fullContent + limitMessage,
-      toolCalls: undefined
-    };
+    yield { type: 'assistant.delta', text: limitMessage };
   }
 }

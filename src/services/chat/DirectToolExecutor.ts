@@ -86,6 +86,12 @@ export interface DirectToolExecutionContext {
     imageModel?: string;
     transcriptionProvider?: string;
     transcriptionModel?: string;
+    operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+    operationScopeId?: string;
+    operationSequence?: number;
+    conversationId?: string;
+    messageId?: string;
+    turnId?: string;
 }
 
 export interface DirectToolExecutorConfig {
@@ -451,6 +457,12 @@ export class DirectToolExecutor {
             };
             return await batchExecutionService.execute(normalizedParams, {
                 batchId,
+                operationId: createNativeToolOperationId(batchId, context),
+                operationOrigin: context?.operationOrigin ?? 'native-chat',
+                operationReplayable: Boolean(batchId),
+                conversationId: context?.conversationId,
+                messageId: context?.messageId,
+                turnId: context?.turnId,
                 observer: onToolEvent
                     ? {
                         onStepStarted: (event) => {
@@ -710,4 +722,17 @@ export class DirectToolExecutor {
     getExecutionManager(): AgentExecutionManager {
         return this.executionManager;
     }
+}
+
+export function createNativeToolOperationId(
+    batchId: string | undefined,
+    context?: DirectToolExecutionContext
+): string | undefined {
+    if (!batchId) return undefined;
+    const scope = context?.operationScopeId
+        ?? context?.turnId
+        ?? context?.messageId
+        ?? context?.conversationId;
+    if (!scope) return batchId;
+    return `${scope}:${context?.operationSequence ?? 0}:${batchId}`;
 }

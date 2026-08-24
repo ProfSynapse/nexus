@@ -4,6 +4,32 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+- 2026-08-21 | The terminal validator recipe combined a stale `/tmp`
+  skill-crafter location with the removed `.claude/skills` project mirror. |
+  Made installed skill-crafter resolution explicit and pointed validation at
+  `.codex/skills/nexus-llm-adapters`. | Files: `protocols/self-refine.md`,
+  `refinement-log.md`.
+
+- 2026-08-21 | Full-tree review found that Google and Ollama synthesize
+  response-local tool-call ids which were reused directly as durable operation
+  ids, causing later calls at the same function/index to conflict or replay stale
+  output. | Documented the response-local ID boundary, required turn/response
+  scoping before receipts, and added the user-visible symptom. | Files:
+  `references/streaming-contract.md`, `references/symptoms.md`,
+  `refinement-log.md`.
+
+- 2026-08-21 | The new provider driver/instance boundary made the adapter
+  protocol's generic "trace wiring" step underspecify the now-mandatory
+  lifecycle seam. | Updated the add-adapter procedure to require driver
+  registration, compatibility-first dynamic imports, config validation,
+  default-instance identity, and instance-owned cleanup. | Files:
+  `protocols/add-adapter.md`, `refinement-log.md`.
+
+- 2026-08-21 | The adapter procedures correctly separated provider response
+  parsing from chat turn orchestration; the 13-adapter error-wiring audit found
+  no gap, and no user correction was available. | No skill change. | Files:
+  `refinement-log.md` only.
+
 - 2026-08-21 | Anthropic response extraction was correct, but newer registered
   models used a request shape that was deprecated or rejected and some defaulted
   to omitted summaries. | Added the missing/empty-thinking symptom and a request-

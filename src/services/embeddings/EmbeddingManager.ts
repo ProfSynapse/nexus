@@ -148,7 +148,7 @@ export class EmbeddingManager {
 
       // Stop watching conversation events
       if (this.conversationWatcher) {
-        this.conversationWatcher.stop();
+        await this.conversationWatcher.shutdown();
       }
 
       // Clean up status bar (removes progress listener)

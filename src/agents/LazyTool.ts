@@ -1,5 +1,10 @@
 import { ITool } from './interfaces/ITool';
 import { JSONSchema } from '../types/schema/JSONSchemaTypes';
+import type {
+  ToolExecutionPolicy,
+  ToolMutationIntent,
+} from './policy/ToolExecutionPolicy';
+import { CONSERVATIVE_TOOL_EXECUTION_POLICY } from './policy/ToolExecutionPolicy';
 
 /**
  * Descriptor for lazy tool registration.
@@ -11,6 +16,7 @@ export interface LazyToolDescriptor {
   description: string;
   version: string;
   factory: () => ITool;
+  executionPolicy?: Readonly<ToolExecutionPolicy>;
 }
 
 /**
@@ -29,6 +35,7 @@ export class LazyTool implements ITool {
 
   private _factory: (() => ITool) | null;
   private _instance: ITool | null = null;
+  private readonly executionPolicy: Readonly<ToolExecutionPolicy>;
 
   constructor(descriptor: LazyToolDescriptor) {
     this.slug = descriptor.slug;
@@ -36,6 +43,7 @@ export class LazyTool implements ITool {
     this.description = descriptor.description;
     this.version = descriptor.version;
     this._factory = descriptor.factory;
+    this.executionPolicy = descriptor.executionPolicy ?? CONSERVATIVE_TOOL_EXECUTION_POLICY;
   }
 
   /**
@@ -61,6 +69,18 @@ export class LazyTool implements ITool {
 
   getResultSchema(): JSONSchema {
     return this.getInstance().getResultSchema();
+  }
+
+  getExecutionPolicy(): Readonly<ToolExecutionPolicy> {
+    return this.executionPolicy;
+  }
+
+  async getMutationIntent(params: unknown): Promise<ToolMutationIntent> {
+    const instance = this.getInstance();
+    if (!instance.getMutationIntent) {
+      throw new Error(`Tool "${this.slug}" does not declare a mutation intent.`);
+    }
+    return instance.getMutationIntent(params);
   }
 
   async execute(params: unknown): Promise<unknown> {

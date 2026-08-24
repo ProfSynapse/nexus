@@ -2,6 +2,16 @@ import { IAgent } from './interfaces/IAgent';
 import { ITool } from './interfaces/ITool';
 import { CommonResult } from '../types';
 import { LazyTool, LazyToolDescriptor } from './LazyTool';
+import { getRegisteredToolExecutionPolicy } from './policy/ToolExecutionPolicyCatalog';
+import type { ToolExecutionPolicy } from './policy/ToolExecutionPolicy';
+
+interface PolicyConfigurableTool extends ITool {
+  setExecutionPolicy(policy: Readonly<ToolExecutionPolicy>): void;
+}
+
+function isPolicyConfigurable(tool: ITool): tool is PolicyConfigurableTool {
+  return 'setExecutionPolicy' in tool && typeof tool.setExecutionPolicy === 'function';
+}
 
 /**
  * Base class for all agents in the MCP plugin
@@ -68,6 +78,9 @@ export abstract class BaseAgent implements IAgent {
    * @param tool Tool to register
    */
   registerTool(tool: ITool): void {
+    if (isPolicyConfigurable(tool)) {
+      tool.setExecutionPolicy(getRegisteredToolExecutionPolicy(this.name, tool.slug));
+    }
     this.tools.set(tool.slug, tool);
   }
 
@@ -78,7 +91,10 @@ export abstract class BaseAgent implements IAgent {
    * @param descriptor Tool metadata and factory function
    */
   registerLazyTool(descriptor: LazyToolDescriptor): void {
-    this.tools.set(descriptor.slug, new LazyTool(descriptor));
+    this.tools.set(descriptor.slug, new LazyTool({
+      ...descriptor,
+      executionPolicy: getRegisteredToolExecutionPolicy(this.name, descriptor.slug),
+    }));
   }
 
   /**

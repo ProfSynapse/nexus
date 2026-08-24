@@ -65,6 +65,7 @@ export class SQLiteMaintenanceService {
         DELETE FROM projects;
         DELETE FROM messages;
         DELETE FROM conversations;
+        DELETE FROM tool_operation_receipts;
         DELETE FROM memory_traces;
         DELETE FROM states;
         DELETE FROM sessions;

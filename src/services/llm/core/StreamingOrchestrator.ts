@@ -12,7 +12,7 @@
 import { IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
 import { LLMProviderSettings } from '../../../types';
 import { IAdapterRegistry } from './AdapterRegistry';
-import { TokenUsage, LLMProviderError, GenerateOptions } from '../adapters/types';
+import { LLMProviderError, GenerateOptions } from '../adapters/types';
 import { Notice } from 'obsidian';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import {
@@ -23,6 +23,9 @@ import {
   GoogleMessage
 } from './ProviderMessageBuilder';
 import { ToolContinuationService, StreamYield } from './ToolContinuationService';
+import type { BaseAdapter } from '../adapters/BaseAdapter';
+import type { ChatRuntimeEvent } from '../runtime/ChatRuntimeEvent';
+import { mapProviderStreamChunk } from '../runtime/ProviderStreamEventMapper';
 
 // Re-export types for backward compatibility
 export type { ConversationMessage, GoogleMessage, StreamingOptions, StreamYield };
@@ -80,6 +83,36 @@ export class StreamingOrchestrator {
     };
   }
 
+  private async* forwardProviderStream(
+    adapter: BaseAdapter,
+    provider: string,
+    prompt: string,
+    generateOptions: GenerateOptions,
+    options: StreamingOptions | undefined,
+    state: { detectedToolCalls: ChatToolCall[] }
+  ): AsyncGenerator<ChatRuntimeEvent, void, unknown> {
+    for await (const chunk of adapter.generateStreamAsync(prompt, generateOptions)) {
+      if (chunk.toolCalls && chunk.complete) {
+        state.detectedToolCalls = chunk.toolCalls.map(toolCall => ({
+          ...toolCall,
+          type: 'function',
+          function: toolCall.function || { name: '', arguments: '{}' },
+        }));
+      }
+
+      for (const event of mapProviderStreamChunk(chunk)) {
+        yield event;
+      }
+
+      if (chunk.complete) {
+        this.persistLatestResponseId(provider, chunk, options);
+        return;
+      }
+    }
+
+    throw new Error(`Provider '${provider}' ended its stream without a response.completed event.`);
+  }
+
   /**
    * Primary method: orchestrate streaming response with tool execution
    * @param messages - Conversation message history
@@ -118,10 +151,11 @@ export class StreamingOrchestrator {
     // Store original messages for pingpong context (exclude the last user message)
     const previousMessages = messages.slice(0, -1);
 
-    // Execute initial stream and detect tool calls
-    let fullContent = '';
-    let detectedToolCalls: ChatToolCall[] = [];
-    let finalUsage: TokenUsage | undefined = undefined;
+    // Execute initial provider response and detect tool calls. Provider response
+    // completion is not turn completion: a tool continuation may follow.
+    const streamState: { detectedToolCalls: ChatToolCall[] } = {
+      detectedToolCalls: [],
+    };
 
     // For Google, pass empty string as prompt since conversation is in conversationHistory
     const isGoogleModel = provider === 'google';
@@ -132,67 +166,18 @@ export class StreamingOrchestrator {
     let activeAdapter = adapter;
     let activeProvider = provider;
 
-      try {
-        const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
-        for await (const chunk of activeAdapter.generateStreamAsync(promptToPass, adapterGenerateOptions)) {
-          // Track usage from chunks
-          if (chunk.usage) {
-            finalUsage = chunk.usage;
-          }
+    yield { type: 'response.resolved', provider: activeProvider, model };
 
-          // Handle text content streaming
-          if (chunk.content) {
-            fullContent += chunk.content;
-
-            yield {
-              chunk: chunk.content,
-              complete: false,
-              content: fullContent,
-              toolCalls: undefined,
-              metadata: chunk.metadata
-            };
-          }
-
-          // Handle reasoning/thinking content (Claude, GPT-5, Gemini)
-          if (chunk.reasoning) {
-            yield {
-              chunk: '',
-              complete: false,
-              content: fullContent,
-              toolCalls: undefined,
-              reasoning: chunk.reasoning,
-              reasoningComplete: chunk.reasoningComplete
-            };
-          }
-
-          // Handle dynamic tool call detection
-          if (chunk.toolCalls) {
-            const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
-              ...tc,
-              type: tc.type || 'function',
-              function: tc.function || { name: '', arguments: '{}' }
-            }));
-
-            // ALWAYS yield tool calls for progressive UI display
-            yield {
-              chunk: '',
-              complete: false,
-              content: fullContent,
-              toolCalls: chatToolCalls,
-              toolCallsReady: chunk.complete || false
-            };
-
-            // Only STORE tool calls for execution when streaming is COMPLETE
-            if (chunk.complete) {
-              detectedToolCalls = chatToolCalls;
-            }
-          }
-
-          if (chunk.complete) {
-            this.persistLatestResponseId(activeProvider, chunk, options);
-            break;
-          }
-        }
+    try {
+      const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
+      yield* this.forwardProviderStream(
+        activeAdapter,
+        activeProvider,
+        promptToPass,
+        adapterGenerateOptions,
+        options,
+        streamState
+      );
     } catch (error) {
       // On Codex 429, fall back to standard OpenAI adapter if available
       if (
@@ -207,63 +192,19 @@ export class StreamingOrchestrator {
           activeProvider = 'openai';
 
           // Reset streaming state for retry
-          fullContent = '';
-          detectedToolCalls = [];
-          finalUsage = undefined;
+          streamState.detectedToolCalls = [];
+
+          yield { type: 'response.resolved', provider: activeProvider, model };
 
           const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
-          for await (const chunk of fallbackAdapter.generateStreamAsync(promptToPass, adapterGenerateOptions)) {
-            if (chunk.usage) {
-              finalUsage = chunk.usage;
-            }
-
-            if (chunk.content) {
-              fullContent += chunk.content;
-              yield {
-                chunk: chunk.content,
-                complete: false,
-                content: fullContent,
-                toolCalls: undefined,
-                metadata: chunk.metadata
-              };
-            }
-
-            if (chunk.reasoning) {
-              yield {
-                chunk: '',
-                complete: false,
-                content: fullContent,
-                toolCalls: undefined,
-                reasoning: chunk.reasoning,
-                reasoningComplete: chunk.reasoningComplete
-              };
-            }
-
-            if (chunk.toolCalls) {
-              const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
-                ...tc,
-                type: tc.type || 'function',
-                function: tc.function || { name: '', arguments: '{}' }
-              }));
-
-              yield {
-                chunk: '',
-                complete: false,
-                content: fullContent,
-                toolCalls: chatToolCalls,
-                toolCallsReady: chunk.complete || false
-              };
-
-              if (chunk.complete) {
-                detectedToolCalls = chatToolCalls;
-              }
-            }
-
-            if (chunk.complete) {
-              this.persistLatestResponseId(activeProvider, chunk, options);
-              break;
-            }
-          }
+          yield* this.forwardProviderStream(
+            fallbackAdapter,
+            activeProvider,
+            promptToPass,
+            adapterGenerateOptions,
+            options,
+            streamState
+          );
         } else {
           // No fallback available — re-throw original error
           throw error;
@@ -273,46 +214,36 @@ export class StreamingOrchestrator {
       }
     }
 
-      // If no tool calls detected, we're done
-      if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {
-        yield {
-          chunk: '',
-          complete: true,
-          content: fullContent,
-          toolCalls: undefined,
-          usage: finalUsage
-        };
-        return;
-      }
+    const detectedToolCalls = streamState.detectedToolCalls;
 
-      const providerExecutedTools = detectedToolCalls.every((toolCall) =>
-        toolCall.providerExecuted ||
-        toolCall.result !== undefined ||
-        toolCall.success !== undefined ||
-        toolCall.error !== undefined
-      );
+    // If no tool calls were requested, the provider response closes the turn.
+    if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {
+      yield { type: 'turn.completed' };
+      return;
+    }
 
-      if (providerExecutedTools) {
-        yield {
-          chunk: '',
-          complete: true,
-          content: fullContent,
-          toolCalls: detectedToolCalls,
-          usage: finalUsage
-        };
-        return;
-      }
+    const providerExecutedTools = detectedToolCalls.every((toolCall) =>
+      toolCall.providerExecuted ||
+      toolCall.result !== undefined ||
+      toolCall.success !== undefined ||
+      toolCall.error !== undefined
+    );
 
-      // Tool calls detected - delegate to ToolContinuationService
+    if (providerExecutedTools) {
+      yield { type: 'turn.completed' };
+      return;
+    }
+
+    // Tool calls detected - delegate to ToolContinuationService. It owns the
+    // one terminal turn event for the complete ping-pong lifecycle.
     yield* this.toolContinuation.executeToolsAndContinue(
-        activeAdapter,
-        activeProvider,
-        detectedToolCalls,
-        previousMessages,
-        userPrompt,
-        generateOptions,
-        options,
-        finalUsage
-      );
+      activeAdapter,
+      activeProvider,
+      detectedToolCalls,
+      previousMessages,
+      userPrompt,
+      generateOptions,
+      options
+    );
   }
 }

@@ -1,6 +1,25 @@
 # Refinement log
 
+2026-08-21 | A green receipt concurrency test sent both calls through one
+`ToolOperationService`, so its local in-flight map prevented the cross-instance
+race before persistence was exercised. | Added a two-owner/barrier rule for
+tests whose production risk crosses service, reload, cache, or device ownership
+boundaries. | `references/mock-honesty.md`, `refinement-log.md`.
+
+2026-08-21 | The packaged verifier, explicit vault targeting, Promise-chain eval,
+and Nexus CLI drive loop all worked as documented for the durable-receipt live
+gate; the only correction belonged to the storage skill's modal-driven rebuild
+procedure. | No change. | `refinement-log.md` only.
+
+2026-08-21 | A PR 5 live check needed an asynchronous service lookup: top-level `await` failed as documented, but returning a Promise chain worked and the macOS CLI waited for its result. | Corrected the eval guidance and added a known-good Promise-chain example. | `protocols/live-loop.md`, `refinement-log.md`.
+
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
+
+2026-08-21 | The terminal validation recipe still targeted the removed
+`.claude/skills` mirror, so the prescribed gate paths did not resolve in the
+current repository. | Repointed validation and both mechanical gates at
+`.codex/skills`, with explicit installed skill-crafter resolution. |
+`protocols/self-refine.md`, `refinement-log.md`.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
@@ -10,6 +29,24 @@ the focused `Code` vault without an error. The live-loop treated an explicit
 vault argument as sufficient proof of targeting. | Added a mandatory harmless
 vault-name probe and a stop condition when the CLI silently falls back to the
 focused renderer. | `protocols/live-loop.md`, `refinement-log.md`.
+2026-08-21 | A live macOS run confirmed vault-targeted `plugin:reload`,
+`dev:errors`, `dev:debug`, `dev:console clear`, error filtering, and synchronous
+`eval`; top-level `await` in `eval code=` failed with `await is not defined`, and
+an uncleared console mixed earlier startup errors into a later clean reload. |
+Recorded the macOS exercise, replaced the async-eval disable/enable example with
+native plugin commands, and required clearing console capture before the reload
+under judgment. | `SKILL.md`, `protocols/live-loop.md`, `refinement-log.md`.
+
+2026-08-21 | The contract-test, deliberate red/green, socket-capable full-suite,
+and packaged verifier procedures covered the provider lifecycle refactor; the
+only initial full-suite failure was the host sandbox denying local listeners,
+not a stale repository command, and no user correction was available. | No
+skill change. | `refinement-log.md` only.
+
+2026-08-21 | The write-test, deliberate red/green, full-suite, and packaged
+verifier procedures matched the repository; the verifier honestly skipped when
+no running Obsidian answered, and no user correction was available. | No skill
+change. | `refinement-log.md` only.
 
 2026-08-21 | On macOS, the packaged verifier put `vault=<name>` before the CLI
 subcommand, while the installed CLI accepted `obsidian eval vault=<name> ...`.
