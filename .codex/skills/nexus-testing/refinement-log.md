@@ -1,59 +1,8 @@
 # Refinement log
 
-2026-08-21 | A green receipt concurrency test sent both calls through one
-`ToolOperationService`, so its local in-flight map prevented the cross-instance
-race before persistence was exercised. | Added a two-owner/barrier rule for
-tests whose production risk crosses service, reload, cache, or device ownership
-boundaries. | `references/mock-honesty.md`, `refinement-log.md`.
-
-2026-08-21 | The packaged verifier, explicit vault targeting, Promise-chain eval,
-and Nexus CLI drive loop all worked as documented for the durable-receipt live
-gate; the only correction belonged to the storage skill's modal-driven rebuild
-procedure. | No change. | `refinement-log.md` only.
-
-2026-08-21 | A PR 5 live check needed an asynchronous service lookup: top-level `await` failed as documented, but returning a Promise chain worked and the macOS CLI waited for its result. | Corrected the eval guidance and added a known-good Promise-chain example. | `protocols/live-loop.md`, `refinement-log.md`.
-
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
-2026-08-21 | The terminal validation recipe still targeted the removed
-`.claude/skills` mirror, so the prescribed gate paths did not resolve in the
-current repository. | Repointed validation and both mechanical gates at
-`.codex/skills`, with explicit installed skill-crafter resolution. |
-`protocols/self-refine.md`, `refinement-log.md`.
-
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
-
-2026-08-23 | On a multi-window macOS install, `obsidian eval vault="Rose N
-Thorn" ...` and `obsidian vault vault="Rose N Thorn" info=name` both returned
-the focused `Code` vault without an error. The live-loop treated an explicit
-vault argument as sufficient proof of targeting. | Added a mandatory harmless
-vault-name probe and a stop condition when the CLI silently falls back to the
-focused renderer. | `protocols/live-loop.md`, `refinement-log.md`.
-2026-08-21 | A live macOS run confirmed vault-targeted `plugin:reload`,
-`dev:errors`, `dev:debug`, `dev:console clear`, error filtering, and synchronous
-`eval`; top-level `await` in `eval code=` failed with `await is not defined`, and
-an uncleared console mixed earlier startup errors into a later clean reload. |
-Recorded the macOS exercise, replaced the async-eval disable/enable example with
-native plugin commands, and required clearing console capture before the reload
-under judgment. | `SKILL.md`, `protocols/live-loop.md`, `refinement-log.md`.
-
-2026-08-21 | The contract-test, deliberate red/green, socket-capable full-suite,
-and packaged verifier procedures covered the provider lifecycle refactor; the
-only initial full-suite failure was the host sandbox denying local listeners,
-not a stale repository command, and no user correction was available. | No
-skill change. | `refinement-log.md` only.
-
-2026-08-21 | The write-test, deliberate red/green, full-suite, and packaged
-verifier procedures matched the repository; the verifier honestly skipped when
-no running Obsidian answered, and no user correction was available. | No skill
-change. | `refinement-log.md` only.
-
-2026-08-21 | On macOS, the packaged verifier put `vault=<name>` before the CLI
-subcommand, while the installed CLI accepted `obsidian eval vault=<name> ...`.
-The existing stubs accepted arguments in any order and hid the defect. | Moved
-the subcommand first for eval, reload, errors, and screenshot calls; added a
-strict argument-order regression case. | `scripts/verify-in-obsidian.mjs`,
-`tests/unit/verifyInObsidianScript.test.ts`, `refinement-log.md`.
 
 2026-08-19 | The catalog-target guard falsely failed because it compared an intentional scratch subset to the new release alias. | Changed it to validate manifest-selected CLI/MCP artifacts against their root aliases and ignore scratch exports. | `scripts/check_catalog_target.py`, `refinement-log.md`.
 
@@ -91,3 +40,42 @@ Payoff on the first run: `dev:errors` surfaced `Database not initialized` from
 notes index silently empty for the whole session. Reproduced on a normal cold
 start, so it was not an artifact of enabling plugins mid-session. No Jest lane
 could see it.
+
+## 2026-08-24 — the loop on macOS, and why `eval` looked broken
+
+Ran the loop against Obsidian on macOS to prove a Gemini reasoning fix
+(`thinkingConfig.includeThoughts`). Two things cost most of the run, neither of
+them the plugin:
+
+- **A shell wrapper can eat the CLI's output.** This machine rewrites bare
+  commands through `rtk`, which returned nothing at all for `obsidian eval`.
+  Every probe looked like a silent no-op while the app was in fact executing the
+  code. Invoke the binary by absolute path
+  (`/Applications/Obsidian.app/Contents/MacOS/obsidian`) before concluding a
+  command does nothing.
+- **`eval`'s stdout is unreliable; its side effects are not.** The same
+  `code=` payload printed `=> 12` on one run out of three and nothing on the
+  others, which reads exactly like a syntax problem and is not one. Do not
+  assert on what `eval` prints. Have the code write its result into a scratch
+  folder in the vault and read that file from the shell — and poll for it, since
+  the command returns before an async body finishes.
+
+Shape that worked, once the driver was too long to quote inline: write the
+driver to `<vault>/_scratch/driver.js` from the shell, then
+
+```
+obsidian eval vault=<name> code="app.vault.adapter.read('_scratch/driver.js').then(function(t){return new Function('app',t)(app)}).catch(function(e){return app.vault.adapter.write('_scratch/error.txt',String(e.stack))})"
+```
+
+The catch clause matters: without it a failing driver is indistinguishable from
+one that never ran.
+
+Also worth the minute it costs: A/B the bundle. Reinstalling the pre-fix
+`main.js`, reloading and re-driving turned "reasoning appears" into "reasoning
+appears only with the fix" — 0 events before, thought summaries after, same
+prompt and same session.
+
+Worktree gotcha: `npm run build` resolves `node_modules/typescript/bin/tsc`
+relative to the worktree, so a worktree without its own `node_modules` fails
+there while `npx jest` still works (node resolution walks up). Symlink it, or
+`npm ci`.

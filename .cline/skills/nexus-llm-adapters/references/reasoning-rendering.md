@@ -41,6 +41,25 @@ rg "type: ['\"]reasoning['\"]" src/services src/ui --type ts
 Zero hits is the healthy state. Any hit is an adapter or service building the
 shape that does not render.
 
+## A provider may withhold reasoning unless the request asks for it
+Every check above is about the response path. Before any of it can matter, the
+**request** has to opt in — a model that thinks does not necessarily return what
+it thought, and the two providers that stream summaries each have their own
+switch:
+
+| Provider | Request must carry |
+|---|---|
+| Google | `generationConfig.thinkingConfig.includeThoughts: true` — without it no part is ever marked `thought: true` |
+| OpenAI | `reasoning.summary` (`'auto'`) on the Responses call |
+
+This failure mode is invisible from the code: the adapter parses thought parts
+correctly, the chain above is intact, and the chat bubble stays empty because the
+data never arrives. It shipped exactly that way for Gemini, past a release note
+claiming reasoning worked on every provider. No mocked lane can catch it — the
+canned SSE body contains thought parts whatever the request asked for. The proof
+is a live request; `tests/debug/google-reasoning-live-smoke.test.ts` is the
+shape, and it asserts on the outbound body as well as the returned reasoning.
+
 ## Reasoning *level* for local providers is a decision, not a gap
 The reasoning toggle and effort slider render only when the model's **static**
 metadata advertises thinking support. Local providers discover their models at

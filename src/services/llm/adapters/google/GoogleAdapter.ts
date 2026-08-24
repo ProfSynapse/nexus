@@ -70,6 +70,12 @@ interface GoogleToolWrapper {
 interface GoogleThinkingConfig {
   thinkingBudget?: number;
   thinkingLevel?: 'low' | 'medium' | 'high';
+  /**
+   * Gemini only emits thought-summary parts (`thought: true`) when this is set.
+   * Without it the model still thinks, but the response carries no reasoning to
+   * display.
+   */
+  includeThoughts?: boolean;
 }
 
 interface GoogleGenerationConfig {
@@ -229,7 +235,11 @@ export class GoogleAdapter extends BaseAdapter {
       // Gemini 3 uses thinking levels. Keep token budgets only for older custom
       // model IDs that users may still pass through the adapter explicitly.
       const effort = options?.thinkingEffort || 'medium';
-      const thinkingConfig = this.getThinkingConfig(model, effort);
+      const thinkingConfig = this.getThinkingConfig(
+        model,
+        effort,
+        Boolean(options?.enableThinking)
+      );
       const samplingConfig = this.getSamplingConfig(
         model,
         (options?.tools && options.tools.length > 0) ? 0 : (options?.temperature ?? 0.7)
@@ -640,16 +650,22 @@ export class GoogleAdapter extends BaseAdapter {
 
   private getThinkingConfig(
     model: string,
-    effort: 'low' | 'medium' | 'high'
+    effort: 'low' | 'medium' | 'high',
+    includeThoughts: boolean
   ): GoogleThinkingConfig {
+    // Ask for thought summaries whenever the user turned thinking on — Gemini
+    // withholds the `thought: true` parts the reasoning UI renders unless the
+    // request opts in, which is why Gemini alone streamed no reasoning.
+    const thoughts = includeThoughts ? { includeThoughts: true } : {};
+
     // thinkingLevel and the legacy thinkingBudget are mutually exclusive: sending
     // both in one request is rejected, so each generation gets exactly one.
     if (this.isGemini3Model(model)) {
-      return { thinkingLevel: effort };
+      return { ...thoughts, thinkingLevel: effort };
     }
 
     const params = ThinkingEffortMapper.getGoogleParams({ enabled: true, effort });
-    return { thinkingBudget: params?.thinkingBudget || 8192 };
+    return { ...thoughts, thinkingBudget: params?.thinkingBudget || 8192 };
   }
 
   private isGemini3Model(model: string): boolean {
