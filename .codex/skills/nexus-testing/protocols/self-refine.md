@@ -28,9 +28,9 @@ session that executes it owes this log a correction.
 8. Re-run the checks so the change did not regress anything:
 
    ```bash
-   python3 <installed-skill-crafter>/scripts/validate_skill.py .codex/skills/nexus-testing
-   python3 .codex/skills/nexus-testing/scripts/check_live_lane_gates.py
-   python3 .codex/skills/nexus-testing/scripts/check_catalog_target.py
+   python3 <installed-skill-crafter>/scripts/validate_skill.py .claude/skills/nexus-testing
+   python3 .claude/skills/nexus-testing/scripts/check_live_lane_gates.py
+   python3 .claude/skills/nexus-testing/scripts/check_catalog_target.py
    ```
 
 ## Guidelines

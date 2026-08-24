@@ -25,7 +25,7 @@ record it.
 7. Re-run the checks so the change did not regress the skill:
    ```bash
    python3 .claude/skills/nexus-storage/scripts/check_schema_consistency.py .
-   python3 /tmp/skill-crafter/skills/skill-crafter/scripts/validate_skill.py .claude/skills/nexus-storage
+   python3 <installed-skill-crafter>/scripts/validate_skill.py .claude/skills/nexus-storage
    ```
 
 ## Guidelines

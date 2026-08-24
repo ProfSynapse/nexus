@@ -9,6 +9,13 @@ Repositories under src/database/repositories write in one order, inside a
 transaction: **append the event to JSONL, then update SQLite, then invalidate the
 query cache.** WorkspaceRepository.create is the canonical example.
 
+This ordering is durability, not cross-instance mutual exclusion. A
+read-missing → append-started → dispatch sequence can admit two owners unless the
+claim operation reports which contender won. If SQLite uses `INSERT OR IGNORE`
+as that claim, the repository must inspect and return the affected-row result;
+discarding it lets losing contenders execute anyway. Tests for this contract
+need two service/repository owners and a barrier after both missing reads.
+
 The "Nexus: Rebuild cache" command (registered in
 src/core/commands/MaintenanceCommandManager.ts, implemented by
 StorageMaintenanceService.rebuildCache) stops autosave, closes the SQLite cache,

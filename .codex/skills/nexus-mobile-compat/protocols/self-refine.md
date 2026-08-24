@@ -24,7 +24,7 @@ feedback, and record the change.
 6. Re-run this skill's validation so the change does not regress it:
    ```bash
    python3 /tmp/skill-crafter/skills/skill-crafter/scripts/validate_skill.py \
-     .codex/skills/nexus-mobile-compat
+     .claude/skills/nexus-mobile-compat
    node scripts/check-mobile-imports.mjs .
    ```
    If you changed the checker, you MUST also re-run it against a fixture with a

@@ -21,7 +21,7 @@ Improve this skill using evidence from this session, and record the change.
    current truth instead.
 5. Re-run the checks so the change does not regress the skill:
    ```bash
-   python3 .codex/skills/nexus-agents/scripts/check_documented_commands.py .codex/skills/nexus-agents
+   python3 .claude/skills/nexus-agents/scripts/check_documented_commands.py .claude/skills/nexus-agents
    ```
 6. Append one line to `../refinement-log.md`: date, observation, change, files.
 7. Report the change and the log entry to the user.

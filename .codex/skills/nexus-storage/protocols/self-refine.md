@@ -24,8 +24,8 @@ record it.
 6. Append an entry to `../refinement-log.md`: date, observation, change, files.
 7. Re-run the checks so the change did not regress the skill:
    ```bash
-   python3 .codex/skills/nexus-storage/scripts/check_schema_consistency.py .
-   python3 <installed-skill-crafter>/scripts/validate_skill.py .codex/skills/nexus-storage
+   python3 .claude/skills/nexus-storage/scripts/check_schema_consistency.py .
+   python3 <installed-skill-crafter>/scripts/validate_skill.py .claude/skills/nexus-storage
    ```
 
 ## Guidelines

@@ -25,8 +25,8 @@ the change.
    produces current truth.
 7. Append to `../refinement-log.md`: date, observation, change, files touched.
 8. Re-run the validator on this skill directory:
-   `python3 /tmp/skill-crafter/skills/skill-crafter/scripts/validate_skill.py .claude/skills/nexus-llm-adapters`
-   (or whatever path skill-crafter is installed at). Resolve anything it flags.
+   `python3 <installed-skill-crafter>/scripts/validate_skill.py .claude/skills/nexus-llm-adapters`.
+   Resolve the installed skill-crafter path first, then resolve anything it flags.
 
 ## Guidelines
 - Pattern: one evidence-backed change per session. The log should read as a

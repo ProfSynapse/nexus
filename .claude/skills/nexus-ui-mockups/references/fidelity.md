@@ -50,6 +50,11 @@ should not be one in the mockup. Drive it with the same hooks:
 A dark-only mockup leaves the light palette to be improvised during
 implementation, which is exactly the decision the mockup existed to make.
 
+If a composite token such as a gradient or shadow contains other custom
+properties, redeclare that composite token under the light-theme hook too.
+Declaring it only on `:root` can preserve the dark computed value after the
+component color tokens are overridden on `body.theme-light`.
+
 ## Name classes the way production names them
 Two naming systems live in `styles.css`, and mockups should use both:
 

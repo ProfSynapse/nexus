@@ -16,8 +16,8 @@ This file routes. The detail loads when you take the path.
    every command a caller can actually type, and it is the artifact the
    shipped-docs gate reads:
    ```bash
-   npm run schemas:tools -- --output cli-first-tool-schemas.json   # refresh in place
-   npm run schemas:tools -- --output - --selector "storage"        # inspect, write nothing
+   npm run schemas:release                                         # refresh committed catalogs
+   node scripts/generate-tool-schemas.mjs --output - --selector "storage" # inspect, write nothing
    ls src/agents/ src/agents/apps/                                 # who exists
    grep -n "slug:" src/agents/<agent>/<agent>.ts                   # that agent's slugs
    ```

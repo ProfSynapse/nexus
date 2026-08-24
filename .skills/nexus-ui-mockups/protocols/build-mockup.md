@@ -10,9 +10,13 @@ product, shows the states implementation would otherwise discover late, and is
 honest about what the plugin can render.
 
 ## Steps
-1. Confirm the artifact is warranted. New view, panel, modal, settings tab, chat
-   surface, board, or a layout refactor of one: build the mockup. A tweak inside
-   an existing layout: skip the mockup, say why, and implement instead.
+1. Confirm both the product surface and the artifact are warranted. State the
+   concrete user problem, what existing Nexus affordance fails to cover it, and
+   the smallest new interaction that closes the gap. If the proposal mostly
+   duplicates an existing toolbar, status, safety, or recovery mechanism, stop
+   and review the product scope before drawing. Once the need is established, a
+   new view, panel, modal, settings tab, chat surface, board, or layout refactor
+   gets a mockup; a tweak inside an existing layout does not.
 2. Find the production surface you are changing before drawing anything. Locate
    the view or tab under `src/` and its rules in `styles.css` (search for the
    class prefix the surface uses). A redesign starts from what ships today, not

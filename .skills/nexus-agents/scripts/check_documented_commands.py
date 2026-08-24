@@ -38,7 +38,7 @@ from pathlib import Path
 
 CATALOG_NAME = "cli-first-tool-schemas.json"
 CATALOG_FALLBACK = Path("docs/generated") / CATALOG_NAME
-REGEN = "npm run schemas:tools -- --output cli-first-tool-schemas.json"
+REGEN = "npm run schemas:release"
 
 # Flags that take no value, per cli/commandLine.ts CONTEXT_BOOLEAN_FLAGS.
 BOOLEAN_FLAGS = {"--json", "--dry-run", "--help", "--recursive"}

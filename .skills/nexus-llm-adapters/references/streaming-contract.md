@@ -81,6 +81,14 @@ index, concatenating argument deltas, and yields progress on an interval. It
 synthesizes an id when the provider omits one, because downstream APIs reject a
 tool result whose call id is empty. Do not re-implement this per adapter.
 
+That synthesized id is a response-local correlation token, not a durable
+operation id. Providers that omit ids can produce the same function/index pair
+again on the next response. Preserve the provider id for matching tool results,
+but scope it with a conversation turn or response identity before it crosses a
+receipt, retry, or deduplication boundary. A regression test must repeat the same
+function at the same index in consecutive responses; one globally unique fixture
+id cannot expose this collision.
+
 ## Mobile changes the shape, not the code
 `ProviderHttpClient.requestStream()` falls back, when there is no desktop Node
 runtime, to a buffered `requestUrl` response wrapped as a single-chunk async

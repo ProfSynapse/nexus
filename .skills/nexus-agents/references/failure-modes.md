@@ -11,7 +11,7 @@ The CLI name is not the slug. `toKebabCase` strips a trailing
 
 Prove it against the catalog, not the source:
 ```bash
-npm run schemas:tools -- --output - --selector "prompt" | grep '"command"'
+node scripts/generate-tool-schemas.mjs --output - --selector "prompt" | grep '"command"'
 python3 .claude/skills/nexus-agents/scripts/cli_name.py <yourSlug> --agent <agentName>
 ```
 Detail: `cli-names.md`.
@@ -58,12 +58,11 @@ not to hand-edit it. Edit the sources it reads instead:
 grep -n "read(" scripts/generate-cli-content.mjs   # the exact inputs, current
 ```
 
-## "npm run schemas:tools did not fix the shipped-docs test failure"
-It writes to `docs/generated/` by default, while
-`tests/unit/shippedGuidanceCommands.test.ts` validates against the repo-root
-catalog:
+## "My one-off schema export did not fix the shipped-docs test failure"
+The direct generator writes only the selected output, while the release command
+refreshes every committed catalog alias that shipped guidance validates:
 ```bash
-npm run schemas:tools -- --output cli-first-tool-schemas.json
+npm run schemas:release
 ```
 
 ## "A doc named a tool that does not exist and nothing caught it"

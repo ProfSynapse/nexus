@@ -34,10 +34,11 @@ survives a rebuild.
    `waitForQueryReady()` when the adapter exposes it, or a cold cache renders as
    "no data". Copy the guard used by TaskBoardDataController or DualBackendExecutor.
 7. Verify by destroying the cache. Create the data in a real vault, run
-   "Nexus: Rebuild cache", and confirm it is still there afterwards. This is the
-   only check that distinguishes persisted data from cached data; a passing unit
-   test with a mocked adapter proves nothing about replay. Use `nexus-testing` for
-   the in-app loop.
+   "Nexus: Rebuild cache", **confirm the modal in Obsidian** (the CLI command
+   returns after opening it, not after rebuilding), and confirm the data is still
+   there afterwards. This is the only check that distinguishes persisted data
+   from cached data; a passing unit test with a mocked adapter proves nothing
+   about replay. Use `nexus-testing` for the in-app loop.
 8. Stop condition: the data round-trips through a rebuild, and a test covers the
    applier case so the replay path cannot regress silently.
 

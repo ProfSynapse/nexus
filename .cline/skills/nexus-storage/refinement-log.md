@@ -4,6 +4,42 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-24 | A 2026-08-21 entry below repointed this skill's validator command at
+`.codex/skills` on the premise that the `.claude/skills` mirror had been removed.
+The premise was false: `scripts/sync-agent-context.mjs` copies `.skills/` into all
+three mirrors byte-for-byte with no path rewriting, so both mirrors exist and a
+mirror-local path cannot survive a sync — the edit only produced drift. | Restored
+the canonical `.claude/skills` path used by the rest of the skills (63 references
+to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
+`protocols/self-refine.md`, `refinement-log.md`.
+
+- 2026-08-23 | A failed vault-root migration left SQLite state metadata visible
+  to `list-states` while `load-state` could not read the intact `state_saved`
+  body in the destination shard. Fresh states worked only from the repository's
+  in-memory cache. The symptom map had no entry for this split read policy. |
+  Added a failure-mode entry that checks the persisted migration state, proves
+  metadata/event/cache behavior separately, forbids shard repair by hand, and
+  records the destination-first read invariant for every migration phase. |
+  references/failure-modes.md.
+- 2026-08-21 | The terminal validation recipe still targeted the removed
+  `.claude/skills` mirror, while this repository owns project skills under
+  `.codex/skills`; following the stale path cannot validate the skill. | Pointed
+  the recipe at the live project skill and made skill-crafter installation
+  resolution explicit. | `protocols/self-refine.md`, `refinement-log.md`.
+
+- 2026-08-21 | Receipt review exposed a gap between JSONL-first durability and
+  ownership: two service instances can both read a missing receipt, append a
+  start, and dispatch when the SQLite `INSERT OR IGNORE` result is discarded. |
+  Clarified that write ordering is not mutual exclusion and documented the
+  two-owner/barrier proof required for an atomic claim. |
+  `references/storage-model.md`, `refinement-log.md`.
+
+- 2026-08-21 | Invoking the Obsidian `nexus:rebuild-cache` command from the CLI
+  returned successfully after opening its confirmation modal, so the first live
+  receipt test incorrectly treated a pending user decision as a completed
+  rebuild until the user pressed the button. | Made confirmation of the in-app
+  modal an explicit part of the real replay gate. | protocols/persist-new-data.md.
+
 - 2026-08-14 | The hydration-gate entry said "await `waitForQueryReady()`", and the
   notes-index startup did exactly that and still failed: the background startup
   rebuild never left the `running` phase, so the gate resolved false after its 120s

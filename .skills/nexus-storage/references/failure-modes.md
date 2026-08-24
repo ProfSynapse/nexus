@@ -26,6 +26,28 @@ default, so an unknown type is dropped in silence during replay.
 Fix: write through the repository (event first, then cache) and add the `case` to
 the applier. Re-verify by rebuilding the cache again and confirming survival.
 
+## "A list tool returns an entity, but loading it by ID or name says not found"
+
+Check `pluginStorage.migration.state` before blaming the point lookup. Affected
+builds could keep legacy roots readable but disable `VaultEventStore` reads
+during a pending or failed cutover, even though writes already went to the
+vault-root destination. SQLite could still contain metadata replayed from those
+shards. The result was a split read path: list queries saw the SQLite row, while
+repositories that needed the JSONL body saw only legacy files and returned null.
+A just-created entity could appear healthy until reload because its body was
+still in the repository's in-memory write cache.
+
+Confirm all three facts before changing data: the metadata row lists, the event
+body exists under the resolved vault-root stream, and the persisted migration
+state is `pending` or `failed`. Do not hand-copy or edit shards. Fix the cutover
+read policy or resolve the migration conflict, then verify a cold point lookup;
+an in-session lookup can be a cache hit and is not proof.
+
+The runtime invariant is: read the configured vault-root destination first at
+every migration phase, retain legacy roots only as fallbacks until verification,
+and let `StorageRouter` deduplicate by event ID. After verified cutover, remove
+the legacy fallbacks but keep destination reads enabled.
+
 ## "Data reappeared after a rebuild"
 
 The inverse: something deleted from SQLite without appending a deletion event.
