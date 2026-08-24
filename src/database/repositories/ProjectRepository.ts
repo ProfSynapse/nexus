@@ -33,6 +33,7 @@ import {
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { parseJsonColumn } from '../utils/jsonColumn';
 import { resolveMetadataUpdate } from './metadataUpdate';
+import { purgeProjectRows } from '../taskOwnership';
 
 interface ProjectRow extends DatabaseRow {
   id: string;
@@ -230,6 +231,21 @@ export class ProjectRepository
     }
   }
 
+  /**
+   * Permanently delete a project and every task it owns.
+   *
+   * The `ON DELETE CASCADE` the old comment relied on never fired — SQLite
+   * foreign-key enforcement is off on this connection — so the tasks, their
+   * dependency edges and their note links were left behind, and `rebuildCache()`
+   * reproduced them because replay dropped only the `projects` row too.
+   * `purgeProjectRows` is shared with `TaskEventApplier.applyProjectDeleted` so
+   * the two paths cannot drift.
+   *
+   * Ordering: the `project_deleted` tombstone is written first, so if the SQLite
+   * purge fails the cache is merely stale over an event store that already says
+   * "deleted" and the next rebuild converges on deleted. The reverse order
+   * converges on the project coming back.
+   */
   async delete(id: string): Promise<void> {
     try {
       // Look up the project to get workspaceId for JSONL path
@@ -248,8 +264,8 @@ export class ProjectRepository
           }
         );
 
-        // 2. Delete from SQLite (cascades to tasks, deps, note links)
-        await this.sqliteCache.run('DELETE FROM projects WHERE id = ?', [id]);
+        // 2. Delete from SQLite — every row the project owns, not just its own.
+        await purgeProjectRows(this.sqliteCache, id);
       });
 
       // 3. Invalidate cache (project + all tasks in project)

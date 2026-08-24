@@ -28,9 +28,11 @@ import {
 import { SessionMetadata } from '../../types/storage/HybridStorageTypes';
 import {
   SessionCreatedEvent,
-  SessionUpdatedEvent
+  SessionUpdatedEvent,
+  SessionDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+import { purgeSessionRows } from '../sessionOwnership';
 
 type SqliteValue = string | number | null;
 
@@ -205,20 +207,63 @@ export class SessionRepository
     }
   }
 
+  /**
+   * Permanently delete a session and everything keyed to it.
+   *
+   * Reachable from the storage adapter and the memory/session services — never
+   * from a tool. The AI has no session delete; do not expose one.
+   *
+   * ## Ordering, and what happens when half of it fails
+   *
+   * JSONL is the source of truth and SQLite is a rebuildable cache, so the two
+   * halves are not symmetric:
+   *
+   *   1. Tombstone. A `session_deleted` event goes into the parent workspace's
+   *      stream first. That stream is shared with the workspace and its sibling
+   *      sessions, so — unlike a workspace delete — there is no file to remove:
+   *      the tombstone IS the removal. On replay it cancels out the
+   *      `session_created` / `state_saved` / `trace_added` events that precede
+   *      it, through the same `purgeSessionRows` used below.
+   *   2. SQLite. Only after the event is on disk.
+   *
+   * The failure modes this produces, on purpose:
+   *
+   * - **Tombstone write fails** → we throw before touching SQLite. Nothing is
+   *   destroyed, the session still lists, the delete is a retryable no-op.
+   * - **SQLite purge fails** → the rows are stale cache over an event store that
+   *   already says "deleted". The next `rebuildCache()` clears them. It
+   *   converges on deleted.
+   *
+   * The opposite order — SQLite first — converges on the session coming BACK
+   * with all its states and traces at the next rebuild. That was the measured
+   * pre-fix behaviour: `sessions 0 → 1` across a rebuild, with 2 states and
+   * 2 traces that never left in the first place.
+   */
   async delete(id: string): Promise<void> {
     try {
-      await this.transaction(async () => {
-        // Get workspace ID first
-        const session = await this.getById(id);
-        if (!session) {
-          throw new Error(`Session not found: ${id}`);
-        }
+      // The workspace ID routes the JSONL write, so it has to be read before
+      // anything is removed.
+      const session = await this.getById(id);
+      if (!session) {
+        throw new Error(`Session not found: ${id}`);
+      }
 
-        // Delete from SQLite (cascades to states and traces)
-        await this.sqliteCache.run('DELETE FROM sessions WHERE id = ?', [id]);
+      // 1. Tombstone in the source of truth.
+      await this.writeEvent<SessionDeletedEvent>(
+        this.jsonlPath(session.workspaceId),
+        {
+          type: 'session_deleted',
+          workspaceId: session.workspaceId,
+          sessionId: id
+        }
+      );
+
+      // 2. Now the cache, which is only ever catching up to the event store.
+      await this.transaction(async () => {
+        await purgeSessionRows(this.sqliteCache, id);
       });
 
-      // Invalidate cache
+      // 3. Invalidate cache
       this.invalidateCache();
       this.log('delete', { id });
     } catch (error) {

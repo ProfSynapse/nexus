@@ -43,6 +43,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import { purgeTaskRows } from '../taskOwnership';
 import { resolveMetadataUpdate } from './metadataUpdate';
 
 interface TaskRow extends DatabaseRow {
@@ -291,8 +292,11 @@ export class TaskRepository
           }
         );
 
-        // 2. Delete from SQLite (cascades: deps + note links removed, children parentTaskId set null)
-        await this.sqliteCache.run('DELETE FROM tasks WHERE id = ?', [id]);
+        // 2. Delete from SQLite. The cascade named in the old comment never
+        //    fired (FK enforcement is off), so the deps, note links and the
+        //    children's parentTaskId are handled explicitly — shared with
+        //    `TaskEventApplier.applyTaskDeleted` so replay does the same.
+        await purgeTaskRows(this.sqliteCache, id);
       });
 
       // 3. Invalidate cache

@@ -24,6 +24,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
 import { resolveWorkspaceId } from './resolveWorkspaceId';
+import { purgeProjectRows, purgeTaskRows } from '../taskOwnership';
 
 /**
  * Normalize a workspaceId that may be a name string instead of a UUID.
@@ -138,8 +139,12 @@ export class TaskEventApplier {
 
   private async applyProjectDeleted(event: ProjectDeletedEvent): Promise<void> {
     if (!event.projectId) return;
-    // CASCADE will handle tasks, dependencies, and note links
-    await this.sqliteCache.run('DELETE FROM projects WHERE id = ?', [event.projectId]);
+    // CASCADE does NOT handle tasks, dependencies and note links: FK enforcement
+    // is off on the shared connection, so this replay used to re-create every
+    // task from `task_created` and then drop only the project row, leaving the
+    // exact same orphans behind on every rebuild. `purgeProjectRows` is shared
+    // with `ProjectRepository.delete` so the two paths cannot drift.
+    await purgeProjectRows(this.sqliteCache, event.projectId);
   }
 
   private async applyTaskCreated(event: TaskCreatedEvent): Promise<void> {
@@ -205,7 +210,10 @@ export class TaskEventApplier {
 
   private async applyTaskDeleted(event: TaskDeletedEvent): Promise<void> {
     if (!event.taskId) return;
-    await this.sqliteCache.run('DELETE FROM tasks WHERE id = ?', [event.taskId]);
+    // Same unenforced-FK story as project_deleted: the dependency edges, note
+    // links and the children's parentTaskId have to be handled here, or every
+    // rebuild reproduces them pointing at a task that no longer exists.
+    await purgeTaskRows(this.sqliteCache, event.taskId);
   }
 
   private async applyDependencyAdded(event: TaskDependencyAddedEvent): Promise<void> {

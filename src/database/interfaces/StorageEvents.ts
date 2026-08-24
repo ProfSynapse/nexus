@@ -164,6 +164,28 @@ export interface SessionUpdatedEvent extends BaseStorageEvent {
   }>;
 }
 
+/**
+ * Event: Session deleted
+ *
+ * The tombstone that makes a permanent session delete survive a cache rebuild.
+ *
+ * A session has no stream of its own — this event is appended to the parent
+ * workspace's stream, where it cancels out the `session_created`, `state_saved`
+ * and `trace_added` events replayed just before it. Without it, replay had
+ * nothing to apply and a deleted session came back on the next `rebuildCache()`.
+ *
+ * `WorkspaceEventApplier.applySessionDeleted` is the other half; both it and
+ * `SessionRepository.delete` purge through `sessionOwnership.purgeSessionRows`
+ * so the live delete and its replay cannot drift.
+ */
+export interface SessionDeletedEvent extends BaseStorageEvent {
+  type: 'session_deleted';
+  /** Parent workspace ID — identifies the stream this tombstone belongs to */
+  workspaceId: string;
+  /** Target session ID */
+  sessionId: string;
+}
+
 // ============================================================================
 // State Events
 // ============================================================================
@@ -746,6 +768,7 @@ export type WorkspaceEvent =
   | WorkspaceDeletedEvent
   | SessionCreatedEvent
   | SessionUpdatedEvent
+  | SessionDeletedEvent
   | StateSavedEvent
   | StateUpdatedEvent
   | StateDeletedEvent
@@ -800,6 +823,7 @@ export function isWorkspaceEvent(event: StorageEvent): event is WorkspaceEvent {
     'workspace_deleted',
     'session_created',
     'session_updated',
+    'session_deleted',
     'state_saved',
     'state_updated',
     'state_deleted',
@@ -890,6 +914,7 @@ export function isUpdateEvent(event: StorageEvent): boolean {
 export function isDeletionEvent(event: StorageEvent): boolean {
   return [
     'workspace_deleted',
+    'session_deleted',
     'conversation_deleted',
     'state_deleted',
     'message_deleted',
