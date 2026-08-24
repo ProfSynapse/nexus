@@ -359,25 +359,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
-   * Recreate database after corruption detected
-   * Deletes corrupt file and creates fresh database
-   */
-  private async recreateCorruptedDatabase(): Promise<void> {
-    const sqlite3 = this.getSqlite3OrThrow();
-    if (this.db) {
-      try {
-        this.bridge.close(this.db);
-      } catch {
-        void 0;
-      }
-      this.db = null;
-    }
-
-    this.db = await this.persistenceService.recreateCorruptedDatabase(sqlite3, SCHEMA_SQL);
-    this.hasUnsavedData = false;
-  }
-
-  /**
    * Save database to file using sqlite3_js_db_export
    */
   private async saveToFile(): Promise<void> {
