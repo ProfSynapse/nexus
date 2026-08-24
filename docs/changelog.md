@@ -15,6 +15,7 @@
 - **Nothing about read-only commands is recorded.** Receipts cover commands that change things; reading a note never copies its contents into the event log.
 
 **Fixes**
+- **Gemini's thinking is now actually visible.** Reasoning displayed for every other provider but never for Gemini: Google only returns a model's thought summaries when the request asks for them, and Nexus never asked. Gemini models now stream their reasoning into chat like the rest.
 - Saved states could disappear after a storage migration that had not finished. Nexus stopped reading the destination folder until the migration was verified, while already writing there — so a state's metadata was listed but its contents could not be loaded, and fresh states only appeared to work because they were still held in memory ([#355](https://github.com/ProfSynapse/nexus/pull/355)).
 - Switching between providers is more reliable. Each provider now owns its own setup and cleanup, so disposing of one can no longer interfere with the one replacing it.
 

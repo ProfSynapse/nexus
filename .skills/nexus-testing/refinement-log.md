@@ -40,3 +40,42 @@ Payoff on the first run: `dev:errors` surfaced `Database not initialized` from
 notes index silently empty for the whole session. Reproduced on a normal cold
 start, so it was not an artifact of enabling plugins mid-session. No Jest lane
 could see it.
+
+## 2026-08-24 — the loop on macOS, and why `eval` looked broken
+
+Ran the loop against Obsidian on macOS to prove a Gemini reasoning fix
+(`thinkingConfig.includeThoughts`). Two things cost most of the run, neither of
+them the plugin:
+
+- **A shell wrapper can eat the CLI's output.** This machine rewrites bare
+  commands through `rtk`, which returned nothing at all for `obsidian eval`.
+  Every probe looked like a silent no-op while the app was in fact executing the
+  code. Invoke the binary by absolute path
+  (`/Applications/Obsidian.app/Contents/MacOS/obsidian`) before concluding a
+  command does nothing.
+- **`eval`'s stdout is unreliable; its side effects are not.** The same
+  `code=` payload printed `=> 12` on one run out of three and nothing on the
+  others, which reads exactly like a syntax problem and is not one. Do not
+  assert on what `eval` prints. Have the code write its result into a scratch
+  folder in the vault and read that file from the shell — and poll for it, since
+  the command returns before an async body finishes.
+
+Shape that worked, once the driver was too long to quote inline: write the
+driver to `<vault>/_scratch/driver.js` from the shell, then
+
+```
+obsidian eval vault=<name> code="app.vault.adapter.read('_scratch/driver.js').then(function(t){return new Function('app',t)(app)}).catch(function(e){return app.vault.adapter.write('_scratch/error.txt',String(e.stack))})"
+```
+
+The catch clause matters: without it a failing driver is indistinguishable from
+one that never ran.
+
+Also worth the minute it costs: A/B the bundle. Reinstalling the pre-fix
+`main.js`, reloading and re-driving turned "reasoning appears" into "reasoning
+appears only with the fix" — 0 events before, thought summaries after, same
+prompt and same session.
+
+Worktree gotcha: `npm run build` resolves `node_modules/typescript/bin/tsc`
+relative to the worktree, so a worktree without its own `node_modules` fails
+there while `npx jest` still works (node resolution walks up). Symlink it, or
+`npm ci`.
