@@ -290,4 +290,74 @@ describe('ShardedJsonlStreamStore', () => {
       expect(streamBEvents.every(e => e.id.startsWith('b-'))).toBe(true);
     });
   });
+
+  /**
+   * Conflict copies (`shard-000003 (1).jsonl`) are readable history but must
+   * never become write targets, and they must still count toward the highest
+   * observed shard index. Both properties hold today only because
+   * `listShards()` parses conflict copies into `baseIndex` and
+   * `appendEventToLockedStream()` resolves its target through `getShardPath()`,
+   * which always mints the canonical filename — neither is obvious from the
+   * append path alone, and nothing pinned either one.
+   *
+   * Without these, a conflict-only sibling above the newest canonical shard
+   * lets a fresh event land BEHIND the reconciliation order, and a stream whose
+   * shards are all conflict copies restarts at shard 1 and overwrites history.
+   */
+  describe('conflict-copy siblings', () => {
+    const conflictRecord = `${JSON.stringify(makeEvent('conflict-evt'))}\n`;
+
+    it('counts a conflict-only sibling when choosing the next shard index', async () => {
+      const { app, adapter } = createMockApp();
+      const store = new ShardedJsonlStreamStore({ app, rootPath: 'root', maxShardBytes: 4096 });
+
+      await store.appendEvent('stream', makeEvent('evt-1'));
+      await adapter.write('root/stream/shard-000003 (1).jsonl', conflictRecord);
+
+      const result = await store.appendEvent('stream', makeEvent('evt-2'));
+
+      // 3, not 1: the conflict copy is the highest shard on disk, so appending
+      // at the canonical cursor would order this event before it.
+      expect(result.shard.index).toBe(3);
+      expect(result.shard.fileName).toBe('shard-000003.jsonl');
+    });
+
+    it('writes to the canonical shard, never into the conflict copy', async () => {
+      const { app, adapter } = createMockApp();
+      const store = new ShardedJsonlStreamStore({ app, rootPath: 'root', maxShardBytes: 4096 });
+
+      await store.appendEvent('stream', makeEvent('evt-1'));
+      await adapter.write('root/stream/shard-000003 (1).jsonl', conflictRecord);
+
+      (adapter.write as jest.Mock).mockClear();
+      (adapter.append as jest.Mock).mockClear();
+
+      await store.appendEvent('stream', makeEvent('evt-2'));
+
+      const touched = [
+        ...(adapter.write as jest.Mock).mock.calls.map((call: unknown[]) => call[0] as string),
+        ...(adapter.append as jest.Mock).mock.calls.map((call: unknown[]) => call[0] as string)
+      ];
+
+      expect(touched).not.toHaveLength(0);
+      expect(touched.some((path) => path.includes('(1)'))).toBe(false);
+      expect(touched).toContain('root/stream/shard-000003.jsonl');
+    });
+
+    it('does not restart at shard 1 when every shard is a conflict copy', async () => {
+      const { app, adapter } = createMockApp();
+      const store = new ShardedJsonlStreamStore({ app, rootPath: 'root', maxShardBytes: 4096 });
+
+      await adapter.mkdir('root/stream');
+      await adapter.write('root/stream/shard-000005 (1).jsonl', conflictRecord);
+
+      const result = await store.appendEvent('stream', makeEvent('evt-1'));
+
+      // Restarting at 1 here would put a live event underneath five shards of
+      // history that the reconciler still reads.
+      expect(result.shard.index).toBe(5);
+      expect(result.shard.fileName).toBe('shard-000005.jsonl');
+    });
+  });
+
 });
