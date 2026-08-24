@@ -335,22 +335,27 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   private async runStartupFullRebuild(isBlockingHydration: boolean): Promise<void> {
     let rejectIdleTimeout: ((error: Error) => void) | undefined;
-    const idleTimeoutPromise = isBlockingHydration
-      ? new Promise<never>((_, reject) => {
-        rejectIdleTimeout = reject;
-      })
-      : undefined;
+    const idleTimeoutPromise = new Promise<never>((_, reject) => {
+      rejectIdleTimeout = reject;
+    });
 
-    const stopWatchdog = isBlockingHydration
-      ? this.hydration.startIdleWatchdog({
-        idleTimeoutMs: this.getStartupRebuildIdleTimeoutMs(),
-        onTimeout: () => {
-          const message = `Local chat index rebuild made no progress for ${this.getStartupRebuildIdleTimeoutMs()} ms`;
-          this.hydration.fail(message);
-          rejectIdleTimeout?.(new Error(message));
-        }
-      })
-      : undefined;
+    // Stall protection is NOT specific to the blocking rebuild. `onProgress`
+    // calls `updateProgress` on both branches, and that moves the phase to
+    // `running`, which is not query-ready. So a *background* rebuild that
+    // reported progress and then stalled leaves `isQueryReady()` false for the
+    // rest of the session with nothing to fail it — the same shape as the
+    // completion bug handled below. The watchdog therefore arms on both
+    // branches; it is inert until the phase actually reaches `running`, so the
+    // background branch that never reports progress (phase stays `idle`, which
+    // is query-ready) is unaffected.
+    const stopWatchdog = this.hydration.startIdleWatchdog({
+      idleTimeoutMs: this.getStartupRebuildIdleTimeoutMs(),
+      onTimeout: () => {
+        const message = `Local chat index rebuild made no progress for ${this.getStartupRebuildIdleTimeoutMs()} ms`;
+        this.hydration.fail(message);
+        rejectIdleTimeout?.(new Error(message));
+      }
+    });
 
     try {
       const rebuildPromise = this.syncCoordinator.fullRebuild({
@@ -358,9 +363,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
           this.hydration.updateProgress(stage, progress, total, isBlockingHydration);
         }
       });
-      const result = idleTimeoutPromise
-        ? await Promise.race([rebuildPromise, idleTimeoutPromise])
-        : await rebuildPromise;
+      const result = await Promise.race([rebuildPromise, idleTimeoutPromise]);
 
       if (!result.success) {
         const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
