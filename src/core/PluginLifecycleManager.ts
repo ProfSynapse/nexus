@@ -232,6 +232,17 @@ export class PluginLifecycleManager {
                             const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
                             if (adapter) {
                                 await this.initializeEmbeddingsWhenReady(adapter);
+                            } else {
+                                // Falling through silently here is indistinguishable from
+                                // "embeddings are still starting up" — this timer is the only
+                                // thing that ever constructs EmbeddingManager, so if the
+                                // adapter is missing they never initialize and nothing says
+                                // why. That absence of a signal reads as a slow boot, which
+                                // is precisely how it gets misdiagnosed. Say it out loud.
+                                console.error(
+                                    '[PluginLifecycleManager] hybridStorageAdapter unavailable after startup delay; ' +
+                                    'embeddings will not initialize for this session'
+                                );
                             }
                         } catch (err) {
                             console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
