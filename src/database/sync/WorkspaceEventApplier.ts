@@ -22,6 +22,7 @@ import {
   ToolOperationIndeterminateEvent,
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
+import { purgeWorkspaceRows } from '../workspaceOwnership';
 
 export class WorkspaceEventApplier {
   private sqliteCache: ISQLiteCacheManager;
@@ -138,11 +139,25 @@ export class WorkspaceEventApplier {
     }
   }
 
+  /**
+   * A `workspace_deleted` event has to remove everything the workspace owns,
+   * not just its row.
+   *
+   * This runs during replay — `rebuildCache()` and cross-device sync — where the
+   * events that created the workspace's sessions, states and traces have already
+   * been applied from the same stream moments earlier. Deleting only the
+   * `workspaces` row left every one of those children behind as an orphan that
+   * reappeared on every rebuild: the schema declares `ON DELETE CASCADE`, but FK
+   * enforcement is off on the shared connection, so nothing cascaded.
+   *
+   * `purgeWorkspaceRows` is shared with `WorkspaceRepository.delete` precisely so
+   * the live delete and the replay of that delete cannot drift apart.
+   */
   private async applyWorkspaceDeleted(event: WorkspaceDeletedEvent): Promise<void> {
     if (!this.isValidWorkspaceId(event.workspaceId)) {
       return;
     }
-    await this.sqliteCache.run('DELETE FROM workspaces WHERE id = ?', [event.workspaceId]);
+    await purgeWorkspaceRows(this.sqliteCache, event.workspaceId);
   }
 
   private async applySessionCreated(event: SessionCreatedEvent): Promise<void> {

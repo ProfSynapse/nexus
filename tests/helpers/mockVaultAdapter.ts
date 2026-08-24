@@ -5,7 +5,8 @@
  *
  * The adapter maintains a Map-backed file system and Set-backed
  * directory tree, supporting exists / read / write / append / stat /
- * list / mkdir — the same surface area as Obsidian's DataAdapter.
+ * list / mkdir / remove / rmdir — the same surface area as Obsidian's
+ * DataAdapter.
  */
 
 import type { App } from 'obsidian';
@@ -24,6 +25,8 @@ export type MockAdapter = {
   stat: jest.Mock<Promise<{ mtime: number; size: number } | null>, [string]>;
   list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
   mkdir: jest.Mock<Promise<void>, [string]>;
+  remove: jest.Mock<Promise<void>, [string]>;
+  rmdir: jest.Mock<Promise<void>, [string, boolean?]>;
 };
 
 export interface CreateMockAppOptions {
@@ -121,6 +124,37 @@ export function createMockApp(options: CreateMockAppOptions = {}): {
     }),
     mkdir: jest.fn(async (path: string) => {
       addDirectoryTree(path.replace(/\\/g, '/'));
+    }),
+    remove: jest.fn(async (path: string) => {
+      const normalizedPath = path.replace(/\\/g, '/');
+      if (!files.delete(normalizedPath)) {
+        throw new Error(`Missing file: ${normalizedPath}`);
+      }
+    }),
+    // Mirrors DataAdapter.rmdir: non-recursive refuses a non-empty directory,
+    // so a caller that forgets to clear the shards first fails here the way it
+    // would in Obsidian rather than silently "succeeding".
+    rmdir: jest.fn(async (path: string, recursive?: boolean) => {
+      const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/g, '');
+      const isUnder = (candidate: string): boolean =>
+        candidate === normalizedPath || candidate.startsWith(`${normalizedPath}/`);
+
+      const containedFiles = Array.from(files.keys()).filter(isUnder);
+      const containedDirs = Array.from(directories.values()).filter(
+        dir => isUnder(dir) && dir !== normalizedPath
+      );
+
+      if (!recursive && (containedFiles.length > 0 || containedDirs.length > 0)) {
+        throw new Error(`Directory not empty: ${normalizedPath}`);
+      }
+
+      for (const filePath of containedFiles) {
+        files.delete(filePath);
+      }
+      for (const dirPath of containedDirs) {
+        directories.delete(dirPath);
+      }
+      directories.delete(normalizedPath);
     })
   };
 

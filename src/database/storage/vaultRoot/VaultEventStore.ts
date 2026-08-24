@@ -123,6 +123,17 @@ export class VaultEventStore {
     return (await handle.shardStore.readEvents(handle.relativeStreamPath)) as TEvent[];
   }
 
+  /**
+   * Permanently remove a logical stream and every shard under it.
+   *
+   * Returns `false` when there was nothing on disk. Idempotent, so a caller
+   * that failed halfway can simply run the whole delete again.
+   */
+  async deleteStream(relativePath: string): Promise<boolean> {
+    const handle = this.resolveStreamHandle(relativePath);
+    return handle.shardStore.deleteStream(handle.relativeStreamPath);
+  }
+
   async listFiles(category: EventStreamCategory): Promise<string[]> {
     const categoryRoot = this.getCategoryRootPath(category);
     if (!(await this.app.vault.adapter.exists(categoryRoot))) {
