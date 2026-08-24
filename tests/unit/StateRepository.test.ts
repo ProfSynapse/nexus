@@ -174,7 +174,7 @@ describe('StateRepository.getStateData event-folding', () => {
  * listing states never has to open the JSONL stream. These pin the write side
  * of that contract — the read side is in MemoryServiceGetStates.test.ts.
  */
-describe('StateRepository archive-flag denormalization (v15)', () => {
+describe('StateRepository archive-flag denormalization (v16)', () => {
   function insertCall(deps: RepositoryDependencies) {
     return (deps.sqliteCache.run as jest.Mock).mock.calls
       .find((call: unknown[]) => /INSERT INTO states/.test(call[0] as string));
@@ -299,7 +299,7 @@ describe('StateRepository archive-flag denormalization (v15)', () => {
   });
 });
 
-describe('StateRepository.backfillDerivedStateMetadata (v15 upgrade path)', () => {
+describe('StateRepository.backfillDerivedStateMetadata (v16 upgrade path)', () => {
   it('reads each workspace stream ONCE, not once per state', async () => {
     // Reading per state is precisely the quadratic cost issue #219 removes;
     // a backfill that reintroduced it would make the upgrade worse than the

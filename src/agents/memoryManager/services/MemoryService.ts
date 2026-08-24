@@ -527,7 +527,7 @@ export class MemoryService {
    * List states for a workspace (optionally a single session).
    *
    * Reads SQLite metadata only. The archive flag consumers filter on lives at
-   * `item.state.state.metadata.isArchived`, and since schema v15 it is a
+   * `item.state.state.metadata.isArchived`, and since schema v16 it is a
    * denormalized column, so this no longer fetches every state's JSONL content
    * to find it — that cost was one full workspace-stream parse PER STATE
    * (issue #219: 200 states = 200 reads, ~180k events parsed, ~500 ms cold).
@@ -630,7 +630,7 @@ export class MemoryService {
    *
    * When `content` is absent this is a skeleton assembled from SQLite metadata
    * alone. `state.metadata.isArchived` is filled from the denormalized column
-   * (v15) — every archive filter in the codebase reads it from there, so a
+   * (v16) — every archive filter in the codebase reads it from there, so a
    * skeleton that omitted it would silently list archived states as visible.
    */
   private stateMetadataToWorkspaceState(state: StateMetadata, content?: unknown, tags: string[] = state.tags || []): WorkspaceState {

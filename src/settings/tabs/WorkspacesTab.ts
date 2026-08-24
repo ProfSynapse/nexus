@@ -433,7 +433,7 @@ export class WorkspacesTab {
                 listStates: async (workspaceId, includeArchived) => {
                     // includeArchived is pushed into SQL (issue #219); the
                     // filter below still runs because rows migrated from a
-                    // pre-v15 cache report their flag as undefined and are
+                    // pre-v16 cache report their flag as undefined and are
                     // returned either way.
                     const result = await memoryService.getStates(workspaceId, undefined, {
                         includeArchived: includeArchived === true

@@ -22,7 +22,7 @@
  * Related files:
  * - src/database/repositories/StateRepository.ts
  * - src/database/sync/WorkspaceEventApplier.ts
- * - src/database/schema/SchemaMigrator.ts (v15 backfill)
+ * - src/database/schema/SchemaMigrator.ts (v16 backfill)
  */
 
 /** Columns derivable from a state snapshot's content. */

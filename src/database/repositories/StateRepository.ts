@@ -45,7 +45,7 @@ interface StateRow extends DatabaseRow {
   created: number;
   tagsJson?: string | null;
   /**
-   * 1 = archived, 0 = not archived, NULL = unknown (row predates the v15
+   * 1 = archived, 0 = not archived, NULL = unknown (row predates the v16
    * migration and has not been backfilled yet). See src/database/utils/stateContent.ts.
    */
   isArchived?: number | null;
@@ -443,7 +443,7 @@ export class StateRepository
 
   /**
    * Fill in `isArchived` (and the derived `description` fallback) for rows the
-   * v15 migration left unknown.
+   * v16 migration left unknown.
    *
    * The migration itself cannot do this: `migrationFn` is synchronous and only
    * sees the database, while the archive flag lives in the JSONL event store.

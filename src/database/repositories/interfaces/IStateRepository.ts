@@ -76,7 +76,7 @@ export interface IStateRepository extends IRepository<StateMetadata> {
   ): Promise<PaginatedResult<StateMetadata>>;
 
   /**
-   * Fill in the denormalized columns for rows migrated from a pre-v15 schema.
+   * Fill in the denormalized columns for rows migrated from a pre-v16 schema.
    * Reads each affected workspace's JSONL stream once. No-op (one indexed
    * SELECT) once every row is known.
    *

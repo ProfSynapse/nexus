@@ -292,7 +292,7 @@ export class WorkspaceEventApplier {
         values.push(derived.isArchived ? 1 : 0);
       }
       // The applier keeps a copy of the snapshot for rows it owns, so the
-      // stateJson column has to track the update too — otherwise the v15
+      // stateJson column has to track the update too — otherwise the v16
       // backfill would read a stale snapshot out of it.
       updates.push('stateJson = ?');
       values.push(event.data.stateJson);

@@ -2,7 +2,7 @@ import { SCHEMA_SQL } from '../../src/database/schema/schema';
 import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from '../../src/database/schema/SchemaMigrator';
 
 /**
- * The fresh-install half of the v15 schema change (issue #219).
+ * The fresh-install half of the v16 schema change (issue #219).
  *
  * `SCHEMA_SQL` is the ONLY DDL a new user ever executes: it ends by stamping
  * `schema_version`, after which `migrate()` early-returns and never applies a
@@ -13,7 +13,7 @@ import { CURRENT_SCHEMA_VERSION, MIGRATIONS } from '../../src/database/schema/Sc
  * These assertions fail against a tree where the migration landed and
  * SCHEMA_SQL did not.
  */
-describe('states.isArchived in the fresh-install schema (v15)', () => {
+describe('states.isArchived in the fresh-install schema (v16)', () => {
   function statesTableBody(): string {
     const match = SCHEMA_SQL.match(/CREATE TABLE IF NOT EXISTS states\s*\(([\s\S]*?)\n\);/);
     expect(match).not.toBeNull();

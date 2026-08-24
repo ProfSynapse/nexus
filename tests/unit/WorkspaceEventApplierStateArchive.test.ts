@@ -10,7 +10,7 @@ type SqliteCacheLike = {
  * this applier. Anything the applier does not write simply does not exist
  * afterwards — that is how the notes index tables were destroyed once already.
  *
- * So the archive flag denormalized in v15 (issue #219) has to survive a
+ * So the archive flag denormalized in v16 (issue #219) has to survive a
  * rebuild, and it has to come out of the replay identical to what
  * StateRepository wrote on the live path. These tests fail against the
  * pre-fix applier, which wrote neither the column nor any content-derived

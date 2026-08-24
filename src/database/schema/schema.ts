@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS states (
   -- Denormalized from the snapshot's state.metadata.isArchived (issue #219) so
   -- listing states never has to read their JSONL content. Nullable with NO
   -- default on purpose: NULL means "unknown, ask the content", which is what
-  -- rows migrated from v14 hold until they are backfilled.
+  -- rows migrated from a pre-v16 cache hold until they are backfilled.
   isArchived INTEGER,
   FOREIGN KEY(sessionId) REFERENCES sessions(id) ON DELETE CASCADE,
   FOREIGN KEY(workspaceId) REFERENCES workspaces(id) ON DELETE CASCADE

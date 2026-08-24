@@ -146,8 +146,8 @@ describe('SchemaMigrator v12 -> v13 skills migration', () => {
     const result = await migrator.migrate();
 
     expect(result.fromVersion).toBe(12);
-    expect(result.toVersion).toBe(15);
-    expect(result.applied).toBe(3);
+    expect(result.toVersion).toBe(16);
+    expect(result.applied).toBe(4);
 
     const ddlRun = db.runCalls.map(c => c.sql).filter(s => /skills/.test(s));
     expect(ddlRun.some(s => /CREATE TABLE IF NOT EXISTS skills/.test(s))).toBe(true);

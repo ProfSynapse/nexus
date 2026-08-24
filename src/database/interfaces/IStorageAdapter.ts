@@ -277,7 +277,7 @@ export interface IStorageAdapter {
    *
    * Result rows carry `isArchived` from SQLite (issue #219) so callers do not
    * have to fetch each state's content to filter archived ones out. It is
-   * `undefined` only for rows migrated from a pre-v15 cache that have not been
+   * `undefined` only for rows migrated from a pre-v16 cache that have not been
    * backfilled yet — for those, the content is still authoritative.
    *
    * @param workspaceId - Workspace ID

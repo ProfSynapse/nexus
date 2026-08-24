@@ -310,8 +310,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
         await this.runReconcile('task', () => this.reconcileMissingTasks());
       }
 
-      // Fill in the state columns denormalized in schema v15 (issue #219) for
-      // rows that came over from a v14 cache. Costs one indexed SELECT once
+      // Fill in the state columns denormalized in schema v16 (issue #219) for
+      // rows that came over from a pre-v16 cache. Costs one indexed SELECT once
       // every row is known, and one JSONL read per affected workspace before
       // that — never one per state, which is the cost being removed. A full
       // rebuild above already writes the columns, so this then finds nothing.
@@ -397,7 +397,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   /**
    * One-shot (per cache) backfill of the state columns denormalized in schema
-   * v15. Never fatal: a failure here only means `MemoryService.getStates`
+   * v16. Never fatal: a failure here only means `MemoryService.getStates`
    * keeps resolving the archive flag from JSONL content, which is what it did
    * before the column existed.
    */
