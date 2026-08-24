@@ -63,7 +63,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
       properties: {
         workspaceId: {
           type: 'string',
-          description: 'Workspace ID. Optional. Defaults to "default".'
+          description: 'Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as "default". Pass "default" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools.'
         },
         sessionId: {
           type: 'string',

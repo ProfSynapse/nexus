@@ -36,6 +36,7 @@ import { QueryOptions } from '../interfaces/IStorageAdapter';
 import { QueryCache } from '../optimizations/QueryCache';
 import { parseJsonColumn } from '../utils/jsonColumn';
 import { purgeWorkspaceRows, workspaceOwnedStreamPaths } from '../workspaceOwnership';
+import { workspaceStreamPath, workspaceStreamPathForRemoval } from './base/workspaceStreamPath';
 
 type SqliteValue = string | number | null;
 
@@ -64,7 +65,7 @@ export class WorkspaceRepository
 
   protected readonly tableName = 'workspaces';
   protected readonly entityType = 'workspace';
-  protected readonly jsonlPath = (id: string): string => `workspaces/ws_${id}.jsonl`;
+  protected readonly jsonlPath = (id: string): string => workspaceStreamPath(id, this.entityType);
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
@@ -269,8 +270,15 @@ export class WorkspaceRepository
   async delete(id: string): Promise<void> {
     try {
       // 1. Tombstone, so a stream we fail to remove still cancels itself out.
+      //
+      // Minted with the REMOVAL guard, not `this.jsonlPath` (the write guard):
+      // the streams most in need of a permanent delete are the malformed ones
+      // the write guard now refuses to create, and they are already on disk.
+      // Routing this through the write tier would throw here and skip both the
+      // stream removal and the SQLite purge below, making every pre-existing
+      // phantom workspace undeletable. Path safety is still enforced.
       await this.writeEvent<WorkspaceDeletedEvent>(
-        this.jsonlPath(id),
+        workspaceStreamPathForRemoval(id, this.entityType),
         {
           type: 'workspace_deleted',
           workspaceId: id

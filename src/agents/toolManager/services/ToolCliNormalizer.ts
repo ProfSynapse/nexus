@@ -642,8 +642,10 @@ function isMeaningfulContextValue(value: unknown): boolean {
   return !isPlaceholderText(value);
 }
 
-// workspaceId/sessionId carry valid silent defaults, so absence/empty is fine
-// ("default" / auto-session). Only a present, non-empty placeholder is junk.
+// sessionId carries a valid silent default (auto-session), and an absent or
+// empty workspaceId is refused outright by normalizeContext — see
+// WORKSPACE_ID_REQUIRED_MESSAGE. So blank is never this function's business;
+// only a present, non-empty placeholder is junk.
 function isPlaceholderJunk(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   if (value.trim().length === 0) return false;
@@ -653,7 +655,9 @@ function isPlaceholderJunk(value: unknown): boolean {
 /**
  * Collect predictable steering for a useTools context block.
  * - memory + goal: hard-required (empty or placeholder → steer).
- * - workspaceId + sessionId: default silently; steer only if present-but-junk.
+ * - workspaceId: requiredness is enforced once, in normalizeContext; here we
+ *   only steer a present-but-junk value.
+ * - sessionId: defaults silently; steer only if present-but-junk.
  * Pure — no agent registry needed, so the eval harness can call it directly.
  */
 export function collectContextContractViolations(
@@ -676,7 +680,7 @@ export function collectContextContractViolations(
   if (isPlaceholderJunk(params.workspaceId)) {
     violations.push({
       field: 'workspaceId',
-      message: 'The "workspaceId" looks like a placeholder. Use "default" for the global workspace, or a real workspace ID — or omit it to default to "default".',
+      message: 'The "workspaceId" looks like a placeholder. Use "default" for the global workspace, or an exact workspace name or ID from getTools — it is required, so there is nothing to fall back to.',
     });
   }
   if (isPlaceholderJunk(params.sessionId)) {
@@ -738,6 +742,45 @@ function normalizeVerbatimValues(raw: unknown): Record<string, string> | undefin
   return Object.keys(raw).length > 0 ? (raw as Record<string, string>) : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// workspaceId requiredness (#214)
+//
+// `workspaceId` is in the `required` array of both envelope schemas, and on the
+// MCP path that array IS enforced at runtime (ValidationService → validateParams
+// → "Missing required parameter: workspaceId"). But `required` only asks whether
+// the key is PRESENT, so `workspaceId: ""` sailed through and the old
+// `params.workspaceId || 'default'` here quietly filed the call under the global
+// workspace — a caller whose template rendered to empty behaved completely
+// differently from one that omitted the field, and its traces, sessions and
+// states landed somewhere it never asked for.
+//
+// So: empty, blank and absent all fail the same way, and they fail HERE because
+// schema `required` is documentation plus CLI-normalizer hints, not validation.
+// There is no session stickiness to fall back on (see #214) — nothing remembers
+// the workspace a session was already working in, so a silent default is a guess
+// dressed up as a decision. Surrounding whitespace is trimmed rather than
+// refused: ` default ` is unambiguous, and trimming keeps it from reaching the
+// repository guard as a distinct path segment.
+// ---------------------------------------------------------------------------
+
+export const WORKSPACE_ID_REQUIRED_MESSAGE =
+  '"workspaceId" is required and must not be empty. Pass "default" for the global workspace, '
+  + 'or an exact workspace name or id from the availableWorkspaces list returned by getTools. '
+  + 'An empty string is not treated as "default" — it is rejected, exactly like omitting the field.';
+
+/**
+ * Resolve the envelope's workspaceId, or throw a recoverable steering error.
+ * @param raw - The caller-supplied top-level workspaceId
+ * @returns The trimmed workspace identifier
+ */
+export function normalizeRequiredWorkspaceId(raw: unknown): string {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (trimmed.length === 0) {
+    throw new Error(WORKSPACE_ID_REQUIRED_MESSAGE);
+  }
+  return trimmed;
+}
+
 export class ToolCliNormalizer {
   constructor(private agentRegistry: Map<string, IAgent>) {}
 
@@ -760,7 +803,7 @@ export class ToolCliNormalizer {
     }
 
     return {
-      workspaceId: params.workspaceId || 'default',
+      workspaceId: normalizeRequiredWorkspaceId(params.workspaceId),
       sessionId: params.sessionId || `session_${Date.now()}`,
       memory: params.memory || '',
       goal: params.goal || '',

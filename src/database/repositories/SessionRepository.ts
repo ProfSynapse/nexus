@@ -33,6 +33,7 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { purgeSessionRows } from '../sessionOwnership';
+import { workspaceStreamPath } from './base/workspaceStreamPath';
 
 type SqliteValue = string | number | null;
 
@@ -59,7 +60,7 @@ export class SessionRepository
   protected readonly tableName = 'sessions';
   protected readonly entityType = 'session';
   // Sessions write to workspace JSONL file
-  protected readonly jsonlPath = (workspaceId: string): string => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath = (workspaceId: string): string => workspaceStreamPath(workspaceId, this.entityType);
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
