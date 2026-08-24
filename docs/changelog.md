@@ -2,6 +2,31 @@
 
 ## August 2026
 
+**Unreleased** — thinking you can actually see, retries that cannot double-write, and two new models
+
+**Reasoning shows up the same way on every provider**
+- Models that think before answering now surface that thinking consistently across Anthropic, Gemini, OpenAI, OpenRouter and LM Studio. Each provider reports reasoning in its own shape, and Nexus only understood some of them, so whether you saw a model's reasoning depended on which provider you happened to be using ([#354](https://github.com/ProfSynapse/nexus/pull/354)).
+- **Claude's thinking no longer breaks when a tool is involved.** Anthropic signs each thinking block and requires it back, unchanged, when the conversation continues after a tool call. Nexus was not replaying those blocks, so a thinking model that used a tool could fail outright partway through a turn. The signed and redacted blocks are now preserved and replayed exactly.
+- Spacing around assistant messages and the "generating" status text was tightened, including the gap that appeared when a reply paused mid-stream.
+
+**A retried command cannot run twice**
+- Every command that changes something now writes a durable receipt before it runs. Retry the exact same command with the same operation id and Nexus replays the receipt instead of doing the work again; reuse that id for a *different* command and it is rejected rather than silently overwriting something. Receipts survive a reload and a cache rebuild, because they live in your vault's event log rather than only in the cache ([#356](https://github.com/ProfSynapse/nexus/pull/356)).
+- Agents that batch several commands to run at once are now stopped when the batch mixes reads with writes. Nexus names the command that is unsafe to parallelise and asks for the batch to be retried in order, so two commands can no longer race over the same note.
+- **Nothing about read-only commands is recorded.** Receipts cover commands that change things; reading a note never copies its contents into the event log.
+
+**Fixes**
+- Saved states could disappear after a storage migration that had not finished. Nexus stopped reading the destination folder until the migration was verified, while already writing there — so a state's metadata was listed but its contents could not be loaded, and fresh states only appeared to work because they were still held in memory ([#355](https://github.com/ProfSynapse/nexus/pull/355)).
+- Switching between providers is more reliable. Each provider now owns its own setup and cleanup, so disposing of one can no longer interfere with the one replacing it.
+
+**Models**
+- **GLM 5.3** (OpenRouter and Requesty) and **Qwen3.8 27B** (OpenRouter) ([#353](https://github.com/ProfSynapse/nexus/pull/353)).
+
+**Under the hood**
+- Nexus's tool catalogue is now generated from the running code and versioned with each release, and the build fails if the two drift apart. This does not change any command you type — it means the documentation an agent reads can no longer disagree with what the tools actually accept ([#353](https://github.com/ProfSynapse/nexus/pull/353)).
+- Streaming was rebuilt on a typed event contract with a single place that decides what a turn looks like, replacing envelopes that each provider filled in slightly differently. A turn that fails or is aborted is now recorded as failed instead of quietly reported as success.
+
+---
+
 **v5.17.2** — Nexus now declares the Obsidian version it actually needs
 
 **Requires Obsidian 1.10.0 or later**
