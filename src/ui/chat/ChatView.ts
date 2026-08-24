@@ -117,10 +117,21 @@ export class ChatView extends ItemView {
   // Layout elements
   private layoutElements!: ChatLayoutElements;
 
+  /**
+   * `chatService` is NOT guaranteed to be present here. Obsidian's view factory
+   * (ChatUIManager.registerViewEarly) constructs ChatView during layout
+   * restoration — on every plugin reload and on cold start — which runs before
+   * the plugin's async service graph has produced chatService, so the factory
+   * passes null. `waitForChatServiceAndInitialize()` fills the field in later.
+   *
+   * Consequence: every collaborator below must receive chatService through a
+   * `getChatService()` accessor. Capturing `this.chatService` by value in this
+   * constructor pins the null forever and the collaborator never recovers.
+   */
   constructor(leaf: WorkspaceLeaf, private chatService: ChatService) {
     super(leaf);
     this.sessionCoordinator = new ChatSessionCoordinator({
-      chatService: this.chatService,
+      getChatService: () => this.chatService ?? null,
       component: this,
       getContainerEl: () => this.containerEl,
       getChatTitleEl: () => this.layoutElements?.chatTitle ?? null,
@@ -140,7 +151,7 @@ export class ChatView extends ItemView {
     });
     this.sendCoordinator = new ChatSendCoordinator({
       app: this.app,
-      chatService: this.chatService,
+      getChatService: () => this.chatService ?? null,
       getContainerEl: () => this.containerEl,
       getConversationManager: () => this.conversationManager ?? null,
       getMessageManager: () => this.messageManager ?? null,
@@ -158,7 +169,7 @@ export class ChatView extends ItemView {
     this.subagentIntegration = new ChatSubagentIntegration({
       app: this.app,
       component: this,
-      chatService: this.chatService,
+      getChatService: () => this.chatService ?? null,
       getConversationManager: () => this.conversationManager ?? null,
       getModelAgentManager: () => this.modelAgentManager ?? null,
       getStreamingController: () => this.streamingController ?? null,

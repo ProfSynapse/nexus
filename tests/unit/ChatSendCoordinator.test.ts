@@ -145,7 +145,7 @@ function createHarness(provider = 'github-copilot') {
 
   const coordinator = new ChatSendCoordinator({
     app: {} as never,
-    chatService: chatService as never,
+    getChatService: () => chatService as never,
     getContainerEl: () => containerEl,
     getConversationManager: () => conversationManager,
     getMessageManager: () => messageManager,

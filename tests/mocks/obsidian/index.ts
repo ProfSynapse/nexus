@@ -50,6 +50,7 @@ export {
   Scope,
   Modal,
   Component,
+  ItemView,
   MarkdownRenderer,
   Plugin,
   Menu,

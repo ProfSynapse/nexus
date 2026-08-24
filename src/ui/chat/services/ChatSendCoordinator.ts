@@ -102,7 +102,12 @@ interface StorageAdapterLike {
 
 interface ChatSendCoordinatorDependencies {
   app: App;
-  chatService: ChatService;
+  /**
+   * Resolved lazily — see the note on ChatSubagentIntegration's getChatService.
+   * ChatView is constructed before the plugin's service graph produces
+   * chatService, so this dependency must never be captured by value.
+   */
+  getChatService: () => ChatService | null;
   getContainerEl: () => HTMLElement;
   getConversationManager: () => ConversationManagerLike | null;
   getMessageManager: () => MessageManagerLike | null;
@@ -366,15 +371,16 @@ export class ChatSendCoordinator {
     // Save conversation with ALL messages intact — compaction is view-layer only.
     // The boundaryMessageId in metadata.compaction.frontier tells the LLM prompt
     // assembly layer which messages to include.
-    const conversationService = this.deps.chatService.getConversationService();
+    const chatService = this.deps.getChatService();
+    const conversationService = chatService?.getConversationService();
     if (conversationService?.updateConversation) {
       await conversationService.updateConversation(conversation.id, {
         title: conversation.title,
         messages: conversation.messages,
         metadata: conversation.metadata
       });
-    } else {
-      await this.deps.chatService.updateConversation(conversation);
+    } else if (chatService) {
+      await chatService.updateConversation(conversation);
     }
 
     this.deps.onUpdateContextProgress();
