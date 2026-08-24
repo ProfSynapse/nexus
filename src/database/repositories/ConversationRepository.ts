@@ -348,7 +348,24 @@ export class ConversationRepository
   }
 
   /**
-   * Delete a conversation
+   * Delete a conversation, permanently.
+   *
+   * Ordering matches `WorkspaceRepository.delete` and for the same reason:
+   * tombstone, then the source of truth, then the cache. Every partial failure
+   * has to converge on "deleted" rather than on the conversation coming back.
+   *
+   *   1. Tombstone. If step 2 then fails, replay still cancels the conversation
+   *      out and nothing resurrects.
+   *   2. Remove the stream — the conversation's OWN stream, which also carries
+   *      its messages (`MessageRepository.jsonlPath` is the same file). A
+   *      failure here throws BEFORE SQLite is touched, leaving a retryable
+   *      no-op rather than a half-deleted conversation.
+   *   3. SQLite, which is only ever catching up to the event store.
+   *
+   * Deleting the stream is what makes this permanent, and it is deliberate:
+   * this path is reached only from the chat UI's own delete
+   * (ChatView → ConversationManager → ChatService → ConversationService), never
+   * from a tool. No AI-reachable surface deletes a conversation.
    */
   async delete(id: string): Promise<void> {
     try {
@@ -361,7 +378,14 @@ export class ConversationRepository
         }
       );
 
-      // 2. Delete from SQLite. Messages are NOT cascaded despite the FK: SQLite
+      // 2. Remove the conversation's event stream. Without this the directory
+      //    `<storage>/conversations/conv_<id>/` survived the delete and the
+      //    rebuild — the tombstone kept it out of the cache, but the source of
+      //    truth was never actually removed. Uses the same idempotent
+      //    `deleteStream` chain as the workspace delete, so a retry is safe.
+      await this.jsonlWriter.deleteStream(this.jsonlPath(id));
+
+      // 3. Delete from SQLite. Messages are NOT cascaded despite the FK: SQLite
       //    foreign-key enforcement is off on this connection, so the rows stayed
       //    behind as orphans until the next rebuild (measured: 1 message row for
       //    a 1-message conversation). `ConversationEventApplier` has always
@@ -369,7 +393,7 @@ export class ConversationRepository
       await this.sqliteCache.run('DELETE FROM messages WHERE conversationId = ?', [id]);
       await this.sqliteCache.run(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
 
-      // 3. Invalidate cache
+      // 4. Invalidate cache
       this.invalidateCache();
 
     } catch (error) {

@@ -542,9 +542,12 @@ export class JSONLWriter {
    * vault-root install, plus any legacy flat file of the same name.
    *
    * Warning: this destroys the source of truth for that stream and cannot be
-   * undone. It exists for the one operation that is meant to be permanent:
-   * deleting a workspace from the settings UI. Everything reachable by the AI
-   * uses a deletion EVENT (a tombstone) instead.
+   * undone. It exists for the deletions that are meant to be permanent and are
+   * driven by a human from the UI: deleting a workspace from the settings tab,
+   * and deleting a conversation from the chat sidebar. Everything reachable by
+   * the AI uses a deletion EVENT (a tombstone) instead — and so does every
+   * entity that owns no stream of its own, such as a session, whose events live
+   * in its parent workspace's stream.
    *
    * Idempotent — removing an already-removed stream succeeds — so a delete that
    * failed partway can be retried as a whole.
