@@ -681,6 +681,74 @@ describe('HybridStorageAdapter', () => {
       // stay inert rather than failing a rebuild that has nothing to stall on.
       expect(adapter.hydration.getState().phase).toBe('idle');
     });
+
+    // Regression (#158 gap 2, found by mutation testing): arming the watchdog on
+    // both branches makes `isBlockingHydration` the ONLY thing left in
+    // `runStartupFullRebuild` that still distinguishes them — it is forwarded as
+    // the 4th argument of `updateProgress`, which sets `state.isBlocking`.
+    // Nothing pinned it, so passing `true` there survived every test. The
+    // consequence is user-visible: `isStartupHydrationBlocking()` reads that
+    // flag, and ChatView holds the chat behind a modal loading overlay for as
+    // long as it is true (src/ui/chat/ChatView.ts) — minutes on a real vault.
+    it('never reports a background startup fullRebuild as blocking hydration', async () => {
+      const adapter = makeHarness();
+      const blockingDuringProgress: boolean[] = [];
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => {
+        onProgress('Processing workspaces', 0, 2);
+        blockingDuringProgress.push((adapter as unknown as HybridStorageAdapter).isStartupHydrationBlocking());
+        onProgress('Processing conversations', 1, 2);
+        blockingDuringProgress.push((adapter as unknown as HybridStorageAdapter).isStartupHydrationBlocking());
+        return Promise.resolve(successfulRebuild);
+      });
+
+      await runStartupFullRebuild(adapter, false);
+
+      // Sampled mid-rebuild, while the phase is `running` — the only window in
+      // which `isBlocking()` can ever return true.
+      expect(blockingDuringProgress).toEqual([false, false]);
+    });
+
+    it('reports a blocking startup fullRebuild as blocking hydration', async () => {
+      const adapter = makeHarness();
+      adapter.hydration.startBlocking();
+      const blockingDuringProgress: boolean[] = [];
+      adapter.syncCoordinator.fullRebuild.mockImplementation(({ onProgress }) => {
+        onProgress('Processing workspaces', 0, 2);
+        blockingDuringProgress.push((adapter as unknown as HybridStorageAdapter).isStartupHydrationBlocking());
+        return Promise.resolve(successfulRebuild);
+      });
+
+      await runStartupFullRebuild(adapter, true);
+
+      // The counterpart assertion: without this, hardcoding `false` at the same
+      // argument would pass the test above.
+      expect(blockingDuringProgress).toEqual([true]);
+    });
+
+    // Regression (#158 gap 3, found by mutation testing): a background rebuild
+    // that succeeds WITHOUT ever reporting progress leaves the phase at `idle`,
+    // so the `phase === 'running'` guard skips `complete()` — and `complete()`
+    // is what would otherwise stop the watchdog. Only the `finally`'s
+    // `stopWatchdog?.()` disarms it on that path. Without it the controller
+    // keeps a live watchdog registration with no timer, which re-arms against a
+    // stale `onTimeout` the next time anything moves the phase to `running`.
+    it('disarms the watchdog after a background rebuild that finished without progress', async () => {
+      jest.useFakeTimers();
+      const adapter = makeHarness();
+      adapter.syncCoordinator.fullRebuild.mockResolvedValue(successfulRebuild);
+
+      await runStartupFullRebuild(adapter, false);
+      expect(adapter.hydration.getState().phase).toBe('idle');
+
+      // Moving the phase to `running` must not resurrect the finished rebuild's
+      // watchdog: 50 ms is its full idle timeout.
+      adapter.hydration.startBlocking();
+      await jest.advanceTimersByTimeAsync(50);
+
+      const state = adapter.hydration.getState();
+      expect(state.phase).toBe('running');
+      expect(state.error).toBeUndefined();
+    });
   });
 
   describe('reconcileMissingConversations', () => {
