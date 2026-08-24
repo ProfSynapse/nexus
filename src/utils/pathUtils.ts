@@ -205,7 +205,14 @@ export function isValidPath(path: string): boolean {
  * trailing slash on the scope is accepted and means the same thing, and an
  * empty scope (what `"/"` normalizes to) still means the whole vault.
  *
- * @param path Vault-relative path to test
+ * NOT A CONFINEMENT GUARD. This is a string test over paths that are already
+ * resolved — `TFile.path` and `embedding_metadata.notePath`, neither of which
+ * can contain a `..` segment. It does no traversal resolution of its own, so
+ * `isWithinPathScope('A/../B/x.md', 'A')` is `true`. Do not reach for it to
+ * decide whether a caller-supplied path may be read or written; `normalizePath`
+ * does not strip `..` either, so such a caller needs its own explicit check.
+ *
+ * @param path Vault-relative path to test. Must already be resolved.
  * @param scope Vault-relative folder or file path to confine to
  */
 export function isWithinPathScope(path: string, scope: string): boolean {

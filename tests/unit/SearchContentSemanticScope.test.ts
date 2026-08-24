@@ -143,7 +143,7 @@ interface CapturedQuery {
  * would: apply the WHERE clause if there is one, order by distance, truncate to
  * LIMIT.
  */
-function createFakeDb(rows: NoteRow[]) {
+function createFakeDb(rows: NoteRow[], options: { vectorTableBroken?: boolean } = {}) {
   const captured: CapturedQuery[] = [];
 
   const query = jest.fn(async (sql: string, params: unknown[]) => {
@@ -160,6 +160,12 @@ function createFakeDb(rows: NoteRow[]) {
     const limit = params[params.length - 1] as number;
     const likePatterns = params.slice(1, params.length - 1) as string[];
     captured.push({ sql, likePatterns, limit });
+
+    // A vec0 table that answers nothing while `embedding_metadata` still counts
+    // rows: the genuine "vector database is broken" case the tool reports on.
+    if (options.vectorTableBroken) {
+      return [];
+    }
 
     const scoped = likePatterns.length === 0
       ? rows
@@ -185,8 +191,8 @@ function createFakeDb(rows: NoteRow[]) {
   return { db: { query, queryOne, run: jest.fn() }, captured };
 }
 
-function createHarness(rows: NoteRow[] = VAULT) {
-  const { db, captured } = createFakeDb(rows);
+function createHarness(rows: NoteRow[] = VAULT, options: { vectorTableBroken?: boolean } = {}) {
+  const { db, captured } = createFakeDb(rows, options);
 
   const engine = {
     initialize: jest.fn(async () => undefined),
@@ -217,7 +223,7 @@ function createHarness(rows: NoteRow[] = VAULT) {
   const tool = new SearchContentTool(plugin);
   tool.setEmbeddingService(embeddingService);
 
-  return { tool, captured };
+  return { tool, captured, embeddingService };
 }
 
 function params(overrides: Partial<ContentSearchParams> = {}): ContentSearchParams {
@@ -368,6 +374,50 @@ describe('SearchContentTool — semantic search scoping (#323)', () => {
 
     expect(raw.success).toBe(true);
     expect(results).toEqual([]);
+  });
+
+  /**
+   * The other half of that trade, and the reason `pathScopePrefix` returns
+   * `null` rather than `''` for a whole-vault path.
+   *
+   * Suppressing the vector-database error is only honest when the query WAS
+   * narrowed. `/` narrows nothing, so an empty answer there still means the
+   * index is broken and must still say so. If `/` were allowed to reduce to an
+   * empty prefix the scope would look present to this branch while the SQL went
+   * out unscoped, and a genuinely broken index would report silent success for
+   * every whole-vault search.
+   */
+  it('still reports a database fault for a whole-vault path, which is not a scope', async () => {
+    const { tool } = createHarness(VAULT, { vectorTableBroken: true });
+
+    const rootScoped = await tool.execute(params({ paths: ['/'] }));
+    const unscoped = await tool.execute(params());
+
+    expect(rootScoped.success).toBe(false);
+    expect((rootScoped as { error?: string }).error).toMatch(/vector database/i);
+    // Identical to passing no `paths` at all, which is what `/` means.
+    expect(rootScoped.success).toBe(unscoped.success);
+  });
+
+  /**
+   * `NoteEmbeddingService.semanticSearch` documents an empty prefix as "anywhere
+   * in the vault", and the prefixes are OR'd, so one empty entry unbounds the
+   * union. Dropping the scope entirely and emitting `LIKE '%'` return the same
+   * rows, but only the former leaves the query the service always issued — this
+   * pins the contract at the service boundary, where `searchContent` is not the
+   * only possible caller.
+   */
+  it('drops the scope entirely when a prefix is empty', async () => {
+    const { embeddingService, captured } = createHarness();
+
+    await embeddingService.semanticSearch(QUERY, 5, ['']);
+    await embeddingService.semanticSearch(QUERY, 5, ['_Base/', '']);
+
+    expect(captured).toHaveLength(2);
+    for (const call of captured) {
+      expect(call.sql).not.toMatch(/WHERE/);
+      expect(call.likePatterns).toEqual([]);
+    }
   });
 });
 
