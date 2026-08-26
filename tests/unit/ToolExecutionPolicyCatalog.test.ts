@@ -91,6 +91,7 @@ describe('Tool execution policy catalog', () => {
       'canvasManager/update',
       'canvasManager/write',
       'contentManager/insert',
+      'contentManager/removeProperty',
       'contentManager/replace',
       'contentManager/setProperty',
       'contentManager/write',

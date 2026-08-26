@@ -10,6 +10,7 @@ import { WriteTool } from '@/agents/contentManager/tools/write';
 import { InsertTool } from '@/agents/contentManager/tools/insert';
 import { ReplaceTool } from '@/agents/contentManager/tools/replace';
 import { SetPropertyTool } from '@/agents/contentManager/tools/setProperty';
+import { RemovePropertyTool } from '@/agents/contentManager/tools/removeProperty';
 import { ContentOperations } from '@/agents/contentManager/utils/ContentOperations';
 
 // A POSIX leading slash (/tmp/ESCAPE.md) is stripped to vault-relative (backward-compat), not an escape.
@@ -23,7 +24,7 @@ interface MockVault {
   getAbstractFileByPath: jest.Mock;
 }
 
-function makeApp(existing?: TFile): { app: any; vault: MockVault; processFrontMatter: jest.Mock } {
+function makeApp(existing?: TFile, frontmatter: Record<string, unknown> = {}): { app: any; vault: MockVault; processFrontMatter: jest.Mock } {
   const vault: MockVault = {
     create: jest.fn().mockResolvedValue(existing ?? new TFile('a.md', 'notes/a.md')),
     modify: jest.fn().mockResolvedValue(undefined),
@@ -32,7 +33,7 @@ function makeApp(existing?: TFile): { app: any; vault: MockVault; processFrontMa
     getAbstractFileByPath: jest.fn().mockReturnValue(existing),
   };
   const processFrontMatter = jest.fn(async (_file: unknown, mutate: (fm: Record<string, unknown>) => void) => {
-    mutate({});
+    mutate(frontmatter);
   });
   const app = { vault, fileManager: { processFrontMatter } };
   return { app, vault, processFrontMatter };
@@ -112,6 +113,55 @@ describe('ReplaceTool confinement', () => {
     const result = await new ReplaceTool(app).execute({ path: 'notes/a.md', start: 'line one', end: 'line three', content: 'ONE' } as any);
     expect(result.success).toBe(true);
     expect(vault.modify).toHaveBeenCalled();
+  });
+});
+
+describe('RemovePropertyTool confinement', () => {
+  it.each(ESCAPING)('rejects escaping path %s with no frontmatter write', async (path) => {
+    const { app, processFrontMatter } = makeApp(undefined, { tags: ['x'] });
+    const result = await new RemovePropertyTool(app).execute({ path, property: 'tags' } as any);
+    expect(result.success).toBe(false);
+    expect(processFrontMatter).not.toHaveBeenCalled();
+  });
+
+  it('removes a property from a normal existing file', async () => {
+    const file = new TFile('a.md', 'notes/a.md');
+    const frontmatter: Record<string, unknown> = { tags: ['x'], status: 'draft' };
+    const { app, processFrontMatter } = makeApp(file, frontmatter);
+    const result = await new RemovePropertyTool(app).execute({ path: 'notes/a.md', property: 'tags' } as any);
+    expect(result.success).toBe(true);
+    expect(processFrontMatter).toHaveBeenCalled();
+    // The key is gone from the object Obsidian re-serializes, not set to null.
+    expect('tags' in frontmatter).toBe(false);
+    expect(frontmatter).toEqual({ status: 'draft' });
+  });
+
+  it('drops one list item and leaves the property in place', async () => {
+    const file = new TFile('a.md', 'notes/a.md');
+    const frontmatter: Record<string, unknown> = { tags: ['a', 'b'] };
+    const { app } = makeApp(file, frontmatter);
+    const result = await new RemovePropertyTool(app)
+      .execute({ path: 'notes/a.md', property: 'tags', value: 'a' } as any);
+    expect(result.success).toBe(true);
+    expect(frontmatter).toEqual({ tags: ['b'] });
+  });
+
+  it('reports failure and leaves frontmatter untouched when the property is absent', async () => {
+    const file = new TFile('a.md', 'notes/a.md');
+    const frontmatter: Record<string, unknown> = { status: 'draft' };
+    const { app } = makeApp(file, frontmatter);
+    const result = await new RemovePropertyTool(app).execute({ path: 'notes/a.md', property: 'tag' } as any);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Properties present: status');
+    expect(frontmatter).toEqual({ status: 'draft' });
+  });
+
+  it('rejects an empty property name before touching the file', async () => {
+    const file = new TFile('a.md', 'notes/a.md');
+    const { app, processFrontMatter } = makeApp(file, { tags: ['x'] });
+    const result = await new RemovePropertyTool(app).execute({ path: 'notes/a.md', property: '  ' } as any);
+    expect(result.success).toBe(false);
+    expect(processFrontMatter).not.toHaveBeenCalled();
   });
 });
 

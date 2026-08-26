@@ -1,7 +1,7 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 // ============================================================================
-// ContentManager tools (5 tools: read, write, replace, insert, setProperty)
+// ContentManager tools (6 tools: read, write, replace, insert, setProperty, removeProperty)
 // ============================================================================
 
 /**
@@ -22,6 +22,26 @@ export interface SetPropertyParams extends CommonParameters {
  * Result of setting a frontmatter property
  */
 export type SetPropertyResult = CommonResult
+
+/**
+ * Params for removing a frontmatter property
+ */
+export interface RemovePropertyParams extends CommonParameters {
+  /** Path to the note file */
+  path: string;
+  /** Frontmatter property name to remove */
+  property: string;
+  /**
+   * Optional. Omit to remove the whole property; pass a value to remove only
+   * that item (or items) from a list property.
+   */
+  value?: string | number | boolean | string[];
+}
+
+/**
+ * Result of removing a frontmatter property
+ */
+export type RemovePropertyResult = CommonResult
 
 /**
  * Params for reading content from a file

@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "241f93490b41413f";
+export const NEXUS_CLI_ASSETS_HASH = "72acd9eeb1c076bc";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -1355,7 +1355,7 @@ Run \`nexus tools task create\` / \`task move\` / \`task update\` for the exact 
     "vault-work.md": `---
 name: vault-work
 intent: Search the vault, read what you find, then create or edit notes — the typical loop
-tools: [search content, search directory, content read, content write, content replace, content insert, content set-property, storage list, memory list-workspaces, memory create-state]
+tools: [search content, search directory, content read, content write, content replace, content insert, content set-property, content remove-property, storage list, memory list-workspaces, memory create-state]
 ---
 
 # Playbook: vault-work
@@ -1376,6 +1376,8 @@ update it," "answer a question from my notes," "add a section to Y," etc.
    top). Never quote, summarize, or edit from a search result alone — it has no body.
 4. **Make the change** with the narrowest tool:
    - \`content set-property\` — a frontmatter field.
+   - \`content remove-property\` — drop a frontmatter field, or one item from a
+     list field with \`--value\`.
    - \`content insert\` — add a section (append/prepend/at an anchor).
    - \`content replace\` — a surgical edit. It is **pattern-anchored**:
      \`{path, start, end, content}\` where \`start\`/\`end\` are exact **anchor text**

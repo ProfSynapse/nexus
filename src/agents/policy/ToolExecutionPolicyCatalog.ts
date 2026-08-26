@@ -42,6 +42,7 @@ export const TOOL_EXECUTION_POLICY_CATALOG: Readonly<Record<string, Readonly<Too
 
   'contentManager/insert': vaultWriteUndo,
   'contentManager/read': readParallel,
+  'contentManager/removeProperty': vaultWriteUndo,
   'contentManager/replace': vaultWriteUndo,
   'contentManager/setProperty': vaultWriteUndo,
   'contentManager/write': vaultWriteUndo,
