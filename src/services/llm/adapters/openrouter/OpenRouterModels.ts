@@ -245,6 +245,24 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    // OpenRouter's model page advertises a 1.31M window, but the top serving
+    // provider caps at 1,048,576 — claim the cap, not the aspiration.
+    provider: 'openrouter',
+    name: 'GLM 5.3 Flash',
+    apiName: 'z-ai/glm-5.3-flash',
+    contextWindow: 1048576,
+    maxTokens: 131072,
+    inputCostPerMillion: 0.075,
+    outputCostPerMillion: 0.25,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     provider: 'openrouter',
     name: 'GLM 5V Turbo',
     apiName: 'z-ai/glm-5v-turbo',
@@ -711,6 +729,26 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // Qwen3.8 Flash is held back until its upstream capacity stabilizes: on
+  // 2026-08-27 (launch week) Alibaba's shared pool 429'd 33 of 37 eval
+  // scenarios. The id, metadata and a live smoke pass are verified — re-enable
+  // once the endpoint is reliably reachable.
+  // {
+  //   provider: 'openrouter',
+  //   name: 'Qwen3.8 Flash',
+  //   apiName: 'qwen/qwen3.8-flash',
+  //   contextWindow: 1000000,
+  //   maxTokens: 131072,
+  //   inputCostPerMillion: 0.15,
+  //   outputCostPerMillion: 0.47,
+  //   capabilities: {
+  //     supportsJSON: true,
+  //     supportsImages: true,
+  //     supportsFunctions: true,
+  //     supportsStreaming: true,
+  //     supportsThinking: true
+  //   }
+  // },
 ];
 
 export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.6-sol';
