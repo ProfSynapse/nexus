@@ -61,7 +61,7 @@ gateway reporting the upstream model it routed to, for instance — fails the
 assertion on a call that actually succeeded. Read the failure message before
 concluding the id is bad.
 
-## The two impostors
+## The three impostors
 Before treating a failure as a bad id or a bad key:
 
 1. **Token starvation on a reasoning model.** The lane sends a small output-token
@@ -78,9 +78,17 @@ Before treating a failure as a bad id or a bad key:
    same treatment, and the symptom is a parameter-rejection error, not a
    model-not-found error.
 
-Network or DNS failures in a sandboxed session are a third category and mean the
-run never reached the provider. Re-run with network access rather than recording
-a failure.
+3. **Upstream saturation on a just-launched gateway model.** The adapter
+   surfaces this as an opaque `generation failed: Provider returned error`,
+   which reads like a bad id. Reproduce the call with curl against the gateway
+   directly and read the error body: a 429 whose metadata names the upstream
+   provider's shared pool means the id is fine and the launch-day pool is
+   saturated. Retry with backoff — these typically clear within minutes — rather
+   than re-spelling the id or touching the entry.
+
+Network or DNS failures in a sandboxed session are a fourth category and mean
+the run never reached the provider. Re-run with network access rather than
+recording a failure.
 
 ## What a pass does not mean
 It returned text. It did not call a tool, hold a multi-turn conversation, or
