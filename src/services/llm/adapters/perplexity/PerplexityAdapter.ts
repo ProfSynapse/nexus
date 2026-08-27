@@ -16,6 +16,7 @@ import {
   SearchResult
 } from '../types';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
+import { buildMessagesWithConversationHistory } from '../shared/OpenAICompatHelpers';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { mapOpenAiCompatFinishReason } from '../shared/OpenAICompatHelpers';
@@ -307,7 +308,7 @@ export class PerplexityAdapter extends BaseAdapter {
     const model = options?.model || this.currentModel;
     const requestBody: PerplexityRequestBody = {
       model,
-      messages: this.buildMessages(prompt, options?.systemPrompt),
+      messages: buildMessagesWithConversationHistory(prompt, options),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       top_p: options?.topP,

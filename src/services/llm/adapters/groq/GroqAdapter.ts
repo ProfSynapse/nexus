@@ -20,6 +20,7 @@ import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
 import {
   buildBearerJsonHeaders,
+  buildMessagesWithConversationHistory,
   mapOpenAiCompatFinishReason,
   convertFunctionTools
 } from '../shared/OpenAICompatHelpers';
@@ -101,24 +102,6 @@ export class GroqAdapter extends BaseAdapter {
   }
 
   /**
-   * Resolve the outgoing message list. Tool continuations arrive as
-   * options.conversationHistory (with the system message stripped by
-   * buildToolContinuation, which expects the adapter to re-add it); dropping
-   * that history sends a continuation with no tool calls or results, and the
-   * model answers an empty conversation with an empty reply.
-   */
-  private resolveMessages(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
-    if (!options?.conversationHistory || options.conversationHistory.length === 0) {
-      return this.buildMessages(prompt, options?.systemPrompt);
-    }
-    let messages = options.conversationHistory;
-    if (options.systemPrompt && !messages.some(m => m.role === 'system')) {
-      messages = [{ role: 'system', content: options.systemPrompt }, ...messages];
-    }
-    return messages;
-  }
-
-  /**
    * Generate streaming response using async generator
    * Uses unified stream processing with automatic tool call accumulation
    */
@@ -131,7 +114,7 @@ export class GroqAdapter extends BaseAdapter {
         headers: buildBearerJsonHeaders(this.apiKey),
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.resolveMessages(prompt, options),
+          messages: buildMessagesWithConversationHistory(prompt, options),
           temperature: options?.temperature,
           max_completion_tokens: options?.maxTokens,
           top_p: options?.topP,
@@ -256,7 +239,7 @@ export class GroqAdapter extends BaseAdapter {
 
     const chatParams: ChatCompletionParams = {
       model,
-      messages: this.resolveMessages(prompt, options),
+      messages: buildMessagesWithConversationHistory(prompt, options),
       temperature: options?.temperature,
       max_completion_tokens: options?.maxTokens,
       top_p: options?.topP,
