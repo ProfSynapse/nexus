@@ -55,3 +55,12 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   (outside quotes) with spaces before parsing, preserving offsets so line
   numbers stay true. Commented-out entries are now a legitimate registry
   state. | Files: `scripts/check_model_registry.py`.
+- 2026-08-27 | The anthropic API registry gained the Claude 5 family while the
+  anthropic-claude-code twin sat at Sonnet 4.6 — nothing in the protocol pairs
+  the two registries, so an API-side update leaves the CLI twin stale until a
+  user notices missing models in the picker. Same exposure for
+  openai / openai-codex. | Added step 6 ("Update the CLI twin registry") to
+  add-model.md: a pairing table (API registry ↔ CLI twin ↔ the twin's own
+  verification command) and the rule that touching either side means deciding,
+  per model, whether the other side gets it too — verified through the twin's
+  transport, cost 0 on the CLI side. | Files: `protocols/add-model.md`.
