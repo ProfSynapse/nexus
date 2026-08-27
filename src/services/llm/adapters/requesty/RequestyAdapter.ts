@@ -207,7 +207,7 @@ export class RequestyAdapter extends BaseAdapter {
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const requestBody: Record<string, unknown> = {
       model: options?.model || this.currentModel,
-      messages: this.buildMessages(prompt, options?.systemPrompt),
+      messages: buildMessagesWithConversationHistory(prompt, options),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
