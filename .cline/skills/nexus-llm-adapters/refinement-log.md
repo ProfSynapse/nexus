@@ -65,3 +65,15 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
   `scripts/check_stream_error_wiring.py` and wired it into the verify and debug
   protocols; re-verified every factual claim against the source tree and dropped
   or rephrased the ones that no longer held. | Files: the whole skill.
+
+- 2026-08-27 | Grading Groq models exposed that GroqAdapter built requests from
+  `prompt + systemPrompt` only and never read `options.conversationHistory` —
+  every tool continuation was sent with no history, so any tool-using chat on
+  Groq went silently blank after the first call (eval: 5% pass). Also
+  `listModels()` hard-forced supportsThinking:false over the registry, and
+  `getCapabilities()` claimed a stale 128k window. | Added `resolveMessages()`
+  (OpenRouter's pattern: prefer conversationHistory, re-add the stripped system
+  prompt) to both paths, dropped the thinking override, corrected capabilities;
+  post-fix eval 97% (gpt-oss-120b) / 100% (qwen3.6-27b). Added the symptom row
+  to `references/symptoms.md`. | Files: `src/services/llm/adapters/groq/GroqAdapter.ts`,
+  `references/symptoms.md`.
