@@ -37,3 +37,21 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   default; deleted every model id, price and baseline; re-verified every
   remaining claim against source and handed eval-harness content to
   `nexus-model-eval`. | Files: the whole skill.
+
+- 2026-08-27 | Adding `z-ai/glm-5.3-flash` and `qwen/qwen3.8-flash` to the
+  OpenRouter registry, the Qwen smoke run failed with an opaque
+  `generation failed: Provider returned error` that looked like a bad id but was
+  a 429 from Alibaba's saturated shared pool (the model had launched the day
+  before); a direct curl exposed the error body and a retry with backoff
+  passed. | Added a third impostor — upstream saturation on a just-launched
+  gateway model, diagnose via direct curl, retry with backoff — and reworded
+  verify-model's anti-pattern to not hardcode the impostor count. | Files:
+  `references/smoke-harness.md`, `protocols/verify-model.md`.
+
+- 2026-08-27 | Commenting out the Qwen3.8 Flash entry (held back for upstream
+  reliability, per the user) made the gate report a phantom entry missing every
+  field: the brace walker counted braces inside `//` comments. | Added
+  `mask_line_comments()` in `check_model_registry.py` — blanks line comments
+  (outside quotes) with spaces before parsing, preserving offsets so line
+  numbers stay true. Commented-out entries are now a legitimate registry
+  state. | Files: `scripts/check_model_registry.py`.

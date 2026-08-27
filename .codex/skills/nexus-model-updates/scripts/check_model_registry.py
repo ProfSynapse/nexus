@@ -152,8 +152,23 @@ class Registry:
         self.runtime_discovery = False
 
 
+def mask_line_comments(text: str) -> str:
+    """Blank out `//` comments (outside single quotes) with spaces.
+
+    A registry may carry a whole entry commented out — held back rather than
+    deleted. Without masking, the brace walker counts the commented braces and
+    reports a phantom entry missing every field. Spaces preserve offsets so
+    reported line numbers stay true.
+    """
+    out = []
+    for line in text.split("\n"):
+        kept = strip_trailing_comment(line)
+        out.append(kept + " " * (len(line) - len(kept)))
+    return "\n".join(out)
+
+
 def parse_registry(path: Path, provider_dir: str) -> Registry | None:
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = mask_line_comments(path.read_text(encoding="utf-8", errors="replace"))
     decl = REGISTRY_DECL.search(text)
     if not decl:
         return None

@@ -70,7 +70,7 @@ structure, through a live call, to tool use.
 - Anti-pattern: reporting "added and tested" when only the unit lane ran. The
   unit lane reads the same literal you just wrote.
 - Anti-pattern: treating a smoke failure as a bad model id before ruling out the
-  two impostors in `references/smoke-harness.md`. Most first failures are one of
+  impostors in `references/smoke-harness.md`. Most first failures are one of
   them.
 - Anti-pattern: pasting credentials, tokens or `.env` contents into a report.
 
