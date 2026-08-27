@@ -2,6 +2,22 @@
 
 ## August 2026
 
+**v5.18.1** — Groq chat that survives tool use, a way to remove frontmatter, and the Claude 5 family
+
+**Frontmatter properties can finally be removed**
+- `content set-property` could write a key but never remove one — passing null wrote `property: null` into the note instead of dropping the line. The new `content remove-property` removes a property outright, or drops a single item from a list property, with the key itself going when the last item does. A property or value that is not there is an error naming what actually is, so a typo cannot report success — and the change is undoable like every other content write ([#365](https://github.com/ProfSynapse/nexus/pull/365)).
+
+**Tool-using chat on Groq works again**
+- Groq models were sent none of the conversation history when continuing after a tool call, so chat on Groq went silently blank the moment a tool was used. The history now carries through the continuation ([#368](https://github.com/ProfSynapse/nexus/pull/368)). The Groq model list was also refreshed against the live catalog: Qwen 3.6 27B added, five dead models pruned, and the provider default is now GPT-OSS 120B.
+- The same gap sat latent in the Requesty and Perplexity providers, one setting away from the identical silent-blank failure. Every compatible provider now builds its messages through the one shared, history-aware path ([#370](https://github.com/ProfSynapse/nexus/pull/370)).
+
+**New models**
+- The Claude Code provider — the subscription-billed CLI, with no API key — now offers the Claude 5 family (Fable 5, Opus 5 and Sonnet 5) and defaults to Sonnet 5 ([#372](https://github.com/ProfSynapse/nexus/pull/372)).
+- The Anthropic provider gains Claude Opus 5, and Sonnet 5's pricing is corrected to the documented $2/$10 per million tokens ([#373](https://github.com/ProfSynapse/nexus/pull/373)).
+- GLM 5.3 Flash is available through OpenRouter ([#366](https://github.com/ProfSynapse/nexus/pull/366)).
+
+---
+
 **v5.18.0** — deletes that stick, search that respects the scope you gave it, and thinking you can actually see
 
 **Reasoning shows up the same way on every provider**
