@@ -42,6 +42,24 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     }
   },
 
+  // Claude Opus 5 (native 1M context, no beta header required)
+  {
+    provider: 'anthropic',
+    name: 'Claude Opus 5',
+    apiName: 'claude-opus-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Claude Opus 4.8
   {
     provider: 'anthropic',
@@ -141,8 +159,9 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     apiName: 'claude-sonnet-5',
     contextWindow: 1000000,
     maxTokens: 128000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
+    // Docs list Sonnet 5 below the 4.6-generation Sonnet price point.
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
