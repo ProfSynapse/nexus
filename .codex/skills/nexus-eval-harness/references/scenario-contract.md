@@ -74,6 +74,13 @@ result it was supposed to get looks identical to one that works.
   case-insensitively as substrings of the actual value, and nested objects match
   partially. Assert the path on the unwrapped domain call when you care about
   arguments.
+- **Expected param names must be the schema's names, not normalizer aliases.**
+  The generated catalog advertises only the production tool's declared schema;
+  a model shown it will never produce an alias the normalizer merely accepts
+  (e.g. `destination` for `storageManager_move`, whose schema requires
+  `newPath`). An alias in `params` fails every model identically — the tell for
+  this whole class of fixture bug. Check the tool's `getSchema()` in
+  `src/agents/` before naming a param.
 - **Rounds are consumed in order** unless `allowReorder: true`, which only
   requires that every expected call appears somewhere in the exchange. Reach for
   it whenever the order is genuinely free (search-then-read versus

@@ -28,7 +28,11 @@
         - name: storageManager_move
           params:
             path: notes/summary.md
-            destination: archive/
+            # The production schema (storageManager/tools/move.ts) requires
+            # `newPath`; `destination` is only a normalizer alias the generated
+            # catalog never advertises. Substring match accepts any target
+            # under archive/.
+            newPath: archive/
       mockResponses:
         storageManager_move:
           success: true
