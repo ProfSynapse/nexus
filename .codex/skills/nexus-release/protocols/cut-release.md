@@ -64,9 +64,13 @@ do not hand-revert it, or the next bump churns it again.
 
 ### 6. Rebuild
 ```bash
+npm ci
 npm run build
 ```
-This is the same command the workflow runs, so it is your CI parity check — and
+`npm ci` first, because the workflow runs `npm ci` — a local `node_modules` that
+has drifted from `package-lock.json` can build green here and still fail on the
+tagged commit (it broke the 5.16.0 tag). `npm run build` is then the same command
+the workflow runs, so it is your CI parity check — and
 it is what refreshes the generated sources. It lints, builds the CLI, regenerates
 `src/utils/cliAssets.ts`, type-checks, bundles, compiles the connector and
 regenerates `src/utils/connectorContent.ts`. A failure here is a failure that

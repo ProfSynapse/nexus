@@ -4,6 +4,15 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-08-27 | Cutting 5.18.1 (clean release). Step 6 said only `npm run build`;
+the executor ran `npm ci` first solely because project memory recalled that
+local `node_modules` drift from `package-lock.json` broke the 5.16.0 tag. The
+workflow runs `npm ci`, so a drifted local install makes the "CI parity check"
+not parity at all — the skill knew this in `references/release-machinery.md`
+and `recover.md` but the protocol step itself never said to do it. | Added
+`npm ci` before `npm run build` in cut-release step 6 with the one-line reason.
+| `protocols/cut-release.md`.
+
 2026-08-19 | Release readiness had no guard for the newly required versioned CLI/MCP artifacts. | Added manifest/artifact/version checks and updated release machinery, bump, asset, and verification guidance. | `scripts/check_release_ready.py`, `references/release-machinery.md`, `protocols/cut-release.md`.
 
 2026-08-15 | Cutting 5.17.0. An `**Unreleased**` changelog entry already existed
