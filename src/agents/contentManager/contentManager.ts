@@ -5,7 +5,8 @@ import {
   WriteTool,
   ReplaceTool,
   InsertTool,
-  SetPropertyTool
+  SetPropertyTool,
+  RemovePropertyTool
 } from './tools';
 import NexusPlugin from '../../main';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -20,6 +21,7 @@ import { MemoryService } from '../memoryManager/services/MemoryService';
  * - replace: Replace or delete existing content with validation
  * - insert: Insert new content at a specific position
  * - setProperty: Set frontmatter properties with optional merge mode
+ * - removeProperty: Remove a frontmatter property, or one item from a list property
  */
 export class ContentManagerAgent extends BaseAgent {
   protected app: App;
@@ -63,7 +65,7 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
 
-    // Register tools (5 tools) - lazy loaded
+    // Register tools (6 tools) - lazy loaded
     this.registerLazyTool({
       slug: 'read', name: 'Read',
       description: 'Read content from a file with line range',
@@ -93,6 +95,12 @@ export class ContentManagerAgent extends BaseAgent {
       description: 'Set a frontmatter property on a note. Supports "replace" (default) and "merge" (array union with dedup) modes.',
       version: '1.0.0',
       factory: () => new SetPropertyTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'removeProperty', name: 'Remove property',
+      description: 'Remove a frontmatter property from a note. Pass a value to drop just that item from a list property; omit it to remove the whole property.',
+      version: '1.0.0',
+      factory: () => new RemovePropertyTool(app),
     });
   }
   

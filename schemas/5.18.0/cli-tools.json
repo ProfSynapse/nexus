@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-24T21:34:36.364Z",
+  "generatedAt": "2026-08-26T18:42:07.046Z",
   "selector": "--help",
-  "toolCount": 79,
+  "toolCount": 80,
   "agentCount": 14,
   "agents": {
     "baseManager": 5,
     "canvasManager": 4,
     "composer": 2,
-    "contentManager": 5,
+    "contentManager": 6,
     "data": 2,
     "elevenlabs": 3,
     "ingestManager": 2,
@@ -566,6 +566,42 @@
       ],
       "examples": [
         "content read \"path-value\" 1 --end-line 1"
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "removeProperty",
+      "description": "Remove a frontmatter property from a note. Pass a value to drop just that item from a list property; omit it to remove the whole property.",
+      "command": "content remove-property",
+      "usage": "content remove-property <path> <property> [--value <value>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the note file (string)"
+        },
+        {
+          "name": "property",
+          "flag": "--property",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Frontmatter property name to remove (e.g. \"tags\", \"aliases\", \"status\") (string)"
+        },
+        {
+          "name": "value",
+          "flag": "--value",
+          "type": "oneOfArray",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional. Omit to remove the whole property. Pass a value to remove only that item from a list property — the inverse of set-property --mode merge — e.g. --value \"[[Note]]\" to drop one link, or --value \"a,b\" to drop several. Removing the last item removes the property too. It is an error if the value is not present."
+        }
+      ],
+      "examples": [
+        "content remove-property \"path-value\" \"property-value\" --value \"value-value\""
       ]
     },
     {
