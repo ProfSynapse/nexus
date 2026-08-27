@@ -13,7 +13,7 @@ jest.mock('../../src/utils/platform', () => ({
 }));
 
 import { GroqAdapter } from '../../src/services/llm/adapters/groq/GroqAdapter';
-import { GROQ_DEFAULT_MODEL } from '../../src/services/llm/adapters/groq/GroqModels';
+import { GROQ_DEFAULT_MODEL, GROQ_MODELS } from '../../src/services/llm/adapters/groq/GroqModels';
 import { LLMProviderError, TokenUsage } from '../../src/services/llm/adapters/types';
 import { ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
 import {
@@ -144,7 +144,11 @@ describe('GroqAdapter', () => {
       ]);
     });
 
-    it('ignores conversationHistory and rebuilds messages from the prompt (current behavior)', async () => {
+    it('sends conversationHistory verbatim with the stripped system prompt re-added', async () => {
+      // Tool continuations arrive as conversationHistory (system message
+      // stripped by buildToolContinuation). Dropping it sent continuations
+      // with no tool calls or results — silently blank chat after the first
+      // tool call.
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
         requests.push(request);
@@ -159,6 +163,24 @@ describe('GroqAdapter', () => {
           { role: 'assistant', content: 'earlier answer' }
         ]
       }));
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.messages).toEqual([
+        { role: 'system', content: 'SYS' },
+        { role: 'user', content: 'earlier turn' },
+        { role: 'assistant', content: 'earlier answer' }
+      ]);
+    });
+
+    it('builds messages from the prompt when no conversationHistory is given', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]'));
+      });
+
+      const adapter = new GroqAdapter('gsk-test');
+      await collect(adapter.generateStreamAsync('current prompt', { systemPrompt: 'SYS' }));
 
       const body = JSON.parse(requests[0].body ?? '{}');
       expect(body.messages).toEqual([
@@ -245,12 +267,18 @@ describe('GroqAdapter', () => {
       await expect(new GroqAdapter('gsk-test').isAvailable()).resolves.toBe(true);
     });
 
-    it('lists static models with supportsThinking forced to false', async () => {
+    it('lists static models with the registry capability flags intact', async () => {
       const adapter = new GroqAdapter('gsk-test');
       const models = await adapter.listModels();
 
       expect(models.length).toBeGreaterThan(0);
-      expect(models.every(model => model.supportsThinking === false)).toBe(true);
+      // The registry flags must flow through unmodified — an adapter override
+      // here silently removes the reasoning toggle for every Groq model.
+      for (const model of models) {
+        const spec = GROQ_MODELS.find(m => m.apiName === model.id);
+        expect(spec).toBeDefined();
+        expect(model.supportsThinking).toBe(spec?.capabilities.supportsThinking);
+      }
       expect(models[0].pricing.currency).toBe('USD');
     });
   });
