@@ -23,6 +23,7 @@ Jest can prove and what the running plugin does.
    | No Obsidian here (container / cloud session) | `protocols/headless-obsidian.md` |
    | Run a gated live-smoke lane or the eval harness | `protocols/run-gated-lanes.md` |
    | `shippedGuidanceCommands` or `ToolManagerCliSyntax` is red | `protocols/fix-shipped-docs-drift.md` |
+   | Merge a PR (what to run first, how to gate on CI) | `protocols/merge-a-pr.md` |
    | A symptom you cannot place | `references/troubleshooting.md` |
 
 2. Derive every list from the tree, never from a document. This skill states no
