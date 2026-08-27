@@ -19,10 +19,58 @@ export const ANTHROPIC_CLAUDE_CODE_MODELS: ModelSpec[] = [
   },
   {
     provider: 'anthropic-claude-code',
+    name: 'Claude Sonnet 5',
+    apiName: 'claude-sonnet-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'anthropic-claude-code',
     name: 'Claude Sonnet 4.6',
     apiName: 'claude-sonnet-4-6',
     contextWindow: 200000,
     maxTokens: 64000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'anthropic-claude-code',
+    name: 'Claude Fable 5',
+    apiName: 'claude-fable-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'anthropic-claude-code',
+    name: 'Claude Opus 5',
+    apiName: 'claude-opus-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
     capabilities: {
@@ -67,4 +115,4 @@ export const ANTHROPIC_CLAUDE_CODE_MODELS: ModelSpec[] = [
   }
 ];
 
-export const ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL = 'claude-sonnet-4-6';
+export const ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL = 'claude-sonnet-5';

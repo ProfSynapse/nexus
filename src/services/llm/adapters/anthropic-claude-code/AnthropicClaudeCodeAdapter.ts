@@ -15,6 +15,7 @@ import {
   LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import { ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './AnthropicClaudeCodeModels';
 import { getPrimaryServerKey } from '../../../../constants/branding';
 
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
@@ -34,7 +35,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   private activeProcess: DesktopChildProcess | null = null;
 
   constructor(private vault: Vault) {
-    super('claude-code-local-auth', 'claude-sonnet-4-6', 'claude-code://local', false);
+    super('claude-code-local-auth', ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL, 'claude-code://local', false);
     this.initializeCache();
   }
 
