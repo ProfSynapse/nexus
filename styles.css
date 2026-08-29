@@ -8436,8 +8436,13 @@ body.is-mobile .nexus-task-board-shell {
 .tool-status-text-failed {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
+  /* Single line, centered via line-height (matches .tool-status-slot height —
+     the old flex centering defeated text-overflow) and ellipsized so a long
+     label + goal suffix truncates instead of blowing out the row. */
+  line-height: 1.46em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: transform 0.2s ease-out, opacity 0.2s ease-out;
 }
 

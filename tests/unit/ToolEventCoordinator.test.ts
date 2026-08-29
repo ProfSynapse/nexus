@@ -638,5 +638,207 @@ describe('ToolEventCoordinator — clearToolNameCache delegates to state manager
     coordinator.clearToolNameCache();
     expect(stateManager.getState('tool-1')).toBeUndefined();
   });
+
+  it('does NOT wipe other state manager listeners (clearStates, not clear)', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    const otherListener = jest.fn();
+    stateManager.onStateChange(otherListener);
+
+    coordinator.clearToolNameCache();
+
+    // A second subscriber must survive the between-turns reset
+    stateManager.transition('msg-2', 'tool-2', 'detected', { rawName: 'read' });
+    expect(otherListener).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ToolEventCoordinator — beginTurn', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('re-subscribes after clearToolNameCache so the next turn reaches the status bar', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // Turn 1
+    coordinator.handleToolExecutionStarted('msg-1', { id: 'call-t1', name: 'contentManager_read' });
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+
+    // Turn 1 ends — coordinator unsubscribes
+    coordinator.clearToolNameCache();
+
+    // Turn 2 begins via the ChatView loading bracket
+    coordinator.beginTurn();
+
+    coordinator.handleToolExecutionStarted('msg-2', { id: 'call-t2', name: 'storageManager_list' });
+    expect(controller.pushStatus).toHaveBeenCalledTimes(2);
+    const [, entry] = controller.pushStatus.mock.calls[1];
+    expect(entry.state).toBe('present');
+  });
+
+  it('clears the previous turn status text and its per-turn state immediately', () => {
+    const { coordinator, controller, stateManager } = makeCoordinator();
+    const statusBar = { clearStatus: jest.fn() };
+    controller.getStatusBar.mockReturnValue(statusBar);
+
+    coordinator.handleToolExecutionStarted('msg-1', { id: 'call-old', name: 'contentManager_read' });
+    coordinator.clearToolNameCache();
+
+    coordinator.beginTurn();
+
+    expect(statusBar.clearStatus).toHaveBeenCalledTimes(1);
+    expect(stateManager.getState('call-old')).toBeUndefined();
+  });
+
+  it('cancels the pending 2s hide from the previous turn', () => {
+    const { coordinator, controller } = makeCoordinator();
+    const statusBar = { clearStatus: jest.fn() };
+    controller.getStatusBar.mockReturnValue(statusBar);
+
+    coordinator.handleToolExecutionStarted('msg-1', { id: 'call-hide', name: 'contentManager_read' });
+    coordinator.clearToolNameCache();
+
+    jest.advanceTimersByTime(500);
+    coordinator.beginTurn(); // clears once, synchronously
+    statusBar.clearStatus.mockClear();
+
+    jest.advanceTimersByTime(5000);
+    // The delayed hide must NOT fire on top of the new turn
+    expect(statusBar.clearStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolEventCoordinator — goal suffix on status labels', () => {
+  it('appends the useTools goal to unwrapped inner-call labels', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_goal',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({
+            workspaceId: 'default',
+            sessionId: 's1',
+            memory: 'none yet',
+            goal: 'Find last week\'s meeting notes',
+            tool: 'content read --file-path notes.md',
+          }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.text).toMatch(/ — Find last week's meeting notes$/);
+    expect(entry.state).toBe('present');
+  });
+
+  it('captures the goal from the filtered execution wrapper event (object parameters)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // DirectToolExecutor fires the wrapper started event first; it is filtered
+    // from the status bar but must still hand over the goal.
+    coordinator.handleToolEvent('msg-1', 'started', {
+      id: 'wrap-1',
+      name: 'useTools',
+      parameters: { goal: 'Reorganize the archive', tool: 'storage move' },
+    });
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+
+    coordinator.handleToolExecutionStarted('msg-1', {
+      id: 'wrap-1_0',
+      name: 'storageManager_move',
+      parameters: { source: 'a.md', target: 'b.md' },
+    });
+
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.text).toMatch(/ — Reorganize the archive$/);
+  });
+
+  it('captures the goal from wrapper toolCall arguments (JSON string parameters)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-1', 'started', {
+      id: 'wrap-2',
+      name: 'toolManager_useTools',
+      toolCall: {
+        id: 'wrap-2',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({ goal: 'Summarize the vault', tool: 'content read' }),
+        },
+      },
+    });
+
+    coordinator.handleToolExecutionStarted('msg-1', {
+      id: 'wrap-2_0',
+      name: 'contentManager_read',
+    });
+
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.text).toMatch(/ — Summarize the vault$/);
+  });
+
+  it('leaves labels untouched when the useTools call has no meaningful goal', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_nogoal',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({ goal: '   ', tool: 'content read --file-path x.md' }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.text).not.toContain('—');
+  });
+
+  it('caps an over-long goal with an ellipsis', () => {
+    const { coordinator, controller } = makeCoordinator();
+    const longGoal = 'Investigate '.repeat(30).trim(); // > 140 chars
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_long',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({ goal: longGoal, tool: 'content read --file-path x.md' }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    const suffix = entry.text.split(' — ')[1];
+    expect(suffix.endsWith('…')).toBe(true);
+    expect(suffix.length).toBeLessThanOrEqual(140);
+  });
+
+  it('resets the goal on beginTurn so it does not bleed into the next turn', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_g1',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({ goal: 'Old goal', tool: 'content read --file-path x.md' }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    coordinator.clearToolNameCache();
+    coordinator.beginTurn();
+    controller.pushStatus.mockClear();
+
+    coordinator.handleToolExecutionStarted('msg-2', { id: 'call_g2', name: 'contentManager_read' });
+
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.text).not.toContain('Old goal');
+  });
 });
 

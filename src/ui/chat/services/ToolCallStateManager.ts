@@ -85,14 +85,15 @@ export class ToolCallStateManager {
   ): boolean {
     // Look up by exact ID first, then check for ID correlation.
     // Execution path appends `_N` suffix (e.g., call_abc_0) while detection
-    // path uses the raw LLM ID (call_abc). Match if either is a prefix of
-    // the other so they share state instead of creating duplicates.
+    // path uses the raw LLM ID (call_abc). Match only when one ID is the
+    // other plus a `_<index>` suffix so they share state instead of creating
+    // duplicates.
     let existing = this.states.get(toolCallId);
     let resolvedId = toolCallId;
 
     if (!existing) {
       for (const [id, state] of this.states) {
-        if (id.startsWith(toolCallId) || toolCallId.startsWith(id)) {
+        if (ToolCallStateManager.isBatchStepVariant(id, toolCallId)) {
           existing = state;
           resolvedId = id; // Use the existing entry's ID as canonical
           break;
@@ -172,6 +173,19 @@ export class ToolCallStateManager {
     };
   }
 
+  /**
+   * True when one ID is the other plus a `_<index>` batch-step suffix —
+   * detection registers the raw LLM ID (`call_abc`) while execution appends
+   * the step index (`call_abc_0`). Anchoring the match at that suffix
+   * boundary keeps `call_abc_1` from swallowing `call_abc_10`, which a bare
+   * mutual-prefix test would cross-match, silently merging two distinct
+   * calls and suppressing the later one's status labels.
+   */
+  private static isBatchStepVariant(a: string, b: string): boolean {
+    const [longer, shorter] = a.length >= b.length ? [a, b] : [b, a];
+    return longer.startsWith(shorter) && /^_\d+$/.test(longer.slice(shorter.length));
+  }
+
   /** Clear all state for a message (call when streaming ends) */
   clearMessage(messageId: string): void {
     const ids = this.messageToolCalls.get(messageId);
@@ -183,7 +197,18 @@ export class ToolCallStateManager {
     }
   }
 
-  /** Clear all state (call on dispose) */
+  /**
+   * Clear per-turn tool call state while KEEPING listeners subscribed.
+   * This is the between-turns reset: wiping the listener array here would
+   * silently kill every subscriber (the status bar goes dark from the next
+   * turn on), so only clear() — reserved for dispose — may do that.
+   */
+  clearStates(): void {
+    this.states.clear();
+    this.messageToolCalls.clear();
+  }
+
+  /** Clear all state AND listeners (call on dispose only) */
   clear(): void {
     this.states.clear();
     this.messageToolCalls.clear();
