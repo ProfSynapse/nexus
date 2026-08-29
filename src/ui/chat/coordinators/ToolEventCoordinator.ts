@@ -27,9 +27,12 @@ type ToolCallLike = NonNullable<ToolEventPayload['toolCall']>;
 type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
-  // Longest goal we embed in a status label. The status line also ellipsizes
-  // via CSS; this cap just keeps pathological strings out of the DOM.
-  private static readonly GOAL_MAX_LENGTH = 140;
+  // Sanity cap on the goal text. Display is NOT clipped — ToolStatusLine
+  // streams the words and follows them past the row edge — so this only
+  // bounds pathological input: 200 chars ≈ 35 words ≈ 3s of streaming, the
+  // most the line should ever be held by a single entry. The useTools
+  // contract asks for 1–3 sentences, so real goals sit well under it.
+  private static readonly GOAL_MAX_LENGTH = 200;
 
   private unsubscribe: (() => void) | null = null;
   private hideTimer: number | null = null;
@@ -330,7 +333,7 @@ export class ToolEventCoordinator {
     this.cancelHide();
     const { state, messageId } = event;
 
-    const tense: 'present' | 'past' | 'failed' =
+    let tense: 'present' | 'past' | 'failed' =
       state.phase === 'completed' ? 'past'
       : state.phase === 'failed' ? 'failed'
       : 'present';
@@ -347,13 +350,28 @@ export class ToolEventCoordinator {
     };
 
     const text = formatToolStepLabel(step, tense);
-    if (text) {
-      // Suffix the turn's goal ("Reading a.md — Find the meeting notes") so
-      // the ticker says WHY, not just which tool. The status line ellipsizes,
-      // so an over-long goal degrades to a truncated single line.
-      const display = this.currentGoal ? `${text} — ${this.currentGoal}` : text;
-      this.controller.pushStatus(messageId, { text: display, state: tense });
+    if (!text) return;
+
+    // Goal-only display: when the turn's useTools call carried a goal, show
+    // THAT instead of the per-tool label. The row's character budget (from
+    // styles.css geometry at ~0.50em/char) is ~48–58 chars on a phone and
+    // ~37 on a narrow desktop pane; a parameterized tool prefix like
+    // "Reading meeting-notes.md — " alone eats up to half of it, so the
+    // tool name is dropped, not suffixed. Failures are the exception —
+    // "Failed to run Move" is actionable in a way the goal is not — and
+    // turns without a goal (direct calls, provider-executed tools) keep the
+    // per-tool labels as the fallback.
+    let display = text;
+    if (this.currentGoal && tense !== 'failed') {
+      display = this.currentGoal;
+      // Hold the working shimmer while other steps of the batch are still
+      // active: every step now renders the same goal text, and flipping
+      // present→past→present per step would only make the line flicker.
+      if (tense === 'past' && this.stateManager.getActiveToolCalls(messageId).length > 0) {
+        tense = 'present';
+      }
     }
+    this.controller.pushStatus(messageId, { text: display, state: tense });
   }
 
   /** Remember a meaningful goal string for the active turn (trimmed, capped). */

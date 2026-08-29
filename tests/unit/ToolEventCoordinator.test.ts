@@ -708,8 +708,8 @@ describe('ToolEventCoordinator — beginTurn', () => {
   });
 });
 
-describe('ToolEventCoordinator — goal suffix on status labels', () => {
-  it('appends the useTools goal to unwrapped inner-call labels', () => {
+describe('ToolEventCoordinator — goal-only status labels', () => {
+  it('shows the useTools goal INSTEAD of the per-tool label', () => {
     const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-1', [
@@ -730,7 +730,7 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
 
     expect(controller.pushStatus).toHaveBeenCalledTimes(1);
     const [, entry] = controller.pushStatus.mock.calls[0];
-    expect(entry.text).toMatch(/ — Find last week's meeting notes$/);
+    expect(entry.text).toBe('Find last week\'s meeting notes');
     expect(entry.state).toBe('present');
   });
 
@@ -754,7 +754,7 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
 
     expect(controller.pushStatus).toHaveBeenCalledTimes(1);
     const [, entry] = controller.pushStatus.mock.calls[0];
-    expect(entry.text).toMatch(/ — Reorganize the archive$/);
+    expect(entry.text).toBe('Reorganize the archive');
   });
 
   it('captures the goal from wrapper toolCall arguments (JSON string parameters)', () => {
@@ -778,10 +778,10 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
     });
 
     const [, entry] = controller.pushStatus.mock.calls[0];
-    expect(entry.text).toMatch(/ — Summarize the vault$/);
+    expect(entry.text).toBe('Summarize the vault');
   });
 
-  it('leaves labels untouched when the useTools call has no meaningful goal', () => {
+  it('falls back to per-tool labels when the useTools call has no meaningful goal', () => {
     const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-1', [
@@ -795,12 +795,63 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
     ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
     const [, entry] = controller.pushStatus.mock.calls[0];
-    expect(entry.text).not.toContain('—');
+    expect(entry.text).toMatch(/Running|Read/i);
   });
 
-  it('caps an over-long goal with an ellipsis', () => {
+  it('keeps the actionable tool label on failure instead of the goal', () => {
     const { coordinator, controller } = makeCoordinator();
-    const longGoal = 'Investigate '.repeat(30).trim(); // > 140 chars
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_f',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({ goal: 'Tidy the archive', tool: 'storage move --source a.md --target b.md' }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    coordinator.handleToolExecutionCompleted('msg-1', 'call_f_0', null, false, 'permission denied');
+
+    const [, entry] = controller.pushStatus.mock.calls[controller.pushStatus.mock.calls.length - 1];
+    expect(entry.state).toBe('failed');
+    expect(entry.text).toMatch(/Failed to run/i);
+    expect(entry.text).not.toContain('Tidy the archive');
+  });
+
+  it('holds the working tense while other batch steps are still active, then flips to past', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-1', [
+      {
+        id: 'call_batch',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({
+            goal: 'Reorganize the archive',
+            tool: 'storage move --source a.md --target b.md, content read --file-path b.md',
+          }),
+        },
+      },
+    ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    // First inner step completes — the second is still active, so the line
+    // must NOT flicker to past-tense mid-batch.
+    coordinator.handleToolExecutionCompleted('msg-1', 'call_batch_0', {}, true);
+    let [, entry] = controller.pushStatus.mock.calls[controller.pushStatus.mock.calls.length - 1];
+    expect(entry.text).toBe('Reorganize the archive');
+    expect(entry.state).toBe('present');
+
+    // Last step completes — now the goal settles into past tense.
+    coordinator.handleToolExecutionCompleted('msg-1', 'call_batch_1', {}, true);
+    [, entry] = controller.pushStatus.mock.calls[controller.pushStatus.mock.calls.length - 1];
+    expect(entry.text).toBe('Reorganize the archive');
+    expect(entry.state).toBe('past');
+  });
+
+  it('caps a pathologically long goal', () => {
+    const { coordinator, controller } = makeCoordinator();
+    const longGoal = 'Investigate '.repeat(30).trim(); // > 200 chars
 
     coordinator.handleToolCallsDetected('msg-1', [
       {
@@ -813,9 +864,8 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
     ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
     const [, entry] = controller.pushStatus.mock.calls[0];
-    const suffix = entry.text.split(' — ')[1];
-    expect(suffix.endsWith('…')).toBe(true);
-    expect(suffix.length).toBeLessThanOrEqual(140);
+    expect(entry.text.length).toBeLessThanOrEqual(200);
+    expect(entry.text.endsWith('…')).toBe(true);
   });
 
   it('resets the goal on beginTurn so it does not bleed into the next turn', () => {
@@ -839,6 +889,7 @@ describe('ToolEventCoordinator — goal suffix on status labels', () => {
 
     const [, entry] = controller.pushStatus.mock.calls[0];
     expect(entry.text).not.toContain('Old goal');
+    expect(entry.text).toMatch(/Running|Read/i);
   });
 });
 
