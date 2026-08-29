@@ -29,6 +29,11 @@ type ToolEventData = ToolEventPayload;
 export class ToolEventCoordinator {
   private unsubscribe: (() => void) | null = null;
   private hideTimer: number | null = null;
+  // The `goal` sentence from the current turn's useTools context contract
+  // (a required parameter of every useTools call — "what you are trying to
+  // accomplish right now"). Appended to tool status labels so the ticker
+  // reads "Reading notes.md — Find last week's meeting notes".
+  private currentGoal: string | null = null;
 
   constructor(
     private controller: ToolStatusBarController,
@@ -51,10 +56,32 @@ export class ToolEventCoordinator {
       this.unsubscribe();
       this.unsubscribe = null;
     }
-    this.stateManager.clear();
+    // clearStates, NOT clear(): clear() also wipes the state manager's
+    // listener array, which would silently kill any other subscriber.
+    this.stateManager.clearStates();
+    this.currentGoal = null;
     // Hide the status bar after a short delay so the user can see the
     // final completed/failed status before it disappears.
     this.scheduleHide(2000);
+  }
+
+  /**
+   * Bracket the start of a generation turn: cancel the previous turn's
+   * pending hide, drop its stale status text and per-turn state, and
+   * re-subscribe to the state manager (clearToolNameCache unsubscribed at
+   * the end of the previous turn).
+   *
+   * ChatView calls this from its loading-state bracket (the same hook that
+   * arms the gap ticker), which fires for every generation path — send,
+   * retry, alternative — so the subscription provably exists for every
+   * turn, not just the first.
+   */
+  beginTurn(): void {
+    this.cancelHide();
+    this.controller.getStatusBar().clearStatus();
+    this.stateManager.clearStates();
+    this.currentGoal = null;
+    this.ensureListening();
   }
 
   /**
@@ -127,6 +154,9 @@ export class ToolEventCoordinator {
 
       if (isUseTools && parameters && typeof parameters === 'object') {
         const params = parameters as Record<string, unknown>;
+        // The useTools context contract requires a `goal` sentence — surface
+        // it as a suffix on this turn's status labels.
+        this.captureGoal(params.goal);
         const innerCalls: Array<{ agent: string; tool: string; parameters?: Record<string, unknown> }> =
           typeof params.tool === 'string'
             ? parseCliForDisplay(params.tool)
@@ -249,6 +279,12 @@ export class ToolEventCoordinator {
     const normalizedName = rawName.replace(/_/g, '.');
     if (normalizedName === 'useTools' || normalizedName === 'getTools' ||
         normalizedName.endsWith('.useTools') || normalizedName.endsWith('.getTools')) {
+      // The wrapper event is filtered, but its parameters carry the turn's
+      // `goal` — grab it before dropping the event so the execution path
+      // (which never re-sends the wrapper params) still gets goal suffixes.
+      if (normalizedName === 'useTools' || normalizedName.endsWith('.useTools')) {
+        this.captureGoalFromEventData(data);
+      }
       return;
     }
 
@@ -290,7 +326,7 @@ export class ToolEventCoordinator {
     this.cancelHide();
     const { state, messageId } = event;
 
-    const tense: 'present' | 'past' | 'failed' =
+    let tense: 'present' | 'past' | 'failed' =
       state.phase === 'completed' ? 'past'
       : state.phase === 'failed' ? 'failed'
       : 'present';
@@ -307,8 +343,57 @@ export class ToolEventCoordinator {
     };
 
     const text = formatToolStepLabel(step, tense);
-    if (text) {
-      this.controller.pushStatus(messageId, { text, state: tense });
+    if (!text) return;
+
+    // Goal-only display: when the turn's useTools call carried a goal, show
+    // THAT instead of the per-tool label. The row's character budget (from
+    // styles.css geometry at ~0.50em/char) is ~48–58 chars on a phone and
+    // ~37 on a narrow desktop pane; a parameterized tool prefix like
+    // "Reading meeting-notes.md — " alone eats up to half of it, so the
+    // tool name is dropped, not suffixed. Failures are the exception —
+    // "Failed to run Move" is actionable in a way the goal is not — and
+    // turns without a goal (direct calls, provider-executed tools) keep the
+    // per-tool labels as the fallback.
+    let display = text;
+    if (this.currentGoal && tense !== 'failed') {
+      display = this.currentGoal;
+      // Hold the working shimmer while other steps of the batch are still
+      // active: every step now renders the same goal text, and flipping
+      // present→past→present per step would only make the line flicker.
+      if (tense === 'past' && this.stateManager.getActiveToolCalls(messageId).length > 0) {
+        tense = 'present';
+      }
+    }
+    this.controller.pushStatus(messageId, { text: display, state: tense });
+  }
+
+  /**
+   * Remember a meaningful goal string for the active turn (trimmed).
+   * Deliberately uncapped: ToolStatusLine streams the words and follows
+   * them past the row edge, so length costs display time, never clipping.
+   */
+  private captureGoal(value: unknown): void {
+    if (typeof value !== 'string') return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    this.currentGoal = trimmed;
+  }
+
+  /** Extract a `goal` from a wrapper event's parameters (object or JSON string). */
+  private captureGoalFromEventData(data: ToolEventData): void {
+    let parameters: unknown = data?.parameters;
+    if (parameters === undefined) {
+      parameters = this.extractToolParameters(data?.toolCall);
+    }
+    if (typeof parameters === 'string') {
+      try {
+        parameters = JSON.parse(parameters);
+      } catch {
+        return;
+      }
+    }
+    if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+      this.captureGoal((parameters as Record<string, unknown>).goal);
     }
   }
 

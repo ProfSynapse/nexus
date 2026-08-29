@@ -996,9 +996,13 @@ export class ChatView extends ItemView {
       this.messageDisplay.updateMessageContent(messageId, content);
       this.toolEventCoordinator.clearToolNameCache();
     } else {
+      // NOTE: no producer currently emits (isComplete=false, isIncremental=false)
+      // — deltas auto-start the parser via updateStreamingChunk. Do NOT hang
+      // per-turn setup off this branch (the tool ticker's re-subscribe once
+      // lived here and silently never ran); turn brackets belong in
+      // handleLoadingStateChanged.
       this.streamingController.startStreaming(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
-      this.toolEventCoordinator.ensureListening();
     }
   }
 
@@ -1022,8 +1026,19 @@ export class ChatView extends ItemView {
     // covers normal completion, aborts, and errors uniformly.
     if (loading) {
       this.workingIndicatorController.begin();
+      // Re-arm the tool ticker for THIS turn. The previous turn's completion
+      // unsubscribed the ToolEventCoordinator from the state machine
+      // (clearToolNameCache), and the old re-subscribe lived in a streaming
+      // branch that never fires — so from the second turn on, no tool status
+      // ever reached the bar. This bracket fires for every generation path
+      // (send, retry, alternative), making the subscription unconditional.
+      this.toolEventCoordinator.beginTurn();
     } else {
       this.workingIndicatorController.end();
+      // Uniform teardown: MessageManager's finally block funnels completion,
+      // abort AND error through here, so an errored turn (which never emits
+      // isComplete) can no longer leave a stale "Running…" label behind.
+      this.toolEventCoordinator.clearToolNameCache();
     }
 
     if (this.chatInput) {

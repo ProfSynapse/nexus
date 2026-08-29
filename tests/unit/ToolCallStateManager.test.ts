@@ -248,6 +248,61 @@ describe('ToolCallStateManager — clearMessage()', () => {
   });
 });
 
+describe('ToolCallStateManager — clearStates()', () => {
+  it('clears per-turn state but KEEPS listeners subscribed', () => {
+    const sm = new ToolCallStateManager();
+    const listener = jest.fn();
+    sm.onStateChange(listener);
+
+    sm.transition('msg-1', 'tc-1', 'detected');
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    sm.clearStates();
+    expect(sm.getState('tc-1')).toBeUndefined();
+    expect(sm.getActiveToolCalls('msg-1')).toEqual([]);
+
+    // The between-turns reset must NOT kill subscribers — that is exactly
+    // the bug that made the tool ticker go dark from the second turn on.
+    sm.transition('msg-2', 'tc-2', 'detected');
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ToolCallStateManager — suffix-boundary correlation', () => {
+  it('does NOT cross-match step 1 with step 10 (a bare prefix test would)', () => {
+    const sm = new ToolCallStateManager();
+
+    sm.transition('msg-1', 'call_b_1', 'completed', { rawName: 'read' }, { success: true });
+
+    // 'call_b_10' starts with 'call_b_1' but the remainder is '0', not '_N' —
+    // it is a distinct batch step and must get its own lifecycle.
+    const result = sm.transition('msg-1', 'call_b_10', 'started', { rawName: 'write' });
+    expect(result).toBe(true);
+    expect(sm.getState('call_b_10')?.phase).toBe('started');
+    expect(sm.getState('call_b_1')?.phase).toBe('completed');
+  });
+
+  it('does not correlate IDs that merely share a character prefix', () => {
+    const sm = new ToolCallStateManager();
+
+    sm.transition('msg-1', 'call_abc', 'completed', undefined, { success: true });
+
+    const result = sm.transition('msg-1', 'call_abcdef', 'started');
+    expect(result).toBe(true);
+    expect(sm.getState('call_abcdef')?.phase).toBe('started');
+  });
+
+  it('still correlates a base ID with its _<index> suffixed variant', () => {
+    const sm = new ToolCallStateManager();
+
+    sm.transition('msg-1', 'call_abc', 'detected', { rawName: 'read' });
+    sm.transition('msg-1', 'call_abc_0', 'started');
+
+    expect(sm.getState('call_abc')?.phase).toBe('started');
+    expect(sm.getState('call_abc_0')).toBeUndefined(); // shares the canonical entry
+  });
+});
+
 describe('ToolCallStateManager — clear()', () => {
   it('removes all state and listeners', () => {
     const sm = new ToolCallStateManager();

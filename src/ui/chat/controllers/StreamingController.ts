@@ -96,8 +96,17 @@ export class StreamingController {
    */
   finalizeStreaming(messageId: string, finalContent: string): void {
     const streamingState = this.streamingStates.get(messageId);
+    // Drop the entry synchronously and unconditionally: getCurrentMessageId()
+    // reports the last key of this map, and a finalized turn must never stay
+    // "current". The old cleanup only ran after an async render AND only when
+    // the message element was still in the DOM — a mid-stream conversation
+    // switch or reconcile leaked the key forever, after which
+    // ToolStatusBarController silently dropped every later turn's
+    // present-tense tool status as a messageId mismatch.
+    this.streamingStates.delete(messageId);
+
     const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
-    
+
     if (streamingState && messageElement) {
       const contentElement = messageElement.querySelector('.message-bubble .message-content');
 
@@ -108,13 +117,8 @@ export class StreamingController {
           contentElement as HTMLElement,
           this.app,
           this.component
-        ).then(() => {
-          // Clean up streaming state
-          this.streamingStates.delete(messageId);
-        }).catch(error => {
+        ).catch(error => {
           console.error('[StreamingController] Error finalizing streaming:', error);
-          // Clean up anyway
-          this.streamingStates.delete(messageId);
         });
       }
     }

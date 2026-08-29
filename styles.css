@@ -8444,8 +8444,13 @@ body.is-mobile .nexus-task-board-shell {
 .tool-status-text-failed {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
+  /* Single line, centered via line-height (matches .tool-status-slot height).
+     No ellipsis: ToolStatusLine streams the text word-by-word and follows the
+     newest word via scrollLeft when the line outgrows the row, so overflow
+     stays hidden but nothing is truncated. */
+  line-height: 1.46em;
+  white-space: nowrap;
+  overflow: hidden;
   transition: transform 0.2s ease-out, opacity 0.2s ease-out;
 }
 

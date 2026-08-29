@@ -493,6 +493,99 @@ describe('ToolStatusPipeline — integration', () => {
   });
 
   // ------------------------------------------------------------------
+  // 7b. Regression: the ticker must survive into the second turn
+  // ------------------------------------------------------------------
+  describe('second turn — beginTurn() re-arms the pipeline (regression)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('full two-turn flow: turn 1 events → turn end → turn 2 events still reach the bar', () => {
+      const { coordinator, entries, streaming } = createPipeline({ messageId: null });
+
+      // ---- Turn 1 (ChatView calls beginTurn on loading=true) ----
+      coordinator.beginTurn();
+      coordinator.handleToolExecutionStarted('msg-1', {
+        id: 'turn1_call',
+        name: 'contentManager_read',
+      });
+      coordinator.handleToolExecutionCompleted('msg-1', 'turn1_call', {}, true);
+      expect(entries).toHaveLength(2);
+
+      // ---- Turn 1 ends (ChatView calls clearToolNameCache on loading=false) ----
+      coordinator.clearToolNameCache();
+
+      // ---- Turn 2 ----
+      streaming.setMessageId(null); // new turn, nothing streaming yet
+      coordinator.beginTurn();
+
+      coordinator.handleToolCallsDetected('msg-2', [
+        {
+          id: 'turn2_call',
+          function: { name: 'contentManager_read', arguments: '{"filePath":"b.md"}' },
+        },
+      ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+      coordinator.handleToolExecutionStarted('msg-2', {
+        id: 'turn2_call_0',
+        name: 'contentManager_read',
+        parameters: { filePath: 'b.md' },
+      });
+      coordinator.handleToolExecutionCompleted('msg-2', 'turn2_call_0', {}, true);
+
+      // Turn 2 produced its own detected → started → completed sequence.
+      // Before the fix, the coordinator stayed unsubscribed after turn 1 and
+      // NONE of these reached the status bar.
+      expect(entries.length).toBe(5);
+      expect(entries[2].state).toBe('present');
+      expect(entries[4].state).toBe('past');
+      expect(entries[4].text).toMatch(/Ran|Read/i);
+    });
+
+    it('turn 2 works even when turn 1 never fired a tool event', () => {
+      const { coordinator, entries } = createPipeline({ messageId: null });
+
+      // Turn 1: pure-text turn, no tools — but the turn end still clears
+      coordinator.beginTurn();
+      coordinator.clearToolNameCache();
+
+      // Turn 2: tool-first turn
+      coordinator.beginTurn();
+      coordinator.handleToolExecutionStarted('msg-2', {
+        id: 'call_after_quiet_turn',
+        name: 'storageManager_list',
+      });
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].state).toBe('present');
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // 7c. Batch-step ID correlation stays anchored at the suffix boundary
+  // ------------------------------------------------------------------
+  describe('large batch — step 10 is not swallowed by step 1', () => {
+    it('keeps call_x_10 distinct from a terminal call_x_1', () => {
+      const { coordinator, entries, stateManager } = createPipeline({ messageId: null });
+
+      coordinator.handleToolExecutionStarted('msg-1', { id: 'call_x_1', name: 'contentManager_read' });
+      coordinator.handleToolExecutionCompleted('msg-1', 'call_x_1', {}, true);
+
+      // Step 10 arrives with an ID that PREFIX-matches step 1's ID. A bare
+      // prefix correlation merged it into the terminal call_x_1 entry and its
+      // status never showed.
+      coordinator.handleToolExecutionStarted('msg-1', { id: 'call_x_10', name: 'storageManager_move' });
+
+      expect(stateManager.getState('call_x_10')?.phase).toBe('started');
+      expect(stateManager.getState('call_x_1')?.phase).toBe('completed');
+      expect(entries[entries.length - 1].state).toBe('present');
+    });
+  });
+
+  // ------------------------------------------------------------------
   // 8. Subagent filter — messageId mismatch
   // ------------------------------------------------------------------
   describe('subagent filter — messageId mismatch', () => {
