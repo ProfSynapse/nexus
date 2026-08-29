@@ -849,9 +849,9 @@ describe('ToolEventCoordinator — goal-only status labels', () => {
     expect(entry.state).toBe('past');
   });
 
-  it('caps a pathologically long goal', () => {
+  it('passes a long goal through uncapped and untruncated', () => {
     const { coordinator, controller } = makeCoordinator();
-    const longGoal = 'Investigate '.repeat(30).trim(); // > 200 chars
+    const longGoal = 'Investigate '.repeat(30).trim(); // ~360 chars
 
     coordinator.handleToolCallsDetected('msg-1', [
       {
@@ -863,9 +863,10 @@ describe('ToolEventCoordinator — goal-only status labels', () => {
       },
     ] as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
+    // ToolStatusLine streams and follows the words, so length costs display
+    // time, never clipping — the coordinator must not shorten the text.
     const [, entry] = controller.pushStatus.mock.calls[0];
-    expect(entry.text.length).toBeLessThanOrEqual(200);
-    expect(entry.text.endsWith('…')).toBe(true);
+    expect(entry.text).toBe(longGoal);
   });
 
   it('resets the goal on beginTurn so it does not bleed into the next turn', () => {

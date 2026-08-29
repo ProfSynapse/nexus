@@ -20,8 +20,8 @@ export type { ToolStatusEntry };
  */
 export class ToolStatusLine {
   // Word-streaming cadence: ~11 words/s. A typical one-sentence goal
-  // (8–12 words) plays in about a second; the 200-char coordinator cap
-  // (~35 words) tops out around 3s.
+  // (8–12 words) plays in about a second; goal text is uncapped, so a
+  // longer one simply streams longer.
   private static readonly WORD_MS = 90;
   // Minimum time a fully revealed entry holds the line before a queued
   // entry may replace it — fast tool batches stay legible.

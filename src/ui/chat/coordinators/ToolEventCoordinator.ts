@@ -27,13 +27,6 @@ type ToolCallLike = NonNullable<ToolEventPayload['toolCall']>;
 type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
-  // Sanity cap on the goal text. Display is NOT clipped — ToolStatusLine
-  // streams the words and follows them past the row edge — so this only
-  // bounds pathological input: 200 chars ≈ 35 words ≈ 3s of streaming, the
-  // most the line should ever be held by a single entry. The useTools
-  // contract asks for 1–3 sentences, so real goals sit well under it.
-  private static readonly GOAL_MAX_LENGTH = 200;
-
   private unsubscribe: (() => void) | null = null;
   private hideTimer: number | null = null;
   // The `goal` sentence from the current turn's useTools context contract
@@ -374,14 +367,16 @@ export class ToolEventCoordinator {
     this.controller.pushStatus(messageId, { text: display, state: tense });
   }
 
-  /** Remember a meaningful goal string for the active turn (trimmed, capped). */
+  /**
+   * Remember a meaningful goal string for the active turn (trimmed).
+   * Deliberately uncapped: ToolStatusLine streams the words and follows
+   * them past the row edge, so length costs display time, never clipping.
+   */
   private captureGoal(value: unknown): void {
     if (typeof value !== 'string') return;
     const trimmed = value.trim();
     if (!trimmed) return;
-    this.currentGoal = trimmed.length > ToolEventCoordinator.GOAL_MAX_LENGTH
-      ? `${trimmed.slice(0, ToolEventCoordinator.GOAL_MAX_LENGTH - 1).trimEnd()}…`
-      : trimmed;
+    this.currentGoal = trimmed;
   }
 
   /** Extract a `goal` from a wrapper event's parameters (object or JSON string). */
