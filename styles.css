@@ -6166,6 +6166,14 @@ body.is-mobile .message-content {
     line-height: 1.5;
 }
 
+/* Thinking block - same left-alignment guard as .message-content; it is a
+   sibling of .message-content inside the bubble, so it needs its own rule */
+body.is-mobile .message-reasoning,
+body.is-mobile .message-reasoning-summary,
+body.is-mobile .message-reasoning-content {
+    text-align: left;
+}
+
 /* Mobile: conversation action buttons always visible */
 body.is-mobile .conversation-actions {
     opacity: 0.7;
