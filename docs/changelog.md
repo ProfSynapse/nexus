@@ -2,6 +2,16 @@
 
 ## August 2026
 
+**v5.18.2** — a tool ticker that keeps running, and thinking text that reads straight on mobile
+
+**The tool ticker stays alive for the whole conversation**
+- The line that reports what the assistant is doing went dark after the first completed turn, so every turn after it ran with no visible sign of activity at all. It now re-arms on each turn and keeps reporting for the length of the chat. The line also shows the goal sentence behind a `useTools` call instead of a run of per-tool labels — revealed word by word, each entry held briefly before the next replaces it — and a failure still names the tool that failed ([#378](https://github.com/ProfSynapse/nexus/pull/378)).
+
+**Thinking blocks read left-aligned on mobile**
+- On phones the text inside a Thinking block was centered. Obsidian's mobile stylesheet centers chat bubble content, and only the message body carried an override; the reasoning block, its summary and its content now carry the same guard and read left-aligned like the rest of the message ([#377](https://github.com/ProfSynapse/nexus/pull/377)).
+
+---
+
 **v5.18.1** — Groq chat that survives tool use, a way to remove frontmatter, and the Claude 5 family
 
 **Frontmatter properties can finally be removed**
