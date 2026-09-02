@@ -95,7 +95,7 @@ describe('OpenRouterImageAdapter', () => {
 
       const body = parsedBody(requests[0]);
       // gemini-2.5-flash-image shuts down on 2026-10-02, so it is no longer the default.
-      expect(body.model).toBe('google/gemini-3.1-flash-lite-image');
+      expect(body.model).toBe('google/gemini-3.1-flash-image');
       expect(body.prompt).toBe('a red circle');
       expect(body).not.toHaveProperty('modalities');
       expect(body).not.toHaveProperty('messages');
@@ -265,7 +265,7 @@ describe('OpenRouterImageAdapter', () => {
     it('fills in the default model', () => {
       const result = adapter.validateImageParams(baseParams());
       expect(result.isValid).toBe(true);
-      expect(result.adjustedParams?.model).toBe('gemini-3.1-flash-lite-image');
+      expect(result.adjustedParams?.model).toBe('gemini-3.1-flash-image');
     });
 
     it('rejects an unknown model instead of guessing an OpenRouter id', () => {

@@ -48,7 +48,8 @@ export class ImageGenerationService {
       const openaiConfig = this.llmSettings.providers?.openai;
       if (openaiConfig?.apiKey && openaiConfig?.enabled) {
         const openaiAdapter = new OpenAIImageAdapter({
-          apiKey: openaiConfig.apiKey
+          apiKey: openaiConfig.apiKey,
+          vault: this.vault // Reference images go through the edits endpoint
         });
         this.adapters.set('openai', openaiAdapter);
       }

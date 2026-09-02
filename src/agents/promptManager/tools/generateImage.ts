@@ -48,7 +48,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     super(
       'generateImage',
       'Generate Image',
-      'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Reference images are supported on Google and OpenRouter.',
+      'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.',
       '2.1.0'
     );
 
@@ -220,7 +220,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       }
     }
     if (!model) {
-      model = 'gemini-3.1-flash-lite-image';
+      model = 'gemini-3.1-flash-image';
     }
 
     return { provider, model };
@@ -247,7 +247,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     }
 
     // Minimal fallback — only the most common default model
-    return ['gemini-3.1-flash-lite-image'];
+    return ['gemini-3.1-flash-image'];
   }
 
   /**
@@ -313,7 +313,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
           type: 'array',
           items: { type: 'string' },
           maxItems: 14,
-          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter. Not supported by the OpenAI provider'
+          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter; up to 16 on OpenAI'
         },
         savePath: {
           type: 'string',

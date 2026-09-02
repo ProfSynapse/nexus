@@ -232,7 +232,7 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
   },
   defaultImageModel: {
     provider: 'google',
-    model: 'gemini-3.1-flash-lite-image'
+    model: 'gemini-3.1-flash-image'
   },
   defaultVideoModel: {
     provider: 'google',

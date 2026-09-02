@@ -304,7 +304,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private xTitle: string;
 
   // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02.
-  private readonly defaultModel = 'gemini-3.1-flash-lite-image';
+  private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Aspect ratios accepted across the catalog. Individual endpoints may
   // support fewer; OpenRouter rejects those with a 400 naming the parameter.
@@ -315,7 +315,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-3.1-flash-lite-image', config?.baseUrl);
+    super(apiKey, 'gemini-3.1-flash-image', config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -562,7 +562,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * Per-image list price at the default resolution. The actual charge is in
    * the response's `usage.cost` and is recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-3.1-flash-lite-image'): Promise<CostDetails> {
+  getImageModelPricing(model = 'gemini-3.1-flash-image'): Promise<CostDetails> {
     const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.05;
 
     return Promise.resolve({

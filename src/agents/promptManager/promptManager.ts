@@ -180,7 +180,7 @@ export class PromptManagerAgent extends BaseAgent {
     if (hasGoogleKey || hasOpenAIKey || hasOpenRouterKey) {
       this.registerLazyTool({
         slug: 'generateImage', name: 'Generate Image',
-        description: 'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Reference images are supported on Google and OpenRouter.',
+        description: 'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.',
         version: '2.1.0',
         factory: () => new GenerateImageTool({
           vault: this.vault,

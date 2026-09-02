@@ -2,14 +2,19 @@
  * OpenAI Image Generation Adapter
  * Location: src/services/llm/adapters/openai/OpenAIImageAdapter.ts
  *
- * Speaks the Images API (POST /v1/images/generations) with an explicit
- * gpt-image-* model. The earlier Responses-API route (a chat model plus the
+ * Speaks the Images API with an explicit gpt-image-* model:
+ * POST /v1/images/generations for a prompt alone, and the multipart
+ * POST /v1/images/edits when reference images are supplied (up to 16, read
+ * from the vault). The earlier Responses-API route (a chat model plus the
  * image_generation tool) picked the image model for us and hid its price.
  *
  * Reference: https://developers.openai.com/api/docs/api-reference/images/create
  */
 
+import { TFile, Vault } from 'obsidian';
 import { BaseImageAdapter } from '../BaseImageAdapter';
+import { ProviderHttpResponse } from '../shared/ProviderHttpClient';
+import { buildMultipartFormData, MultipartField } from '../../utils/MultipartFormDataBuilder';
 import {
   ImageGenerationParams,
   ImageGenerationResponse,
@@ -77,6 +82,22 @@ interface OpenAIImagesResponse {
 }
 
 const FIXED_SIZES = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
+
+/** The Images edits endpoint accepts up to 16 input images for GPT image models. */
+const MAX_REFERENCE_IMAGES = 16;
+
+const REFERENCE_MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp'
+};
+
+interface ReferenceImagePart {
+  bytes: ArrayBuffer;
+  filename: string;
+  mimeType: string;
+}
 
 // Pixel dimensions per aspect ratio for models that accept arbitrary sizes.
 // gpt-image-2 rejects any dimension not divisible by 16, so every entry is an
@@ -157,12 +178,24 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
   private readonly defaultModel = 'gpt-image-2';
+  private vault: Vault | null = null;
 
-  constructor(config?: ProviderConfig) {
+  constructor(config?: ProviderConfig & { vault?: Vault }) {
     const apiKey = config?.apiKey || '';
     super(apiKey, 'gpt-image-2', config?.baseUrl);
 
+    if (config?.vault) {
+      this.vault = config.vault;
+    }
+
     this.initializeCache();
+  }
+
+  /**
+   * Set vault for reading reference images
+   */
+  setVault(vault: Vault): void {
+    this.vault = vault;
   }
 
   /**
@@ -190,21 +223,25 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         requestBody.size = size;
       }
 
-      // Retries cover 408/409/429/5xx only; a 4xx rejection is final.
-      const result = await this.request<OpenAIImagesResponse>({
-        url: `${this.baseUrl}/images/generations`,
-        operation: 'image generation',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify(requestBody),
-        timeoutMs: 120_000,
-        retries: 2
-      });
+      const hasReferenceImages = !!params.referenceImages && params.referenceImages.length > 0;
 
-      this.assertOk(result, `OpenAI image generation failed: HTTP ${result.status}`);
+      // Retries cover 408/409/429/5xx only; a 4xx rejection is final.
+      const result = hasReferenceImages
+        ? await this.requestEdit(model, params, size)
+        : await this.request<OpenAIImagesResponse>({
+          url: `${this.baseUrl}/images/generations`,
+          operation: 'image generation',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify(requestBody),
+          timeoutMs: 120_000,
+          retries: 2
+        });
+
+      this.assertOk(result, `OpenAI image ${hasReferenceImages ? 'edit' : 'generation'} failed: HTTP ${result.status}`);
 
       if (!result.json) {
         throw new Error('No response returned from OpenAI image generation');
@@ -284,10 +321,18 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       warnings.push('OpenAI image generation produces one image per request; numberOfImages ignored');
     }
 
-    // Reference images go through /v1/images/edits (multipart), which this
-    // adapter does not implement.
     if (params.referenceImages && params.referenceImages.length > 0) {
-      errors.push('Reference images are not supported for OpenAI image generation');
+      if (params.referenceImages.length > MAX_REFERENCE_IMAGES) {
+        errors.push(`Too many reference images. OpenAI image edits accept at most ${MAX_REFERENCE_IMAGES}`);
+      }
+      if (!this.vault) {
+        errors.push('Vault not configured - cannot load reference images');
+      }
+      for (const path of params.referenceImages) {
+        if (!this.getReferenceMimeType(path)) {
+          errors.push(`Invalid reference image format: ${path}. Supported formats: .png, .jpg, .jpeg, .webp`);
+        }
+      }
     }
 
     if (!params.model) {
@@ -376,6 +421,75 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   }
 
   // Private helper methods
+
+  /**
+   * POST /v1/images/edits: the prompt plus every reference image as an
+   * `image[]` part. Same response shape as generations.
+   */
+  private async requestEdit(
+    model: string,
+    params: ImageGenerationParams,
+    size: string | undefined
+  ): Promise<ProviderHttpResponse<OpenAIImagesResponse>> {
+    const fields: MultipartField[] = [
+      { name: 'model', value: model },
+      { name: 'prompt', value: params.prompt },
+      { name: 'n', value: '1' },
+      { name: 'output_format', value: 'png' }
+    ];
+    if (size) {
+      fields.push({ name: 'size', value: size });
+    }
+    for (const part of await this.loadReferenceImages(params.referenceImages ?? [])) {
+      fields.push({ name: 'image[]', value: part.bytes, filename: part.filename, contentType: part.mimeType });
+    }
+
+    const { body, contentType } = buildMultipartFormData(fields);
+    return this.request<OpenAIImagesResponse>({
+      url: `${this.baseUrl}/images/edits`,
+      operation: 'image edit',
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body,
+      timeoutMs: 180_000,
+      retries: 2
+    });
+  }
+
+  private async loadReferenceImages(paths: string[]): Promise<ReferenceImagePart[]> {
+    if (!this.vault) {
+      throw new Error('Vault not configured - cannot load reference images');
+    }
+
+    const parts: ReferenceImagePart[] = [];
+    for (const path of paths) {
+      const file = this.vault.getAbstractFileByPath(path);
+      if (!file) {
+        throw new Error(`Reference image not found: ${path}`);
+      }
+      if (!(file instanceof TFile)) {
+        throw new Error(`Reference path is not a file: ${path}`);
+      }
+      const mimeType = this.getReferenceMimeType(path);
+      if (!mimeType) {
+        throw new Error(`Invalid reference image format: ${path}`);
+      }
+      parts.push({
+        bytes: await this.vault.readBinary(file),
+        filename: file.name,
+        mimeType
+      });
+    }
+    return parts;
+  }
+
+  private getReferenceMimeType(path: string): string | undefined {
+    const ext = path.toLowerCase().split('.').pop() || '';
+    return REFERENCE_MIME_TYPES[ext];
+  }
 
   private buildImageResponse(
     response: OpenAIImagesResponse,

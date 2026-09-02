@@ -129,7 +129,7 @@ export class DefaultsTab {
       } : undefined,
       temperature: llmSettings?.defaultTemperature ?? 0.5,
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
-      imageModel: llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-lite-image',
+      imageModel: llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       transcriptionProvider: llmSettings?.defaultTranscriptionModel?.provider,
       transcriptionModel: llmSettings?.defaultTranscriptionModel?.model,
       workspaceId: pluginSettings.defaultWorkspaceId || null,

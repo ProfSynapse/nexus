@@ -55,6 +55,44 @@ describe('Settings', () => {
     });
   });
 
+  it('moves a saved gemini-2.5-flash-image default to gemini-3.1-flash-image and keeps the provider', async () => {
+    const plugin = {
+      loadData: jest.fn(async () => ({
+        llmProviders: {
+          defaultImageModel: { provider: 'openrouter', model: 'gemini-2.5-flash-image' }
+        }
+      })),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect(settings.settings.llmProviders.defaultImageModel).toEqual({
+      provider: 'openrouter',
+      model: 'gemini-3.1-flash-image'
+    });
+  });
+
+  it('leaves a saved image default alone when it is not the retired model', async () => {
+    const plugin = {
+      loadData: jest.fn(async () => ({
+        llmProviders: {
+          defaultImageModel: { provider: 'google', model: 'gemini-3.1-flash-lite-image' }
+        }
+      })),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect(settings.settings.llmProviders.defaultImageModel).toEqual({
+      provider: 'google',
+      model: 'gemini-3.1-flash-lite-image'
+    });
+  });
+
   it('does not load or overwrite runtime pluginStorage state through normal settings saves', async () => {
     const initialData = {
       enabledVault: true,
