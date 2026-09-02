@@ -31,6 +31,7 @@ import {
   StreamChunk
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
+import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp';
 
@@ -117,62 +118,6 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
   '8:1': [1024, 128]
 };
 
-/**
- * Read width and height from a PNG, JPEG or WebP header. Returns null when
- * the bytes are not one of those or the header is truncated.
- */
-export function readImageDimensions(buffer: Buffer): { width: number; height: number } | null {
-  // PNG: signature, then IHDR with width/height as big-endian u32 at 16 and 20.
-  if (buffer.length >= 24 && buffer.readUInt32BE(0) === 0x89504e47 && buffer.toString('ascii', 12, 16) === 'IHDR') {
-    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
-  }
-
-  // JPEG: walk segments to the first start-of-frame marker.
-  if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
-    let offset = 2;
-    while (offset + 9 <= buffer.length) {
-      if (buffer[offset] !== 0xff) {
-        return null;
-      }
-      const marker = buffer[offset + 1];
-      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-        offset += 2; // standalone marker, no length
-        continue;
-      }
-      const length = buffer.readUInt16BE(offset + 2);
-      const isStartOfFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
-      if (isStartOfFrame) {
-        return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
-      }
-      if (length < 2) {
-        return null;
-      }
-      offset += 2 + length;
-    }
-    return null;
-  }
-
-  // WebP: RIFF....WEBP then a VP8 / VP8L / VP8X chunk.
-  if (buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
-    const chunk = buffer.toString('ascii', 12, 16);
-    if (chunk === 'VP8 ') {
-      return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
-    }
-    if (chunk === 'VP8L') {
-      const bits = buffer.readUInt32LE(21);
-      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
-    }
-    if (chunk === 'VP8X') {
-      return {
-        width: (buffer.readUIntLE(24, 3)) + 1,
-        height: (buffer.readUIntLE(27, 3)) + 1
-      };
-    }
-  }
-
-  return null;
-}
-
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -195,7 +140,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
       // now answers "No endpoints found".
       openRouterId: 'google/gemini-2.5-flash-image',
-      displayName: 'Nano Banana (via OpenRouter)',
+      displayName: 'Nano Banana legacy, shuts down 2026-10-02 (via OpenRouter)',
       costPerImage: 0.039,
       pricingNote: '1290 output tokens at $30/M',
       maxReferenceImages: 3,
@@ -205,7 +150,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     },
     'gemini-3-pro-image-preview': {
       openRouterId: 'google/gemini-3-pro-image-preview',
-      displayName: 'Nano Banana Pro (via OpenRouter)',
+      displayName: 'Nano Banana Pro preview (via OpenRouter)',
       costPerImage: 0.134,
       pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
       maxReferenceImages: 14,
@@ -215,7 +160,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     },
     'gemini-3.1-flash-image-preview': {
       openRouterId: 'google/gemini-3.1-flash-image-preview',
-      displayName: 'Nano Banana 2 (via OpenRouter)',
+      displayName: 'Nano Banana 2 preview (via OpenRouter)',
       costPerImage: 0.067,
       pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
       maxReferenceImages: 14,
@@ -277,7 +222,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     // but Google retires previews (2.5's is already gone), so prefer these.
     'gemini-3.1-flash-image': {
       openRouterId: 'google/gemini-3.1-flash-image',
-      displayName: 'Nano Banana 2 GA (via OpenRouter)',
+      displayName: 'Nano Banana 2 (via OpenRouter)',
       costPerImage: 0.067,
       pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
       maxReferenceImages: 14,
@@ -297,7 +242,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     },
     'gemini-3-pro-image': {
       openRouterId: 'google/gemini-3-pro-image',
-      displayName: 'Nano Banana Pro GA (via OpenRouter)',
+      displayName: 'Nano Banana Pro (via OpenRouter)',
       costPerImage: 0.134,
       pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
       maxReferenceImages: 14,
@@ -358,7 +303,8 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private httpReferer: string;
   private xTitle: string;
 
-  private readonly defaultModel = 'gemini-2.5-flash-image';
+  // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02.
+  private readonly defaultModel = 'gemini-3.1-flash-lite-image';
 
   // Aspect ratios accepted across the catalog. Individual endpoints may
   // support fewer; OpenRouter rejects those with a 400 naming the parameter.
@@ -369,7 +315,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-2.5-flash-image', config?.baseUrl);
+    super(apiKey, 'gemini-3.1-flash-lite-image', config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -616,7 +562,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * Per-image list price at the default resolution. The actual charge is in
    * the response's `usage.cost` and is recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
+  getImageModelPricing(model = 'gemini-3.1-flash-lite-image'): Promise<CostDetails> {
     const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.05;
 
     return Promise.resolve({
@@ -704,9 +650,10 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       return fromHeader;
     }
 
-    if (buffer.length >= 4 && buffer.readUInt32BE(0) === 0x89504e47) return 'png';
-    if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) return 'jpeg';
-    if (buffer.length >= 12 && buffer.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+    const sniffed = sniffImageFormat(buffer);
+    if (sniffed) {
+      return sniffed;
+    }
 
     throw new Error(`Unsupported image format from OpenRouter: ${mediaType || 'unknown media type'}`);
   }

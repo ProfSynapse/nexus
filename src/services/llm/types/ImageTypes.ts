@@ -6,8 +6,8 @@
  * 
  * Used by:
  * - BaseImageAdapter: Abstract base class for image adapters
- * - OpenAIImageAdapter: OpenAI gpt-image-1 implementation (available but disabled)
- * - GeminiImageAdapter: Google Imagen 4 implementation
+ * - OpenAIImageAdapter: OpenAI Images API (gpt-image-2 family; adapter present, provider not wired)
+ * - GeminiImageAdapter: Google Nano Banana (Gemini image) implementation
  * - ImageGenerationService: Core orchestration service
  * - ImageFileManager: Vault file operations
  * - GenerateImageMode: MCP interface mode
@@ -23,8 +23,8 @@ export interface ImageGenerationParams {
   size?: string; // Legacy support for pixel dimensions (converted to aspectRatio)
   aspectRatio?: AspectRatio; // Nano Banana aspect ratios
   numberOfImages?: number; // 1-4 images
-  imageSize?: NanoBananaImageSize; // Image resolution: 1K, 2K, or 4K
-  referenceImages?: string[]; // Vault-relative paths (max 3 for 2.5-flash, max 14 for 3-pro)
+  imageSize?: NanoBananaImageSize; // Image resolution: 512px, 1K, 2K, or 4K (per-model availability)
+  referenceImages?: string[]; // Vault-relative paths; per-model limit enforced by the adapter (3 for 2.5-flash, 14 for 3.x)
   savePath: string; // vault relative path
   sessionId?: string;
   context?: string;
@@ -180,11 +180,11 @@ export interface GoogleRequestContent {
 
 export interface GoogleImageConfig {
   aspectRatio?: string;
-  imageSize?: '1K' | '2K' | '4K';
+  imageSize?: '512' | '1K' | '2K' | '4K'; // wire value; '512px' is mapped to '512'
 }
 
 export interface GoogleImageGenerationRequest {
-  model: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview';
+  model: string; // Gemini image model id, see GeminiImageAdapter.modelSpecs
   contents: GoogleRequestContent[];
   generationConfig?: {
     responseModalities?: ('TEXT' | 'IMAGE')[];
@@ -239,20 +239,22 @@ export class ImageGenerationError extends LLMProviderError {
 export type ImageProvider = 'openai' | 'google' | 'openrouter'; // OpenAI available but not active
 
 export type ImageModel =
-  | 'gpt-image-1'              // OpenAI (available but not active)
-  | 'gemini-2.5-flash-image'   // Google Nano Banana (fast)
-  | 'gemini-3-pro-image-preview' // Google Nano Banana Pro (advanced)
-  | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 (flash speed, pro quality)
+  | 'gpt-image-1'              // OpenAI GPT Image 1 (adapter present, provider not wired)
+  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (adapter present, provider not wired)
+  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (adapter present, provider not wired)
+  | 'gemini-2.5-flash-image'   // Google Nano Banana legacy, shuts down 2026-10-02
+  | 'gemini-3-pro-image-preview' // Google Nano Banana Pro preview id
+  | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 preview id
   | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
   | 'gpt-5.4-image-2'                // OpenAI GPT-5.4 Image 2 (OpenRouter only)
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
   | 'flux-2-flex'                    // Black Forest Labs FLUX.2 Flex (OpenRouter only)
   | 'flux-2-klein-4b'                // Black Forest Labs FLUX.2 Klein 4B (OpenRouter only)
-  | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id (OpenRouter only)
-  | 'gemini-3.1-flash-lite-image'    // Google Nano Banana 2 Lite (OpenRouter only)
-  | 'gemini-3-pro-image'             // Google Nano Banana Pro, GA id (OpenRouter only)
+  | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id (Google direct and OpenRouter)
+  | 'gemini-3.1-flash-lite-image'    // Google Nano Banana 2 Lite, the default (Google direct and OpenRouter)
+  | 'gemini-3-pro-image'             // Google Nano Banana Pro, GA id (Google direct and OpenRouter)
   | 'gpt-5-image-mini'               // OpenAI GPT-5 Image Mini (OpenRouter only)
-  | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter only)
+  | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter, and the OpenAI adapter)
   | 'seedream-4.5'                   // ByteDance Seedream 4.5 (OpenRouter only)
   | 'seedream-5-lite';               // ByteDance Seedream 5.0 Lite (OpenRouter only)
 

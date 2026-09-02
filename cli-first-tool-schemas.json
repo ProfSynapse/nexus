@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-02T11:39:35.581Z",
+  "generatedAt": "2026-09-02T12:27:15.907Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1779,7 +1779,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-2.5-flash-image). Available: gemini-2.5-flash-image, gemini-3-pro-image-preview, gemini-3.1-flash-image-preview, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gemini-3.1-flash-image, gemini-3.1-flash-lite-image, gemini-3-pro-image, gpt-5-image-mini, gpt-image-2, seedream-4.5, seedream-5-lite (One of: [\"gemini-2.5-flash-image\", \"gemini-3-pro-image-preview\", \"gemini-3.1-flash-image-preview\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gemini-3.1-flash-image\", \"gemini-3.1-flash-lite-image\", \"gemini-3-pro-image\", \"gpt-5-image-mini\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-lite-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-5-image-mini, gpt-image-2, seedream-4.5, seedream-5-lite (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gemini-3.1-flash-image-preview\", \"gemini-3-pro-image-preview\", \"gemini-2.5-flash-image\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-5-image-mini\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\"])"
         },
         {
           "name": "aspectRatio",
@@ -1803,7 +1803,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image resolution. 512px only for gemini-3.1-flash-image-preview. 4K available for gemini-3-pro-image-preview and gemini-3.1-flash-image-preview (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
+          "description": "[OPTIONAL] Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image and gemini-3-pro-image. Not accepted by gemini-2.5-flash-image or the FLUX models. (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
         },
         {
           "name": "referenceImages",
@@ -1811,7 +1811,7 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Reference images for style/composition. Max 3 for 2.5-flash, max 14 for 3-pro (Array of a string) [max items: 14]"
+          "description": "[OPTIONAL] Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter (Array of a string) [max items: 14]"
         },
         {
           "name": "savePath",

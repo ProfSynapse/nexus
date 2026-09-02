@@ -111,7 +111,7 @@ export class ModelAgentDefaultsResolver {
       agentModel: llmProviders?.agentModel?.model || null,
       agentThinkingSettings,
       imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
-      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-3.1-flash-lite-image',
       speechProvider: llmProviders?.defaultSpeechModel?.provider || null,
       speechModel: llmProviders?.defaultSpeechModel?.model || null,
       speechVoice: llmProviders?.defaultSpeechModel?.voice || null,

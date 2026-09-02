@@ -78,7 +78,7 @@ describe('OpenRouterImageAdapter', () => {
   });
 
   describe('request shape', () => {
-    it('posts to /api/v1/images with the GA Gemini 2.5 id for the default model', async () => {
+    it('posts to /api/v1/images with Nano Banana 2 Lite as the default model', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
         requests.push(request);
@@ -94,12 +94,26 @@ describe('OpenRouterImageAdapter', () => {
       expect(requests[0].headers?.Authorization).toBe('Bearer or-test');
 
       const body = parsedBody(requests[0]);
-      // The retired google/gemini-2.5-flash-image-preview id returns "No endpoints found".
-      expect(body.model).toBe('google/gemini-2.5-flash-image');
+      // gemini-2.5-flash-image shuts down on 2026-10-02, so it is no longer the default.
+      expect(body.model).toBe('google/gemini-3.1-flash-lite-image');
       expect(body.prompt).toBe('a red circle');
       expect(body).not.toHaveProperty('modalities');
       expect(body).not.toHaveProperty('messages');
       expect(body).not.toHaveProperty('n');
+    });
+
+    it('maps gemini-2.5-flash-image to the GA id, not the retired preview id', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+
+      const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
+      await adapter.generateImage(baseParams({ model: 'gemini-2.5-flash-image' }));
+
+      // google/gemini-2.5-flash-image-preview returns "No endpoints found".
+      expect(parsedBody(requests[0]).model).toBe('google/gemini-2.5-flash-image');
     });
 
     it('sends aspect_ratio and maps imageSize to the resolution enum for Gemini 3.x', async () => {
@@ -251,7 +265,7 @@ describe('OpenRouterImageAdapter', () => {
     it('fills in the default model', () => {
       const result = adapter.validateImageParams(baseParams());
       expect(result.isValid).toBe(true);
-      expect(result.adjustedParams?.model).toBe('gemini-2.5-flash-image');
+      expect(result.adjustedParams?.model).toBe('gemini-3.1-flash-lite-image');
     });
 
     it('rejects an unknown model instead of guessing an OpenRouter id', () => {

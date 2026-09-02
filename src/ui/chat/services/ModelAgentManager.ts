@@ -75,7 +75,7 @@ export class ModelAgentManager {
   private agentModel: string | null = null;
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private imageProvider: 'google' | 'openrouter' = 'google';
-  private imageModel = 'gemini-2.5-flash-image';
+  private imageModel = 'gemini-3.1-flash-lite-image';
   private speechProvider: DefaultSpeechModelSettings['provider'] | null = null;
   private speechModel: DefaultSpeechModelSettings['model'] | null = null;
   private speechVoice: DefaultSpeechModelSettings['voice'] | null = null;
