@@ -73,3 +73,23 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   registry-anatomy: a sibling's separator is not evidence, and an unreachable
   catalog means asking the user for the listing page rather than stopping. |
   Files: `references/registry-anatomy.md`.
+- 2026-09-02 | OpenRouter had split image generation onto a dedicated Image API
+  ten weeks earlier and three of seven shipped image models were dead (the
+  default's preview id retired; FLUX 404 on chat completions). Nothing in this
+  skill covered image models: they live in adapter-local catalogs the gate
+  cannot see, their enum is embedded in the committed tool catalogs, and the
+  provider's own listing was wrong twice (a resolution advertised then rejected;
+  a listed id with an empty endpoints array). | Added `protocols/add-image-model.md`
+  — transport choice, the two catalog commands, copy-the-endpoint-parameters
+  rule, catalog regeneration, and a mandatory live call with a mundane prompt —
+  and a workflow row pointing at it. | Files: `protocols/add-image-model.md`,
+  `SKILL.md`.
+- 2026-09-02 | Live calls through the rewritten Gemini and OpenAI adapters found
+  two silent overcharges the docs never state: Google accepts `imageSize:
+  "512px"` and renders a 1K image (the enum is `"512"`), and OpenAI with no
+  `size` chose 1536x1024 at `high` for gpt-image-1-mini, five times list.
+  gpt-image-2 also rejects any dimension not divisible by 16. | Added three
+  guideline bullets to `protocols/add-image-model.md`: read the wire enum and
+  compare token counts across spellings, never let a token-priced provider pick
+  size/quality, and the divisible-by-16 rule. | Files:
+  `protocols/add-image-model.md`.
