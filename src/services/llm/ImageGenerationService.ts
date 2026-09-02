@@ -6,6 +6,7 @@
 
 import { Vault } from 'obsidian';
 import { GeminiImageAdapter } from './adapters/google/GeminiImageAdapter';
+import { OpenAIImageAdapter } from './adapters/openai/OpenAIImageAdapter';
 import { OpenRouterImageAdapter } from './adapters/openrouter/OpenRouterImageAdapter';
 import { ImageFileManager } from './ImageFileManager';
 import { 
@@ -43,18 +44,15 @@ export class ImageGenerationService {
         return;
       }
 
-      // Initialize OpenAI adapter (DISABLED - available but not active)
-      // Uncomment the block below to enable OpenAI image generation
-      /*
+      // Initialize OpenAI adapter if API key is available and enabled
       const openaiConfig = this.llmSettings.providers?.openai;
       if (openaiConfig?.apiKey && openaiConfig?.enabled) {
         const openaiAdapter = new OpenAIImageAdapter({
-          apiKey: openaiConfig.apiKey
+          apiKey: openaiConfig.apiKey,
+          vault: this.vault // Reference images go through the edits endpoint
         });
         this.adapters.set('openai', openaiAdapter);
-        console.log('OpenAI image adapter initialized with plugin settings');
       }
-      */
 
       // Initialize Google adapter if API key is available and enabled
       const googleConfig = this.llmSettings.providers?.google;
@@ -211,14 +209,14 @@ export class ImageGenerationService {
     }
 
     // Add unavailable providers if no API keys are configured
-    const allProviders: ImageProvider[] = ['openai', 'google', 'openrouter']; // OpenAI available but disabled
+    const allProviders: ImageProvider[] = ['openai', 'google', 'openrouter'];
     for (const provider of allProviders) {
       if (!providers.find(p => p.provider === provider)) {
         providers.push({
           provider,
           available: false,
           models: [],
-          error: provider === 'openai' ? 'Provider disabled (available in code)' : 'API key not configured'
+          error: 'API key not configured'
         });
       }
     }

@@ -74,8 +74,8 @@ export class ModelAgentManager {
   private agentProvider: string | null = null;
   private agentModel: string | null = null;
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
-  private imageProvider: 'google' | 'openrouter' = 'google';
-  private imageModel = 'gemini-3.1-flash-lite-image';
+  private imageProvider: 'google' | 'openrouter' | 'openai' = 'google';
+  private imageModel = 'gemini-3.1-flash-image';
   private speechProvider: DefaultSpeechModelSettings['provider'] | null = null;
   private speechModel: DefaultSpeechModelSettings['model'] | null = null;
   private speechVoice: DefaultSpeechModelSettings['voice'] | null = null;
@@ -585,7 +585,7 @@ export class ModelAgentManager {
   /**
    * Get image provider
    */
-  getImageProvider(): 'google' | 'openrouter' {
+  getImageProvider(): 'google' | 'openrouter' | 'openai' {
     return this.imageProvider;
   }
 
@@ -599,7 +599,7 @@ export class ModelAgentManager {
   /**
    * Set image model (provider and model)
    */
-  setImageModel(provider: 'google' | 'openrouter', model: string): void {
+  setImageModel(provider: 'google' | 'openrouter' | 'openai', model: string): void {
     this.imageProvider = provider;
     this.imageModel = model;
   }

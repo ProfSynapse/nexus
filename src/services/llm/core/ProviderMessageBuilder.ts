@@ -111,7 +111,7 @@ export interface StreamingOptions {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;

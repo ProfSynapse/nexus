@@ -93,9 +93,27 @@ export class Settings {
                         ...(loadedProviders.providers || {})
                     }
                 };
+                this.migrateRetiredImageModel();
             }
         } catch {
             // Continue with defaults - plugin should still function
+        }
+    }
+
+    /**
+     * gemini-2.5-flash-image shuts down on 2026-10-02. A saved default that
+     * still names it would start failing on that date, so it moves to the
+     * current Nano Banana 2 id, which both Google direct and OpenRouter serve.
+     * The provider is kept.
+     */
+    private migrateRetiredImageModel(): void {
+        const llmProviders = this.settings.llmProviders;
+        const selection = llmProviders?.defaultImageModel;
+        if (llmProviders && selection?.model === 'gemini-2.5-flash-image') {
+            llmProviders.defaultImageModel = {
+                ...selection,
+                model: 'gemini-3.1-flash-image'
+            };
         }
     }
 

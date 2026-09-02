@@ -84,8 +84,8 @@ export class PromptParser {
         errors.push(`${prefix}: savePath must be relative to vault root`);
       }
 
-      if (imageConfig.provider && !['google', 'openrouter'].includes(imageConfig.provider)) {
-        errors.push(`${prefix}: provider must be 'google' or 'openrouter'`);
+      if (imageConfig.provider && !['google', 'openrouter', 'openai'].includes(imageConfig.provider)) {
+        errors.push(`${prefix}: provider must be 'google', 'openrouter' or 'openai'`);
       }
 
     }

@@ -211,7 +211,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   private vault: Vault | null = null;
   // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02; Google
   // recommends Nano Banana 2 Lite as the transition.
-  private readonly defaultModel = 'gemini-3.1-flash-lite-image';
+  private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Supported aspect ratios for Nano Banana models
   private readonly nanoBananaAspectRatios: string[] = [
@@ -221,7 +221,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   constructor(config?: ProviderConfig & { vault?: Vault }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-3.1-flash-lite-image', config?.baseUrl);
+    super(apiKey, 'gemini-3.1-flash-image', config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -483,7 +483,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
    * List price for one 1K image. The actual charge is computed from the
    * response's image token count and recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-3.1-flash-lite-image'): Promise<CostDetails> {
+  getImageModelPricing(model = 'gemini-3.1-flash-image'): Promise<CostDetails> {
     const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.039;
 
     return Promise.resolve({

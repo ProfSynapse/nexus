@@ -52,7 +52,7 @@ export interface StreamingOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   temperature?: number; // 0.0-1.0, controls randomness
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;

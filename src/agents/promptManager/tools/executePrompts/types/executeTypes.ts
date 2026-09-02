@@ -59,7 +59,7 @@ export interface ImageGenerationRequest extends BaseBatchRequest {
   /** The prompt text describing the image to generate */
   prompt: string;
   /** Image generation provider — defaults to user settings or first available */
-  provider?: 'google' | 'openrouter';
+  provider?: 'google' | 'openrouter' | 'openai';
   /** Image generation model — defaults to user settings or first available for provider */
   model?: string;
   /** Image aspect ratio */
@@ -105,7 +105,7 @@ export interface TextPromptConfig {
 export interface ImagePromptConfig {
   type: 'image';
   prompt: string;
-  provider?: 'google' | 'openrouter';
+  provider?: 'google' | 'openrouter' | 'openai';
   model?: string;
   aspectRatio?: AspectRatio;
   savePath: string;

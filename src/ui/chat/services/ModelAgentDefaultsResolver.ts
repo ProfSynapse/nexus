@@ -19,7 +19,7 @@ interface PluginWithSettings {
         defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
         agentThinking?: ThinkingSettings;
-        defaultImageModel?: { provider: 'google' | 'openrouter'; model: string };
+        defaultImageModel?: { provider: 'google' | 'openrouter' | 'openai'; model: string };
         defaultTranscriptionModel?: { provider: string; model: string };
         defaultSpeechModel?: DefaultSpeechModelSettings;
         defaultRealtimeVoiceModel?: DefaultRealtimeVoiceModelSettings;
@@ -41,7 +41,7 @@ export interface ModelAgentDefaultState {
   agentProvider: string | null;
   agentModel: string | null;
   agentThinkingSettings: ThinkingSettings;
-  imageProvider: 'google' | 'openrouter';
+  imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   speechProvider: DefaultSpeechModelSettings['provider'] | null;
   speechModel: DefaultSpeechModelSettings['model'] | null;
@@ -111,7 +111,7 @@ export class ModelAgentDefaultsResolver {
       agentModel: llmProviders?.agentModel?.model || null,
       agentThinkingSettings,
       imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
-      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-3.1-flash-lite-image',
+      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: llmProviders?.defaultSpeechModel?.provider || null,
       speechModel: llmProviders?.defaultSpeechModel?.model || null,
       speechVoice: llmProviders?.defaultSpeechModel?.voice || null,

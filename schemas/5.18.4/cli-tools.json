@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-02T13:15:45.525Z",
+  "generatedAt": "2026-09-02T14:32:28.132Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1753,7 +1753,7 @@
     {
       "agent": "promptManager",
       "tool": "generateImage",
-      "description": "Generate images using Google Nano Banana models (direct or via OpenRouter). Supports reference images for style/composition guidance.",
+      "description": "Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.",
       "command": "prompt generate-image",
       "usage": "prompt generate-image <prompt> [--provider <provider>] [--model <model>] [--aspect-ratio <aspectRatio>] [--number-of-images <numberOfImages>] [--image-size <imageSize>] [--reference-images <referenceImages>] <savePath>",
       "arguments": [
@@ -1771,7 +1771,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] AI provider (default: google). Available: google, openrouter (One of: [\"google\", \"openrouter\"])"
+          "description": "[OPTIONAL] AI provider (default: google). Available: openai, google, openrouter (One of: [\"openai\", \"google\", \"openrouter\"])"
         },
         {
           "name": "model",
@@ -1779,7 +1779,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-lite-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-5-image-mini, gpt-image-2, seedream-4.5, seedream-5-lite (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gemini-3.1-flash-image-preview\", \"gemini-3-pro-image-preview\", \"gemini-2.5-flash-image\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-5-image-mini\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-5-image-mini, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-1.5, gpt-image-1, gpt-image-1-mini (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gemini-3.1-flash-image-preview\", \"gemini-3-pro-image-preview\", \"gemini-2.5-flash-image\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-5-image-mini\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-1.5\", \"gpt-image-1\", \"gpt-image-1-mini\"])"
         },
         {
           "name": "aspectRatio",
@@ -1811,7 +1811,7 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter (Array of a string) [max items: 14]"
+          "description": "[OPTIONAL] Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter; up to 16 on OpenAI (Array of a string) [max items: 14]"
         },
         {
           "name": "savePath",

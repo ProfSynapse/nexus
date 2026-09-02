@@ -73,7 +73,7 @@ export interface ToolContext {
   constraints?: string;
 
   /** Chat-scoped image provider preference for image tools */
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
 
   /** Chat-scoped image model preference for image tools */
   imageModel?: string;

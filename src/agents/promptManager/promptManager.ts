@@ -171,15 +171,16 @@ export class PromptManagerAgent extends BaseAgent {
       this.storageService
     ));
 
-    // Register image generation tool only if Google or OpenRouter API keys are configured
+    // Register image generation tool only if an image-capable provider key is configured
     const llmProviders = settings.settings.llmProviders;
     const hasGoogleKey = llmProviders?.providers?.google?.apiKey && llmProviders?.providers?.google?.enabled;
+    const hasOpenAIKey = llmProviders?.providers?.openai?.apiKey && llmProviders?.providers?.openai?.enabled;
     const hasOpenRouterKey = llmProviders?.providers?.openrouter?.apiKey && llmProviders?.providers?.openrouter?.enabled;
 
-    if (hasGoogleKey || hasOpenRouterKey) {
+    if (hasGoogleKey || hasOpenAIKey || hasOpenRouterKey) {
       this.registerLazyTool({
         slug: 'generateImage', name: 'Generate Image',
-        description: 'Generate images using Google Nano Banana models (direct or via OpenRouter). Supports reference images for style/composition guidance.',
+        description: 'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.',
         version: '2.1.0',
         factory: () => new GenerateImageTool({
           vault: this.vault,

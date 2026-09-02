@@ -143,7 +143,7 @@ export class ChatSettingsModal extends Modal {
       },
       temperature: temperature,
       imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
-      imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-lite-image',
+      imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: this.modelAgentManager.getSpeechProvider() || llmSettings?.defaultSpeechModel?.provider,
       speechModel: this.modelAgentManager.getSpeechModel() || llmSettings?.defaultSpeechModel?.model,
       speechVoice: this.modelAgentManager.getSpeechVoice() || llmSettings?.defaultSpeechModel?.voice,

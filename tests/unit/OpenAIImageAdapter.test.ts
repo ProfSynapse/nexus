@@ -12,6 +12,7 @@ jest.mock('../../src/utils/platform', () => ({
 import { OpenAIImageAdapter } from '../../src/services/llm/adapters/openai/OpenAIImageAdapter';
 import { AspectRatio, ImageGenerationParams } from '../../src/services/llm/types/ImageTypes';
 import { jsonResponse, CapturedRequest } from './helpers/llmAdapterTestHarness';
+import { TFile } from '../mocks/obsidian';
 
 function pngBase64(width: number, height: number): string {
   const buf = Buffer.alloc(33);
@@ -42,6 +43,19 @@ function imagesResponse(b64: string, size = '1024x1024', quality = 'medium', out
 
 function baseParams(overrides: Partial<ImageGenerationParams> = {}): ImageGenerationParams {
   return { prompt: 'a blue teacup', provider: 'openrouter', savePath: 'images/cup.png', ...overrides };
+}
+
+
+/** A vault holding the given files (path -> bytes) as TFiles. */
+function makeVault(files: Record<string, Uint8Array>) {
+  return {
+    getAbstractFileByPath: (path: string) => {
+      if (!(path in files)) return null;
+      const file = new TFile(path.split('/').pop() || path, path);
+      return file;
+    },
+    readBinary: async (file: { path: string }) => files[file.path].buffer.slice(0) as ArrayBuffer
+  };
 }
 
 function parsedBody(request: CapturedRequest): Record<string, unknown> {
@@ -156,10 +170,18 @@ describe('OpenAIImageAdapter', () => {
       expect(result.adjustedParams?.model).toBe('gpt-image-2');
     });
 
-    it('rejects reference images, which need the edits endpoint', () => {
+    it('rejects reference images when no vault is configured to read them', () => {
       const result = adapter.validateImageParams(baseParams({ referenceImages: ['refs/a.png'] }));
       expect(result.isValid).toBe(false);
-      expect(result.errors.join(' ')).toMatch(/Reference images are not supported/);
+      expect(result.errors.join(' ')).toMatch(/Vault not configured/);
+    });
+
+    it('caps reference images at 16 and rejects unsupported formats', () => {
+      const withVault = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: makeVault({}) as never });
+      const tooMany = Array.from({ length: 17 }, (_, i) => `refs/${i}.png`);
+      expect(withVault.validateImageParams(baseParams({ referenceImages: tooMany })).errors.join(' ')).toMatch(/at most 16/);
+      expect(withVault.validateImageParams(baseParams({ referenceImages: ['refs/a.gif'] })).errors.join(' ')).toMatch(/Invalid reference image format/);
+      expect(withVault.validateImageParams(baseParams({ referenceImages: ['refs/a.png', 'refs/b.webp'] })).isValid).toBe(true);
     });
 
     it('rejects a non-standard size for a fixed-size model but allows it for gpt-image-2', () => {
@@ -181,5 +203,75 @@ describe('OpenAIImageAdapter', () => {
     for (const model of models) {
       expect(model.pricing?.imageGeneration).toBeGreaterThan(0);
     }
+  });
+
+  describe('reference images (edits endpoint)', () => {
+    it('posts a multipart body with every reference image as image[] to /images/edits', async () => {
+      const requests: CapturedRequest[] = [];
+      const b64 = pngBase64(1024, 1024);
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(b64);
+      });
+
+      const refA = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+      const refB = new Uint8Array([0x52, 0x49, 0x46, 0x46, 4, 5, 6]);
+      const adapter = new OpenAIImageAdapter({
+        apiKey: 'sk-test',
+        vault: makeVault({ 'refs/a.png': refA, 'refs/b.webp': refB }) as never
+      });
+
+      const response = await adapter.generateImage(baseParams({
+        model: 'gpt-image-1.5',
+        aspectRatio: AspectRatio.LANDSCAPE_16_9,
+        referenceImages: ['refs/a.png', 'refs/b.webp']
+      }));
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0].url).toBe('https://api.openai.com/v1/images/edits');
+      expect(requests[0].method).toBe('POST');
+      expect(requests[0].headers?.Authorization).toBe('Bearer sk-test');
+      const contentType = requests[0].headers?.['Content-Type'] || '';
+      expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+
+      const rawBody = requests[0].body as unknown;
+      expect(rawBody).toBeInstanceOf(ArrayBuffer);
+      const body = Buffer.from(rawBody as ArrayBuffer).toString('latin1');
+      const boundary = contentType.split('boundary=')[1];
+      const parts = body.split(`--${boundary}`).filter(p => p.includes('Content-Disposition'));
+
+      const field = (name: string) => parts.find(p => p.includes(`name="${name}"`)) || '';
+      expect(field('model')).toContain('\r\n\r\ngpt-image-1.5\r\n');
+      expect(field('prompt')).toContain('\r\n\r\na blue teacup\r\n');
+      expect(field('n')).toContain('\r\n\r\n1\r\n');
+      expect(field('size')).toContain('\r\n\r\n1536x1024\r\n');
+      expect(field('output_format')).toContain('\r\n\r\npng\r\n');
+
+      const images = parts.filter(p => p.includes('name="image[]"'));
+      expect(images).toHaveLength(2);
+      expect(images[0]).toContain('filename="a.png"');
+      expect(images[0]).toContain('Content-Type: image/png');
+      expect(images[0]).toContain(Buffer.from(refA).toString('latin1'));
+      expect(images[1]).toContain('filename="b.webp"');
+      expect(images[1]).toContain('Content-Type: image/webp');
+      expect(images[1]).toContain(Buffer.from(refB).toString('latin1'));
+
+      expect(response.format).toBe('png');
+      expect(response.dimensions).toEqual({ width: 1024, height: 1024 });
+    });
+
+    it('fails before any request when a reference image is missing from the vault', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: makeVault({}) as never });
+
+      await expect(adapter.generateImage(baseParams({ referenceImages: ['refs/missing.png'] })))
+        .rejects.toThrow(/Reference image not found: refs\/missing.png/);
+      expect(requests).toHaveLength(0);
+    });
   });
 });

@@ -73,7 +73,7 @@ export class MessageAlternativeService {
       workspaceId?: string;
       sessionId?: string;
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;
