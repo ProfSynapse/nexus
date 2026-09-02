@@ -2,6 +2,25 @@
 
 ## September 2026
 
+**v5.18.4** — image generation that works again on OpenRouter, is billed once, and lands in chat even when batched
+
+**OpenRouter image generation works again**
+- OpenRouter moved image generation to a dedicated Image API in June, and since then three of the seven OpenRouter image models — including the default — failed with "No endpoints found that support the requested output modalities". The adapter now calls the Image API, reads the real format and dimensions from the returned bytes, sends only the parameters each model accepts, and retries only on transient errors so a rejected parameter or a moderation block is never paid for twice ([#380](https://github.com/ProfSynapse/nexus/pull/380)).
+- Eight new OpenRouter image models, each verified with a live generation: Gemini 3.1 Flash Image, Gemini 3.1 Flash Lite Image, Gemini 3 Pro Image, GPT-5 Image Mini, GPT Image 2, Seedream 4.5, Seedream 5 Lite and FLUX.2 Klein 4B. Prices are corrected against the live listing.
+
+**Every image is generated and billed once**
+- Each generation was silently run twice, once for the result and once more for the bytes to save. One call now serves both.
+
+**Gemini and OpenAI image adapters**
+- The Gemini adapter gains the GA ids for Gemini 3.1 Flash Image, Flash Lite Image and Gemini 3 Pro Image, with docs-verified prices and a per-model list of which image sizes are actually accepted. A 512 request now produces a real 512-class image instead of a 1K image billed at the 1K rate. The actual charge is read back from the response.
+- The default image model is now Gemini 3.1 Flash Lite Image. Gemini 2.5 Flash Image shuts down on 2026-10-02; if you have it saved as your default it keeps working until then.
+- The OpenAI image adapter moves to the Images API with GPT Image 2 as its default alongside 1.5, 1 and 1 Mini, and always sends an explicit size so a mini model is not billed at a large size it never asked for.
+
+**Generated images show up in chat when batched**
+- An image generated inside a multi-command `useTools` batch never appeared in the conversation; only a lone `generateImage` did. Batched results now render one image bubble each, above the text, and failed entries are skipped.
+
+---
+
 **v5.18.3** — Claude Fable 5.1 on every Anthropic-backed provider
 
 **New models**
