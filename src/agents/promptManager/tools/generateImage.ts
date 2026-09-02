@@ -220,7 +220,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       }
     }
     if (!model) {
-      model = 'gemini-2.5-flash-image';
+      model = 'gemini-3.1-flash-lite-image';
     }
 
     return { provider, model };
@@ -247,7 +247,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     }
 
     // Minimal fallback — only the most common default model
-    return ['gemini-2.5-flash-image'];
+    return ['gemini-3.1-flash-lite-image'];
   }
 
   /**
@@ -307,13 +307,13 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         imageSize: {
           type: 'string',
           enum: ['512px', '1K', '2K', '4K'],
-          description: 'Image resolution. 512px only for gemini-3.1-flash-image-preview. 4K available for gemini-3-pro-image-preview and gemini-3.1-flash-image-preview'
+          description: 'Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image and gemini-3-pro-image. Not accepted by gemini-2.5-flash-image or the FLUX models.'
         },
         referenceImages: {
           type: 'array',
           items: { type: 'string' },
           maxItems: 14,
-          description: 'Reference images for style/composition. Max 3 for 2.5-flash, max 14 for 3-pro'
+          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter'
         },
         savePath: {
           type: 'string',

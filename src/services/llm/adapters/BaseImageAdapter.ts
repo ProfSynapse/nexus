@@ -58,6 +58,19 @@ export abstract class BaseImageAdapter extends BaseAdapter {
    * Generate image with comprehensive validation and error handling
    */
   async generateImageSafely(params: ImageGenerationParams): Promise<ImageGenerationResult> {
+    const { result } = await this.generateImageWithResponse(params);
+    return result;
+  }
+
+  /**
+   * Same as generateImageSafely, but also hands back the raw provider response
+   * so the caller can save the bytes without a second paid generation.
+   * `response` is present only when `result.success` is true.
+   */
+  async generateImageWithResponse(params: ImageGenerationParams): Promise<{
+    result: ImageGenerationResult;
+    response?: ImageGenerationResponse;
+  }> {
     const startTime = Date.now();
 
     try {
@@ -65,9 +78,11 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       const validation = this.validateImageParams(params);
       if (!validation.isValid) {
         return {
-          success: false,
-          error: `Parameter validation failed: ${validation.errors.join(', ')}`,
-          validationErrors: validation.errors
+          result: {
+            success: false,
+            error: `Parameter validation failed: ${validation.errors.join(', ')}`,
+            validationErrors: validation.errors
+          }
         };
       }
 
@@ -86,23 +101,26 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       const cost = await this.calculateImageCost(response, finalParams.model || this.currentModel);
 
       return {
-        success: true,
-        data: {
-          imagePath: finalParams.savePath,
-          prompt: finalParams.prompt,
-          revisedPrompt: response.revisedPrompt,
-          model: finalParams.model || this.currentModel,
-          provider: this.name,
-          dimensions: response.dimensions,
-          fileSize: response.imageData.length,
-          format: response.format,
-          cost: cost || undefined,
-          usage: response.usage,
-          metadata: {
-            ...response.metadata,
-            generationTimeMs: generationTime
+        result: {
+          success: true,
+          data: {
+            imagePath: finalParams.savePath,
+            prompt: finalParams.prompt,
+            revisedPrompt: response.revisedPrompt,
+            model: finalParams.model || this.currentModel,
+            provider: this.name,
+            dimensions: response.dimensions,
+            fileSize: response.imageData.length,
+            format: response.format,
+            cost: cost || undefined,
+            usage: response.usage,
+            metadata: {
+              ...response.metadata,
+              generationTimeMs: generationTime
+            }
           }
-        }
+        },
+        response
       };
     } catch (error) {
       const generationTime = Date.now() - startTime;
@@ -110,22 +128,28 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       
       if (error instanceof ImageGenerationError) {
         return {
-          success: false,
-          error: error.message
+          result: {
+            success: false,
+            error: error.message
+          }
         };
       }
 
       // Handle timeout specifically
       if (error instanceof Error && error.message === 'Image generation timed out') {
         return {
-          success: false,
-          error: `Image generation timed out after ${Math.round(generationTime / 1000)}s. This can happen with complex prompts or high server load. Please try again with a simpler prompt.`
+          result: {
+            success: false,
+            error: `Image generation timed out after ${Math.round(generationTime / 1000)}s. This can happen with complex prompts or high server load. Please try again with a simpler prompt.`
+          }
         };
       }
 
       return {
-        success: false,
-        error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        result: {
+          success: false,
+          error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }
       };
     }
   }

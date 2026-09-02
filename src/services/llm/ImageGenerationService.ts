@@ -105,15 +105,14 @@ export class ImageGenerationService {
         };
       }
 
-      // Generate the image using the adapter
-      const result = await adapter.generateImageSafely(params);
-      
-      if (!result.success || !result.data) {
+      // One provider call yields both the result and the bytes to save.
+      // (Calling generateImageSafely and then generateImage generated — and
+      // billed — every image twice.)
+      const { result, response: imageResponse } = await adapter.generateImageWithResponse(params);
+
+      if (!result.success || !result.data || !imageResponse) {
         return result;
       }
-
-      // Generate the image response for file saving
-      const imageResponse = await adapter.generateImage(params);
 
       // Save the image to vault
       const saveResult = await this.fileManager.saveImage(imageResponse, params);

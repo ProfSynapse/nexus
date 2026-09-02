@@ -32,16 +32,20 @@ python3 .claude/skills/nexus-model-updates/scripts/check_model_registry.py \
 3. **A provider with no registry yet** — follow
    `protocols/add-provider-registry.md`. Adapter wiring belongs to
    `nexus-llm-adapters`; only the catalog and its aggregator entries are yours.
-4. **Before calling any of the above done** — run `protocols/verify-model.md`. You
+4. **An image generation model** — follow `protocols/add-image-model.md`. Image
+   models live in the image adapters' own catalogs, not in `<Provider>Models.ts`,
+   the structural gate does not see them, and the committed tool catalogs embed
+   their enum.
+5. **Before calling any of the above done** — run `protocols/verify-model.md`. You
    MUST get a zero exit from
    `scripts/check_model_registry.py --repo-root . <provider>`, and you MUST NOT
    report a model as working on the strength of a registry entry: the entry is a
    claim about an id, and only a live call tests it.
-5. **End of a session that used this skill** — run `protocols/self-refine.md`.
+6. **End of a session that used this skill** — run `protocols/self-refine.md`.
 
 ## Map
-- `protocols/` the procedures: add-model, change-default, add-provider-registry,
-  verify-model, self-refine.
+- `protocols/` the procedures: add-model, add-image-model, change-default,
+  add-provider-registry, verify-model, self-refine.
 - `references/` mechanism, read on demand: `registry-anatomy.md` (what a
   `ModelSpec` field means and how to fill it), `consumers.md` (who reads the
   registries and what silently breaks when metadata is wrong),

@@ -375,7 +375,7 @@ function instantiateAgents() {
   llmSettings.providers.openrouter.enabled = true;
   llmSettings.defaultImageModel = {
     provider: 'google',
-    model: 'gemini-2.5-flash-image'
+    model: 'gemini-3.1-flash-lite-image'
   };
   llmSettings.defaultSpeechModel = {
     provider: 'openai',

@@ -1,9 +1,14 @@
 /**
  * OpenRouter Image Generation Adapter
- * Supports image generation through OpenRouter's unified API
- * Uses models with "image" in their output_modalities
  *
- * API: POST /api/v1/chat/completions with modalities: ['image', 'text']
+ * Speaks OpenRouter's dedicated Image API (POST /api/v1/images), the only
+ * transport that serves every image model on the platform. The older
+ * chat-completions route (`modalities: ['image', 'text']`) still works for
+ * Google and OpenAI text+image models but returns 404 for image-only models
+ * such as FLUX, and OpenRouter adds new image models to the Image API only.
+ *
+ * Catalog: https://openrouter.ai/api/v1/images/models
+ * Per-model parameters and pricing: /api/v1/images/models/<id>/endpoints
  */
 
 import { Vault } from 'obsidian';
@@ -14,7 +19,8 @@ import {
   ImageValidationResult,
   ImageModel,
   ImageUsage,
-  AspectRatio
+  AspectRatio,
+  NanoBananaImageSize
 } from '../../types/ImageTypes';
 import {
   ProviderConfig,
@@ -25,43 +31,92 @@ import {
   StreamChunk
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
+import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
 
-interface OpenRouterImageContentPart {
-  type: 'text' | 'image_url';
-  text?: string;
-  image_url?: {
-    url: string;
-  };
+type OutputFormat = 'png' | 'jpeg' | 'webp';
+
+/** OpenRouter's `resolution` enum. Our `imageSize` uses '512px' for the first. */
+type OpenRouterResolution = '512' | '1K' | '2K' | '4K';
+
+/**
+ * Everything the adapter needs to know about one model, sourced from
+ * /api/v1/images/models/<id>/endpoints. `resolutions` is null when the
+ * endpoint has no `resolution` parameter — sending one is a hard 400.
+ */
+interface OpenRouterImageModelSpec {
+  openRouterId: string;
+  displayName: string;
+  /** USD for one image at the default resolution (1K / 1 megapixel). */
+  costPerImage: number;
+  pricingNote: string;
+  maxReferenceImages: number;
+  resolutions: OpenRouterResolution[] | null;
+  contextWindow: number;
+  lastUpdated: string;
 }
 
-interface OpenRouterImageChatMessage {
-  role: 'user';
-  content: string | OpenRouterImageContentPart[];
+interface OpenRouterImageReference {
+  type: 'image_url';
+  image_url: { url: string };
 }
 
-interface OpenRouterImageRequestBody {
+interface OpenRouterImagesRequestBody {
   model: string;
-  messages: OpenRouterImageChatMessage[];
-  modalities: ['image', 'text'];
-  image_config?: {
-    aspect_ratio: AspectRatio;
+  prompt: string;
+  aspect_ratio?: AspectRatio;
+  resolution?: OpenRouterResolution;
+  input_references?: OpenRouterImageReference[];
+}
+
+interface OpenRouterImagesResponse {
+  created?: number;
+  data?: Array<{
+    b64_json?: string;
+    media_type?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    cost?: number;
+    completion_tokens_details?: {
+      image_tokens?: number;
+    };
   };
 }
 
-interface OpenRouterImageResponse {
-  choices?: Array<{
-    message?: {
-      images?: Array<{
-        image_url?: {
-          url?: string;
-        };
-        imageUrl?: {
-          url?: string;
-        };
-      }>;
-    };
-  }>;
-}
+const IMAGE_SIZE_TO_RESOLUTION: Record<NanoBananaImageSize, OpenRouterResolution> = {
+  '512px': '512',
+  '1K': '1K',
+  '2K': '2K',
+  '4K': '4K'
+};
+
+const MEDIA_TYPE_TO_FORMAT: Record<string, OutputFormat> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpeg',
+  'image/jpg': 'jpeg',
+  'image/webp': 'webp'
+};
+
+// Typical pixel dimensions per aspect ratio at 1K. Used only when the image
+// header cannot be read — the real dimensions come from the bytes.
+const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
+  '1:1': [1024, 1024],
+  '2:3': [832, 1248],
+  '3:2': [1248, 832],
+  '3:4': [864, 1184],
+  '4:3': [1184, 864],
+  '4:5': [896, 1152],
+  '5:4': [1152, 896],
+  '9:16': [768, 1344],
+  '16:9': [1344, 768],
+  '21:9': [1536, 672],
+  '1:4': [256, 1024],
+  '4:1': [1024, 256],
+  '1:8': [128, 1024],
+  '8:1': [1024, 128]
+};
 
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
@@ -73,15 +128,174 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   readonly name = 'openrouter-image';
   readonly baseUrl = 'https://openrouter.ai/api/v1';
-  readonly supportedModels: ImageModel[] = [
-    'gemini-2.5-flash-image',
-    'gemini-3-pro-image-preview',
-    'gemini-3.1-flash-image-preview',
-    'gpt-5-image',
-    'gpt-5.4-image-2',
-    'flux-2-pro',
-    'flux-2-flex'
-  ];
+
+  /**
+   * Model catalog. Every value comes from the model's own
+   * /api/v1/images/models/<id>/endpoints entry. Gemini bills per output token
+   * (a 1K image is 1120 tokens); FLUX bills per megapixel; OpenAI bills per
+   * output token at the provider's default (high) quality.
+   */
+  private readonly modelSpecs: Record<string, OpenRouterImageModelSpec> = {
+    'gemini-2.5-flash-image': {
+      // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
+      // now answers "No endpoints found".
+      openRouterId: 'google/gemini-2.5-flash-image',
+      displayName: 'Nano Banana legacy, shuts down 2026-10-02 (via OpenRouter)',
+      costPerImage: 0.039,
+      pricingNote: '1290 output tokens at $30/M',
+      maxReferenceImages: 3,
+      resolutions: null,
+      contextWindow: 32768,
+      lastUpdated: '2026-09-02'
+    },
+    'gemini-3-pro-image-preview': {
+      openRouterId: 'google/gemini-3-pro-image-preview',
+      displayName: 'Nano Banana Pro preview (via OpenRouter)',
+      costPerImage: 0.134,
+      pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
+      maxReferenceImages: 14,
+      resolutions: ['1K', '2K', '4K'],
+      contextWindow: 65536,
+      lastUpdated: '2026-09-02'
+    },
+    'gemini-3.1-flash-image-preview': {
+      openRouterId: 'google/gemini-3.1-flash-image-preview',
+      displayName: 'Nano Banana 2 preview (via OpenRouter)',
+      costPerImage: 0.067,
+      pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
+      maxReferenceImages: 14,
+      resolutions: ['512', '1K', '2K', '4K'],
+      contextWindow: 65536,
+      lastUpdated: '2026-09-02'
+    },
+    'gpt-5-image': {
+      openRouterId: 'openai/gpt-5-image',
+      displayName: 'GPT-5 Image (via OpenRouter)',
+      costPerImage: 0.167,
+      pricingNote: '4160 output tokens at $40/M at the default high quality',
+      maxReferenceImages: 16,
+      resolutions: null,
+      contextWindow: 400000,
+      lastUpdated: '2026-09-02'
+    },
+    'gpt-5.4-image-2': {
+      openRouterId: 'openai/gpt-5.4-image-2',
+      displayName: 'GPT-5.4 Image 2 (via OpenRouter)',
+      costPerImage: 0.125,
+      pricingNote: '4160 output tokens at $30/M at the default high quality',
+      maxReferenceImages: 16,
+      resolutions: null,
+      contextWindow: 272000,
+      lastUpdated: '2026-09-02'
+    },
+    'flux-2-pro': {
+      openRouterId: 'black-forest-labs/flux.2-pro',
+      displayName: 'FLUX.2 Pro (via OpenRouter)',
+      costPerImage: 0.03,
+      pricingNote: '$0.03 per output megapixel',
+      maxReferenceImages: 8,
+      resolutions: null,
+      contextWindow: 4096,
+      lastUpdated: '2026-09-02'
+    },
+    'flux-2-flex': {
+      openRouterId: 'black-forest-labs/flux.2-flex',
+      displayName: 'FLUX.2 Flex (via OpenRouter)',
+      costPerImage: 0.06,
+      pricingNote: '$0.06 per output megapixel, plus $0.06 per input megapixel',
+      maxReferenceImages: 8,
+      resolutions: null,
+      contextWindow: 4096,
+      lastUpdated: '2026-09-02'
+    },
+    'flux-2-klein-4b': {
+      openRouterId: 'black-forest-labs/flux.2-klein-4b',
+      displayName: 'FLUX.2 Klein 4B (via OpenRouter)',
+      costPerImage: 0.014,
+      pricingNote: '$0.014 per output megapixel; exactly one image per request',
+      maxReferenceImages: 4,
+      resolutions: null,
+      contextWindow: 4096,
+      lastUpdated: '2026-09-02'
+    },
+    // GA ids for the Gemini image family. The -preview ids above still resolve
+    // but Google retires previews (2.5's is already gone), so prefer these.
+    'gemini-3.1-flash-image': {
+      openRouterId: 'google/gemini-3.1-flash-image',
+      displayName: 'Nano Banana 2 (via OpenRouter)',
+      costPerImage: 0.067,
+      pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
+      maxReferenceImages: 14,
+      resolutions: ['512', '1K', '2K', '4K'],
+      contextWindow: 65536,
+      lastUpdated: '2026-09-02'
+    },
+    'gemini-3.1-flash-lite-image': {
+      openRouterId: 'google/gemini-3.1-flash-lite-image',
+      displayName: 'Nano Banana 2 Lite (via OpenRouter)',
+      costPerImage: 0.034,
+      pricingNote: '1120 output tokens at $30/M; 1K only',
+      maxReferenceImages: 14,
+      resolutions: ['1K'],
+      contextWindow: 65536,
+      lastUpdated: '2026-09-02'
+    },
+    'gemini-3-pro-image': {
+      openRouterId: 'google/gemini-3-pro-image',
+      displayName: 'Nano Banana Pro (via OpenRouter)',
+      costPerImage: 0.134,
+      pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
+      maxReferenceImages: 14,
+      resolutions: ['1K', '2K', '4K'],
+      contextWindow: 65536,
+      lastUpdated: '2026-09-02'
+    },
+    'gpt-5-image-mini': {
+      openRouterId: 'openai/gpt-5-image-mini',
+      displayName: 'GPT-5 Image Mini (via OpenRouter)',
+      costPerImage: 0.033,
+      pricingNote: '4160 output tokens at $8/M at the default high quality',
+      maxReferenceImages: 16,
+      resolutions: null,
+      contextWindow: 400000,
+      lastUpdated: '2026-09-02'
+    },
+    'gpt-image-2': {
+      // OpenRouter's recommended replacement for the gpt-5-image chat models.
+      openRouterId: 'openai/gpt-image-2',
+      displayName: 'GPT Image 2 (via OpenRouter)',
+      costPerImage: 0.125,
+      pricingNote: '4160 output tokens at $30/M at the default high quality',
+      maxReferenceImages: 16,
+      resolutions: null,
+      contextWindow: 32000,
+      lastUpdated: '2026-09-02'
+    },
+    'seedream-4.5': {
+      openRouterId: 'bytedance-seed/seedream-4.5',
+      displayName: 'Seedream 4.5 (via OpenRouter)',
+      costPerImage: 0.04,
+      pricingNote: '$0.04 per image at any resolution',
+      maxReferenceImages: 14,
+      // The endpoint lists 1K, but OpenRouter rejects it: the model needs at
+      // least 3,686,400 output pixels, so 2K is the real minimum.
+      resolutions: ['2K', '4K'],
+      contextWindow: 32000,
+      lastUpdated: '2026-09-02'
+    },
+    'seedream-5-lite': {
+      openRouterId: 'bytedance-seed/seedream-5-0-lite',
+      displayName: 'Seedream 5.0 Lite (via OpenRouter)',
+      costPerImage: 0.035,
+      pricingNote: '$0.035 per image; 2K and 4K only',
+      maxReferenceImages: 14,
+      resolutions: ['2K', '4K'],
+      contextWindow: 32000,
+      lastUpdated: '2026-09-02'
+    }
+  };
+
+  readonly supportedModels: ImageModel[] = Object.keys(this.modelSpecs) as ImageModel[];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
@@ -89,29 +303,19 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private httpReferer: string;
   private xTitle: string;
 
-  // OpenRouter model IDs for image generation
-  private readonly modelMap: Record<string, string> = {
-    'gemini-2.5-flash-image': 'google/gemini-2.5-flash-image-preview',
-    'gemini-3-pro-image-preview': 'google/gemini-3-pro-image-preview',
-    'gemini-3.1-flash-image-preview': 'google/gemini-3.1-flash-image-preview',
-    'gpt-5-image': 'openai/gpt-5-image',
-    'gpt-5.4-image-2': 'openai/gpt-5.4-image-2',
-    // Add other image-capable models as they become available
-    'flux-2-pro': 'black-forest-labs/flux.2-pro',
-    'flux-2-flex': 'black-forest-labs/flux.2-flex'
-  };
+  // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02.
+  private readonly defaultModel = 'gemini-3.1-flash-lite-image';
 
-  private readonly defaultModel = 'gemini-2.5-flash-image';
-
-  // Supported aspect ratios per OpenRouter docs
-  private readonly openRouterAspectRatios = [
+  // Aspect ratios accepted across the catalog. Individual endpoints may
+  // support fewer; OpenRouter rejects those with a 400 naming the parameter.
+  private readonly openRouterAspectRatios: string[] = [
     '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
     '1:4', '4:1', '1:8', '8:1'
   ];
 
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-2.5-flash-image', config?.baseUrl);
+    super(apiKey, 'gemini-3.1-flash-lite-image', config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -131,82 +335,74 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   }
 
   /**
-   * Generate images using OpenRouter's unified API
-   * Uses modalities: ['image', 'text'] for image generation
+   * Generate one image through POST /api/v1/images.
    */
   async generateImage(params: ImageGenerationParams): Promise<ImageGenerationResponse> {
     try {
       this.validateConfiguration();
 
       const model = params.model || this.defaultModel;
-      const openRouterModel = this.modelMap[model] || `google/${model}`;
+      const spec = this.modelSpecs[model];
+      if (!spec) {
+        throw new Error(`Unknown OpenRouter image model: ${model}. Supported models: ${this.supportedModels.join(', ')}`);
+      }
 
-      const response = await this.withRetry(async () => {
-        // Build message content with prompt and reference images
-        const content: OpenRouterImageContentPart[] = [{ type: 'text', text: params.prompt }];
+      const requestBody: OpenRouterImagesRequestBody = {
+        model: spec.openRouterId,
+        prompt: params.prompt
+      };
 
-        // Add reference images if provided
-        if (params.referenceImages && params.referenceImages.length > 0) {
-          const referenceImageParts = await this.loadReferenceImages(params.referenceImages);
-          content.push(...referenceImageParts);
-        }
+      if (params.aspectRatio) {
+        requestBody.aspect_ratio = params.aspectRatio;
+      }
 
-        // Build request body per OpenRouter docs
-        const requestBody: OpenRouterImageRequestBody = {
-          model: openRouterModel,
-          messages: [
-            {
-              role: 'user',
-              content: content.length === 1 ? params.prompt : content
-            }
-          ],
-          modalities: ['image', 'text']
-        };
+      // Only endpoints that declare a `resolution` parameter accept one.
+      if (params.imageSize && spec.resolutions) {
+        requestBody.resolution = IMAGE_SIZE_TO_RESOLUTION[params.imageSize];
+      }
 
-        // Add image_config for aspect ratio
-        if (params.aspectRatio) {
-          requestBody.image_config = {
-            aspect_ratio: params.aspectRatio
-          };
-        }
+      if (params.referenceImages && params.referenceImages.length > 0) {
+        requestBody.input_references = await this.loadReferenceImages(params.referenceImages);
+      }
 
-        const result = await this.request({
-          url: `${this.baseUrl}/chat/completions`,
-          operation: 'image generation',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.apiKey}`,
-            'HTTP-Referer': this.httpReferer,
-            'X-Title': this.xTitle
-          },
-          body: JSON.stringify(requestBody),
-          timeoutMs: 120_000
-        });
+      // Retries cover 408/409/429/5xx only; a 4xx parameter rejection or a
+      // moderation block is final and must not be paid for twice.
+      const result = await this.request<OpenRouterImagesResponse>({
+        url: `${this.baseUrl}/images`,
+        operation: 'image generation',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'HTTP-Referer': this.httpReferer,
+          'X-Title': this.xTitle
+        },
+        body: JSON.stringify(requestBody),
+        timeoutMs: 120_000,
+        retries: 2
+      });
 
-        this.assertOk(result, `OpenRouter image generation failed: HTTP ${result.status}`);
-        return result.json;
-      }, 2);
+      this.assertOk(result, `OpenRouter image generation failed: HTTP ${result.status}`);
 
-      if (!response) {
+      if (!result.json) {
         throw new Error('No response returned from OpenRouter image generation');
       }
 
-      return this.buildImageResponse(response, params);
+      return this.buildImageResponse(result.json, params, spec);
     } catch (error) {
       this.handleImageError(error, 'image generation', params);
     }
   }
 
   /**
-   * Load reference images from vault and convert to OpenRouter format
+   * Load reference images from the vault as data-URL `input_references`.
    */
-  private async loadReferenceImages(paths: string[]): Promise<OpenRouterImageContentPart[]> {
+  private async loadReferenceImages(paths: string[]): Promise<OpenRouterImageReference[]> {
     if (!this.vault) {
       throw new Error('Vault not configured - cannot load reference images');
     }
 
-    const parts: OpenRouterImageContentPart[] = [];
+    const references: OpenRouterImageReference[] = [];
 
     for (const path of paths) {
       try {
@@ -215,27 +411,20 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           throw new Error(`Reference image not found: ${path}`);
         }
 
-        // Read file as binary
         const arrayBuffer = await this.vault.readBinary(file as import('obsidian').TFile);
-        const buffer = Buffer.from(arrayBuffer);
-        const base64 = buffer.toString('base64');
-
-        // Determine MIME type from extension
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
         const mimeType = this.getMimeType(path);
 
-        // OpenRouter uses OpenAI-style image format
-        parts.push({
+        references.push({
           type: 'image_url',
-          image_url: {
-            url: `data:${mimeType};base64,${base64}`
-          }
+          image_url: { url: `data:${mimeType};base64,${base64}` }
         });
       } catch (error) {
         throw new Error(`Failed to load reference image ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
 
-    return parts;
+    return references;
   }
 
   /**
@@ -267,25 +456,36 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     const warnings: string[] = [...(baseValidation.warnings || [])];
     const adjustedParams: Partial<ImageGenerationParams> = {};
 
-    // Validate model
     const model = params.model || this.defaultModel;
-    if (model && !this.modelMap[model]) {
-      warnings.push(`Unknown model ${model}, will attempt to use as-is`);
+    const spec = this.modelSpecs[model];
+    if (!spec) {
+      errors.push(`Unknown model ${model}. Supported models: ${this.supportedModels.join(', ')}`);
+      return { isValid: false, errors, warnings, adjustedParams };
     }
 
-    // Validate aspect ratio
     if (params.aspectRatio && !this.openRouterAspectRatios.includes(params.aspectRatio)) {
       errors.push(`Invalid aspect ratio. Supported ratios: ${this.openRouterAspectRatios.join(', ')}`);
     }
 
-    // Validate reference images
+    if (params.imageSize) {
+      if (!spec.resolutions) {
+        warnings.push(`${model} does not take a resolution; imageSize ${params.imageSize} ignored`);
+        adjustedParams.imageSize = undefined;
+      } else if (!spec.resolutions.includes(IMAGE_SIZE_TO_RESOLUTION[params.imageSize])) {
+        const supported = spec.resolutions.map(r => (r === '512' ? '512px' : r)).join(', ');
+        errors.push(`imageSize ${params.imageSize} is not available for ${model}. Supported: ${supported}`);
+      }
+    }
+
+    if (params.numberOfImages && params.numberOfImages > 1) {
+      warnings.push('OpenRouter image generation produces one image per request; numberOfImages ignored');
+    }
+
     if (params.referenceImages && params.referenceImages.length > 0) {
-      // OpenRouter/Gemini supports up to 14 reference images
-      if (params.referenceImages.length > 14) {
-        errors.push('Too many reference images. Maximum is 14 reference images');
+      if (params.referenceImages.length > spec.maxReferenceImages) {
+        errors.push(`Too many reference images for ${model}. Maximum is ${spec.maxReferenceImages}`);
       }
 
-      // Validate image extensions
       const validExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
       for (const path of params.referenceImages) {
         const ext = '.' + (path.toLowerCase().split('.').pop() || '');
@@ -295,7 +495,6 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       }
     }
 
-    // Set default model if not specified
     if (!params.model) {
       adjustedParams.model = this.defaultModel;
     }
@@ -360,23 +559,11 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   }
 
   /**
-   * Get pricing for OpenRouter image models
-   * Note: OpenRouter pricing varies by underlying model
+   * Per-image list price at the default resolution. The actual charge is in
+   * the response's `usage.cost` and is recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
-    // OpenRouter pricing is model-dependent
-    // These are approximate prices - actual cost from OpenRouter API response
-    const pricing: Record<string, number> = {
-      'gemini-2.5-flash-image': 0.039,
-      'gemini-3-pro-image-preview': 0.08,
-      'gemini-3.1-flash-image-preview': 0.04,
-      'gpt-5-image': 0.08,
-      'gpt-5.4-image-2': 0.08,
-      'flux-2-pro': 0.05,
-      'flux-2-flex': 0.03
-    };
-
-    const basePrice = pricing[model] || 0.05;
+  getImageModelPricing(model = 'gemini-3.1-flash-lite-image'): Promise<CostDetails> {
+    const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.05;
 
     return Promise.resolve({
       inputCost: 0,
@@ -392,14 +579,14 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * List available OpenRouter image models
    */
   listModels(): Promise<ModelInfo[]> {
-    return Promise.resolve([
-      {
-        id: 'gemini-2.5-flash-image',
-        name: 'Nano Banana (via OpenRouter)',
-        contextWindow: 32000,
+    return Promise.resolve(
+      Object.entries(this.modelSpecs).map(([id, spec]) => ({
+        id,
+        name: spec.displayName,
+        contextWindow: spec.contextWindow,
         maxOutputTokens: 0,
         supportsJSON: false,
-        supportsImages: true,
+        supportsImages: spec.maxReferenceImages > 0,
         supportsFunctions: false,
         supportsStreaming: false,
         supportsThinking: false,
@@ -407,205 +594,72 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         pricing: {
           inputPerMillion: 0,
           outputPerMillion: 0,
-          imageGeneration: 0.039,
+          imageGeneration: spec.costPerImage,
           currency: 'USD',
-          lastUpdated: '2025-12-07'
+          lastUpdated: spec.lastUpdated
         }
-      },
-      {
-        id: 'gemini-3-pro-image-preview',
-        name: 'Nano Banana Pro (via OpenRouter)',
-        contextWindow: 32000,
-        maxOutputTokens: 0,
-        supportsJSON: false,
-        supportsImages: true,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 0,
-          outputPerMillion: 0,
-          imageGeneration: 0.08,
-          currency: 'USD',
-          lastUpdated: '2025-12-07'
-        }
-      },
-      {
-        id: 'gemini-3.1-flash-image-preview',
-        name: 'Nano Banana 2 (via OpenRouter)',
-        contextWindow: 65536,
-        maxOutputTokens: 0,
-        supportsJSON: false,
-        supportsImages: true,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 0.25,
-          outputPerMillion: 1.50,
-          imageGeneration: 0.04,
-          currency: 'USD',
-          lastUpdated: '2026-02-26'
-        }
-      },
-      {
-        id: 'gpt-5-image',
-        name: 'GPT-5 Image (via OpenRouter)',
-        contextWindow: 400000,
-        maxOutputTokens: 128000,
-        supportsJSON: false,
-        supportsImages: true,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 10,
-          outputPerMillion: 10,
-          imageGeneration: 0.08,
-          currency: 'USD',
-          lastUpdated: '2026-02-26'
-        }
-      },
-      {
-        id: 'gpt-5.4-image-2',
-        name: 'GPT-5.4 Image 2 (via OpenRouter)',
-        contextWindow: 272000,
-        maxOutputTokens: 128000,
-        supportsJSON: false,
-        supportsImages: true,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 8,
-          outputPerMillion: 15,
-          imageGeneration: 0.08,
-          currency: 'USD',
-          lastUpdated: '2026-04-24'
-        }
-      },
-      {
-        id: 'flux-2-pro',
-        name: 'FLUX.2 Pro (via OpenRouter)',
-        contextWindow: 4096,
-        maxOutputTokens: 0,
-        supportsJSON: false,
-        supportsImages: false,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 0,
-          outputPerMillion: 0,
-          imageGeneration: 0.05,
-          currency: 'USD',
-          lastUpdated: '2025-12-07'
-        }
-      },
-      {
-        id: 'flux-2-flex',
-        name: 'FLUX.2 Flex (via OpenRouter)',
-        contextWindow: 4096,
-        maxOutputTokens: 0,
-        supportsJSON: false,
-        supportsImages: false,
-        supportsFunctions: false,
-        supportsStreaming: false,
-        supportsThinking: false,
-        supportsImageGeneration: true,
-        pricing: {
-          inputPerMillion: 0,
-          outputPerMillion: 0,
-          imageGeneration: 0.03,
-          currency: 'USD',
-          lastUpdated: '2025-12-07'
-        }
-      }
-    ]);
+      }))
+    );
   }
 
   // Private helper methods
 
   private buildImageResponse(
-    response: OpenRouterImageResponse,
-    params: ImageGenerationParams
+    response: OpenRouterImagesResponse,
+    params: ImageGenerationParams,
+    spec: OpenRouterImageModelSpec
   ): ImageGenerationResponse {
-    // OpenRouter response format:
-    // { choices: [{ message: { content: "...", images: [{ type: "image_url", image_url: { url: "data:image/png;base64,..." } }] } }] }
-
-    if (!response.choices || response.choices.length === 0) {
-      throw new Error('No response choices received from OpenRouter');
+    const item = response.data?.[0];
+    if (!item?.b64_json) {
+      throw new Error('No image data in OpenRouter response');
     }
 
-    const message = response.choices[0].message;
-    if (!message?.images || message.images.length === 0) {
-      throw new Error('No images found in OpenRouter response');
-    }
+    const buffer = Buffer.from(item.b64_json, 'base64');
+    const format = this.resolveFormat(item.media_type, buffer);
 
-    const imageData = message.images[0];
-    const imageUrl = imageData.image_url?.url || imageData.imageUrl?.url;
-
-    if (!imageUrl) {
-      throw new Error('No image URL found in OpenRouter response');
-    }
-
-    // Parse base64 data URL
-    const matches = imageUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!matches) {
-      throw new Error('Invalid image data URL format from OpenRouter');
-    }
-
-    const format = matches[1] as 'png' | 'jpeg' | 'webp';
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    // Extract dimensions from aspectRatio
-    let width = 1024, height = 1024;
     const aspectRatio: AspectRatio = params.aspectRatio || AspectRatio.SQUARE;
+    const dimensions = readImageDimensions(buffer) || this.dimensionsForAspectRatio(aspectRatio);
 
-    // Map aspect ratios to dimensions per OpenRouter docs
-    const aspectRatioToDimensions: Record<string, [number, number]> = {
-      '1:1': [1024, 1024],
-      '2:3': [832, 1248],
-      '3:2': [1248, 832],
-      '3:4': [864, 1184],
-      '4:3': [1184, 864],
-      '4:5': [896, 1152],
-      '5:4': [1152, 896],
-      '9:16': [768, 1344],
-      '16:9': [1344, 768],
-      '21:9': [1536, 672],
-      '1:4': [256, 1024],
-      '4:1': [1024, 256],
-      '1:8': [128, 1024],
-      '8:1': [1024, 128]
-    };
-
-    if (params.aspectRatio && aspectRatioToDimensions[params.aspectRatio]) {
-      [width, height] = aspectRatioToDimensions[params.aspectRatio];
-    }
-
-    const usage: ImageUsage = this.buildImageUsage(1, `${width}x${height}`, params.model || this.defaultModel);
+    const model = params.model || this.defaultModel;
+    const usage: ImageUsage = this.buildImageUsage(1, `${dimensions.width}x${dimensions.height}`, model);
 
     return {
       imageData: buffer,
-      format: format,
-      dimensions: { width, height },
+      format,
+      dimensions,
       metadata: {
         aspectRatio,
-        model: params.model || this.defaultModel,
+        imageSize: params.imageSize,
+        model,
         provider: this.name,
         generatedAt: new Date().toISOString(),
         originalPrompt: params.prompt,
         referenceImagesCount: params.referenceImages?.length || 0,
-        openRouterModel: this.modelMap[params.model || this.defaultModel]
+        openRouterModel: spec.openRouterId,
+        mediaType: item.media_type,
+        reportedCostUsd: response.usage?.cost,
+        imageTokens: response.usage?.completion_tokens_details?.image_tokens
       },
       usage
     };
+  }
+
+  private resolveFormat(mediaType: string | undefined, buffer: Buffer): OutputFormat {
+    const fromHeader = mediaType ? MEDIA_TYPE_TO_FORMAT[mediaType.toLowerCase()] : undefined;
+    if (fromHeader) {
+      return fromHeader;
+    }
+
+    const sniffed = sniffImageFormat(buffer);
+    if (sniffed) {
+      return sniffed;
+    }
+
+    throw new Error(`Unsupported image format from OpenRouter: ${mediaType || 'unknown media type'}`);
+  }
+
+  private dimensionsForAspectRatio(aspectRatio: string): { width: number; height: number } {
+    const [width, height] = ASPECT_RATIO_TO_DIMENSIONS[aspectRatio] || [1024, 1024];
+    return { width, height };
   }
 }
