@@ -13,7 +13,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { McpLineClient, McpToolResult } from './mcpLineClient';
+import { McpLineClient, McpToolResult, parseTimeoutEnv } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
 import {
     hydrateToolContentArgv,
@@ -151,6 +151,8 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
   --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
+                          (a tool call may run up to 10 minutes — image edits and
+                          slow models take a while; $NEXUS_CLI_TOOL_TIMEOUT_MS overrides)
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
@@ -235,7 +237,9 @@ EXAMPLES
 
 async function withClient<T>(vaultName: string | undefined, fn: (c: McpLineClient) => Promise<T>): Promise<T> {
     const vault = resolveVault(vaultName);
-    const client = new McpLineClient(vault.path);
+    const client = new McpLineClient(vault.path, {
+        toolCallTimeoutMs: parseTimeoutEnv(process.env.NEXUS_CLI_TOOL_TIMEOUT_MS)
+    });
     await client.connect();
     try {
         await client.initialize();

@@ -54,15 +54,41 @@ export function parseJsonRpcResponse(line: string): JsonRpcResponse | null {
     return response;
 }
 
+export const DEFAULT_TIMEOUT_MS = 20_000;
+/** Ten minutes: long enough for an image edit or a slow generation model. */
+export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 600_000;
+
+/**
+ * Read a positive integer millisecond override from the environment; anything
+ * else (unset, empty, NaN, zero, negative) yields undefined so the default holds.
+ */
+export function parseTimeoutEnv(raw: string | undefined): number | undefined {
+    if (!raw) return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+}
+
 export class McpLineClient {
     private socket: Socket | null = null;
     private nextId = 1;
     private readonly pending = new Map<number, Pending>();
     private buffer = '';
     private readonly timeoutMs: number;
+    private readonly toolCallTimeoutMs: number;
 
-    constructor(private readonly socketPath: string, opts: { timeoutMs?: number } = {}) {
-        this.timeoutMs = opts.timeoutMs ?? 20000;
+    /**
+     * `timeoutMs` bounds the handshake and discovery calls, which answer from
+     * memory. `toolCallTimeoutMs` bounds `tools/call`, which may be waiting on a
+     * provider: an image edit or a slow model can take well over a minute, and
+     * a 20-second client timeout used to abandon a call the plugin then finished
+     * anyway (the image landed in the vault after the CLI had already errored).
+     */
+    constructor(
+        private readonly socketPath: string,
+        opts: { timeoutMs?: number; toolCallTimeoutMs?: number } = {}
+    ) {
+        this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+        this.toolCallTimeoutMs = opts.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS;
     }
 
     connect(): Promise<void> {
@@ -113,15 +139,15 @@ export class McpLineClient {
         this.pending.clear();
     }
 
-    private request(method: string, params?: unknown): Promise<unknown> {
+    private request(method: string, params?: unknown, timeoutMs: number = this.timeoutMs): Promise<unknown> {
         if (!this.socket) return Promise.reject(new Error('not connected'));
         const id = this.nextId++;
         const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n';
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 this.pending.delete(id);
-                reject(new Error(`Timeout after ${this.timeoutMs}ms waiting for "${method}"`));
-            }, this.timeoutMs);
+                reject(new Error(`Timeout after ${timeoutMs}ms waiting for "${method}"`));
+            }, timeoutMs);
             this.pending.set(id, {
                 resolve: (v) => { clearTimeout(timer); resolve(v); },
                 reject: (e) => { clearTimeout(timer); reject(e); },
@@ -149,7 +175,7 @@ export class McpLineClient {
     }
 
     callTool(name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-        return this.request('tools/call', { name, arguments: args }) as Promise<McpToolResult>;
+        return this.request('tools/call', { name, arguments: args }, this.toolCallTimeoutMs) as Promise<McpToolResult>;
     }
 
     close(): void {
