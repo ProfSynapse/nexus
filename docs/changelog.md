@@ -2,6 +2,23 @@
 
 ## September 2026
 
+**v5.18.5** — OpenAI image generation you can actually pick, reference images everywhere, and a CLI that waits for its images
+
+**OpenAI image generation is reachable**
+- The OpenAI image adapter shipped in 5.18.4 but nothing constructed it, so OpenAI never appeared as an image provider in chat, the `generateImage` tool, or `prompt execute`. It is now built from an enabled OpenAI key like Google and OpenRouter, listed in the chat image-provider dropdown, offered in the tool's provider enum, and accepted by the batch parser. The `generateImage` tool also registers when only an OpenAI key is configured ([#381](https://github.com/ProfSynapse/nexus/pull/381)).
+- Google is no longer hidden from the image-provider dropdown on mobile. Every image adapter goes through Obsidian's request layer, so the list is the same on desktop and phone.
+
+**Reference images work on the OpenAI provider**
+- Passing `referenceImages` to an OpenAI image model used to be rejected outright. They now go through OpenAI's image-edits endpoint, up to 16 PNG, JPG or WebP files read from the vault. A missing file, unsupported format, or too many images fails before any request is made. Verified live on `gpt-image-1-mini` and `gpt-image-2`.
+
+**Nano Banana 2 is the default image model, and the retiring one is migrated**
+- The default image model is now `gemini-3.1-flash-image` (Nano Banana 2) everywhere a default is written. If your saved default is still `gemini-2.5-flash-image`, which Google shuts down on 2026-10-02, it is moved to Nano Banana 2 on the provider you had, so it keeps working past the shutdown. Any other saved choice is untouched.
+
+**The CLI waits for slow tool calls**
+- `nexus use` gave up after 20 seconds on every tool call, so an image edit or a slow model reported a timeout while the plugin finished the work and the file landed in the vault a minute later. The handshake and discovery calls keep their 20 seconds; a tool call now gets 10 minutes, and `NEXUS_CLI_TOOL_TIMEOUT_MS` changes that budget ([#382](https://github.com/ProfSynapse/nexus/pull/382)).
+
+---
+
 **v5.18.4** — image generation that works again on OpenRouter, is billed once, and lands in chat even when batched
 
 **OpenRouter image generation works again**
