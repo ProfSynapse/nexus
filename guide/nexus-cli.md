@@ -104,6 +104,15 @@ The vault name lives in the socket name, so selection happens at call time:
 3. exactly one vault open → used automatically.
 4. multiple open, none specified → error listing them (run `nexus vaults`).
 
+## Timeouts
+
+The handshake and discovery calls answer from memory and time out after 20
+seconds. A tool call (`nexus use …`) may be waiting on a provider — an image
+edit or a slow generation model can take a minute or more — so it is allowed
+up to **10 minutes**. Set `NEXUS_CLI_TOOL_TIMEOUT_MS` to change that budget for
+a shell/session. The plugin keeps running a call the CLI has given up on, so a
+timed-out image or file write can still land in the vault afterwards.
+
 ## Platform notes
 
 | Platform | Transport | Install |

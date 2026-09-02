@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "72acd9eeb1c076bc";
+export const NEXUS_CLI_ASSETS_HASH = "12f4a7babd7333df";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -38,14 +38,29 @@ function parseJsonRpcResponse(line) {
   }
   return response;
 }
+var DEFAULT_TIMEOUT_MS = 2e4;
+var DEFAULT_TOOL_CALL_TIMEOUT_MS = 6e5;
+function parseTimeoutEnv(raw) {
+  if (!raw) return void 0;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : void 0;
+}
 var McpLineClient = class {
+  /**
+   * \`timeoutMs\` bounds the handshake and discovery calls, which answer from
+   * memory. \`toolCallTimeoutMs\` bounds \`tools/call\`, which may be waiting on a
+   * provider: an image edit or a slow model can take well over a minute, and
+   * a 20-second client timeout used to abandon a call the plugin then finished
+   * anyway (the image landed in the vault after the CLI had already errored).
+   */
   constructor(socketPath, opts = {}) {
     this.socketPath = socketPath;
     this.socket = null;
     this.nextId = 1;
     this.pending = /* @__PURE__ */ new Map();
     this.buffer = "";
-    this.timeoutMs = opts.timeoutMs ?? 2e4;
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.toolCallTimeoutMs = opts.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS;
   }
   connect() {
     return new Promise((resolve, reject) => {
@@ -90,15 +105,15 @@ var McpLineClient = class {
     for (const p of this.pending.values()) p.reject(err);
     this.pending.clear();
   }
-  request(method, params) {
+  request(method, params, timeoutMs = this.timeoutMs) {
     if (!this.socket) return Promise.reject(new Error("not connected"));
     const id = this.nextId++;
     const payload = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\\n";
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(\`Timeout after \${this.timeoutMs}ms waiting for "\${method}"\`));
-      }, this.timeoutMs);
+        reject(new Error(\`Timeout after \${timeoutMs}ms waiting for "\${method}"\`));
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (v) => {
           clearTimeout(timer);
@@ -128,7 +143,7 @@ var McpLineClient = class {
     return this.request("tools/list", {});
   }
   callTool(name, args) {
-    return this.request("tools/call", { name, arguments: args });
+    return this.request("tools/call", { name, arguments: args }, this.toolCallTimeoutMs);
   }
   close() {
     this.socket?.end();
@@ -602,6 +617,8 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
   --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
+                          (a tool call may run up to 10 minutes \\u2014 image edits and
+                          slow models take a while; $NEXUS_CLI_TOOL_TIMEOUT_MS overrides)
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
@@ -685,7 +702,9 @@ EXAMPLES
 }
 async function withClient(vaultName, fn) {
   const vault = resolveVault(vaultName);
-  const client = new McpLineClient(vault.path);
+  const client = new McpLineClient(vault.path, {
+    toolCallTimeoutMs: parseTimeoutEnv(process.env.NEXUS_CLI_TOOL_TIMEOUT_MS)
+  });
   await client.connect();
   try {
     await client.initialize();
