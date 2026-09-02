@@ -4,6 +4,11 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-02 | Cutting 5.18.4 and 5.18.5 the same day as 5.18.3 (image API
+merge, OpenAI image wiring, CLI tools/call timeout). Every step ran as
+written, including the `NEXUS_OBSIDIAN_CLI=obsidian-cli` line added that
+morning; all three workflows green first try. | No change. | none.
+
 2026-09-02 | Cutting 5.18.3 (clean: patch, one model PR, VERIFIED in-app,
 workflow green in 2m41s). The one friction was pre-empted from session memory
 rather than from the skill: `verify-in-obsidian.mjs` probes `obsidian` before
