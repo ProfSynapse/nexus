@@ -19,7 +19,7 @@ import { CostDetails, LLMProviderError } from '../adapters/types';
 export interface ImageGenerationParams {
   prompt: string;
   provider: 'google' | 'openrouter'; // Google direct or OpenRouter routing
-  model?: string; // gemini-2.5-flash-image, gemini-3-pro-image-preview, flux-2-pro, flux-2-flex
+  model?: string; // Internal id from the adapter catalog, e.g. gemini-2.5-flash-image, flux-2-pro
   size?: string; // Legacy support for pixel dimensions (converted to aspectRatio)
   aspectRatio?: AspectRatio; // Nano Banana aspect ratios
   numberOfImages?: number; // 1-4 images
@@ -246,7 +246,15 @@ export type ImageModel =
   | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
   | 'gpt-5.4-image-2'                // OpenAI GPT-5.4 Image 2 (OpenRouter only)
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
-  | 'flux-2-flex';                   // Black Forest Labs FLUX.2 Flex (OpenRouter only)
+  | 'flux-2-flex'                    // Black Forest Labs FLUX.2 Flex (OpenRouter only)
+  | 'flux-2-klein-4b'                // Black Forest Labs FLUX.2 Klein 4B (OpenRouter only)
+  | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id (OpenRouter only)
+  | 'gemini-3.1-flash-lite-image'    // Google Nano Banana 2 Lite (OpenRouter only)
+  | 'gemini-3-pro-image'             // Google Nano Banana Pro, GA id (OpenRouter only)
+  | 'gpt-5-image-mini'               // OpenAI GPT-5 Image Mini (OpenRouter only)
+  | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter only)
+  | 'seedream-4.5'                   // ByteDance Seedream 4.5 (OpenRouter only)
+  | 'seedream-5-lite';               // ByteDance Seedream 5.0 Lite (OpenRouter only)
 
 // Aspect ratio constants for Nano Banana models
 export enum AspectRatio {
