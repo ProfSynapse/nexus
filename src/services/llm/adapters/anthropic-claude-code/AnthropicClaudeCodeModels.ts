@@ -51,6 +51,22 @@ export const ANTHROPIC_CLAUDE_CODE_MODELS: ModelSpec[] = [
   },
   {
     provider: 'anthropic-claude-code',
+    name: 'Claude Fable 5.1',
+    apiName: 'claude-fable-5-1',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'anthropic-claude-code',
     name: 'Claude Fable 5',
     apiName: 'claude-fable-5',
     contextWindow: 1000000,

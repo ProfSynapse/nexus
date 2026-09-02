@@ -153,6 +153,23 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   },
 
   // Anthropic models via Requesty (dashed upstream slugs)
+  // Requesty lists this one with a dotted version, unlike its dashed Claude siblings.
+  {
+    provider: 'requesty',
+    name: 'Claude Fable 5.1',
+    apiName: 'anthropic/claude-fable-5.1',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 10.00,
+    outputCostPerMillion: 50.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'requesty',
     name: 'Claude Fable 5',

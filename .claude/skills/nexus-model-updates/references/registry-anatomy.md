@@ -111,3 +111,5 @@ Field-level questions the type does not answer:
 | Not sure whether tools are supported | Not a guess — go back to the provider's docs |
 | Model needs a beta header | `betaHeaders`, not a capability flag |
 | Two entries would share an id | Only where the adapter disambiguates; otherwise one entry |
+| Gateway sibling uses a dash (or dot) in its version | Not evidence — a gateway's separator varies per model; read this model's own listing |
+| Gateway catalog unreachable (egress-blocked, keyless lookup fails) | Ask the user for the gateway's model page; a screenshot of its id and price is a published listing |

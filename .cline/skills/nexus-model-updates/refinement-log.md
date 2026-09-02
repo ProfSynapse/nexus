@@ -64,3 +64,12 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   verification command) and the rule that touching either side means deciding,
   per model, whether the other side gets it too — verified through the twin's
   transport, cost 0 on the CLI side. | Files: `protocols/add-model.md`.
+- 2026-09-02 | Adding Claude Fable 5.1: both gateway catalogs were
+  egress-blocked from the remote session, and the Requesty registry's own
+  header ("dashed upstream slugs") plus every Claude sibling pointed at
+  `claude-fable-5-1`, while Requesty's listing (supplied by the user as a
+  screenshot) publishes `anthropic/claude-fable-5.1`. A sibling's separator
+  would have produced a confidently spelled 404. | Added two lookup rows to
+  registry-anatomy: a sibling's separator is not evidence, and an unreachable
+  catalog means asking the user for the listing page rather than stopping. |
+  Files: `references/registry-anatomy.md`.
