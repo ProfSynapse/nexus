@@ -109,8 +109,13 @@ do — every lane resolves `obsidian` to a hand-written mock, so a green suite s
 nothing about whether the plugin still loads in the app:
 
 ```bash
-npm run verify:obsidian -- --skip-build --vault <your test vault>
+NEXUS_OBSIDIAN_CLI=obsidian-cli npm run verify:obsidian -- --skip-build --vault <your test vault>
 ```
+
+Set `NEXUS_OBSIDIAN_CLI=obsidian-cli` on macOS. The script probes `obsidian`
+first, and on a case-insensitive filesystem that name resolves to the Electron
+GUI binary, which half-answers and intermittently returns empty output — a
+false `SKIPPED` or a hang, not a verification.
 
 `--skip-build` reuses the bundle step 6 just produced. It reloads the plugin,
 fails on a non-empty `dev:errors`, and drops a screenshot in `test-artifacts/`.

@@ -4,6 +4,15 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-02 | Cutting 5.18.3 (clean: patch, one model PR, VERIFIED in-app,
+workflow green in 2m41s). The one friction was pre-empted from session memory
+rather than from the skill: `verify-in-obsidian.mjs` probes `obsidian` before
+`obsidian-cli`, and on macOS `obsidian` resolves to the GUI binary, which
+answers intermittently with empty output. The skill never mentioned the
+`NEXUS_OBSIDIAN_CLI` override, so a reader without that memory gets a false
+SKIPPED or a hang at step 8. | Put `NEXUS_OBSIDIAN_CLI=obsidian-cli` in the
+step 8 command with a two-sentence reason. | `protocols/cut-release.md`.
+
 2026-08-27 | Cutting 5.18.1 (clean release). Step 6 said only `npm run build`;
 the executor ran `npm ci` first solely because project memory recalled that
 local `node_modules` drift from `package-lock.json` broke the 5.16.0 tag. The
