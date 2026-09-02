@@ -40,7 +40,7 @@ export interface StreamOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   temperature?: number;
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;

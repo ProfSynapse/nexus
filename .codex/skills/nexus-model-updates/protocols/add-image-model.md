@@ -2,8 +2,9 @@
 
 Context: image generation models do not live in `<Provider>Models.ts` and the
 structural gate does not see them. Each image adapter carries its own catalog —
-`src/services/llm/adapters/openrouter/OpenRouterImageAdapter.ts` (`modelSpecs`)
-and `src/services/llm/adapters/google/GeminiImageAdapter.ts` — and the internal
+`src/services/llm/adapters/openrouter/OpenRouterImageAdapter.ts` (`modelSpecs`),
+`src/services/llm/adapters/google/GeminiImageAdapter.ts` and
+`src/services/llm/adapters/openai/OpenAIImageAdapter.ts` — and the internal
 ids are also enumerated in the `ImageModel` union in
 `src/services/llm/types/ImageTypes.ts`. The `generateImage` tool builds its model
 enum at runtime from the adapters, but the committed tool catalogs embed that

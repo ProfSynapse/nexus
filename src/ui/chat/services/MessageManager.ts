@@ -156,7 +156,7 @@ export class MessageManager {
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;
@@ -246,7 +246,7 @@ export class MessageManager {
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;
@@ -288,7 +288,7 @@ export class MessageManager {
       workspaceId?: string;
       sessionId?: string;
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;
@@ -326,7 +326,7 @@ export class MessageManager {
       workspaceId?: string;
       sessionId?: string;
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;
@@ -401,7 +401,7 @@ export class MessageManager {
       workspaceId?: string;
       sessionId?: string;
       temperature?: number;
-      imageProvider?: 'google' | 'openrouter';
+      imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
       transcriptionProvider?: string;
       transcriptionModel?: string;

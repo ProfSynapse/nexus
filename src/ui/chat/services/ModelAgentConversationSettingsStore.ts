@@ -22,7 +22,7 @@ export interface ConversationSettingsMetadata {
   agentProvider?: string | null;
   agentModel?: string | null;
   agentThinking?: ThinkingSettings;
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   speechProvider?: DefaultSpeechModelSettings['provider'] | null;
   speechModel?: DefaultSpeechModelSettings['model'] | null;

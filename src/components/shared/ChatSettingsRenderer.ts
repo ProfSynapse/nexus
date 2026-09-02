@@ -38,7 +38,7 @@ import {
 import type { AppsSettings } from '../../types/apps/AppTypes';
 import { isTextOnlyProvider } from '../../services/llm/utils/ToolSchemaSupport';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
-import { isDesktop, isProviderCompatible } from '../../utils/platform';
+import { isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { renderModelDropdownSection } from './ModelDropdownRenderer';
 import {
@@ -70,7 +70,7 @@ export interface ChatSettings {
     effort: ThinkingEffort;
   };
   temperature: number; // 0.0-1.0, controls randomness
-  imageProvider: 'google' | 'openrouter';
+  imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   speechProvider?: DefaultSpeechModelSettings['provider'];
   speechModel?: DefaultSpeechModelSettings['model'];
@@ -533,14 +533,15 @@ export class ChatSettingsRenderer {
     new Setting(content)
       .setName('Provider')
       .addDropdown(dropdown => {
-        const providers: Array<{ id: 'google' | 'openrouter'; name: string }> = isDesktop()
-          ? [
-            { id: 'google', name: 'Google AI' },
-            { id: 'openrouter', name: 'OpenRouter' }
-          ]
-          : [{ id: 'openrouter', name: 'OpenRouter' }];
+        // Every image adapter speaks requestUrl, so the list is the same on
+        // desktop and mobile.
+        const providers: Array<{ id: 'google' | 'openrouter' | 'openai'; name: string }> = [
+          { id: 'google', name: 'Google AI' },
+          { id: 'openai', name: 'OpenAI' },
+          { id: 'openrouter', name: 'OpenRouter' }
+        ];
 
-        // If current selection isn't supported on this platform, fall back.
+        // A saved selection outside this list (older settings) falls back.
         if (!providers.some(p => p.id === this.settings.imageProvider)) {
           this.settings.imageProvider = providers[0].id;
           this.settings.imageModel = '';
@@ -559,8 +560,8 @@ export class ChatSettingsRenderer {
 
         dropdown.setValue(this.settings.imageProvider);
         dropdown.onChange((value) => {
-          this.settings.imageProvider = value as 'google' | 'openrouter';
-          void this.imageService.getModelsForProvider(value as 'google' | 'openrouter').then(models => {
+          this.settings.imageProvider = value as 'google' | 'openrouter' | 'openai';
+          void this.imageService.getModelsForProvider(value as 'google' | 'openrouter' | 'openai').then(models => {
             this.settings.imageModel = models[0]?.id || '';
             this.notifyChange();
             this.render();

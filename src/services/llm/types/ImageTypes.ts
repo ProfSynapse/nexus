@@ -6,7 +6,7 @@
  * 
  * Used by:
  * - BaseImageAdapter: Abstract base class for image adapters
- * - OpenAIImageAdapter: OpenAI Images API (gpt-image-2 family; adapter present, provider not wired)
+ * - OpenAIImageAdapter: OpenAI Images API (gpt-image-2 family)
  * - GeminiImageAdapter: Google Nano Banana (Gemini image) implementation
  * - ImageGenerationService: Core orchestration service
  * - ImageFileManager: Vault file operations
@@ -18,7 +18,7 @@ import { CostDetails, LLMProviderError } from '../adapters/types';
 // Core image generation parameter interfaces
 export interface ImageGenerationParams {
   prompt: string;
-  provider: 'google' | 'openrouter'; // Google direct or OpenRouter routing
+  provider: 'google' | 'openrouter' | 'openai'; // Google direct, OpenRouter routing, or OpenAI direct
   model?: string; // Internal id from the adapter catalog, e.g. gemini-2.5-flash-image, flux-2-pro
   size?: string; // Legacy support for pixel dimensions (converted to aspectRatio)
   aspectRatio?: AspectRatio; // Nano Banana aspect ratios
@@ -111,7 +111,7 @@ export interface ImageGenerationResult {
 
 // Provider-specific configuration
 export interface ImageProviderConfig {
-  provider: 'openai' | 'google'; // OpenAI available but not active
+  provider: 'openai' | 'google';
   apiKey: string;
   baseUrl?: string;
   defaultModel?: string;
@@ -139,7 +139,7 @@ export interface ImageBuffer {
   };
 }
 
-// OpenAI specific types (available but not active)
+// OpenAI specific types
 export interface OpenAIImageGenerationRequest {
   model: 'gpt-5.2'; // Model that supports image_generation tool
   input: string;
@@ -236,12 +236,12 @@ export class ImageGenerationError extends LLMProviderError {
 }
 
 // Supported providers and models
-export type ImageProvider = 'openai' | 'google' | 'openrouter'; // OpenAI available but not active
+export type ImageProvider = 'openai' | 'google' | 'openrouter';
 
 export type ImageModel =
-  | 'gpt-image-1'              // OpenAI GPT Image 1 (adapter present, provider not wired)
-  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (adapter present, provider not wired)
-  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (adapter present, provider not wired)
+  | 'gpt-image-1'              // OpenAI GPT Image 1 (OpenAI direct)
+  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (OpenAI direct)
+  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (OpenAI direct)
   | 'gemini-2.5-flash-image'   // Google Nano Banana legacy, shuts down 2026-10-02
   | 'gemini-3-pro-image-preview' // Google Nano Banana Pro preview id
   | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 preview id
@@ -281,7 +281,7 @@ export const IMAGE_SIZES = {
   SQUARE_1024: '1024x1024',
   PORTRAIT: '1024x1536',  // Supported by both providers
   LANDSCAPE: '1536x1024', // Supported by both providers
-  AUTO: 'auto'            // OpenAI automatic sizing (available but not active)
+  AUTO: 'auto'            // OpenAI automatic sizing
 } as const;
 
 export type ImageSize = typeof IMAGE_SIZES[keyof typeof IMAGE_SIZES];

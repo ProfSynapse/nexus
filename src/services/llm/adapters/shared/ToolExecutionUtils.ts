@@ -67,7 +67,7 @@ export interface ToolMetadata {
 export interface ToolExecutionContext {
   sessionId?: string;
   workspaceId?: string;
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;

@@ -6,9 +6,6 @@
  * gpt-image-* model. The earlier Responses-API route (a chat model plus the
  * image_generation tool) picked the image model for us and hid its price.
  *
- * Not yet wired into ImageGenerationService — the provider unions across the
- * chat UI only know 'google' | 'openrouter'.
- *
  * Reference: https://developers.openai.com/api/docs/api-reference/images/create
  */
 

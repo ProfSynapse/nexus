@@ -83,7 +83,7 @@ export interface DefaultModelSettings {
  * Default image model selection settings
  */
 export interface DefaultImageModelSettings {
-  provider: 'google' | 'openrouter';
+  provider: 'google' | 'openrouter' | 'openai';
   model: string;
 }
 

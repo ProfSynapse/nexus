@@ -31,7 +31,7 @@ export interface ModelAgentPromptContextSnapshot {
   currentSystemPrompt: string | null;
   thinkingSettings: ThinkingSettings;
   temperature: number;
-  imageProvider: 'google' | 'openrouter';
+  imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   transcriptionProvider: string | null;
   transcriptionModel: string | null;
@@ -49,7 +49,7 @@ export interface ModelAgentMessageOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   temperature?: number;
-  imageProvider?: 'google' | 'openrouter';
+  imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
   transcriptionModel?: string;

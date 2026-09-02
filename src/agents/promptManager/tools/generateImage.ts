@@ -19,7 +19,7 @@ import { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 
 export interface GenerateImageParams extends CommonParameters {
   prompt: string;
-  provider?: 'google' | 'openrouter'; // Defaults to user settings or first available provider
+  provider?: 'google' | 'openrouter' | 'openai'; // Defaults to user settings or first available provider
   model?: string; // Defaults to user settings or first available model for the provider
   aspectRatio?: AspectRatio;
   numberOfImages?: number;
@@ -48,7 +48,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     super(
       'generateImage',
       'Generate Image',
-      'Generate images using Google Nano Banana models (direct or via OpenRouter). Supports reference images for style/composition guidance.',
+      'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Reference images are supported on Google and OpenRouter.',
       '2.1.0'
     );
 
@@ -114,7 +114,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         return createResult<GenerateImageModeResult>(
           false,
           undefined,
-          'No image generation providers available. Please configure a Google or OpenRouter API key in plugin settings.'
+          'No image generation providers available. Please configure a Google, OpenAI or OpenRouter API key in plugin settings.'
         );
       }
 
@@ -189,19 +189,19 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
   private resolveDefaults(
     paramProvider?: string,
     paramModel?: string
-  ): { provider: 'google' | 'openrouter'; model: string } {
+  ): { provider: 'google' | 'openrouter' | 'openai'; model: string } {
     // User settings defaults
     const settingsProvider = this.llmSettings?.defaultImageModel?.provider;
     const settingsModel = this.llmSettings?.defaultImageModel?.model;
 
     // Resolve provider: param > settings > first available > 'google'
-    let provider: 'google' | 'openrouter' = (paramProvider as 'google' | 'openrouter') || settingsProvider || 'google';
+    let provider: 'google' | 'openrouter' | 'openai' = (paramProvider as 'google' | 'openrouter' | 'openai') || settingsProvider || 'google';
 
     // If chosen provider is not available, try the other one
     if (this.imageService) {
       const initializedProviders = this.imageService.getInitializedProviders();
       if (initializedProviders.length > 0 && !initializedProviders.includes(provider)) {
-        const available = initializedProviders.find(p => p === 'google' || p === 'openrouter');
+        const available = initializedProviders.find(p => p === 'google' || p === 'openrouter' || p === 'openai');
         if (available) {
           provider = available;
         }
@@ -234,7 +234,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     if (this.imageService) {
       // Collect unique model IDs across all initialized adapters
       const modelIds = new Set<string>();
-      const providers: Array<'google' | 'openrouter'> = ['google', 'openrouter'];
+      const providers: Array<'google' | 'openrouter' | 'openai'> = ['google', 'openrouter', 'openai'];
       for (const provider of providers) {
         const models = this.imageService.getSupportedModelIds(provider);
         for (const id of models) {
@@ -256,12 +256,12 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
   private getAvailableProviderNames(): string[] {
     if (this.imageService) {
       const providers = this.imageService.getInitializedProviders()
-        .filter(p => p === 'google' || p === 'openrouter');
+        .filter(p => p === 'google' || p === 'openrouter' || p === 'openai');
       if (providers.length > 0) {
         return providers;
       }
     }
-    return ['google', 'openrouter'];
+    return ['google', 'openrouter', 'openai'];
   }
 
   /**
@@ -313,7 +313,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
           type: 'array',
           items: { type: 'string' },
           maxItems: 14,
-          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter'
+          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter. Not supported by the OpenAI provider'
         },
         savePath: {
           type: 'string',

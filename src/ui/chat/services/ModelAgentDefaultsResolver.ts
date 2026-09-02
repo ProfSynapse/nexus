@@ -19,7 +19,7 @@ interface PluginWithSettings {
         defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
         agentThinking?: ThinkingSettings;
-        defaultImageModel?: { provider: 'google' | 'openrouter'; model: string };
+        defaultImageModel?: { provider: 'google' | 'openrouter' | 'openai'; model: string };
         defaultTranscriptionModel?: { provider: string; model: string };
         defaultSpeechModel?: DefaultSpeechModelSettings;
         defaultRealtimeVoiceModel?: DefaultRealtimeVoiceModelSettings;
@@ -41,7 +41,7 @@ export interface ModelAgentDefaultState {
   agentProvider: string | null;
   agentModel: string | null;
   agentThinkingSettings: ThinkingSettings;
-  imageProvider: 'google' | 'openrouter';
+  imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   speechProvider: DefaultSpeechModelSettings['provider'] | null;
   speechModel: DefaultSpeechModelSettings['model'] | null;
