@@ -1,5 +1,14 @@
 # Nexus Changelog
 
+## September 2026
+
+**v5.18.3** — Claude Fable 5.1 on every Anthropic-backed provider
+
+**New models**
+- Claude Fable 5.1, Anthropic's newest model, is now available from the Anthropic provider, the Claude Code provider (subscription-billed, no API key), and through OpenRouter and Requesty. It carries a 1M-token context window and a 128K-token output limit. No provider default changes, so your current model stays selected until you pick it ([#379](https://github.com/ProfSynapse/nexus/pull/379)).
+
+---
+
 ## August 2026
 
 **v5.18.2** — a tool ticker that keeps running, and thinking text that reads straight on mobile
