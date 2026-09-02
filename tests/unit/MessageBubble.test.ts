@@ -469,4 +469,81 @@ describe('MessageBubble', () => {
       ['images/generated.png']
     ]);
   });
+
+  it('renders an image generated inside a multi-command useTools batch', () => {
+    const bubble = new MessageBubble(
+      createAssistantMessage({
+        id: 'msg_image_batch',
+        content: 'Here is the cover.',
+        toolCalls: [createCompletedToolCall({
+          id: 'tool_batch_1',
+          result: {
+            success: true,
+            data: {
+              results: [
+                { agent: 'content', tool: 'read', success: true, content: 'notes' },
+                { agent: 'promptManager', tool: 'generateImage', success: true, imagePath: 'images/cover.png' }
+              ]
+            }
+          },
+          success: true
+        })]
+      }),
+      app,
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+    activeBubble = bubble;
+
+    const root = bubble.createElement() as MockElement;
+    const imageBubbles = root.children.filter(child => child.hasClass('message-image'));
+    expect(imageBubbles).toHaveLength(1);
+    expect((app.vault.adapter.getResourcePath as jest.Mock).mock.calls).toEqual([
+      ['images/cover.png']
+    ]);
+    // The image sits in the message stream above the text bubble, not inside it.
+    expect(root.children.indexOf(imageBubbles[0])).toBeLessThan(
+      root.children.findIndex(child => child.hasClass('message-container') && !child.hasClass('message-image'))
+    );
+  });
+
+  it('renders one bubble per generated image and skips failed batch entries', () => {
+    const bubble = new MessageBubble(
+      createAssistantMessage({
+        id: 'msg_image_batch_multi',
+        content: '',
+        toolCalls: [createCompletedToolCall({
+          id: 'tool_batch_2',
+          result: {
+            success: false,
+            error: '1 of 3 failed',
+            data: {
+              results: [
+                { agent: 'promptManager', tool: 'generateImage', success: true, imagePath: 'images/one.png' },
+                { agent: 'promptManager', tool: 'generateImage', success: false, error: 'moderation', imagePath: 'images/blocked.png' },
+                { agent: 'promptManager', tool: 'generateImage', success: true, imagePath: 'images/two.png' }
+              ]
+            }
+          },
+          success: true
+        })]
+      }),
+      app,
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+    activeBubble = bubble;
+
+    const root = bubble.createElement() as MockElement;
+    const imageBubbles = root.children.filter(child => child.hasClass('message-image'));
+    expect(imageBubbles).toHaveLength(2);
+    expect((app.vault.adapter.getResourcePath as jest.Mock).mock.calls).toEqual([
+      ['images/one.png'],
+      ['images/two.png']
+    ]);
+  });
 });
