@@ -239,6 +239,8 @@ export class ImageGenerationError extends LLMProviderError {
 export type ImageProvider = 'openai' | 'google' | 'openrouter';
 
 export type ImageModel =
+  | 'gpt-image-2.5-sunburst'  // OpenAI GPT Image 2.5 Sunburst (OpenAI direct)
+  | 'gpt-image-2.5-flare'     // OpenAI GPT Image 2.5 Flare (OpenAI direct)
   | 'gpt-image-1'              // OpenAI GPT Image 1 (OpenAI direct)
   | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (OpenAI direct)
   | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (OpenAI direct)

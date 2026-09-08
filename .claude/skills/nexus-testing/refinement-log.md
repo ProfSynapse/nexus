@@ -88,3 +88,7 @@ Worktree gotcha: `npm run build` resolves `node_modules/typescript/bin/tsc`
 relative to the worktree, so a worktree without its own `node_modules` fails
 there while `npx jest` still works (node resolution walks up). Symlink it, or
 `npm ci`.
+
+- 2026-09-08 | Request-body assertions caught unsupported sampling parameters; removing the production guards made all new regression cases fail. Skill validation also treated optional machine-private hook paths as broken references. | Clarified the optional local hook without repository links and added the missing Next section in protocols/merge-a-pr.md.
+
+- 2026-09-08 | Quality and dimension guards were tested at the outgoing request boundary; disabling them made the regression cases fail. | No procedure change.

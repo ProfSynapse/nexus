@@ -73,6 +73,51 @@ describe('OpenAIImageAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  describe.each(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'])('%s', model => {
+    it.each([false, true])('sends explicit medium quality and size (edit=%s)', async edit => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: makeVault({ 'refs/mug.png': new Uint8Array([1, 2, 3]) }) as never });
+      await adapter.generateImage(baseParams({ model, referenceImages: edit ? ['refs/mug.png'] : undefined }));
+      if (edit) {
+        const body = Buffer.from(requests[0].body as unknown as ArrayBuffer).toString('latin1');
+        expect(body).toContain('name="quality"\r\n\r\nmedium');
+        expect(body).toContain('name="model"\r\n\r\n' + model);
+        expect(body).toContain('name="size"\r\n\r\n1024x1024');
+      } else {
+        expect(parsedBody(requests[0])).toMatchObject({ model, quality: 'medium', size: '1024x1024' });
+      }
+    });
+
+    it.each(['1820x1024', '512x512', '4096x1024', '3840x3840', '2048x512'])('rejects invalid pixel dimensions %s before requesting', async size => {
+      const request = jest.fn(async () => imagesResponse(pngBase64(1024, 1024)));
+      __setRequestUrlMock(request);
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+      expect(adapter.validateImageParams(baseParams({ model, size })).isValid).toBe(false);
+      await expect(adapter.generateImage(baseParams({ model, size }))).rejects.toThrow(/dimensions/);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('validates dimensions derived from aspect ratios as well as explicit sizes', () => {
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+      expect(adapter.validateImageParams(baseParams({ model, aspectRatio: '4:1' as AspectRatio })).isValid).toBe(false);
+      expect(adapter.validateImageParams(baseParams({ model, size: '3840x2160' })).isValid).toBe(true);
+      expect(adapter.validateImageParams(baseParams({ model, aspectRatio: AspectRatio.LANDSCAPE_16_9 })).isValid).toBe(true);
+    });
+
+    it('prices text and reference image input at their distinct token rates', async () => {
+      __setRequestUrlMock(async () => jsonResponse(200, {
+        data: [{ b64_json: pngBase64(1024, 1024) }],
+        usage: { input_tokens: 120, input_tokens_details: { text_tokens: 20, image_tokens: 100 }, output_tokens: 1000 }
+      }));
+      const result = await new OpenAIImageAdapter({ apiKey: 'sk-test' }).generateImage(baseParams({ model }));
+      expect(result.metadata.reportedCostUsd).toBeCloseTo((20 * 5 + 100 * 8 + 1000 * 30) / 1000000, 8);
+    });
+  });
+
   it('posts to /v1/images/generations with gpt-image-2 by default and exact pixels for the aspect ratio', async () => {
     const requests: CapturedRequest[] = [];
     __setRequestUrlMock(async (request) => {

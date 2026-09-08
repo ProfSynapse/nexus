@@ -77,3 +77,7 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
   post-fix eval 97% (gpt-oss-120b) / 100% (qwen3.6-27b). Added the symptom row
   to `references/symptoms.md`. | Files: `src/services/llm/adapters/groq/GroqAdapter.ts`,
   `references/symptoms.md`.
+
+- 2026-09-08 | A new reasoning model rejected normal sampling settings; request-body regression tests and live completion, streaming tool calls, and rejected-model checks exercised the documented workflow. Subscription live verification was blocked by stale credentials. | No procedure change.
+
+- 2026-09-08 | Live generation and multipart reference-image edits passed for both new image models. | No procedure change.

@@ -244,9 +244,9 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         // Add optional parameters
-        if (options?.temperature !== undefined) responseParams.temperature = options.temperature;
+        if (model !== 'gpt-6-astra' && options?.temperature !== undefined) responseParams.temperature = options.temperature;
         if (options?.maxTokens !== undefined) responseParams.max_output_tokens = options.maxTokens;
-        if (options?.topP !== undefined) responseParams.top_p = options.topP;
+        if (model !== 'gpt-6-astra' && options?.topP !== undefined) responseParams.top_p = options.topP;
         if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
         if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
@@ -613,9 +613,9 @@ export class OpenAIAdapter extends BaseAdapter {
     }
 
     // Add optional parameters
-    if (options?.temperature !== undefined) responseParams.temperature = options.temperature;
+    if (model !== 'gpt-6-astra' && options?.temperature !== undefined) responseParams.temperature = options.temperature;
     if (options?.maxTokens !== undefined) responseParams.max_output_tokens = options.maxTokens;
-    if (options?.topP !== undefined) responseParams.top_p = options.topP;
+    if (model !== 'gpt-6-astra' && options?.topP !== undefined) responseParams.top_p = options.topP;
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 

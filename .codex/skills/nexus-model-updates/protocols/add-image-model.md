@@ -41,7 +41,9 @@ endpoint actually accepts, proven by one live generation through the adapter.
    the per-image figure is 1120 × the `output_image` token price. FLUX bills per
    megapixel. Never send `n` unless the endpoint lists it.
 
-3. **Write the entry and the union member.** The `ImageModel` union in
+3. **Write the entry and the union member.** Keep the existing first catalog
+   entry unless deliberately changing the fallback: tool defaults can select
+   the first returned model independently of the adapter's default field. The `ImageModel` union in
    `ImageTypes.ts` must list the internal id or `supportedModels` will not
    compile. Internal ids are provider-neutral (`gemini-2.5-flash-image` is one
    id across Google direct and OpenRouter) — reuse an existing internal id when
@@ -85,6 +87,9 @@ endpoint actually accepts, proven by one live generation through the adapter.
   for gpt-image-1-mini — $0.05 against an $0.011 list price. Send an explicit
   size. gpt-image-2 arbitrary sizes must have both dimensions divisible by 16
   (`1820x1024` is a hard 400; `1792x1008` is an exact 16:9).
+- Pattern: price text and image input tokens separately when the provider returns
+  a modality breakdown. An edit includes both; one blended input rate silently
+  overcharges prompts or undercharges reference images.
 - Pattern: prices in the catalog are list prices at the default resolution; the
   actual charge is in the response and is what to report.
 - Anti-pattern: adding a model because it appears in `/api/v1/models`. That is

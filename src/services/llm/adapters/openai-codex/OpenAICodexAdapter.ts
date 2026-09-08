@@ -323,7 +323,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
       // (including tool continuation calls which pass conversationHistory)
       requestBody.instructions = options?.systemPrompt || '';
 
-      if (options?.temperature !== undefined) {
+      if (model !== 'gpt-6-astra' && options?.temperature !== undefined) {
         requestBody.temperature = options.temperature;
       }
       if (options?.maxTokens !== undefined) {
