@@ -19,6 +19,7 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 ## What Provider Setup Unlocks
 
 - **Standard text chat**: any configured chat provider works in the chat model picker
+- **Image generation and editing**: configure an OpenAI key to select GPT Image 2.5 Sunburst or Flare. Both use medium quality and accept reference images. Adding these models does not change your saved default.
 - **Live voice**: configure OpenAI, then choose the live voice provider/model in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. Only OpenAI realtime/WebRTC is wired in the current build
 - **Read aloud and `generateAudio`**: configure a speech-capable backend such as OpenAI, ElevenLabs, Google AI, Mistral, or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. This is a different surface from live voice and is not OpenAI-only
 - **`generateVideo`**: configure Google AI or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Video**
@@ -107,7 +108,7 @@ Desktop only. Experimental.
 
 ## Codex Via ChatGPT
 
-Use this if you have an active ChatGPT Plus or Pro subscription and want GPT-5 models through your ChatGPT login.
+Use this if you have an active ChatGPT Plus or Pro subscription and want supported OpenAI models through your ChatGPT login. Model access depends on your account and the subscription endpoint.
 
 1. In Nexus, go to **Settings -> Providers -> OpenAI**
 2. Click **Connect** under **ChatGPT (Codex)**

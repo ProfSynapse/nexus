@@ -2,6 +2,15 @@
 
 ## September 2026
 
+
+**v5.18.6** — GPT-6 Astra and GPT Image 2.5
+
+- GPT-6 Astra is available in the OpenAI, OpenRouter, and ChatGPT/Codex model lists. OpenAI requests omit the sampling parameters Astra rejects. Live completions and tool calls were verified through OpenAI and OpenRouter; ChatGPT/Codex verification remains pending a refreshed login and compatible client.
+- GPT Image 2.5 Sunburst and Flare are available through the OpenAI image provider for generation and reference-image editing. Both use explicit medium quality, reject unsupported image dimensions before making a request, and price text and image input tokens separately.
+- Existing chat and image model defaults are preserved. Both image models passed live generation and edit checks at 1024×1024 medium quality.
+
+---
+
 **v5.18.5** — OpenAI image generation you can actually pick, reference images everywhere, and a CLI that waits for its images
 
 **OpenAI image generation is reachable**

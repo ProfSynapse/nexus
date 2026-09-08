@@ -633,6 +633,23 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // https://openrouter.ai/openai/gpt-6-astra
+  {
+    provider: 'openrouter',
+    name: 'GPT-6 Astra',
+    apiName: 'openai/gpt-6-astra',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 10.00,
+    outputCostPerMillion: 50.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openrouter',
     name: 'Kimi K2.7 Code',

@@ -65,20 +65,22 @@ checked, and proven against the live endpoint.
      src/services/llm/adapters/<provider>
    ```
 
-6. **Update the CLI twin registry — or the API one, coming the other way.**
+6. **Update the subscription twin registry — or the API one, coming the other way.**
    Two vendors have *paired* registries that cover the same models through
    different transports and drift independently:
 
-   | API registry | CLI-backed twin | Twin verification |
+   | API registry | Subscription twin | Twin verification |
    |---|---|---|
    | `anthropic/AnthropicModels.ts` | `anthropic-claude-code/AnthropicClaudeCodeModels.ts` | `printf '...' \| claude -p --model <id>` |
-   | `openai/OpenAIModels.ts` | `openai-codex/OpenAICodexModels.ts` | `codex exec --model <id> ...` |
+   | `openai/OpenAIModels.ts` | `openai-codex/OpenAICodexModels.ts` | Live provider smoke lane with the twin provider id (OAuth transport) |
 
    When you touch either side of a pair, open the other side and decide,
    per model, whether it belongs there too. The twin's conventions differ:
    cost is 0 (subscription-billed), and availability must be proven through
-   the *CLI*, not the API — the anti-pattern below still applies, so verify
-   with the twin's own command. Skipping this step is how the Claude 5
+   the twin's actual transport, not the public API. A CLI check is supplementary
+   for an OAuth-backed adapter: an outdated CLI can reject a model before the
+   adapter is tested. Read the adapter before choosing the verification command.
+   Skipping this step is how the Claude 5
    family sat in the API registry for weeks while the Claude Code provider
    still topped out at Sonnet 4.6 (fixed 2026-08-27).
 

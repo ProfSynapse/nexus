@@ -32,3 +32,5 @@ fixed: `prompt sub` advertises two arguments whose flag kebab-cases to a bare
 their tools appear in no export.
 
 **Files.** SKILL.md, protocols/, references/, scripts/, this log.
+
+- 2026-09-08 | Image model additions appeared in the regenerated CLI enum and the release bundle checks passed. | No procedure change.

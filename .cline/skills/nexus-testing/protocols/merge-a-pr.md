@@ -38,11 +38,16 @@ pinned the old behavior, was never run locally.
 ## Guidelines
 
 - On machines with this repo's local merge-gate hook
-  (`.claude/hooks/gate-pr-merge.sh`, wired via the gitignored
-  `.claude/settings.json`), step 2 is enforced mechanically — `gh pr merge` is
+  (configured in that machine's private agent settings), step 2 is enforced
+  mechanically — `gh pr merge` is
   blocked while any bucket is not pass/skipping. The hook does not travel with
   the repo; on other machines this protocol is the only guard.
 - Anti-pattern: `gh pr checks N && gh pr merge N`. This reads like a gate and
   is not one. It is exactly how #368 merged red.
 - Anti-pattern: `gh pr checks --watch` as a gate — it can exit while checks
   are still pending, and its exit code has the same problem.
+
+
+## Next
+
+Run `self-refine.md` at the end of the session.

@@ -46,7 +46,10 @@ interface OpenAIImageModelSpec {
   costPerImage: number;
   pricingNote: string;
   inputTokenPricePerMillion: number;
+  textInputTokenPricePerMillion?: number;
   outputTokenPricePerMillion: number;
+  defaultQuality?: 'medium';
+  strictSizeLimits?: boolean;
   /** gpt-image-2 accepts any WIDTHxHEIGHT; the others accept three sizes plus auto. */
   supportsArbitrarySize: boolean;
   lastUpdated: string;
@@ -58,6 +61,7 @@ interface OpenAIImagesRequestBody {
   n: 1;
   size?: string;
   output_format: OutputFormat;
+  quality?: 'medium';
 }
 
 interface OpenAIImagesResponse {
@@ -74,6 +78,10 @@ interface OpenAIImagesResponse {
     input_tokens?: number;
     output_tokens?: number;
     total_tokens?: number;
+    input_tokens_details?: {
+      text_tokens?: number;
+      image_tokens?: number;
+    };
     output_tokens_details?: {
       image_tokens?: number;
       text_tokens?: number;
@@ -143,6 +151,31 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       outputTokenPricePerMillion: 30,
       supportsArbitrarySize: true,
       lastUpdated: '2026-09-02'
+    },
+    // https://developers.openai.com/api/docs/guides/image-generation
+    'gpt-image-2.5-sunburst': {
+      displayName: 'GPT Image 2.5 Sunburst',
+      costPerImage: 0.01317,
+      pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+      inputTokenPricePerMillion: 8,
+      textInputTokenPricePerMillion: 5,
+      outputTokenPricePerMillion: 30,
+      defaultQuality: 'medium',
+      strictSizeLimits: true,
+      supportsArbitrarySize: true,
+      lastUpdated: '2026-09-08'
+    },
+    'gpt-image-2.5-flare': {
+      displayName: 'GPT Image 2.5 Flare',
+      costPerImage: 0.01317,
+      pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+      inputTokenPricePerMillion: 8,
+      textInputTokenPricePerMillion: 5,
+      outputTokenPricePerMillion: 30,
+      defaultQuality: 'medium',
+      strictSizeLimits: true,
+      supportsArbitrarySize: true,
+      lastUpdated: '2026-09-08'
     },
     'gpt-image-1.5': {
       displayName: 'GPT Image 1.5',
@@ -219,9 +252,12 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       };
 
       const size = this.resolveSize(params, spec);
+      const sizeError = spec.strictSizeLimits ? this.getSizeError(size) : undefined;
+      if (sizeError) throw new Error(sizeError);
       if (size) {
         requestBody.size = size;
       }
+      if (spec.defaultQuality) requestBody.quality = spec.defaultQuality;
 
       const hasReferenceImages = !!params.referenceImages && params.referenceImages.length > 0;
 
@@ -276,6 +312,19 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     return '1024x1024';
   }
 
+  private getSizeError(size: string | undefined): string | undefined {
+    if (!size || size === 'auto') return undefined;
+    const dimensions = this.parseSize(size);
+    if (!dimensions) return 'Use WIDTHxHEIGHT in pixels or "auto"';
+    const { width, height } = dimensions;
+    const pixels = width * height;
+    if (width % 16 || height % 16 || width > 3840 || height > 3840 ||
+        pixels < 655360 || pixels > 8294400 || width / height < 1 / 3 || width / height > 3) {
+      return 'Image dimensions must be multiples of 16, at most 3840 per edge, 655,360–8,294,400 total pixels, and between 1:3 and 3:1';
+    }
+    return undefined;
+  }
+
   /**
    * Validate OpenAI-specific image generation parameters
    */
@@ -315,6 +364,10 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     if (params.imageSize) {
       warnings.push(`${model} sizes images in pixels; imageSize ${params.imageSize} ignored`);
       adjustedParams.imageSize = undefined;
+    }
+    if (spec.strictSizeLimits) {
+      const sizeError = this.getSizeError(this.resolveSize(params, spec));
+      if (sizeError) errors.push(sizeError);
     }
 
     if (params.numberOfImages && params.numberOfImages > 1) {
@@ -440,6 +493,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     if (size) {
       fields.push({ name: 'size', value: size });
     }
+    const quality = this.modelSpecs[model]?.defaultQuality;
+    if (quality) fields.push({ name: 'quality', value: quality });
     for (const part of await this.loadReferenceImages(params.referenceImages ?? [])) {
       fields.push({ name: 'image[]', value: part.bytes, filename: part.filename, contentType: part.mimeType });
     }
@@ -510,7 +565,12 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
 
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
-    const reportedCostUsd = (inputTokens * spec.inputTokenPricePerMillion + outputTokens * spec.outputTokenPricePerMillion) / 1_000_000;
+    const textTokens = response.usage?.input_tokens_details?.text_tokens ??
+      (params.referenceImages?.length ? 0 : inputTokens);
+    const inputCost = spec.textInputTokenPricePerMillion === undefined
+      ? inputTokens * spec.inputTokenPricePerMillion
+      : textTokens * spec.textInputTokenPricePerMillion + (inputTokens - textTokens) * spec.inputTokenPricePerMillion;
+    const reportedCostUsd = (inputCost + outputTokens * spec.outputTokenPricePerMillion) / 1_000_000;
 
     return {
       imageData: buffer,

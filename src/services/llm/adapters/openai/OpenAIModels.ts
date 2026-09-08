@@ -13,7 +13,24 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
-  // GPT-5.6 family (latest models)
+  // https://developers.openai.com/api/docs/models/gpt-6-astra
+  {
+    provider: 'openai',
+    name: 'GPT-6 Astra',
+    apiName: 'gpt-6-astra',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 10.00,
+    outputCostPerMillion: 50.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // GPT-5.6 family
   {
     provider: 'openai',
     name: 'GPT-5.6 Sol',

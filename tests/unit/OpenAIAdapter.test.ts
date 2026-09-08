@@ -35,6 +35,27 @@ describe('OpenAIAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  // Astra rejects sampling parameters that normal chat settings supply.
+  it.each([false, true])('omits Astra sampling parameters (stream=%s)', async (stream) => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async (request) => {
+      requests.push(request);
+      return stream
+        ? sseResponse(sse({ type: 'response.completed', response: { id: 'resp_astra' } }))
+        : jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] });
+    });
+    const adapter = new OpenAIAdapter('sk-test');
+    const options = { model: 'gpt-6-astra', temperature: 0.7, topP: 0.9, enableThinking: true, thinkingEffort: 'low' as const };
+    if (stream) await collect(adapter.generateStreamAsync('hi', options));
+    else await adapter.generateUncached('hi', options);
+    const body = JSON.parse(requests[0].body ?? '{}');
+    expect(requests[0].url).toContain('/responses');
+    expect(body.model).toBe('gpt-6-astra');
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('top_p');
+    expect(body.reasoning).toEqual({ effort: 'low', summary: 'auto' });
+  });
+
   describe('non-streaming generate', () => {
     it('parses Responses API output into text, usage, and responseId metadata', async () => {
       const requests: CapturedRequest[] = [];

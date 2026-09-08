@@ -36,6 +36,22 @@ describe('OpenAICodexAdapter', () => {
     }));
   });
 
+  it('omits temperature for Astra on the subscription endpoint', async () => {
+    const requests: RequestRecord[] = [];
+    __setRequestUrlMock(async (request) => {
+      requests.push(request);
+      return {
+        status: 200, headers: {}, json: {}, arrayBuffer: new ArrayBuffer(0),
+        text: 'data: {"type":"response.completed","response":{"id":"resp_astra"}}\n\n'
+      };
+    });
+    const adapter = new OpenAICodexAdapter(createTokens());
+    for await (const chunk of adapter.generateStreamAsync('hi', { model: 'gpt-6-astra', temperature: 0.7 })) {
+      void chunk;
+    }
+    expect(JSON.parse(requests[0].body ?? '{}')).not.toHaveProperty('temperature');
+  });
+
   it('refreshes expiring tokens before inference', async () => {
     const seenUrls: string[] = [];
     const refreshed: CodexOAuthTokens[] = [];

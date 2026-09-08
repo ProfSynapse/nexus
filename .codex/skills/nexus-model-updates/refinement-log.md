@@ -93,3 +93,7 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
   compare token counts across spellings, never let a token-priced provider pick
   size/quality, and the divisible-by-16 rule. | Files:
   `protocols/add-image-model.md`.
+
+- 2026-09-08 | The paired subscription registry was described as CLI-backed, but its adapter uses OAuth HTTP; an old CLI rejected the requested model while the adapter independently failed on expired credentials. | Clarified transport-specific twin verification in protocols/add-model.md.
+
+- 2026-09-08 | Live generation and reference-image edits returned distinct text and image input token counts. | Added modality-specific input pricing guidance to protocols/add-image-model.md; measured output-token prices for the new catalog entries. The full provider-wiring suite also caught first-entry fallback drift; documented preserving catalog order when defaults are unchanged.
