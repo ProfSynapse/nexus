@@ -4,6 +4,13 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-08 | Cutting 5.18.6 for GPT-6 Astra and GPT Image 2.5. Clean dependency
+install and build passed, the plugin was VERIFIED in the Code vault on
+Obsidian 1.13.7, and PR/main CI passed. The numeric tag workflow published all
+five expected assets and completed provenance attestation. The readiness
+check's missing PR-link warning was reviewed: the changelog covered the actual
+model and adapter changes. | No procedure change. | none.
+
 2026-09-02 | Cutting 5.18.4 and 5.18.5 the same day as 5.18.3 (image API
 merge, OpenAI image wiring, CLI tools/call timeout). Every step ran as
 written, including the `NEXUS_OBSIDIAN_CLI=obsidian-cli` line added that
