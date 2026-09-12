@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
   "nexusVersion": "5.18.6",
-  "generatedAt": "2026-09-08T20:49:25.172Z",
+  "generatedAt": "2026-09-12T15:56:20.428Z",
   "toolCount": 2,
   "tools": [
     {
       "name": "toolManager_getTools",
-      "description": "REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.\nThis returns CLI-oriented command metadata for the tools you need next.\nSend workspaceId, sessionId, memory, goal, and constraints at the top level.\nUse one stable human-readable session name for the conversation. Reuse that same sessionId value for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state. Nexus stores an internal UUID silently.\nDo not send a nested \"context\" object or legacy \"request\" array.\n\nWorkflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands\nKnown-good example: {\"workspaceId\":\"default\",\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available storage tools.\",\"tool\":\"storage move, content read\"}\nExample selectors: tool=\"--help\", tool=\"storage\", tool=\"storage move\", tool=\"storage move, content read\"\n\nAgents:\ncontent: [read,write,replace,insert,setProperty,removeProperty]\nstorage: [list,createFolder,move,copy,archive,open]\nsearch: [content,directory,memory,queryNotes]\nmemory: [createState,listStates,loadState,updateState,archiveState,createWorkspace,listWorkspaces,searchWorkspaces,loadWorkspace,updateWorkspace,archiveWorkspace,run]\nprompt: [list,get,create,update,archive,listModels,execute,generateImage,generateAudio,generateVideo,checkGeneratedArtifact,subagent]\ncanvas: [read,write,update,list]\nbase: [read,write,update,list,analyze]\ntask: [createProject,listProjects,updateProject,archiveProject,create,list,open,update,move,query,linkNote]\ningest: [run,capabilities]\nelevenlabs: [listVoices,soundEffects,generateMusic]\ncomposer: [compose,listFormats]\nweb: [open,capture-markdown,capture-png,capture-pdf,links]\nskills: [listSkills,loadSkill,createSkill,updateSkill,archiveSkill,syncSkills]\ndata: [runPython,listCapabilities]\n\nExisting workspaces: not listed here. The getTools RESULT carries the live list — read \"workspaces\" there and pass one of those exact names. Never infer a workspace name from the user's wording.",
+      "description": "REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.\nThis returns CLI-oriented command metadata for the tools you need next.\nSend sessionId, memory, goal, and constraints at the top level.\nThe workspace is remembered per session: the first useTools call of a fresh session passes \"workspaceId\" once (\"default\" or an exact name from the workspaces list this call returns) or runs \"memory load-workspace\"; later calls inherit it. Omit \"workspaceId\" unless you are deliberately switching. getTools itself never needs it.\nUse one stable human-readable session name for the conversation. Reuse that same sessionId value for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state. Nexus stores an internal UUID silently.\nDo not send a nested \"context\" object or legacy \"request\" array.\n\nWorkflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands\nKnown-good example: {\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available storage tools.\",\"tool\":\"storage move, content read\"}\nExample selectors: tool=\"--help\", tool=\"storage\", tool=\"storage move\", tool=\"storage move, content read\"\n\nAgents:\ncontent: [read,write,replace,insert,setProperty,removeProperty]\nstorage: [list,createFolder,move,copy,archive,open]\nsearch: [content,directory,memory,queryNotes]\nmemory: [createState,listStates,loadState,updateState,archiveState,createWorkspace,listWorkspaces,searchWorkspaces,loadWorkspace,updateWorkspace,archiveWorkspace,run]\nprompt: [list,get,create,update,archive,listModels,execute,generateImage,generateAudio,generateVideo,checkGeneratedArtifact,subagent]\ncanvas: [read,write,update,list]\nbase: [read,write,update,list,analyze]\ntask: [createProject,listProjects,updateProject,archiveProject,create,list,open,update,move,query,linkNote]\ningest: [run,capabilities]\nelevenlabs: [listVoices,soundEffects,generateMusic]\ncomposer: [compose,listFormats]\nweb: [open,capture-markdown,capture-png,capture-pdf,links]\nskills: [listSkills,loadSkill,createSkill,updateSkill,archiveSkill,syncSkills]\ndata: [runPython,listCapabilities]\n\nExisting workspaces: not listed here. The getTools RESULT carries the live list — read \"workspaces\" there and pass one of those exact names. Never infer a workspace name from the user's wording.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "workspaceId": {
             "type": "string",
-            "description": "Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as \"default\". Pass \"default\" for the global workspace, or an exact value from the availableWorkspaces list this call returns."
+            "description": "Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. Discovery never needs it — a fresh session names its workspace on its first useTools call (\"default\" for the global workspace, or an exact value from the workspaces list this call returns). An empty string is read as omitted, never as \"default\"."
           },
           "sessionId": {
             "type": "string",
-            "description": "Stable human-readable session name for this chat. Required. Reuse the same value for every getTools/useTools call so traces and saved states attach to the current session; Nexus stores the internal UUID silently."
+            "description": "Stable human-readable session name for this chat. Reuse the same value for every getTools/useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session."
           },
           "memory": {
             "type": "string",
@@ -36,8 +36,6 @@
           }
         },
         "required": [
-          "workspaceId",
-          "sessionId",
           "memory",
           "goal",
           "tool"
@@ -46,17 +44,17 @@
     },
     {
       "name": "toolManager_useTools",
-      "description": "Execute one or more CLI-style tool commands from the top-level \"tool\" field. Known-good example: {\"workspaceId\":\"default\",\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available workspaces.\",\"tool\":\"memory list-workspaces\"}. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. Separate multiple commands with a top-level comma outside quotes (\"cmd1, cmd2\"); commas inside quoted values stay literal and never split commands. For multiline content, wrap the value in quotes — literal newlines and escaped ones like \"# Title\\n\\nBody\" both work, and any double quote inside the value must be escaped as \\\". Never flatten multiline content to one line; quoting is enough. For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping entirely: put the text in the optional top-level \"values\" map and reference it from the tool string as @key (unquoted). Values are substituted after parsing with no escape processing, so the content arrives exactly as written. Quote the token (\"@key\") to pass literal text instead, and reference every declared key. Example: {\"tool\": \"content write --path snippet.md --content @body\", \"values\": {\"body\": \"const re = /\\\\d+/;\"}}. When you already know several files you want to read, batch them as comma-separated \"content read\" commands in ONE call with strategy \"parallel\" — do not issue a separate useTools call per file. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.",
+      "description": "Execute one or more CLI-style tool commands from the top-level \"tool\" field. Known-good example: {\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available workspaces.\",\"tool\":\"memory list-workspaces\"}. The workspace is remembered per session: a fresh session passes \"workspaceId\" once (\"default\" or an exact name from getTools) or loads one with \"memory load-workspace\"; every later call in that session inherits it, so omit \"workspaceId\" unless you are deliberately switching. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. Separate multiple commands with a top-level comma outside quotes (\"cmd1, cmd2\"); commas inside quoted values stay literal and never split commands. For multiline content, wrap the value in quotes — literal newlines and escaped ones like \"# Title\\n\\nBody\" both work, and any double quote inside the value must be escaped as \\\". Never flatten multiline content to one line; quoting is enough. For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping entirely: put the text in the optional top-level \"values\" map and reference it from the tool string as @key (unquoted). Values are substituted after parsing with no escape processing, so the content arrives exactly as written. Quote the token (\"@key\") to pass literal text instead, and reference every declared key. Example: {\"tool\": \"content write --path snippet.md --content @body\", \"values\": {\"body\": \"const re = /\\\\d+/;\"}}. When you already know several files you want to read, batch them as comma-separated \"content read\" commands in ONE call with strategy \"parallel\" — do not issue a separate useTools call per file. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "workspaceId": {
             "type": "string",
-            "description": "Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as \"default\". Pass \"default\" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools."
+            "description": "Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. A fresh session must pass it once (or run \"memory load-workspace\") before other commands — \"default\" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools. An empty string is read as omitted, never as \"default\"."
           },
           "sessionId": {
             "type": "string",
-            "description": "Stable human-readable session name for this chat. Required. Reuse the same value for every useTools call so traces and saved states attach to the current session; Nexus stores the internal UUID silently."
+            "description": "Stable human-readable session name for this chat. Reuse the same value for every useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session."
           },
           "memory": {
             "type": "string",
@@ -98,8 +96,6 @@
           }
         },
         "required": [
-          "workspaceId",
-          "sessionId",
           "memory",
           "goal",
           "tool"
