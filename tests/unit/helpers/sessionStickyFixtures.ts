@@ -104,8 +104,8 @@ export function makeToolManagerAgent(
   batchExecute: jest.Mock;
 } {
   // Minimal registry so normalizeExecutionCalls can resolve `content read`,
-  // `memory load-workspace` and `memory list-workspaces` — the normalizer
-  // rejects unknown commands.
+  // `memory load-workspace`, `memory list-workspaces` and
+  // `memory create-workspace` — the normalizer rejects unknown commands.
   const readTool = {
     slug: 'read', name: 'Read', description: 'Read a note', version: '1.0.0',
     execute: jest.fn().mockResolvedValue({ success: true }),
@@ -124,6 +124,12 @@ export function makeToolManagerAgent(
     getParameterSchema: () => ({ type: 'object', properties: {} }),
     getResultSchema: () => ({ type: 'object' })
   } as unknown as ITool;
+  const createWorkspaceTool = {
+    slug: 'createWorkspace', name: 'Create Workspace', description: 'Create a workspace', version: '1.0.0',
+    execute: jest.fn().mockResolvedValue({ success: true }),
+    getParameterSchema: () => ({ type: 'object', properties: { name: { type: 'string' } }, required: ['name'] }),
+    getResultSchema: () => ({ type: 'object' })
+  } as unknown as ITool;
   const stubAgent = (name: string, tools: ITool[]): IAgent => ({
     name, description: '', version: '1.0.0',
     getTools: () => tools,
@@ -132,7 +138,7 @@ export function makeToolManagerAgent(
   });
   const registry = new Map<string, IAgent>([
     ['contentManager', stubAgent('contentManager', [readTool])],
-    ['memoryManager', stubAgent('memoryManager', [loadWorkspaceTool, listWorkspacesTool])]
+    ['memoryManager', stubAgent('memoryManager', [loadWorkspaceTool, listWorkspacesTool, createWorkspaceTool])]
   ]);
   const normalizer = new ToolCliNormalizer(registry);
   const batchExecute = jest.fn(async (params: BatchParams) => batchResult(params));

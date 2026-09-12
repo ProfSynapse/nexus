@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "5a6cadfe8840206d";
+export const NEXUS_CLI_ASSETS_HASH = "0cc1ae808e1c59cc";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -715,7 +715,8 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
                           \\\`memory load-workspace <name>\\\`; every later call in that
                           session inherits it. Nothing defaults silently: an unbound
                           session's \\\`use\\\` fails with a steer (only \\\`memory
-                          list-workspaces\\\` / \\\`memory load-workspace\\\` run unbound).
+                          list-workspaces\\\` / \\\`load-workspace\\\` / \\\`create-workspace\\\`
+                          run unbound).
   --session <name>        PASS ONCE \\u2014 the vault remembers the CLI's current session.
                           Omit it and the CLI continues where it left off (or runs as
                           "nexus-cli" if it never chose). Pass a different name once
@@ -778,7 +779,8 @@ GOTCHAS
   \\u2022 --memory/--goal are enforced \\u2014 send real values or the call is rejected.
   \\u2022 "This session has no workspace yet" means choose once: \\\`--workspace <name>\\\` on
     this call, or \\\`memory load-workspace <name>\\\` in its own call (not batched with
-    other commands). Then drop --workspace; the session inherits it. Repeating
+    other commands; if none fits, \\\`memory create-workspace\\\` first, then load it).
+    Then drop --workspace; the session inherits it. Repeating
     --workspace on every call is harmless but unnecessary. \\\`--workspace default\\\`
     is the global workspace \\u2014 pass it deliberately, never as a placeholder.
   \\u2022 --session works the same way: choose once, then omit. Two different --session
@@ -1057,8 +1059,8 @@ For a common task, **\`nexus playbook <name>\`** gives you a ready-to-run recipe
   \`memory load-workspace <name>\`), then omit both — every later call continues
   that session and inherits its workspace. Nothing defaults silently: a session
   that never chose a workspace fails with *"This session has no workspace yet"*
-  (only \`memory list-workspaces\` / \`memory load-workspace\` run before the
-  choice). Pass a different value once to switch. \`nexus context\` shows what
+  (only \`memory list-workspaces\` / \`load-workspace\` / \`create-workspace\` run
+  before the choice). Pass a different value once to switch. \`nexus context\` shows what
   the vault currently remembers.
 - **You can't escape the vault.** Paths are vault-relative; \`..\`, \`~\`, and
   absolute paths are rejected. That's a guardrail, not a bug.
@@ -1173,7 +1175,9 @@ so you can go straight to \`nexus use\` without a separate \`nexus tools\` call.
    If none fits, create one with \`memory create-workspace\`, then load it. Loading
    scopes your traces, auto-loads that workspace's task summary, and **binds the
    session to it**. (This playbook only *lists* workspaces — loading is your
-   call, since only you know which one.)
+   call, since only you know which one.) These three — \`memory list-workspaces\`,
+   \`load-workspace\`, \`create-workspace\` — are the only commands that run before
+   a workspace is chosen; each in its own call.
 2. **Then omit \`--session\` and \`--workspace\`.** The vault remembers both: every
    later call continues that session and inherits its workspace. Pass a
    different value once to switch; \`nexus context\` shows what is remembered. A

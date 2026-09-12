@@ -72,8 +72,9 @@ switch) and omit it afterwards:
   and every later call in that session inherits it. Nothing defaults silently:
   a session that has not chosen fails with *"This session has no workspace
   yet"* — pass `--workspace` once, or run `memory load-workspace <name>` in
-  its own call. Only `memory list-workspaces` and `memory load-workspace` run
-  before a workspace is chosen. `--workspace default` is the global workspace;
+  its own call. Only `memory list-workspaces`, `memory load-workspace` and
+  `memory create-workspace` run before a workspace is chosen (create one when
+  none fits, then load it). `--workspace default` is the global workspace;
   pass it deliberately, never as a placeholder.
 
 ```

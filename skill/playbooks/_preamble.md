@@ -12,7 +12,9 @@ so you can go straight to `nexus use` without a separate `nexus tools` call.
    If none fits, create one with `memory create-workspace`, then load it. Loading
    scopes your traces, auto-loads that workspace's task summary, and **binds the
    session to it**. (This playbook only *lists* workspaces — loading is your
-   call, since only you know which one.)
+   call, since only you know which one.) These three — `memory list-workspaces`,
+   `load-workspace`, `create-workspace` — are the only commands that run before
+   a workspace is chosen; each in its own call.
 2. **Then omit `--session` and `--workspace`.** The vault remembers both: every
    later call continues that session and inherits its workspace. Pass a
    different value once to switch; `nexus context` shows what is remembered. A

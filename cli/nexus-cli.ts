@@ -158,7 +158,8 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
                           \`memory load-workspace <name>\`; every later call in that
                           session inherits it. Nothing defaults silently: an unbound
                           session's \`use\` fails with a steer (only \`memory
-                          list-workspaces\` / \`memory load-workspace\` run unbound).
+                          list-workspaces\` / \`load-workspace\` / \`create-workspace\`
+                          run unbound).
   --session <name>        PASS ONCE — the vault remembers the CLI's current session.
                           Omit it and the CLI continues where it left off (or runs as
                           "nexus-cli" if it never chose). Pass a different name once
@@ -221,7 +222,8 @@ GOTCHAS
   • --memory/--goal are enforced — send real values or the call is rejected.
   • "This session has no workspace yet" means choose once: \`--workspace <name>\` on
     this call, or \`memory load-workspace <name>\` in its own call (not batched with
-    other commands). Then drop --workspace; the session inherits it. Repeating
+    other commands; if none fits, \`memory create-workspace\` first, then load it).
+    Then drop --workspace; the session inherits it. Repeating
     --workspace on every call is harmless but unnecessary. \`--workspace default\`
     is the global workspace — pass it deliberately, never as a placeholder.
   • --session works the same way: choose once, then omit. Two different --session
@@ -387,7 +389,7 @@ async function main(): Promise<number> {
         const preamble = existsSync(preamblePath) ? readFileSync(preamblePath, 'utf8').trim() : '';
         if (preamble) process.stdout.write(preamble + '\n\n');
 
-        // `memory list-workspaces` is one of the two commands the server runs
+        // `memory list-workspaces` is one of the three commands the server runs
         // for a session that has not chosen a workspace yet, so this works on a
         // fresh session with no --workspace.
         const ctx = buildPlaybookEnvelope(flags, name);

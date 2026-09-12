@@ -405,12 +405,15 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
             // UNBOUND: what runs anyway, and under which partition. Discovery
             // always does. So does a `useTools` batch made ENTIRELY of
-            // `memory load-workspace` / `memory list-workspaces` — the only
-            // exemption from the UNBOUND rule. A fresh session has to be able
-            // to see its workspaces and pick one, both of those live behind
+            // `memory load-workspace` / `memory list-workspaces` /
+            // `memory create-workspace` — the only exemption from the UNBOUND
+            // rule. A fresh session has to be able to see its workspaces,
+            // create one when none fits, and pick one; all three live behind
             // useTools, and the steer itself tells the caller to do exactly
             // this; without the exemption `load-workspace` would need the
-            // workspace it is about to load. It is a partition, not a choice:
+            // workspace it is about to load. Creating is part of choosing and
+            // is scoped to no workspace; the guidance says "create, then
+            // load", so the load still binds. It is a partition, not a choice:
             // no WorkspaceBindingIntent is recorded, so bind point 1 stays
             // silent, and bind point 2 binds the workspace actually loaded on
             // success. A MIXED batch does not qualify: normalizeContext stamps

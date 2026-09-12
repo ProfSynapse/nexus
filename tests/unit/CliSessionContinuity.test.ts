@@ -310,6 +310,19 @@ describe('unbound useTools: the workspace-selection exemption', () => {
     expect(manager.resolveHandleWorkspace('nexus-cli')).toBeUndefined();
   });
 
+  it('an unbound `memory create-workspace --name X` runs under "default" and leaves the handle unbound (create, then load)', async () => {
+    const { manager } = makeManager();
+    const { strategy, captured, batchExecute } = makeStrategy(manager);
+
+    await strategy.handle(cliUse({ tool: 'memory create-workspace --name "Q3 Launch"' }));
+
+    expect(captured.result?.success).toBe(true);
+    expect(batchExecute).toHaveBeenCalledTimes(1);
+    expect(batchExecute.mock.calls[0][0].context.workspaceId).toBe('default');
+    // Creating is part of choosing, but it is not the choice: the load does that.
+    expect(manager.resolveHandleWorkspace('nexus-cli')).toBeUndefined();
+  });
+
   it('an unbound `memory load-workspace research` runs, and ends bound to the LOADED workspace via bind point 2', async () => {
     const { manager } = makeManager();
     // The stubbed batch does what the real ToolBatchExecutionService does on a
@@ -363,16 +376,19 @@ describe('unbound useTools: the workspace-selection exemption', () => {
     expect(manager.resolveHandleWorkspace('nexus-cli')).toBeUndefined();
   });
 
-  it('isWorkspaceSelectionOnlyCommand accepts only batches made entirely of the two selection commands', () => {
+  it('isWorkspaceSelectionOnlyCommand accepts only batches made entirely of the three selection commands', () => {
     expect(isWorkspaceSelectionOnlyCommand('memory load-workspace research')).toBe(true);
     expect(isWorkspaceSelectionOnlyCommand('memory load-workspace "My Research, v2"')).toBe(true);
     expect(isWorkspaceSelectionOnlyCommand('memory list-workspaces')).toBe(true);
+    expect(isWorkspaceSelectionOnlyCommand('memory create-workspace --name X')).toBe(true);
     expect(isWorkspaceSelectionOnlyCommand('memoryManager loadWorkspace --workspace research')).toBe(true);
     expect(isWorkspaceSelectionOnlyCommand('memory list-workspaces, memory load-workspace research')).toBe(true);
+    expect(isWorkspaceSelectionOnlyCommand('memory create-workspace --name X, memory load-workspace X')).toBe(true);
 
     expect(isWorkspaceSelectionOnlyCommand('memory load-workspace research, content read --path a.md')).toBe(false);
+    expect(isWorkspaceSelectionOnlyCommand('memory create-workspace --name X, content read --path a.md')).toBe(false);
     expect(isWorkspaceSelectionOnlyCommand('content read --path a.md')).toBe(false);
-    expect(isWorkspaceSelectionOnlyCommand('memory create-workspace --name X')).toBe(false);
+    expect(isWorkspaceSelectionOnlyCommand('memory delete-workspace --id X')).toBe(false);
     expect(isWorkspaceSelectionOnlyCommand('memory')).toBe(false);
     expect(isWorkspaceSelectionOnlyCommand('')).toBe(false);
     expect(isWorkspaceSelectionOnlyCommand(undefined)).toBe(false);

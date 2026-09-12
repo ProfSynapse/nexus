@@ -41,8 +41,8 @@ For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
   `memory load-workspace <name>`), then omit both — every later call continues
   that session and inherits its workspace. Nothing defaults silently: a session
   that never chose a workspace fails with *"This session has no workspace yet"*
-  (only `memory list-workspaces` / `memory load-workspace` run before the
-  choice). Pass a different value once to switch. `nexus context` shows what
+  (only `memory list-workspaces` / `load-workspace` / `create-workspace` run
+  before the choice). Pass a different value once to switch. `nexus context` shows what
   the vault currently remembers.
 - **You can't escape the vault.** Paths are vault-relative; `..`, `~`, and
   absolute paths are rejected. That's a guardrail, not a bug.
