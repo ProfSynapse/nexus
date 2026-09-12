@@ -421,9 +421,11 @@ describe('persistence: session-bindings.json', () => {
   // returns [] while storage is still hydrating after a reload, and a call a
   // few seconds in saw exactly that: the handle was dropped and a new id
   // minted — the regression this map exists to prevent. Continuity wins: the
-  // same id is kept and the record re-created with it, whether the empty list
-  // came from cold storage or from a real delete.
-  it('a restored handle whose session storage does not list keeps the SAME id and re-creates the record with it', async () => {
+  // same id is kept either way. Only a DEFINITE delete (a non-empty list that
+  // lacks the id) re-creates the record; an empty list is ambiguous between
+  // cold and empty, and re-creating there would append a duplicate
+  // session_created event to the JSONL source of truth on every cold reload.
+  it('a restored handle whose session was deleted (non-empty list without it) keeps the SAME id and re-creates the record with it', async () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'default::nexus-cli': { id: 's-20260101000000', displaySessionId: 'nexus-cli', workspaceId: 'default' } },
@@ -431,7 +433,8 @@ describe('persistence: session-bindings.json', () => {
       cliCurrentSession: null
     };
     const sessionService = makeSessionService();
-    sessionService.getAllSessions.mockResolvedValue([]); // deleted while unloaded — or not yet loaded
+    // Storage is warm — it lists another session — and ours is not there.
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-20260101000001', workspaceId: 'default', name: 'other' }]);
     const { manager } = makeManager({ store, sessionService });
 
     const result = await manager.validateSessionId('nexus-cli', 'resumed after reload', 'default');
@@ -450,7 +453,7 @@ describe('persistence: session-bindings.json', () => {
     expect(store.doc?.handles['default::nexus-cli']?.id).toBe('s-20260101000000');
   });
 
-  it('cold storage (empty list, then warm) never renames: the same id is used on every call and the check runs once', async () => {
+  it('cold storage (empty list, then warm) never renames and does NOT re-create: same id every call, check runs once', async () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
@@ -470,11 +473,14 @@ describe('persistence: session-bindings.json', () => {
     expect(cold.displaySessionIdChanged).toBe(false);
     expect(warm).toEqual(cold);
     expect(sessionService.getAllSessions).toHaveBeenCalledTimes(1);
+    // The empty list is ambiguous (cold or empty workspace): no re-create,
+    // so a cold reload never appends a duplicate session_created event.
+    expect(sessionService.createSession).not.toHaveBeenCalled();
     expect(await manager.resolveWorkspaceForSession(undefined, 'live-check'))
       .toEqual({ workspaceId: 'ws-research-id', explicit: false });
   });
 
-  it('a failed re-create (workspace not found while storage is cold) only logs; the handle is still kept', async () => {
+  it('a failed re-create (e.g. workspace not found) only logs; the handle is still kept', async () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
@@ -482,7 +488,7 @@ describe('persistence: session-bindings.json', () => {
       cliCurrentSession: null
     };
     const sessionService = makeSessionService();
-    sessionService.getAllSessions.mockResolvedValue([]);
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-other', workspaceId: 'ws-research-id', name: 'other' }]);
     sessionService.createSession.mockRejectedValue(new Error('Workspace ws-research-id not found'));
     const { manager } = makeManager({ store, sessionService });
 

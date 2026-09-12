@@ -466,17 +466,25 @@ export class SessionContextManager {
 
   /**
    * Check a restored handle's session against storage once, and ALWAYS keep
-   * the entry. The handle's continuity is what the caller wants: when
-   * storage lists the session, trust the entry; when it does not, re-create
-   * the record with the same id (best-effort) and trust the entry anyway.
+   * the entry. The handle's continuity is what the caller wants; what varies
+   * on a miss is only whether the session RECORD is re-created here:
    *
-   * Never drop on a miss. `SessionService.getAllSessions` returns `[]` while
-   * storage is still hydrating after a reload (it swallows the error), and a
-   * call a few seconds in saw exactly that: the restored `default::live-check`
-   * was dropped and a new id minted — the regression this handle map exists
-   * to prevent. A session that was genuinely deleted while unloaded is
-   * therefore resurrected with its old id, which is the lesser evil versus
-   * silently renumbering a live session because storage was cold.
+   * - Storage lists the session → trust the entry.
+   * - Storage returned a NON-EMPTY list without it → a definite delete while
+   *   the plugin was unloaded. Re-create the record with the same id
+   *   (best-effort) so the handle resumes rather than renumbering — the
+   *   lesser evil.
+   * - Storage returned `[]` → ambiguous. `SessionService.getAllSessions`
+   *   swallows errors and returns `[]` while storage is still hydrating after
+   *   a reload (a call a few seconds in saw exactly that and dropped
+   *   `default::live-check` — the regression this map exists to prevent), and
+   *   an empty workspace looks the same. Do NOT re-create here:
+   *   SessionRepository.create appends the JSONL `session_created` event
+   *   before the SQLite INSERT, so re-creating a session that merely was not
+   *   listed yet would leave a duplicate event in the source of truth on
+   *   every cold reload. Keep the entry, mark it verified, and let trace
+   *   capture's own auto-create supply the record later if it really is
+   *   missing (it already creates sessions for trace storage).
    *
    * A lookup that THROWS keeps the entry unverified (re-checked next call)
    * and returns it, as before.
@@ -507,9 +515,17 @@ export class SessionContextManager {
       }
     }
 
-    if (!sessions.some(session => session.id === entry.id)) {
+    if (sessions.some(session => session.id === entry.id)) {
+      return entry;
+    }
+
+    if (sessions.length === 0) {
       logger.systemLog(
-        `Restored session handle "${key}" points at session ${entry.id}, which storage does not list; keeping the handle and re-creating the record`
+        `Restored session handle "${key}" points at session ${entry.id}, but storage listed no sessions for workspace ${entry.workspaceId} (cold or empty); keeping the handle, record not re-created`
+      );
+    } else {
+      logger.systemLog(
+        `Restored session handle "${key}" points at session ${entry.id}, which storage no longer lists; keeping the handle and re-creating the record`
       );
       try {
         // createAutoSession already logs and swallows a failed createSession
