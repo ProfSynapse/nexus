@@ -28,7 +28,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   ) {
     this.slug = 'useTools';
     this.name = 'Use Tools';
-    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. '
+    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. The workspace is remembered per session: a fresh session passes "workspaceId" once ("default" or an exact name from getTools) or loads one with "memory load-workspace"; every later call in that session inherits it, so omit "workspaceId" unless you are deliberately switching. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. '
       + CLI_BATCHING_RULE + ' '
       + CLI_MULTILINE_RULE + ' '
       + CLI_VALUES_RULE + ' Example: ' + CLI_VALUES_EXAMPLE
@@ -63,11 +63,11 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
       properties: {
         workspaceId: {
           type: 'string',
-          description: 'Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as "default". Pass "default" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools.'
+          description: 'Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. A fresh session must pass it once (or run "memory load-workspace") before other commands — "default" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools. An empty string is read as omitted, never as "default".'
         },
         sessionId: {
           type: 'string',
-          description: 'Stable human-readable session name for this chat. Required. Reuse the same value for every useTools call so traces and saved states attach to the current session; Nexus stores the internal UUID silently.'
+          description: 'Stable human-readable session name for this chat. Reuse the same value for every useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session.'
         },
         memory: {
           type: 'string',
@@ -107,7 +107,13 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
             + ' Keys use letters, digits, "_" or "-". Example: ' + CLI_VALUES_EXAMPLE
         }
       },
-      required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool']
+      // workspaceId and sessionId are deliberately NOT required (#214): the
+      // workspace is inherited from the session's bind after the first call,
+      // and on the MCP path `required` IS enforced (ValidationService), so
+      // listing it would force every call to restate it. Requiredness of the
+      // FIRST call is enforced where it can see the session — in
+      // ToolCliNormalizer.normalizeRequiredWorkspaceId — not by the schema.
+      required: ['memory', 'goal', 'tool']
     };
   }
 

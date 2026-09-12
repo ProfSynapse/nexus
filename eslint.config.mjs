@@ -368,6 +368,7 @@ export default defineConfig([
             "src/database/migration/CacheBackendMigration.ts", // removes code-controlled cache.db conflict siblings
             "src/database/migration/LegacyArchiver.ts",        // renames legacy storage folder to archive path
             "src/services/artifacts/ArtifactJobStore.ts",
+            "src/services/session/SessionBindingsStore.ts", // session-bindings.json under resolvePluginStorageRoot().dataRoot; path is code-controlled (#214)
             "src/services/storage/SnapshotArchiveService.ts",
             "src/services/llm/utils/CacheManager.ts",
             "src/services/llm/utils/Logger.ts",

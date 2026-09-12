@@ -43,7 +43,41 @@ interface ToolExecutionRequest {
         name: string;
         arguments: Record<string, unknown>;
     };
+    /** Attached by RequestHandlerFactory from the connection's initialize handshake. */
+    clientName?: string;
 }
+
+/** The envelope fields processSession reads and rewrites. */
+type SessionEnvelopeParams = Record<string, unknown> & {
+    context?: { sessionId?: string; workspaceId?: string; [key: string]: unknown };
+    sessionId?: string;
+    workspaceId?: string;
+    workspaceContext?: { workspaceId?: string; [key: string]: unknown };
+};
+
+/**
+ * What processSession decided about the workspace, carried to bind point 1.
+ * `handle` is the caller-supplied session id (friendly name or standard id) —
+ * the key a later call will present again — not the internal id.
+ */
+interface WorkspaceBindingIntent {
+    handle: string;
+    displayHandle?: string;
+    workspaceId: string;
+    explicit: boolean;
+    /**
+     * What the handle was bound to BEFORE the tool ran. Bind point 1 compares
+     * against this after execution: if the handle moved in between, bind point
+     * 2 (`memory load-workspace` inside the batch) fired during the call and
+     * must win — see bindWorkspaceFromResult.
+     */
+    priorBound?: string;
+}
+
+/** Tool names on the two-tool surface, as the strategy sees them after the prefix split. */
+const TOOL_MANAGER_AGENT = 'toolManager';
+const USE_TOOLS = 'useTools';
+const GET_TOOLS = 'getTools';
 
 interface ToolExecutionResponse {
     content: Array<{
@@ -73,16 +107,17 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     async handle(request: ToolExecutionRequest): Promise<ToolExecutionResponse> {
         const startTime = Date.now();
-        let context: (IRequestContext & { sessionInfo: SessionInfo }) | undefined;
+        let context: (IRequestContext & { sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }) | undefined;
         let success = false;
         let result: ToolExecutionResult;
-        
+
         try {
             context = await this.buildRequestContext(request);
             const processedParams = await this.processParameters(context);
             result = await this.executeTool(context, processedParams);
             success = true;
-            
+            this.bindWorkspaceFromResult(context, result);
+
             // Trigger response capture callback if available
             if (this.onToolResponse) {
                 try {
@@ -174,7 +209,9 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         }
     }
 
-    private async buildRequestContext(request: ToolExecutionRequest): Promise<IRequestContext & { sessionInfo: SessionInfo }> {
+    private async buildRequestContext(
+        request: ToolExecutionRequest
+    ): Promise<IRequestContext & { sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }> {
         const { name: fullToolName, arguments: parsedArgs } = request.params;
 
         if (!parsedArgs) {
@@ -188,11 +225,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         // MCP requires tool names match ^[a-zA-Z0-9_-]{1,64}$ (no dots allowed)
         let agentName: string;
         let tool: string;
-        let params: Record<string, unknown> & {
-            context?: { sessionId?: string; workspaceId?: string; [key: string]: unknown };
-            sessionId?: string;
-            workspaceContext?: { workspaceId?: string; [key: string]: unknown };
-        };
+        let params: SessionEnvelopeParams;
 
         // Check if this is a toolManager tool (toolManager_getTools or toolManager_useTool)
         if (fullToolName.startsWith('toolManager_')) {
@@ -215,58 +248,10 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             }
         }
 
-        // Use SessionContextManager for unified session handling instead of separate SessionService
-        const sessionId = params.context?.sessionId || params.sessionId;
+        const { sessionInfo, workspaceBinding } = await this.processSession(params, agentName, tool);
 
-        let sessionInfo: SessionInfo;
-        if (this.sessionContextManager && sessionId) {
-            try {
-                const validationResult = await this.sessionContextManager.validateSessionId(
-                    sessionId,
-                    typeof params.memory === 'string' ? params.memory : undefined,
-                    typeof params.workspaceId === 'string'
-                        ? params.workspaceId
-                        : params.context?.workspaceId
-                );
-                const isNonStandardId = validationResult.displaySessionIdChanged;
-                
-                sessionInfo = {
-                    sessionId: validationResult.id,
-                    isNewSession: validationResult.created,
-                    isNonStandardId: isNonStandardId,
-                    originalSessionId: isNonStandardId ? sessionId : undefined,
-                    displaySessionId: validationResult.displaySessionId,
-                    displaySessionIdChanged: validationResult.displaySessionIdChanged
-                };
-                
-                // Update params with validated session ID (both locations for compatibility)
-                if (params.context) {
-                    params.context.sessionId = validationResult.id;
-                    params.context.sessionName = validationResult.displaySessionId;
-                }
-                params.sessionId = validationResult.id;
-                params._displaySessionId = validationResult.displaySessionId;
-            } catch (error) {
-                logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
-                // Fallback to original SessionService if SessionContextManager fails
-                sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-                if (params.context) {
-                    params.context.sessionId = sessionInfo.sessionId;
-                }
-                params.sessionId = sessionInfo.sessionId;
-            }
-        } else {
-            // Fallback to original SessionService if no SessionContextManager or sessionId
-            // processSessionId handles undefined by generating a new session ID
-            sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-            if (params.context) {
-                params.context.sessionId = sessionInfo.sessionId;
-            }
-            params.sessionId = sessionInfo.sessionId;
-        }
-        
         const shouldInjectInstructions = this.dependencies.sessionService.shouldInjectInstructions(
-            sessionInfo.sessionId, 
+            sessionInfo.sessionId,
             this.sessionContextManager
         );
 
@@ -276,12 +261,193 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             params,
             sessionId: sessionInfo.sessionId,
             fullToolName,
+            clientName: request.clientName,
             sessionContextManager: this.sessionContextManager,
             sessionInfo: {
                 ...sessionInfo,
                 shouldInjectInstructions
-            }
+            },
+            ...(workspaceBinding ? { workspaceBinding } : {})
         };
+    }
+
+    /**
+     * Resolve the session and the workspace it runs in, in that order of
+     * dependency: the handle partition (`"<workspaceId>::<handle>"`) needs the
+     * workspace, so the workspace is settled FIRST (#214):
+     *
+     *   workspaceId:  explicit on this call  →  handle's last bind  →  UNBOUND
+     *
+     * UNBOUND is not an error here. `useTools` is left without a workspaceId so
+     * ToolCliNormalizer.normalizeRequiredWorkspaceId throws its "pass it once"
+     * steer; `getTools` is partitioned under 'default' so discovery can be a
+     * session's first call — WITHOUT binding, because nothing was chosen.
+     *
+     * The resolved canonical value is written back onto `params` so
+     * normalizeContext and ToolBatchExecutionService.validateContext can stay
+     * strict and unchanged. Mutates `params` in place, as the caller expects.
+     */
+    private async processSession(
+        params: SessionEnvelopeParams,
+        agentName: string,
+        tool: string
+    ): Promise<{ sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }> {
+        // Use SessionContextManager for unified session handling instead of separate SessionService
+        const sessionId = params.context?.sessionId || params.sessionId;
+
+        if (!this.sessionContextManager || !sessionId) {
+            // Fallback to original SessionService if no SessionContextManager or sessionId
+            // processSessionId handles undefined by generating a new session ID
+            const sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
+            if (params.context) {
+                params.context.sessionId = sessionInfo.sessionId;
+            }
+            params.sessionId = sessionInfo.sessionId;
+            return { sessionInfo };
+        }
+
+        const isToolManager = agentName === TOOL_MANAGER_AGENT;
+        let workspaceBinding: WorkspaceBindingIntent | undefined;
+        try {
+            // Legacy `agent_tool` calls carry the envelope under `context`; the
+            // two-tool surface carries it at the top level (normalizeContext
+            // rejects a nested `context` outright).
+            const resolution = await this.sessionContextManager.resolveWorkspaceForSession(
+                params.workspaceId ?? params.context?.workspaceId,
+                sessionId
+            );
+
+            if (resolution.workspaceId) {
+                // Two-tool calls read the top level; legacy calls read `context`.
+                // A legacy call only gets the top-level key canonicalised if it
+                // sent one — injecting a new key into an arbitrary tool's params
+                // is not this method's business.
+                if (isToolManager || !params.context || params.workspaceId !== undefined) {
+                    params.workspaceId = resolution.workspaceId;
+                }
+                if (params.context) {
+                    params.context.workspaceId = resolution.workspaceId;
+                }
+                workspaceBinding = {
+                    handle: sessionId,
+                    workspaceId: resolution.workspaceId,
+                    explicit: resolution.explicit,
+                    priorBound: this.sessionContextManager.resolveHandleWorkspace(sessionId)
+                };
+            } else if (isToolManager && tool === USE_TOOLS) {
+                // Leave it absent. Deleting rather than skipping guards against a
+                // caller that sent `workspaceId: ""` — blank must fail exactly
+                // like omitted, not slip past `required` as a present key.
+                delete params.workspaceId;
+            }
+
+            // Only discovery is partitioned under 'default' when unbound. For
+            // everything else the manager's own 'default' parameter applies,
+            // which is today's behaviour for legacy-format calls.
+            const partitionWorkspace = resolution.workspaceId
+                ?? (isToolManager && tool === GET_TOOLS ? 'default' : undefined);
+
+            const validationResult = await this.sessionContextManager.validateSessionId(
+                sessionId,
+                typeof params.memory === 'string' ? params.memory : undefined,
+                partitionWorkspace
+            );
+            const isNonStandardId = validationResult.displaySessionIdChanged;
+
+            const sessionInfo: SessionInfo = {
+                sessionId: validationResult.id,
+                isNewSession: validationResult.created,
+                isNonStandardId: isNonStandardId,
+                originalSessionId: isNonStandardId ? sessionId : undefined,
+                displaySessionId: validationResult.displaySessionId,
+                displaySessionIdChanged: validationResult.displaySessionIdChanged
+            };
+
+            // Update params with validated session ID (both locations for compatibility)
+            if (params.context) {
+                params.context.sessionId = validationResult.id;
+                params.context.sessionName = validationResult.displaySessionId;
+            }
+            params.sessionId = validationResult.id;
+            params._displaySessionId = validationResult.displaySessionId;
+
+            if (workspaceBinding && validationResult.displaySessionId !== sessionId) {
+                workspaceBinding.displayHandle = validationResult.displaySessionId;
+            }
+            return { sessionInfo, workspaceBinding };
+        } catch (error) {
+            logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
+            // Fallback to original SessionService if SessionContextManager fails
+            const sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
+            if (params.context) {
+                params.context.sessionId = sessionInfo.sessionId;
+            }
+            params.sessionId = sessionInfo.sessionId;
+            // No bind on the fallback path: the manager that would hold it just failed.
+            return { sessionInfo };
+        }
+    }
+
+    /**
+     * Bind point 1 (#214): an EXPLICIT workspaceId on a `useTools` call whose
+     * result did not fail binds the session's handle to that workspace.
+     *
+     * The check reads the RESULT, not `handle()`'s local `success` flag — that
+     * flag is true for any non-throwing call, including one that returned
+     * `{ success: false }` because validateWorkspaceId rejected the value. An
+     * inherited workspace is not a new choice and never re-binds; `getTools`
+     * never binds because discovery chooses nothing.
+     *
+     * Ordering with bind point 2: `nexus use --workspace X -- memory
+     * load-workspace Y` fires BOTH points in one call — the batch service binds
+     * Y while the tool runs, and this method runs after. The loaded workspace
+     * is the more deliberate act and happened later, so it must win: if the
+     * handle's binding moved since processSession snapshotted it, skip.
+     */
+    private bindWorkspaceFromResult(
+        context: IRequestContext & { workspaceBinding?: WorkspaceBindingIntent },
+        result: ToolExecutionResult
+    ): void {
+        const intent = context.workspaceBinding;
+        if (!this.sessionContextManager || !intent || !intent.explicit) {
+            return;
+        }
+        if (context.agentName !== TOOL_MANAGER_AGENT || context.tool !== USE_TOOLS) {
+            return;
+        }
+        if (!result || result.success === false) {
+            return;
+        }
+        try {
+            if (this.boundDuringCall(intent.handle, intent.priorBound)) {
+                return;
+            }
+            this.sessionContextManager.bindHandleWorkspace(intent.handle, intent.workspaceId);
+            if (intent.displayHandle && intent.displayHandle !== intent.handle
+                && !this.boundDuringCall(intent.displayHandle, intent.priorBound)) {
+                this.sessionContextManager.bindHandleWorkspace(intent.displayHandle, intent.workspaceId);
+            }
+        } catch (error) {
+            logger.systemWarn(`Workspace bind failed for session "${intent.handle}": ${getErrorMessage(error)}`);
+        }
+    }
+
+    /**
+     * True when `handle` is bound to something other than what processSession
+     * saw before execution — i.e. bind point 2 moved it during this call. The
+     * display handle (a renamed friendly id) had no binding of its own before
+     * the call, so the same snapshot serves both: bind point 2 binds every
+     * handle mapped to the session id at once.
+     */
+    private boundDuringCall(handle: string, priorBound: string | undefined): boolean {
+        const current = this.sessionContextManager?.resolveHandleWorkspace(handle);
+        if (current === undefined || current === priorBound) {
+            return false;
+        }
+        logger.systemLog(
+            `Session "${handle}" was bound to workspace ${current} during the call (load-workspace); keeping it over the explicit workspaceId`
+        );
+        return true;
     }
 
     private async processParameters(context: IRequestContext): Promise<EnhancedToolParams> {

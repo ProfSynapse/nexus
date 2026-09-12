@@ -643,9 +643,9 @@ function isMeaningfulContextValue(value: unknown): boolean {
 }
 
 // sessionId carries a valid silent default (auto-session), and an absent or
-// empty workspaceId is refused outright by normalizeContext — see
-// WORKSPACE_ID_REQUIRED_MESSAGE. So blank is never this function's business;
-// only a present, non-empty placeholder is junk.
+// empty workspaceId is either inherited from the session's bind upstream or
+// refused by normalizeContext — see WORKSPACE_ID_REQUIRED_MESSAGE. So blank is
+// never this function's business; only a present, non-empty placeholder is junk.
 function isPlaceholderJunk(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   if (value.trim().length === 0) return false;
@@ -655,8 +655,8 @@ function isPlaceholderJunk(value: unknown): boolean {
 /**
  * Collect predictable steering for a useTools context block.
  * - memory + goal: hard-required (empty or placeholder → steer).
- * - workspaceId: requiredness is enforced once, in normalizeContext; here we
- *   only steer a present-but-junk value.
+ * - workspaceId: "bound or explicit" is enforced once, in normalizeContext;
+ *   here we only steer a present-but-junk value.
  * - sessionId: defaults silently; steer only if present-but-junk.
  * Pure — no agent registry needed, so the eval harness can call it directly.
  */
@@ -680,7 +680,7 @@ export function collectContextContractViolations(
   if (isPlaceholderJunk(params.workspaceId)) {
     violations.push({
       field: 'workspaceId',
-      message: 'The "workspaceId" looks like a placeholder. Use "default" for the global workspace, or an exact workspace name or ID from getTools — it is required, so there is nothing to fall back to.',
+      message: 'The "workspaceId" looks like a placeholder. Use "default" for the global workspace, or an exact workspace name or ID from getTools — or omit it to keep the workspace this session already uses.',
     });
   }
   if (isPlaceholderJunk(params.sessionId)) {
@@ -743,34 +743,37 @@ function normalizeVerbatimValues(raw: unknown): Record<string, string> | undefin
 }
 
 // ---------------------------------------------------------------------------
-// workspaceId requiredness (#214)
+// workspaceId: pass it once, it is remembered (#214)
 //
-// `workspaceId` is in the `required` array of both envelope schemas, and on the
-// MCP path that array IS enforced at runtime (ValidationService → validateParams
-// → "Missing required parameter: workspaceId"). But `required` only asks whether
-// the key is PRESENT, so `workspaceId: ""` sailed through and the old
-// `params.workspaceId || 'default'` here quietly filed the call under the global
-// workspace — a caller whose template rendered to empty behaved completely
-// differently from one that omitted the field, and its traces, sessions and
-// states landed somewhere it never asked for.
+// A session's workspace is bound by the first useTools call that names one
+// (or by a successful `memory load-workspace`) and inherited by every later
+// call in that session — ToolExecutionStrategy.processSession resolves
+//   explicit on this call → the session's last bind → UNBOUND
+// and writes the winner onto `params.workspaceId` before this normalizer runs.
+// `workspaceId` is therefore no longer in the `required` array of either
+// envelope schema: a call that omits it is the normal case after the first.
 //
-// So: empty, blank and absent all fail the same way, and they fail HERE because
-// schema `required` is documentation plus CLI-normalizer hints, not validation.
-// There is no session stickiness to fall back on (see #214) — nothing remembers
-// the workspace a session was already working in, so a silent default is a guess
-// dressed up as a decision. Surrounding whitespace is trimmed rather than
-// refused: ` default ` is unambiguous, and trimming keeps it from reaching the
-// repository guard as a distinct path segment.
+// What reaches this function is the RESOLVED value, so an empty one means the
+// session has never been bound. That still fails, and fails HERE, because the
+// alternative is the bug #214 reports: the old `params.workspaceId || 'default'`
+// quietly filed an unbound call under the global workspace, and a caller whose
+// template rendered `workspaceId: ""` behaved differently from one that omitted
+// the field while its traces, sessions and states landed somewhere it never
+// asked for. Empty, blank and absent all mean UNBOUND; none of them means
+// 'default'. Surrounding whitespace is trimmed rather than refused: ` default `
+// is unambiguous, and trimming keeps it from reaching the repository guard as
+// a distinct path segment.
 // ---------------------------------------------------------------------------
 
 export const WORKSPACE_ID_REQUIRED_MESSAGE =
-  '"workspaceId" is required and must not be empty. Pass "default" for the global workspace, '
-  + 'or an exact workspace name or id from the availableWorkspaces list returned by getTools. '
-  + 'An empty string is not treated as "default" — it is rejected, exactly like omitting the field.';
+  'This session has no workspace yet. Pass "workspaceId" once — "default" for the global workspace, '
+  + 'or an exact name/id from availableWorkspaces — or load one with "memory load-workspace"; '
+  + 'later calls in this session inherit it.';
 
 /**
- * Resolve the envelope's workspaceId, or throw a recoverable steering error.
- * @param raw - The caller-supplied top-level workspaceId
+ * Accept the session's resolved workspaceId, or throw the recoverable
+ * "pass it once" steer when the session is still unbound.
+ * @param raw - The resolved top-level workspaceId (explicit or inherited)
  * @returns The trimmed workspace identifier
  */
 export function normalizeRequiredWorkspaceId(raw: unknown): string {

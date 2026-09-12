@@ -125,11 +125,25 @@ export class AgentExecutionManager {
         }
 
         try {
+            // Same resolution order as ToolExecutionStrategy.processSession
+            // (explicit → session's last bind → unbound), so the handle partition
+            // never diverges between the MCP path and this direct-form chat
+            // path (#214). Direct-form callers carry the chat's workspace under
+            // `context` (DirectToolExecutor fills it from the chat selection);
+            // the old top-level-only read partitioned every such handle under
+            // 'default'. Only the PARTITION uses the resolved value — the tool
+            // still receives `context.workspaceId` exactly as the chat sent it.
+            const nestedContext = params.context as { workspaceId?: unknown } | undefined;
+            const resolution = await this.sessionContextManager.resolveWorkspaceForSession(
+                params.workspaceId ?? nestedContext?.workspaceId,
+                sessionId
+            );
+
             // Validate session ID - destructure the result to get the actual ID
             const validationResult = await this.sessionContextManager.validateSessionId(
                 sessionId,
                 typeof params.memory === 'string' ? params.memory : undefined,
-                typeof params.workspaceId === 'string' ? params.workspaceId : undefined
+                resolution.workspaceId
             );
             const validatedSessionId = validationResult.id;
             params.sessionId = validatedSessionId;

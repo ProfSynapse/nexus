@@ -103,6 +103,17 @@ function makeDeps(captured: CapturedExecution): IRequestHandlerDependencies {
 function makeContextManager(overrides: Partial<SessionContextManager> = {}): SessionContextManager {
   return {
     validateSessionId: jest.fn(),
+    // Identity resolution: an explicit value is used as-is, nothing is bound.
+    // The resolution order itself is covered in SessionStickyWorkspace.test.ts.
+    resolveWorkspaceForSession: jest.fn(async (explicit: unknown) => {
+      const trimmed = typeof explicit === 'string' ? explicit.trim() : '';
+      return trimmed ? { workspaceId: trimmed, explicit: true } : { workspaceId: undefined, explicit: false };
+    }),
+    bindHandleWorkspace: jest.fn(),
+    // Nothing bound before or after the call, so bind point 1 never sees a
+    // mid-call load-workspace bind here (that ordering is pinned in
+    // SessionStickyWorkspace.test.ts).
+    resolveHandleWorkspace: jest.fn().mockReturnValue(undefined),
     applyWorkspaceContext: jest.fn((_id: string, p: Record<string, unknown>) => p),
     updateFromResult: jest.fn(),
     updateSessionDescription: jest.fn(),
