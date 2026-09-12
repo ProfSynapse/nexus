@@ -6,7 +6,7 @@
  * The SessionContextManager is REAL; only storage (SessionService), the
  * workspace lookup and the persistence store are stubbed — and none of them
  * supplies the value an assertion depends on, except where a test is about
- * that stub's data (persistence round-trip, deleted-session drop).
+ * that stub's data (persistence round-trip, storage-miss re-create).
  */
 
 import { ToolExecutionStrategy } from '../../../src/handlers/strategies/ToolExecutionStrategy';

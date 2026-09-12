@@ -13,7 +13,7 @@
  * REAL throughout; only storage (SessionService), the workspace lookup and the
  * persistence store are stubbed — and none of them supplies the value an
  * assertion depends on, except where the test is about that stub's data
- * (persistence round-trip, deleted-session drop).
+ * (persistence round-trip, storage-miss re-create).
  */
 
 import type { IRequestContext } from '../../src/handlers/interfaces/IRequestHandlerServices';
@@ -417,7 +417,13 @@ describe('persistence: session-bindings.json', () => {
     expect(afterService.createSession).not.toHaveBeenCalled();
   });
 
-  it('a restored handle whose session was deleted is dropped, and the handle gets a fresh session', async () => {
+  // A restored handle is never dropped on a storage miss. `getAllSessions`
+  // returns [] while storage is still hydrating after a reload, and a call a
+  // few seconds in saw exactly that: the handle was dropped and a new id
+  // minted — the regression this map exists to prevent. Continuity wins: the
+  // same id is kept and the record re-created with it, whether the empty list
+  // came from cold storage or from a real delete.
+  it('a restored handle whose session storage does not list keeps the SAME id and re-creates the record with it', async () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'default::nexus-cli': { id: 's-20260101000000', displaySessionId: 'nexus-cli', workspaceId: 'default' } },
@@ -425,17 +431,66 @@ describe('persistence: session-bindings.json', () => {
       cliCurrentSession: null
     };
     const sessionService = makeSessionService();
-    sessionService.getAllSessions.mockResolvedValue([]); // deleted while unloaded
+    sessionService.getAllSessions.mockResolvedValue([]); // deleted while unloaded — or not yet loaded
     const { manager } = makeManager({ store, sessionService });
 
-    const result = await manager.validateSessionId('nexus-cli', undefined, 'default');
+    const result = await manager.validateSessionId('nexus-cli', 'resumed after reload', 'default');
 
-    expect(result.created).toBe(true);
-    expect(result.id).not.toBe('s-20260101000000');
-    // Not renamed either: the stale display name must not force a suffix.
+    expect(result.id).toBe('s-20260101000000');
+    expect(result.created).toBe(false);
     expect(result.displaySessionId).toBe('nexus-cli');
+    expect(sessionService.createSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.createSession).toHaveBeenCalledWith({
+      id: 's-20260101000000',
+      name: 'nexus-cli',
+      description: 'resumed after reload',
+      workspaceId: 'default'
+    });
     await manager.flushBindings();
-    expect(store.doc?.handles['default::nexus-cli']?.id).toBe(result.id);
+    expect(store.doc?.handles['default::nexus-cli']?.id).toBe('s-20260101000000');
+  });
+
+  it('cold storage (empty list, then warm) never renames: the same id is used on every call and the check runs once', async () => {
+    const store = new MemoryBindingsStore();
+    store.doc = {
+      handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
+      handleWorkspace: { 'live-check': 'ws-research-id' },
+      cliCurrentSession: 'live-check'
+    };
+    const sessionService = makeSessionService();
+    sessionService.getAllSessions.mockResolvedValueOnce([]); // ~3 s after reload: still hydrating
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-20260912194746', workspaceId: 'ws-research-id', name: 'live-check' }]);
+    const { manager } = makeManager({ store, sessionService });
+
+    const cold = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+    const warm = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+
+    expect(cold.id).toBe('s-20260912194746');
+    expect(cold.displaySessionId).toBe('live-check');
+    expect(cold.displaySessionIdChanged).toBe(false);
+    expect(warm).toEqual(cold);
+    expect(sessionService.getAllSessions).toHaveBeenCalledTimes(1);
+    expect(await manager.resolveWorkspaceForSession(undefined, 'live-check'))
+      .toEqual({ workspaceId: 'ws-research-id', explicit: false });
+  });
+
+  it('a failed re-create (workspace not found while storage is cold) only logs; the handle is still kept', async () => {
+    const store = new MemoryBindingsStore();
+    store.doc = {
+      handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
+      handleWorkspace: {},
+      cliCurrentSession: null
+    };
+    const sessionService = makeSessionService();
+    sessionService.getAllSessions.mockResolvedValue([]);
+    sessionService.createSession.mockRejectedValue(new Error('Workspace ws-research-id not found'));
+    const { manager } = makeManager({ store, sessionService });
+
+    const result = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+
+    expect(result.id).toBe('s-20260912194746');
+    expect(result.created).toBe(false);
+    expect(manager.describeHandle('live-check', 'ws-research-id')?.id).toBe('s-20260912194746');
   });
 
   it('a storage lookup that throws keeps the restored handle rather than renaming a live session', async () => {

@@ -99,12 +99,16 @@ export class SessionContextManager {
   private sessionHandleMap: Map<string, { id: string; displaySessionId: string; workspaceId: string }> = new Map();
 
   // Handle entries restored from session-bindings.json that have not yet been
-  // checked against storage. A restored entry is only trusted once
-  // `sessionService.getAllSessions(entry.workspaceId)` confirms the session
-  // still exists; a session deleted while the plugin was unloaded is dropped
-  // at that point instead of being silently resumed. The check is lazy (on the
-  // handle's first use) rather than at service init because storage is cold
-  // during startup hydration and would report every session as missing.
+  // checked against storage. On the handle's first use
+  // `sessionService.getAllSessions(entry.workspaceId)` is consulted once; the
+  // entry is KEPT either way — a miss re-creates the session record with the
+  // same id (best-effort) rather than minting a new one. The check is lazy
+  // rather than at service init because storage is cold during startup
+  // hydration, and it cannot be allowed to drop anything for the same reason:
+  // a call a few seconds after reload saw an empty list and renumbered a live
+  // session (see verifyRestoredHandle). What the check still buys is the
+  // display-name uniqueness pass in createUniqueSessionDisplayName, which
+  // skips unverified entries so a stale name never forces a `-2`.
   private unverifiedHandleKeys: Set<string> = new Set();
 
   // Handle → workspace id of the LAST DELIBERATE bind (#214). Distinct from
@@ -461,16 +465,27 @@ export class SessionContextManager {
   }
 
   /**
-   * Confirm a restored handle's session still exists in storage. Returns the
-   * entry when it does (and marks it trusted), or null after dropping the
-   * entry when the session is gone. A lookup that THROWS keeps the entry
-   * unverified and returns it — a storage hiccup must not rename a live
-   * session to `<handle>-2`.
+   * Check a restored handle's session against storage once, and ALWAYS keep
+   * the entry. The handle's continuity is what the caller wants: when
+   * storage lists the session, trust the entry; when it does not, re-create
+   * the record with the same id (best-effort) and trust the entry anyway.
+   *
+   * Never drop on a miss. `SessionService.getAllSessions` returns `[]` while
+   * storage is still hydrating after a reload (it swallows the error), and a
+   * call a few seconds in saw exactly that: the restored `default::live-check`
+   * was dropped and a new id minted — the regression this handle map exists
+   * to prevent. A session that was genuinely deleted while unloaded is
+   * therefore resurrected with its old id, which is the lesser evil versus
+   * silently renumbering a live session because storage was cold.
+   *
+   * A lookup that THROWS keeps the entry unverified (re-checked next call)
+   * and returns it, as before.
    */
   private async verifyRestoredHandle(
     key: string,
-    entry: { id: string; displaySessionId: string; workspaceId: string }
-  ): Promise<{ id: string; displaySessionId: string; workspaceId: string } | null> {
+    entry: { id: string; displaySessionId: string; workspaceId: string },
+    sessionDescription?: string
+  ): Promise<{ id: string; displaySessionId: string; workspaceId: string }> {
     if (!this.unverifiedHandleKeys.has(key)) {
       return entry;
     }
@@ -485,25 +500,30 @@ export class SessionContextManager {
       return entry;
     }
 
-    if (sessions.some(session => session.id === entry.id)) {
-      // Trust every key that points at this session, not just the one looked up.
-      for (const [otherKey, other] of this.sessionHandleMap.entries()) {
-        if (other.id === entry.id) {
-          this.unverifiedHandleKeys.delete(otherKey);
-        }
-      }
-      return entry;
-    }
-
-    logger.systemLog(`Restored session handle "${key}" points at deleted session ${entry.id}; dropping it`);
+    // Trust every key that points at this session, not just the one looked up.
     for (const [otherKey, other] of this.sessionHandleMap.entries()) {
       if (other.id === entry.id) {
-        this.sessionHandleMap.delete(otherKey);
         this.unverifiedHandleKeys.delete(otherKey);
       }
     }
-    this.scheduleBindingsSave();
-    return null;
+
+    if (!sessions.some(session => session.id === entry.id)) {
+      logger.systemLog(
+        `Restored session handle "${key}" points at session ${entry.id}, which storage does not list; keeping the handle and re-creating the record`
+      );
+      try {
+        // createAutoSession already logs and swallows a failed createSession
+        // (e.g. "Workspace X not found" while storage is cold); the guard here
+        // is belt-and-braces so nothing on this path can throw or drop.
+        await this.createAutoSession(entry.id, entry.displaySessionId, sessionDescription, entry.workspaceId);
+      } catch (error) {
+        logger.systemWarn(
+          `Could not re-create session ${entry.id} for restored handle "${key}": ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    return entry;
   }
 
   /**
@@ -770,7 +790,9 @@ export class SessionContextManager {
     if (!isStandardSessionId(sessionId)) {
       const key = this.handleKey(workspaceId, sessionId);
       const knownHandle = this.sessionHandleMap.get(key);
-      const existingHandle = knownHandle ? await this.verifyRestoredHandle(key, knownHandle) : null;
+      const existingHandle = knownHandle
+        ? await this.verifyRestoredHandle(key, knownHandle, sessionDescription)
+        : null;
       if (existingHandle) {
         return {
           id: existingHandle.id,
