@@ -178,6 +178,11 @@ export class McpLineClient {
         return this.request('tools/call', { name, arguments: args }, this.toolCallTimeoutMs) as Promise<McpToolResult>;
     }
 
+    /** Standard MCP `resources/read`; used for the server-answered `nexus://context` view. */
+    readResource(uri: string): Promise<unknown> {
+        return this.request('resources/read', { uri });
+    }
+
     close(): void {
         this.socket?.end();
         this.socket?.destroy();

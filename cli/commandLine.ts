@@ -59,7 +59,7 @@ export const MISPLACEABLE_CONTEXT_FLAGS = new Set([
     'memory', 'goal', 'constraints', 'operation-id', 'vault', 'session', 'json', 'dry-run',
 ]);
 
-export const VERBS = ['tools', 'use', 'playbook', 'vaults', 'doctor', 'help'];
+export const VERBS = ['tools', 'use', 'playbook', 'context', 'vaults', 'doctor', 'help'];
 
 export interface PartitionedUseArgv {
     outerArgv: string[];
