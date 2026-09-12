@@ -38,6 +38,7 @@ nexus tools [selector...]           Discover tools. Drill down as far as you wan
                                       nexus tools storage list       one tool, full arg schema
                                       nexus tools "storage list, content read"   several at once
 nexus use [context] -- <command>    Run a CLI-style tool command
+nexus context [--json]              What this vault remembers for the CLI (session, workspace)
 nexus vaults                        List open vaults
 nexus doctor [--vault <name>]       Connect + MCP handshake + tools/list
 nexus --help                        Full usage
@@ -53,9 +54,43 @@ nexus use \
 ```
 
 `--memory` and `--goal` are **required** — Nexus enforces the context contract
-and rejects calls without them. Optional: `--workspace <id>` (default
-`default`), `--session <name>` (default `nexus-cli`; reuse one name per task),
-`--constraints <text>`, `--json` (raw JSON-RPC result).
+and rejects calls without them. Optional: `--constraints <text>`, `--json` (raw
+JSON-RPC result).
+
+### Workspace and session: choose once, it is remembered
+
+`--workspace <name|id>` and `--session <name>` are **pass-once** flags. The
+vault remembers them, so you pass each on the first call of a task (or to
+switch) and omit it afterwards:
+
+- **Session.** With an explicit `--session`, the vault records that handle as
+  the CLI's current session once the call succeeds; every later CLI call with
+  no `--session` continues it. A vault where the CLI never chose runs as
+  `nexus-cli`. Two different names are two different sessions.
+- **Workspace.** A session's workspace is bound by the first successful call
+  that names one (`--workspace`) or by a successful `memory load-workspace`,
+  and every later call in that session inherits it. Nothing defaults silently:
+  a session that has not chosen fails with *"This session has no workspace
+  yet"* — pass `--workspace` once, or run `memory load-workspace <name>` in
+  its own call. Only `memory list-workspaces`, `memory load-workspace` and
+  `memory create-workspace` run before a workspace is chosen (create one when
+  none fits, then load it). `--workspace default` is the global workspace;
+  pass it deliberately, never as a placeholder.
+
+```
+# first call: choose both once
+nexus use --session weekly-review --workspace "Research" \
+  --memory "starting the weekly review" --goal "list this week's dailies" \
+  -- search directory --query "2026-07" --paths "Daily"
+
+# later calls: nothing to repeat
+nexus use --memory "have the list; reading Monday" --goal "read Monday's daily" \
+  -- content read --path Daily/2026-07-13.md --start-line 1
+```
+
+`nexus context` prints what the current vault remembers (vault, current CLI
+session, its workspace). The state lives in the plugin's data folder inside
+the vault and survives a plugin reload; the CLI itself holds nothing.
 
 The `--` delimiter separates CLI context from the tool command. Values after it
 are ordinary shell arguments, so a multiword value needs only one quote layer:

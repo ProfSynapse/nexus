@@ -34,7 +34,8 @@ Full live schema: `nexus tools prompt execute`. Saved prompts: `prompt list`
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above); thread `--workspace`/`--session`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Pick the driver**: write an **inline** `prompt`, or find a **saved** one with
    `prompt list` and pass its name as `customPrompt`.
 3. **Attach the notes** the prompt should see via `contextFiles` (read them first
@@ -60,11 +61,14 @@ the inline JSON stays small.
 
 ## Worked examples
 
+All three examples share one session. Example A is the first call, so it names
+the session and the workspace once; B and C omit both and inherit them.
+
 **A — inline prompt, one note as context, result to stdout:**
 
 ```
 nexus use \
-  --json --workspace research --session prompt-run \
+  --json --session prompt-run --workspace research \
   --memory "summarizing the auth flow note" --goal "get a 3-bullet summary" \
   -- prompt execute --prompts '[{"type":"text","prompt":"Summarize this note in 3 bullets","contextFiles":["Projects/Auth/flow.md"]}]'
 ```
@@ -76,14 +80,13 @@ the **user** message. They are different roles, not alternatives — a request w
 `customPrompt` and no `prompt` sends the model no instruction to act on.
 
 ```
-# find the saved prompt's name
-nexus use --workspace research --session prompt-run \
+# find the saved prompt's name (session + workspace inherited from A)
+nexus use \
   --memory "looking for my weekly-review prompt" --goal "list saved prompts" \
   -- prompt list
 
 # run it over this week's notes and append the output to the review note
 nexus use \
-  --workspace research --session prompt-run \
   --memory "have the daily notes; running weekly-review" --goal "append a weekly review" \
   -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","prompt":"Write the weekly review from the attached daily notes.","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
 ```
@@ -92,11 +95,10 @@ nexus use \
 
 ```
 nexus use \
-  --workspace research --session prompt-run \
   --memory "need a logo asset" --goal "generate a logo image" \
   -- prompt execute --prompts '[{"type":"image","prompt":"a minimalist logo, teal on white","savePath":"Assets/logo.png","aspectRatio":"1:1"}]'
 # then poll:
-nexus use --workspace research --session prompt-run \
+nexus use \
   --memory "waiting on the logo" --goal "check image generation status" \
   -- prompt check-generated-artifact "<job-id>"
 ```

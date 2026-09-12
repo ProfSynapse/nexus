@@ -44,7 +44,7 @@ export type SessionDeletedListener = (sessionId: string, workspaceId: string) =>
  * so this file does not import the (heavy) WorkspaceService module.
  */
 export interface WorkspaceResolverLike {
-  getWorkspaceByNameOrId(identifier: string): Promise<{ id: string } | null>;
+  getWorkspaceByNameOrId(identifier: string): Promise<{ id: string; name?: string } | null>;
 }
 
 export interface SessionValidationResult {
@@ -120,6 +120,14 @@ export class SessionContextManager {
   // 'default' — so that map records where traces went, not what the caller
   // chose. Only bindHandleWorkspace / bindSessionWorkspaceById write here.
   private handleWorkspace: Map<string, string> = new Map();
+
+  // The session handle the CLI last chose with an explicit `--session` on a
+  // successful call — "where the CLI left off" in this vault. A CLI call with
+  // no `--session` continues it (ToolExecutionStrategy bind point 3). Null
+  // until the CLI has chosen once; the `'nexus-cli'` fallback the strategy
+  // applies in that case is a default, not a choice, and never lands here.
+  // MCP clients and native chat never read or write this.
+  private cliCurrentSession: string | null = null;
 
   // Canonicalises workspace names to ids before a bind or partition, the same
   // way ToolCallTraceService.resolveWorkspaceId does for traces, so a session's
@@ -212,6 +220,9 @@ export class SessionContextManager {
         this.handleWorkspace.set(handle, workspaceId);
       }
     }
+    if (this.cliCurrentSession === null && doc.cliCurrentSession) {
+      this.cliCurrentSession = doc.cliCurrentSession;
+    }
   }
 
   private snapshotBindings(): PersistedSessionBindings {
@@ -221,8 +232,43 @@ export class SessionContextManager {
     }
     return {
       handles,
-      handleWorkspace: Object.fromEntries(this.handleWorkspace.entries())
+      handleWorkspace: Object.fromEntries(this.handleWorkspace.entries()),
+      cliCurrentSession: this.cliCurrentSession
     };
+  }
+
+  /** The handle the CLI last chose with `--session`, or null if it never has. */
+  getCliCurrentSession(): string | null {
+    return this.cliCurrentSession;
+  }
+
+  /**
+   * Bind point 3 (#214): remember the handle an explicit `--session` named
+   * once the call succeeded. Switching is the same gesture as choosing — pass
+   * a different value once. Idempotent so the every-call case costs no write.
+   */
+  setCliCurrentSession(handle: string): void {
+    const trimmed = handle.trim();
+    if (!trimmed) {
+      logger.systemWarn('Attempted to set the CLI current session to an empty handle');
+      return;
+    }
+    if (this.cliCurrentSession === trimmed) {
+      return;
+    }
+    this.cliCurrentSession = trimmed;
+    logger.systemLog(`CLI current session is now "${trimmed}"`);
+    this.scheduleBindingsSave();
+  }
+
+  /**
+   * The internal session a friendly handle maps to in a workspace, if this
+   * manager has seen it (live or restored). Read-only; used by the
+   * `nexus://context` resource to show the display name a renamed handle got.
+   */
+  describeHandle(handle: string, workspaceId = 'default'): { id: string; displaySessionId: string } | undefined {
+    const entry = this.sessionHandleMap.get(this.handleKey(workspaceId, handle));
+    return entry ? { id: entry.id, displaySessionId: entry.displaySessionId } : undefined;
   }
 
   /**
@@ -275,6 +321,23 @@ export class SessionContextManager {
     } catch (error) {
       logger.systemWarn(`Workspace lookup failed for "${trimmed}": ${error instanceof Error ? error.message : String(error)}`);
       return trimmed;
+    }
+  }
+
+  /**
+   * Best-effort display name for a canonical workspace id ('default' has
+   * none). Read-only; a failed or absent lookup yields undefined.
+   */
+  async describeWorkspace(workspaceId: string): Promise<{ id: string; name?: string }> {
+    const trimmed = workspaceId.trim();
+    if (trimmed.length === 0 || trimmed === GLOBAL_WORKSPACE_ID || !this.workspaceResolver) {
+      return { id: trimmed };
+    }
+    try {
+      const workspace = await this.workspaceResolver.getWorkspaceByNameOrId(trimmed);
+      return workspace?.name ? { id: trimmed, name: workspace.name } : { id: trimmed };
+    } catch {
+      return { id: trimmed };
     }
   }
 
@@ -589,6 +652,7 @@ export class SessionContextManager {
     this.sessionHandleMap.clear();
     this.unverifiedHandleKeys.clear();
     this.handleWorkspace.clear();
+    this.cliCurrentSession = null;
     this.instructedSessions.clear();
     this.defaultWorkspaceContext = null;
   }

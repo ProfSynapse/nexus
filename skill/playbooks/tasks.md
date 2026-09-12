@@ -13,23 +13,24 @@ the workspace, get or create a project (capture its `projectId`), then add tasks
 
 ## The one thing to get right: workspace vs project
 
-- **Workspace** comes from the **top-level `--workspace <name-or-id>` context
-  flag** — the same flag you pass on every call, set to the workspace you loaded.
-  Task tools read their workspace scope from it automatically. **Do not** put
+- **Workspace** is the one your session is bound to — set once by loading it
+  (`memory load-workspace`) or by passing the top-level `--workspace <name-or-id>`
+  context flag once; every later call in the session inherits it, and task tools
+  read their workspace scope from it automatically. **Do not** put
   `--workspace-id` *inside* the tool string — it's a reserved context field and
   is rejected there.
 - **Project** is identified by a **`projectId`** that `task create-project` (or
   `task list-projects`) returns. Capture it and pass it to task calls as
   `--project-id`.
 
-So: load the workspace → thread `--workspace` on every call → create/find a
-project → capture its `projectId` → create tasks with `--project-id`.
+So: load the workspace once → create/find a project → capture its `projectId`
+→ create tasks with `--project-id`.
 
 ## Protocol
 
-1. **Load the workspace** (spine above); thread `--workspace <name-or-id>` on
-   every following call.
-2. **Get a project.** `task list-projects` (scoped by `--workspace`) to find one,
+1. **Name the session and load the workspace** (spine above) — once; later calls
+   inherit both.
+2. **Get a project.** `task list-projects` (scoped by the session's workspace) to find one,
    or `task create-project --name "<name>"` — note the **projectId** it returns.
 3. **Add tasks.** `task create --project-id <projectId> --title "<title>"` (add
    `--description`, dependencies, etc. — see `nexus tools task create`).
@@ -44,39 +45,35 @@ project → capture its `projectId` → create tasks with `--project-id`.
 ## Worked example — new project, two tasks, one depends on the other
 
 ```
-# 1. load the workspace — thread --workspace (name or id) on every later call
+# 1. name the session and load the workspace — once; loading binds the session
+#    to "product", so no later call repeats --session or --workspace
 nexus use \
-  --memory "planning the launch" --goal "load the product workspace" \
   --session launch-plan \
+  --memory "planning the launch" --goal "load the product workspace" \
   -- memory load-workspace "product"
 
-# 2. create a project — workspace comes from --workspace; capture the projectId
+# 2. create a project — workspace scope is inherited; capture the projectId
 nexus use \
-  --workspace product --session launch-plan \
   --memory "starting the Q3 launch project" --goal "create the Q3 Launch project" \
   -- task create-project --name "Q3 Launch"
 # → result includes the projectId, e.g. "proj_def456"
 
 # 3. add tasks under that project
 nexus use \
-  --workspace product --session launch-plan \
   --memory "adding launch tasks" --goal "create the copy task" \
   -- task create --project-id proj_def456 --title "Write launch copy"
 
 nexus use \
-  --workspace product --session launch-plan \
   --memory "adding the dependent task" --goal "create the publish task" \
   -- task create --project-id proj_def456 --title "Publish blog post"
 
 # 4. see the board (statuses, what's blocked)
 nexus use \
-  --workspace product --session launch-plan \
   --memory "reviewing the launch tasks" --goal "list tasks in the project" \
   -- task list --project-id proj_def456
 
 # 5. checkpoint
 nexus use \
-  --workspace product --session launch-plan \
   --memory "project + tasks created" --goal "checkpoint the setup" \
   -- memory create-state --name launch-tasks-seeded \
   --conversation-context "created Q3 Launch project with copy + publish tasks" \
@@ -91,8 +88,11 @@ Run `nexus tools task create` / `task move` / `task update` for the exact fields
 ## Pitfalls
 
 - **Putting `--workspace-id` inside the tool string** — rejected as a reserved
-  context field. Scope task tools with the top-level `--workspace <name-or-id>`
-  flag instead (the workspace you loaded); it accepts a name *or* an id.
+  context field. Task tools are scoped by the session's workspace — the one you
+  loaded, or the top-level `--workspace <name-or-id>` flag passed once; it
+  accepts a name *or* an id.
+- **"This session has no workspace yet"** — the session never chose. Load one
+  first (step 1); don't answer the steer with `--workspace default`.
 - **Creating tasks with no project** — `task create` needs `--project-id`; make or
   find the project first and capture the id it returns.
 - **`task link-note` needs a real `--note-path`** — a vault-relative path to an

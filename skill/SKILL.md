@@ -36,6 +36,14 @@ For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
   hoping for vault content — that comes from `nexus use --memory … --goal … -- content read …`.
 - **`--memory` and `--goal` are real and enforced.** You're operating a person's
   live vault; pass a genuine running summary and objective, not placeholders.
+- **`--workspace` and `--session` are pass-once.** The vault remembers them:
+  name a session and choose its workspace on the first call of a task (or run
+  `memory load-workspace <name>`), then omit both — every later call continues
+  that session and inherits its workspace. Nothing defaults silently: a session
+  that never chose a workspace fails with *"This session has no workspace yet"*
+  (only `memory list-workspaces` / `load-workspace` / `create-workspace` run
+  before the choice). Pass a different value once to switch. `nexus context` shows what
+  the vault currently remembers.
 - **You can't escape the vault.** Paths are vault-relative; `..`, `~`, and
   absolute paths are rejected. That's a guardrail, not a bug.
 - **Nothing is destroyed.** The AI gets archive (reversible), not delete.
@@ -48,7 +56,11 @@ For a common task, **`nexus playbook <name>`** gives you a ready-to-run recipe
 nexus tools [selector]              # discover — tool schemas (never vault data)
 nexus use --memory "<what you're doing>" --goal "<objective>" -- \
     <agent command --flags>         # execute — runs one tool, prints the result
+nexus context                       # what this vault remembers: session + workspace
 ```
+
+Add `--session <name> --workspace <name>` to the **first** `use` of a task
+only; the vault remembers both for every call after it.
 
 The `--` delimiter is canonical: context belongs before it; the tool command
 belongs after it. This avoids nested command-string quoting, especially in

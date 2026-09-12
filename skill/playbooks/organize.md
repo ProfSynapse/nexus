@@ -12,7 +12,8 @@ Unlike `vault-work` (which edits note *bodies*), this moves and files whole note
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above); thread `--workspace`/`--session`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Map the current layout before touching anything.**
    - `storage list --path "<folder>"` — see what's in a folder.
    - `search query-notes --sql "…"` — query frontmatter as a database to *find*
@@ -33,33 +34,30 @@ Unlike `vault-work` (which edits note *bodies*), this moves and files whole note
 ## Worked example — archive old daily notes into a subfolder
 
 ```
-# 1. load the workspace
+# 1. name the session and load the workspace — the only call that needs --session;
+#    loading binds the workspace, so nothing below repeats either flag
 nexus use \
-  --memory "tidying old dailies" --goal "load the journal workspace" \
   --session tidy-dailies \
+  --memory "tidying old dailies" --goal "load the journal workspace" \
   -- memory load-workspace "journal"
 
 # 2. map — which dailies are from 2025? (query frontmatter; --describe to see columns first)
 nexus use \
-  --workspace journal --session tidy-dailies \
   --memory "finding 2025 dailies to archive" --goal "list 2025 daily notes" \
   -- search query-notes --sql "SELECT path FROM notes WHERE path LIKE 'Daily/2025-%' ORDER BY path"
 
 # 3. make the destination folder
 nexus use \
-  --workspace journal --session tidy-dailies \
   --memory "have the 2025 list; creating archive folder" --goal "create Daily/Archive/2025" \
   -- storage create-folder --path Daily/Archive/2025
 
 # 4. move each note (one call per file — verify each)
 nexus use \
-  --workspace journal --session tidy-dailies \
   --memory "moving 2025 dailies into the archive folder" --goal "move 2025-01-03.md" \
   -- storage move --path Daily/2025-01-03.md --new-path Daily/Archive/2025/2025-01-03.md
 
 # 5. checkpoint after the batch
 nexus use \
-  --workspace journal --session tidy-dailies \
   --memory "2025 dailies archived" --goal "checkpoint the reorg" \
   -- memory create-state --name dailies-archived \
   --conversation-context "moved all 2025 daily notes into Daily/Archive/2025" \

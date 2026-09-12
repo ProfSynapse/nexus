@@ -119,7 +119,9 @@ export class RequestRouter {
             ),
             new ResourceReadStrategy(
                 this.dependencies,
-                this.app
+                this.app,
+                // For the CLI's `nexus://context` read (see CliContextResource).
+                { sessionContextManager: this.sessionContextManager, vaultName: this.vaultName }
             ),
             new PromptsListStrategy(
                 this.dependencies

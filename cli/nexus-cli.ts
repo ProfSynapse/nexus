@@ -4,17 +4,22 @@
  *
  * Discover:  nexus tools [selector]
  * Execute:   nexus use --memory "…" --goal "…" -- <agent action --flags>
- * Inspect:   nexus vaults | nexus doctor
+ * Inspect:   nexus context | nexus vaults | nexus doctor
  *
  * It connects to the same unix socket connector.js uses (/tmp/nexus_mcp_<vault>.sock),
  * speaks the two-tool protocol (toolManager_getTools / toolManager_useTools), prints the
  * result, and exits. Spike scope per docs/plans/local-cli-agent-bridge-plan.md §9 step 1:
  * self-contained (node builtins only), macOS/Linux sockets only.
+ *
+ * The CLI holds no state and fills no defaults (#214): `--workspace` and `--session`
+ * are sent only when given, and the server remembers them per vault — pass each once.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpLineClient, McpToolResult, parseTimeoutEnv } from './mcpLineClient';
 import { playbooksDir, parseFrontmatter, listPlaybooks } from './playbooks';
+import { buildPlaybookEnvelope, buildToolsEnvelope, buildUseEnvelope } from './envelope';
+import { NEXUS_CONTEXT_RESOURCE_URI, formatContextSnapshot, parseContextSnapshot } from './context';
 import {
     hydrateToolContentArgv,
     parseOuterArgs,
@@ -134,6 +139,8 @@ COMMANDS
   nexus use [context] -- <command>    EXECUTE a tool (useTools). See CONTEXT below.
   nexus playbook [name]              Task primer: recipe + your workspaces + preloaded
                                      tools, in one call. \`nexus playbook\` lists them.
+  nexus context [--json]             What this vault remembers for the CLI: current
+                                     session and its workspace (read-only)
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
@@ -146,8 +153,17 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --memory "<text>"       REQUIRED — rolling summary of what you've done/learned
   --goal "<text>"         REQUIRED — this call's objective, one sentence
                           (empty or placeholder like "N/A" is REJECTED with a steer)
-  --workspace <id>        scope for traces/memory (default: "default")
-  --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
+  --workspace <name|id>   PASS ONCE — the vault remembers it per session. A fresh
+                          session must choose: pass --workspace once, or run
+                          \`memory load-workspace <name>\`; every later call in that
+                          session inherits it. Nothing defaults silently: an unbound
+                          session's \`use\` fails with a steer (only \`memory
+                          list-workspaces\` / \`load-workspace\` / \`create-workspace\`
+                          run unbound).
+  --session <name>        PASS ONCE — the vault remembers the CLI's current session.
+                          Omit it and the CLI continues where it left off (or runs as
+                          "nexus-cli" if it never chose). Pass a different name once
+                          to switch. \`nexus context\` shows both.
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
   --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
@@ -204,6 +220,16 @@ GOTCHAS
     --dryRun, and typos like --vualt fail with a suggestion instead of silently
     doing nothing. Tool flags are only recognized after \`--\`.
   • --memory/--goal are enforced — send real values or the call is rejected.
+  • "This session has no workspace yet" means choose once: \`--workspace <name>\` on
+    this call, or \`memory load-workspace <name>\` in its own call (not batched with
+    other commands; if none fits, \`memory create-workspace\` first, then load it).
+    Then drop --workspace; the session inherits it. Repeating
+    --workspace on every call is harmless but unnecessary. \`--workspace default\`
+    is the global workspace — pass it deliberately, never as a placeholder.
+  • --session works the same way: choose once, then omit. Two different --session
+    names are two different sessions with their own remembered workspace.
+    \`nexus context\` shows what the current vault remembers; a plugin reload
+    keeps it.
   • Media generation is async — \`prompt generate-image\` / \`generate-audio\` /
     \`generate-video\` return a job; poll \`prompt check-generated-artifact "<job-id>"\`.
   • States: the AI gets archive (reversible), not delete.
@@ -227,10 +253,13 @@ ${playbookLines}
 
 EXAMPLES
   nexus tools "content read, search content"
-  nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
-  nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
-  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
+  # first call of a fresh session: choose the session and workspace ONCE...
+  nexus use --session daily-audit --workspace "My Notes" --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
+  # ...then omit both; this call runs in daily-audit / "My Notes"
+  nexus use --memory "read today's daily; checking the root" --goal "list vault root" -- storage list
+  nexus use --vault "My Notes" --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
   nexus use --memory "reviewing saved views" --goal "see what the Tasks base returns" -- base analyze "Bases/Tasks.base" --limit 20
+  nexus context
   nexus playbook vault-work
 `;
 }
@@ -307,15 +336,18 @@ async function main(): Promise<number> {
         //   nexus tools storage move, content read -> multiple tools, full schemas each
         const selector = positionals.slice(1).join(' ') || '--help';
         return withClient(vaultFlag, async (client) => {
-            // getTools validates memory/goal too — auto-fill for discovery so callers need not pass them.
-            const result = await client.callTool('toolManager_getTools', {
-                tool: selector,
-                workspaceId: typeof flags.workspace === 'string' ? flags.workspace : 'default',
-                sessionId: typeof flags.session === 'string' ? flags.session : 'nexus-cli',
-                memory: typeof flags.memory === 'string' ? flags.memory : 'Discovering available Nexus tools.',
-                goal: typeof flags.goal === 'string' ? flags.goal : `Inspect "${selector}" tools.`,
-            });
+            const result = await client.callTool('toolManager_getTools', buildToolsEnvelope(flags, selector));
             return printToolResult(result, asJson);
+        });
+    }
+
+    if (cmd === 'context') {
+        // Read-only: what THIS vault remembers for the CLI (current session and
+        // its workspace). Answered by the server over a standard resources/read.
+        return withClient(vaultFlag, async (client) => {
+            const snapshot = parseContextSnapshot(await client.readResource(NEXUS_CONTEXT_RESOURCE_URI));
+            process.stdout.write(asJson ? JSON.stringify(snapshot, null, 2) + '\n' : formatContextSnapshot(snapshot));
+            return 0;
         });
     }
 
@@ -357,12 +389,10 @@ async function main(): Promise<number> {
         const preamble = existsSync(preamblePath) ? readFileSync(preamblePath, 'utf8').trim() : '';
         if (preamble) process.stdout.write(preamble + '\n\n');
 
-        const ctx = {
-            workspaceId: typeof flags.workspace === 'string' ? flags.workspace : 'default',
-            sessionId: typeof flags.session === 'string' ? flags.session : 'nexus-cli',
-            memory: `Loading the "${name}" playbook.`,
-            goal: `Prepare to run the ${name} task.`,
-        };
+        // `memory list-workspaces` is one of the three commands the server runs
+        // for a session that has not chosen a workspace yet, so this works on a
+        // fresh session with no --workspace.
+        const ctx = buildPlaybookEnvelope(flags, name);
         try {
             // Fetch live parts BEFORE printing them, so a mid-stream failure falls back
             // cleanly instead of duplicating half-printed sections.
@@ -422,15 +452,7 @@ async function main(): Promise<number> {
             );
             return 2;
         }
-        const args: Record<string, unknown> = {
-            tool: command,
-            workspaceId: typeof flags.workspace === 'string' ? flags.workspace : 'default',
-            sessionId: typeof flags.session === 'string' ? flags.session : 'nexus-cli',
-            memory,
-            goal,
-        };
-        if (typeof flags.constraints === 'string') args.constraints = flags.constraints;
-        if (typeof flags['operation-id'] === 'string') args.operationId = flags['operation-id'];
+        const args = buildUseEnvelope(flags, command, memory, goal);
         if (flags['dry-run'] === true) {
             process.stdout.write('DRY RUN — no vault connection and no tool execution.\n');
             process.stdout.write(JSON.stringify(args, null, 2) + '\n');
