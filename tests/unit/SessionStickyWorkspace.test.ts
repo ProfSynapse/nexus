@@ -34,6 +34,7 @@ import type { RequestRouter } from '../../src/handlers/RequestRouter';
 import type { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import type { App } from 'obsidian';
 import {
+  HeldBindingsStore,
   MemoryBindingsStore,
   getToolsRequest,
   makeManager,
@@ -41,6 +42,7 @@ import {
   makeSessionService,
   makeStrategy,
   makeToolManagerAgent,
+  settle,
   useToolsRequest
 } from './helpers/sessionStickyFixtures';
 
@@ -483,29 +485,89 @@ describe('persistence: session-bindings.json', () => {
     });
   });
 
-  it('writes are debounced into one save per burst and flushed on cleanup', async () => {
-    jest.useFakeTimers();
-    try {
-      const store = new MemoryBindingsStore();
-      const { manager } = makeManager({ store });
+  // Persistence is write-through, not debounced: a 300 ms timer sat pending
+  // for minutes while Obsidian was in the background (Electron throttles
+  // background renderer timers, and the CLI runs precisely then), so the file
+  // lagged the in-memory state. No timers anywhere in this block — the
+  // HeldBindingsStore controls what is in flight.
+  it('the first change writes immediately, with no timer to wait on', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
 
-      manager.bindHandleWorkspace('a', 'ws-research-id');
-      manager.bindHandleWorkspace('b', 'ws-blog-id');
-      manager.bindHandleWorkspace('c', 'default');
-      expect(store.saves).toBe(0);
+    manager.bindHandleWorkspace('a', 'ws-research-id');
 
-      await jest.advanceTimersByTimeAsync(1000);
-      expect(store.saves).toBe(1);
-      expect(Object.keys(store.doc?.handleWorkspace ?? {})).toEqual(['a', 'b', 'c']);
+    expect(store.started).toHaveLength(1);
+    expect(store.started[0].handleWorkspace).toEqual({ a: 'ws-research-id' });
+  });
 
-      manager.bindHandleWorkspace('d', 'default');
-      manager.cleanup();
-      await Promise.resolve();
-      expect(store.saves).toBe(2);
-      expect(store.doc?.handleWorkspace.d).toBe('default');
-    } finally {
-      jest.useRealTimers();
-    }
+  it('a burst of N binds while a write is in flight produces exactly 2 writes, and the second carries all N', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id'); // write 1 starts, held
+    manager.bindHandleWorkspace('b', 'ws-blog-id');
+    manager.bindHandleWorkspace('c', 'default');
+    manager.setCliCurrentSession('c');
+    expect(store.started).toHaveLength(1);
+
+    expect(store.release()).toBe(true); // write 1 settles
+    await settle();
+
+    // One follow-up, snapshotting the state as it stands now — not one write
+    // per change, and not a stale copy taken when the changes happened.
+    expect(store.started).toHaveLength(2);
+    expect(Object.keys(store.started[1].handleWorkspace)).toEqual(['a', 'b', 'c']);
+    expect(store.started[1].cliCurrentSession).toBe('c');
+
+    expect(store.release()).toBe(true);
+    await settle();
+    expect(store.started).toHaveLength(2);
+    expect(store.doc?.handleWorkspace).toEqual({ a: 'ws-research-id', b: 'ws-blog-id', c: 'default' });
+  });
+
+  it('flushBindings resolves once the changes made during an in-flight write are on disk', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id');
+    manager.bindHandleWorkspace('b', 'ws-blog-id');
+    let flushed = false;
+    const flush = manager.flushBindings().then(() => { flushed = true; });
+
+    store.release();
+    await settle();
+    expect(flushed).toBe(false); // the follow-up carrying b is still in flight
+
+    store.release();
+    await flush;
+    expect(store.doc?.handleWorkspace).toEqual({ a: 'ws-research-id', b: 'ws-blog-id' });
+
+    // Nothing in flight: flush writes now, so a caller can rely on "current
+    // state is on disk" without knowing the writer's history.
+    const second = manager.flushBindings();
+    expect(store.started).toHaveLength(3);
+    store.release();
+    await second;
+  });
+
+  it('cleanup snapshots before the maps are cleared and writes it after the in-flight write, never the emptied state', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id'); // held
+    manager.bindHandleWorkspace('d', 'default');       // dirty
+    manager.cleanup();                                  // maps now empty
+
+    expect(store.started).toHaveLength(1);
+    store.release();
+    await settle();
+
+    expect(store.started).toHaveLength(2);
+    expect(store.started[1].handleWorkspace).toEqual({ a: 'ws-research-id', d: 'default' });
+    store.release();
+    await settle();
+    expect(store.doc?.handleWorkspace.d).toBe('default');
+    expect(store.inFlight).toBe(0);
   });
 
   it('the vault store creates the data folder and writes through the adapter, never Node fs', async () => {

@@ -72,6 +72,55 @@ export class MemoryBindingsStore implements SessionBindingsStore {
   }
 }
 
+/**
+ * A store whose writes stay in flight until the test releases them, so a
+ * test can hold the manager in its "write in progress" state and observe how
+ * changes made meanwhile are coalesced. `save` records the payload the moment
+ * the write STARTS (that is what the manager snapshotted) and resolves only
+ * when `release()` is called for it.
+ */
+export class HeldBindingsStore implements SessionBindingsStore {
+  doc: PersistedSessionBindings | null = null;
+  /** Payloads in the order writes started. */
+  started: PersistedSessionBindings[] = [];
+  private pending: Array<() => void> = [];
+
+  async load(): Promise<PersistedSessionBindings | null> {
+    return this.doc ? JSON.parse(JSON.stringify(this.doc)) : null;
+  }
+
+  save(doc: PersistedSessionBindings): Promise<void> {
+    const copy = JSON.parse(JSON.stringify(doc)) as PersistedSessionBindings;
+    this.started.push(copy);
+    return new Promise<void>(resolve => {
+      this.pending.push(() => {
+        this.doc = copy;
+        resolve();
+      });
+    });
+  }
+
+  /** Number of writes started but not yet released. */
+  get inFlight(): number {
+    return this.pending.length;
+  }
+
+  /** Complete the oldest in-flight write; returns false if there is none. */
+  release(): boolean {
+    const next = this.pending.shift();
+    if (!next) return false;
+    next();
+    return true;
+  }
+}
+
+/** Let the manager's writer observe a released write and take its next step. */
+export async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 export function makeManager(options: {
   sessionService?: SessionServiceStub;
   resolver?: WorkspaceResolverLike | null;

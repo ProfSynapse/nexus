@@ -69,13 +69,6 @@ export interface SessionWorkspaceResolution {
 const GLOBAL_WORKSPACE_ID = 'default';
 
 /**
- * How long consecutive binding changes are coalesced before one write. A
- * session's first few calls (getTools, useTools, load-workspace) all mutate
- * the map within a second or two; one file write per burst is plenty.
- */
-const BINDINGS_SAVE_DEBOUNCE_MS = 300;
-
-/**
  * SessionContextManager
  * 
  * Provides a centralized service for managing and persisting workspace context
@@ -138,8 +131,19 @@ export class SessionContextManager {
   // Persistence for handles + handleWorkspace. Null in tests and before wiring;
   // every store operation is best-effort and degrades to "pass it once again".
   private bindingsStore: SessionBindingsStore | null = null;
-  private bindingsSaveTimer: number | null = null;
   private bindingsRestore: Promise<void> | null = null;
+
+  // Write-through with in-flight coalescing, deliberately NOT a timer. A
+  // debounced `window.setTimeout` sat pending for minutes while Obsidian was
+  // in the background — Electron throttles background renderer timers, and the
+  // CLI is used precisely when Obsidian is not focused — so the file lagged
+  // the in-memory state and a quit in that window lost the bind. Instead: a
+  // change with no write in flight starts one now; a change during a write
+  // sets `bindingsDirty`, and the writer runs once more when it settles. Each
+  // write snapshots the state as it is when that write starts, so a burst
+  // collapses to at most two writes and the file always ends current.
+  private bindingsWrite: Promise<void> | null = null;
+  private bindingsDirty = false;
 
   // Disposer for the session-deleted subscription so re-wiring or teardown can
   // unregister cleanly.
@@ -272,35 +276,71 @@ export class SessionContextManager {
   }
 
   /**
-   * Coalesce binding changes into one write. Fire-and-forget: a failed write
-   * is logged by the store and the next change retries.
+   * Persist a binding change. Write-through: starts a write immediately when
+   * none is in flight, otherwise marks the state dirty so the in-flight
+   * writer runs once more when it settles (see `bindingsWrite`). Fire-and-
+   * forget: a failed write is logged and the next change retries.
    */
   private scheduleBindingsSave(): void {
     if (!this.bindingsStore) {
       return;
     }
-    if (this.bindingsSaveTimer) {
-      window.clearTimeout(this.bindingsSaveTimer);
+    if (this.bindingsWrite) {
+      this.bindingsDirty = true;
+      return;
     }
-    this.bindingsSaveTimer = window.setTimeout(() => {
-      this.bindingsSaveTimer = null;
-      void this.flushBindings();
-    }, BINDINGS_SAVE_DEBOUNCE_MS);
+    this.startBindingsWrite(this.snapshotBindings());
   }
 
-  /** Write the current bindings now, cancelling any pending debounced write. */
-  async flushBindings(): Promise<void> {
-    if (this.bindingsSaveTimer) {
-      window.clearTimeout(this.bindingsSaveTimer);
-      this.bindingsSaveTimer = null;
+  /**
+   * Begin the writer with `doc` as its first payload. Must only be called
+   * with no write in flight. The writer keeps going while changes arrive
+   * mid-write, each pass snapshotting the state as it stands at that moment,
+   * and stops as soon as the store is unwired (cleanup) so it can never write
+   * the emptied maps over the file.
+   */
+  private startBindingsWrite(doc: PersistedSessionBindings): void {
+    const store = this.bindingsStore;
+    if (!store) {
+      return;
     }
+    this.bindingsDirty = false;
+    this.bindingsWrite = (async () => {
+      try {
+        await this.saveBindings(store, doc);
+        while (this.bindingsDirty && this.bindingsStore === store) {
+          this.bindingsDirty = false;
+          await this.saveBindings(store, this.snapshotBindings());
+        }
+      } finally {
+        this.bindingsWrite = null;
+      }
+    })();
+  }
+
+  private async saveBindings(store: SessionBindingsStore, doc: PersistedSessionBindings): Promise<void> {
+    try {
+      await store.save(doc);
+    } catch (error) {
+      logger.systemWarn(`Session bindings save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Resolve once the current bindings are on disk: waits for any in-flight
+   * write (and the follow-up it owes for changes made meanwhile), or starts a
+   * write now when nothing is in flight.
+   */
+  async flushBindings(): Promise<void> {
     if (!this.bindingsStore) {
       return;
     }
-    try {
-      await this.bindingsStore.save(this.snapshotBindings());
-    } catch (error) {
-      logger.systemWarn(`Session bindings save failed: ${error instanceof Error ? error.message : String(error)}`);
+    if (!this.bindingsWrite) {
+      this.startBindingsWrite(this.snapshotBindings());
+    }
+    const inFlight = this.bindingsWrite;
+    if (inFlight) {
+      await inFlight;
     }
   }
 
@@ -662,17 +702,25 @@ export class SessionContextManager {
    * (ServiceContainer.clear) so the in-memory handle map and session-deleted
    * subscription do not survive a plugin reload. The persisted bindings DO
    * survive — that is what lets a returning handle resume its session — so
-   * any pending debounced write is flushed before memory is cleared.
+   * anything the writer still owes is written before memory is cleared.
    */
   cleanup(): void {
     if (this.sessionDeletedUnsubscribe) {
       this.sessionDeletedUnsubscribe();
       this.sessionDeletedUnsubscribe = null;
     }
-    if (this.bindingsSaveTimer) {
-      // Snapshot before clearAll() empties the maps; the write itself is
-      // fire-and-forget because Obsidian does not await plugin unload.
-      void this.flushBindings();
+    const store = this.bindingsStore;
+    const inFlight = this.bindingsWrite;
+    if (store && inFlight) {
+      // Every change already started its own write; the only state not yet on
+      // disk is what arrived while that write was in flight. Snapshot it NOW,
+      // synchronously, before clearAll() empties the maps, and write it after
+      // the in-flight write settles so the two cannot land out of order. The
+      // writer's own follow-up stops once the store is unwired below, so this
+      // is the last write. Fire-and-forget: Obsidian does not await unload.
+      const finalDoc = this.snapshotBindings();
+      this.bindingsDirty = false;
+      void inFlight.then(() => this.saveBindings(store, finalDoc));
     }
     this.bindingsStore = null;
     this.bindingsRestore = null;
