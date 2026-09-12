@@ -65,6 +65,13 @@ interface WorkspaceBindingIntent {
     displayHandle?: string;
     workspaceId: string;
     explicit: boolean;
+    /**
+     * What the handle was bound to BEFORE the tool ran. Bind point 1 compares
+     * against this after execution: if the handle moved in between, bind point
+     * 2 (`memory load-workspace` inside the batch) fired during the call and
+     * must win — see bindWorkspaceFromResult.
+     */
+    priorBound?: string;
 }
 
 /** Tool names on the two-tool surface, as the strategy sees them after the prefix split. */
@@ -324,7 +331,8 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                 workspaceBinding = {
                     handle: sessionId,
                     workspaceId: resolution.workspaceId,
-                    explicit: resolution.explicit
+                    explicit: resolution.explicit,
+                    priorBound: this.sessionContextManager.resolveHandleWorkspace(sessionId)
                 };
             } else if (isToolManager && tool === USE_TOOLS) {
                 // Leave it absent. Deleting rather than skipping guards against a
@@ -389,6 +397,12 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
      * `{ success: false }` because validateWorkspaceId rejected the value. An
      * inherited workspace is not a new choice and never re-binds; `getTools`
      * never binds because discovery chooses nothing.
+     *
+     * Ordering with bind point 2: `nexus use --workspace X -- memory
+     * load-workspace Y` fires BOTH points in one call — the batch service binds
+     * Y while the tool runs, and this method runs after. The loaded workspace
+     * is the more deliberate act and happened later, so it must win: if the
+     * handle's binding moved since processSession snapshotted it, skip.
      */
     private bindWorkspaceFromResult(
         context: IRequestContext & { workspaceBinding?: WorkspaceBindingIntent },
@@ -405,13 +419,35 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             return;
         }
         try {
+            if (this.boundDuringCall(intent.handle, intent.priorBound)) {
+                return;
+            }
             this.sessionContextManager.bindHandleWorkspace(intent.handle, intent.workspaceId);
-            if (intent.displayHandle && intent.displayHandle !== intent.handle) {
+            if (intent.displayHandle && intent.displayHandle !== intent.handle
+                && !this.boundDuringCall(intent.displayHandle, intent.priorBound)) {
                 this.sessionContextManager.bindHandleWorkspace(intent.displayHandle, intent.workspaceId);
             }
         } catch (error) {
             logger.systemWarn(`Workspace bind failed for session "${intent.handle}": ${getErrorMessage(error)}`);
         }
+    }
+
+    /**
+     * True when `handle` is bound to something other than what processSession
+     * saw before execution — i.e. bind point 2 moved it during this call. The
+     * display handle (a renamed friendly id) had no binding of its own before
+     * the call, so the same snapshot serves both: bind point 2 binds every
+     * handle mapped to the session id at once.
+     */
+    private boundDuringCall(handle: string, priorBound: string | undefined): boolean {
+        const current = this.sessionContextManager?.resolveHandleWorkspace(handle);
+        if (current === undefined || current === priorBound) {
+            return false;
+        }
+        logger.systemLog(
+            `Session "${handle}" was bound to workspace ${current} during the call (load-workspace); keeping it over the explicit workspaceId`
+        );
+        return true;
     }
 
     private async processParameters(context: IRequestContext): Promise<EnhancedToolParams> {

@@ -110,6 +110,10 @@ function makeContextManager(overrides: Partial<SessionContextManager> = {}): Ses
       return trimmed ? { workspaceId: trimmed, explicit: true } : { workspaceId: undefined, explicit: false };
     }),
     bindHandleWorkspace: jest.fn(),
+    // Nothing bound before or after the call, so bind point 1 never sees a
+    // mid-call load-workspace bind here (that ordering is pinned in
+    // SessionStickyWorkspace.test.ts).
+    resolveHandleWorkspace: jest.fn().mockReturnValue(undefined),
     applyWorkspaceContext: jest.fn((_id: string, p: Record<string, unknown>) => p),
     updateFromResult: jest.fn(),
     updateSessionDescription: jest.fn(),

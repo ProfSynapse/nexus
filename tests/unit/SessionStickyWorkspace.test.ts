@@ -115,8 +115,14 @@ function makeManager(options: {
  * ToolCliNormalizer, so the unbound-useTools steer comes from production code
  * rather than a stub. The batch service is stubbed: it records the context it
  * was handed and returns whatever the test says the workspace guard decided.
+ * `batchResult` receives the batch params so a test can act mid-execution the
+ * way the real service does (bind point 2 fires inside `execute`).
  */
-function makeToolManagerAgent(batchResult: () => unknown = () => ({ success: true })): {
+type BatchParams = Parameters<ToolBatchExecutionService['execute']>[0];
+
+function makeToolManagerAgent(
+  batchResult: (params: BatchParams) => unknown = () => ({ success: true })
+): {
   agent: IAgent;
   batchExecute: jest.Mock;
 } {
@@ -145,7 +151,7 @@ function makeToolManagerAgent(batchResult: () => unknown = () => ({ success: tru
     ['memoryManager', stubAgent('memoryManager', loadWorkspaceTool)]
   ]);
   const normalizer = new ToolCliNormalizer(registry);
-  const batchExecute = jest.fn(async () => batchResult());
+  const batchExecute = jest.fn(async (params: BatchParams) => batchResult(params));
   const batchService = { execute: batchExecute } as unknown as ToolBatchExecutionService;
   const useTools = new UseToolTool(batchService, normalizer);
   const getTools = new GetToolsTool(registry, { workspaces: [], customAgents: [], vaultRoot: [] });
@@ -516,6 +522,22 @@ describe('bind point 2: memory load-workspace', () => {
     await first.handle(useToolsRequest());
 
     expect(batchExecute.mock.calls[1][0].context.workspaceId).toBe('ws-research-id');
+  });
+
+  it('when both bind points fire in one call, the loaded workspace wins over the explicit workspaceId', async () => {
+    // `nexus use --workspace Blog -- memory load-workspace Research`: bind
+    // point 2 binds Research while the batch runs; bind point 1 runs after
+    // and must not overwrite it with Blog — loading is the more deliberate
+    // act and it happened later in the same call.
+    const { manager } = makeManager();
+    const { strategy } = makeStrategy(manager, () => makeToolManagerAgent((params) => {
+      manager.bindSessionWorkspaceById(params.context.sessionId as string, 'ws-research-id');
+      return { success: true };
+    }));
+
+    await strategy.handle(useToolsRequest({ workspaceId: 'Blog', tool: 'memory load-workspace Research' }));
+
+    expect(manager.resolveHandleWorkspace('nexus-cli')).toBe('ws-research-id');
   });
 });
 
