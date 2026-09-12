@@ -7,11 +7,33 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "0cc1ae808e1c59cc";
+export const NEXUS_CLI_ASSETS_HASH = "62f9b230e38756c1";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
 // cli/nexus-cli.ts
 var import_node_fs3 = require("node:fs");
@@ -564,16 +586,81 @@ function suggestVerb(candidate) {
 // cli/vaultDiscovery.ts
 var import_node_fs2 = require("node:fs");
 var import_node_child_process = require("node:child_process");
+var import_node_os2 = require("node:os");
+var nodePath = __toESM(require("node:path"));
 var NAME_PREFIX = "nexus_mcp_";
 var UNIX_SOCK_DIR = "/tmp";
 var UNIX_SUFFIX = ".sock";
 var WIN_PIPE_DIR = "\\\\\\\\.\\\\pipe\\\\";
+var NOTE_SUFFIX = ".json";
 function formatAvailableVaults(sockets) {
   if (sockets.length === 0) {
     return "  (none detected \\u2014 open Obsidian with Nexus enabled)";
   }
   const nameWidth = Math.max(...sockets.map((socket) => socket.name.length));
-  return sockets.map((socket) => \`  \${socket.name.padEnd(nameWidth)}  \${socket.path}\`).join("\\n");
+  const pathWidth = Math.max(...sockets.map((socket) => socket.path.length));
+  return sockets.map((socket) => {
+    const line = \`  \${socket.name.padEnd(nameWidth)}  \${socket.path}\`;
+    return socket.basePath ? \`\${line.padEnd(nameWidth + pathWidth + 4)}  \${socket.basePath}\` : line;
+  }).join("\\n");
+}
+function vaultNotePath(socket, platform = process.platform, tempDir = (0, import_node_os2.tmpdir)()) {
+  if (platform === "win32") {
+    return \`\${tempDir.replace(/[\\\\/]+$/, "")}\\\\\${NAME_PREFIX}\${socket.name}\${NOTE_SUFFIX}\`;
+  }
+  return socket.path.endsWith(UNIX_SUFFIX) ? \`\${socket.path.slice(0, -UNIX_SUFFIX.length)}\${NOTE_SUFFIX}\` : \`\${socket.path}\${NOTE_SUFFIX}\`;
+}
+function parseVaultNote(raw) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return void 0;
+  }
+  if (typeof parsed !== "object" || parsed === null) return void 0;
+  const { vaultName, basePath } = parsed;
+  if (typeof vaultName !== "string" || typeof basePath !== "string" || basePath.length === 0) {
+    return void 0;
+  }
+  return { vaultName, basePath };
+}
+function readVaultNotes(sockets, platform = process.platform, tempDir = (0, import_node_os2.tmpdir)()) {
+  return sockets.map((socket) => {
+    let raw;
+    try {
+      raw = (0, import_node_fs2.readFileSync)(vaultNotePath(socket, platform, tempDir), "utf8");
+    } catch {
+      return { ...socket };
+    }
+    const note = parseVaultNote(raw);
+    if (!note) return { ...socket };
+    return { ...socket, basePath: toRealPath(note.basePath) };
+  });
+}
+function toRealPath(target) {
+  try {
+    return import_node_fs2.realpathSync.native(target);
+  } catch {
+    return target;
+  }
+}
+function resolveVaultByCwd(cwd, entries, platform = process.platform) {
+  const p = platform === "win32" ? nodePath.win32 : nodePath.posix;
+  const fold = (value) => platform === "win32" ? value.toLowerCase() : value;
+  const here = fold(p.resolve(cwd));
+  let best;
+  let bestLength = -1;
+  for (const entry of entries) {
+    if (!entry.basePath) continue;
+    const base = fold(p.resolve(entry.basePath));
+    const prefix = base.endsWith(p.sep) ? base : \`\${base}\${p.sep}\`;
+    const contains = here === base || here.startsWith(prefix);
+    if (contains && base.length > bestLength) {
+      best = entry;
+      bestLength = base.length;
+    }
+  }
+  return best;
 }
 var WINDOWS_PIPE_LIST_SCRIPT = "Get-ChildItem -LiteralPath '\\\\\\\\.\\\\pipe\\\\' -Name";
 var SAFE_PIPE_NAME = /^nexus_mcp_[a-z0-9_-]+$/;
@@ -647,11 +734,15 @@ function resolveVault(requested) {
     return { name: s, path: p };
   }
   const sockets = listVaultSockets();
-  if (sockets.length === 1) return sockets[0];
   if (sockets.length === 0) {
     throw new Error("No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.");
   }
-  throw new Error(\`Multiple vaults open: \${sockets.map((x) => x.name).join(", ")}. Pass --vault <name>.\`);
+  const byCwd = resolveVaultByCwd(toRealPath(process.cwd()), readVaultNotes(sockets));
+  if (byCwd) return byCwd;
+  if (sockets.length === 1) return sockets[0];
+  throw new Error(
+    \`Multiple vaults open: \${sockets.map((x) => x.name).join(", ")}. Run from inside a vault folder to select it, or pass --vault <name>.\`
+  );
 }
 function printToolResult(result, asJson) {
   if (asJson) {
@@ -677,7 +768,7 @@ function buildUsage() {
   }
   let availableVaultLines;
   try {
-    availableVaultLines = formatAvailableVaults(listVaultSockets());
+    availableVaultLines = formatAvailableVaults(readVaultNotes(listVaultSockets()));
   } catch (error) {
     availableVaultLines = \`  (could not enumerate: \${error.message})\`;
   }
@@ -698,7 +789,7 @@ COMMANDS
                                      tools, in one call. \\\`nexus playbook\\\` lists them.
   nexus context [--json]             What this vault remembers for the CLI: current
                                      session and its workspace (read-only)
-  nexus vaults                       List open Nexus vaults (live sockets)
+  nexus vaults                       List open Nexus vaults (live sockets + vault folder)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
 
@@ -723,7 +814,8 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
                           to switch. \\\`nexus context\\\` shows both.
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
-  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
+  --vault <name>          target a vault (else: $NEXUS_VAULT; else the open vault whose
+                          folder contains the current directory; else the single open one)
                           (a tool call may run up to 10 minutes \\u2014 image edits and
                           slow models take a while; $NEXUS_CLI_TOOL_TIMEOUT_MS overrides)
   --json                  print the raw JSON result
@@ -795,7 +887,7 @@ GOTCHAS
     list of errors before touching disk); \\\`base analyze\\\` runs it and returns the rows
     a user would see.
   \\u2022 No open vault \\u2192 the socket is absent; open Obsidian with Nexus. Multiple open \\u2192
-    pass --vault <name>.
+    run from inside a vault's folder (cwd selects it) or pass --vault <name>.
 
 TOOL CATALOG
   Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
@@ -864,8 +956,10 @@ Run \\\`nexus --help\\\` for the manual.
       process.stdout.write("No open Nexus vaults. Is Obsidian running with Nexus enabled?\\n");
       return 0;
     }
-    for (const s of sockets) process.stdout.write(\`\${s.name}	\${s.path}
+    for (const s of readVaultNotes(sockets)) {
+      process.stdout.write(\`\${s.name}	\${s.path}\${s.basePath ? \`	\${s.basePath}\` : ""}
 \`);
+    }
     return 0;
   }
   if (cmd === "doctor") {

@@ -42,18 +42,27 @@ function uniqueSocketPath(): string {
   return socketPath;
 }
 
-function createConfiguration(ipcPath: string): ServerConfiguration {
+/** The sidecar note lives beside the socket: `<path minus .sock>.json`. */
+function noteFor(ipcPath: string): string {
+  return ipcPath.replace(/\.sock$/, '.json');
+}
+
+function createConfiguration(ipcPath: string, basePath: string | null = null): ServerConfiguration {
   return {
     isWindows: () => false,
     getIPCPath: () => ipcPath,
+    getVaultNotePath: () => noteFor(ipcPath),
+    getVaultBasePath: () => basePath,
+    getSanitizedVaultName: () => 'test-vault',
     getServerInfo: () => ({ name: 'test', version: '1.0' }),
     getServerOptions: () => ({}),
   } as unknown as ServerConfiguration;
 }
 
-function createTransportManager(ipcPath: string): IPCTransportManager {
+function createTransportManager(ipcPath: string, basePath: string | null = null): IPCTransportManager {
+  createdPaths.push(noteFor(ipcPath));
   const manager = new IPCTransportManager(
-    createConfiguration(ipcPath),
+    createConfiguration(ipcPath, basePath),
     {} as unknown as StdioTransportManager
   );
   openManagers.push(manager);
@@ -286,5 +295,99 @@ describeOnPosix('IPC socket ownership across a reload', () => {
     await expect(canConnect(ipcPath)).resolves.toBe(true);
 
     await manager.stopTransport();
+  });
+});
+
+/**
+ * The vault note is how a `nexus` run from inside a vault folder finds its
+ * vault. It shares the socket's path (minus the suffix) and therefore the
+ * socket's ownership hazard, so it is written and released alongside it.
+ */
+describeOnPosix('IPC vault note beside the socket', () => {
+  afterEach(async () => {
+    for (const manager of openManagers.splice(0)) {
+      manager.closeListener();
+      await manager.stopTransport().catch(() => undefined);
+    }
+    for (const server of openServers.splice(0)) {
+      await closeDirectly(server);
+    }
+    for (const createdPath of createdPaths.splice(0)) {
+      try {
+        fs.unlinkSync(createdPath);
+      } catch {
+        // Already gone, which is the usual case.
+      }
+    }
+  });
+
+  it('publishes { vaultName, basePath } owner-only once listening, and removes it on stop', async () => {
+    const ipcPath = uniqueSocketPath();
+    const notePath = noteFor(ipcPath);
+
+    const manager = createTransportManager(ipcPath, '/vaults/Test Vault');
+    expect(fs.existsSync(notePath)).toBe(false);
+
+    await manager.startTransport();
+
+    expect(fs.existsSync(notePath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(notePath, 'utf8'))).toEqual({
+      vaultName: 'test-vault',
+      basePath: '/vaults/Test Vault',
+    });
+    expect(fs.statSync(notePath).mode & 0o777).toBe(0o600);
+
+    await manager.stopTransport();
+
+    expect(fs.existsSync(notePath)).toBe(false);
+  });
+
+  it('writes no note when the adapter cannot name a folder, and clears a stale one', async () => {
+    const ipcPath = uniqueSocketPath();
+    const notePath = noteFor(ipcPath);
+    fs.writeFileSync(notePath, JSON.stringify({ vaultName: 'test-vault', basePath: '/gone' }));
+
+    const manager = createTransportManager(ipcPath, null);
+    await manager.startTransport();
+
+    expect(fs.existsSync(notePath)).toBe(false);
+
+    await manager.stopTransport();
+  });
+
+  it('overwrites a stale note from an earlier run rather than trusting it', async () => {
+    const ipcPath = uniqueSocketPath();
+    const notePath = noteFor(ipcPath);
+    fs.writeFileSync(notePath, JSON.stringify({ vaultName: 'test-vault', basePath: '/old/place' }), { mode: 0o644 });
+
+    const manager = createTransportManager(ipcPath, '/new/place');
+    await manager.startTransport();
+
+    expect(JSON.parse(fs.readFileSync(notePath, 'utf8')).basePath).toBe('/new/place');
+    expect(fs.statSync(notePath).mode & 0o777).toBe(0o600);
+
+    await manager.stopTransport();
+  });
+
+  it('leaves the successor’s note alone when the predecessor tears down late', async () => {
+    const ipcPath = uniqueSocketPath();
+    const notePath = noteFor(ipcPath);
+
+    const predecessor = createTransportManager(ipcPath, '/vaults/Test Vault');
+    await predecessor.startTransport();
+    predecessor.closeListener();
+
+    const successor = createTransportManager(ipcPath, '/vaults/Test Vault');
+    await successor.startTransport();
+    const successorNote = identityOf(notePath);
+    expect(successorNote).not.toBeNull();
+
+    await predecessor.stopTransport();
+
+    expect(fs.existsSync(notePath)).toBe(true);
+    expect(identityOf(notePath)).toEqual(successorNote);
+
+    await successor.stopTransport();
+    expect(fs.existsSync(notePath)).toBe(false);
   });
 });
