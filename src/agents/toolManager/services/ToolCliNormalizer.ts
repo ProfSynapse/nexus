@@ -767,8 +767,51 @@ function normalizeVerbatimValues(raw: unknown): Record<string, string> | undefin
 
 export const WORKSPACE_ID_REQUIRED_MESSAGE =
   'This session has no workspace yet. Pass "workspaceId" once — "default" for the global workspace, '
-  + 'or an exact name/id from availableWorkspaces — or load one with "memory load-workspace"; '
+  + 'or an exact name/id from availableWorkspaces — or load one with "memory load-workspace" in its own call '
+  + '(it and "memory list-workspaces" are the only commands that run before a workspace is chosen); '
   + 'later calls in this session inherit it.';
+
+/**
+ * The commands an UNBOUND session may run: choosing a workspace needs a way
+ * to see the choices and to make one, and both live behind useTools. Anything
+ * else waits for the choice — see isWorkspaceSelectionOnlyCommand.
+ */
+const WORKSPACE_SELECTION_COMMANDS = new Set(['loadworkspace', 'listworkspaces']);
+
+function normalizeCommandWord(value: string): string {
+  return value.replace(/[-_\s]/g, '').toLowerCase();
+}
+
+/**
+ * True when EVERY command in a useTools `tool` string is a workspace-selection
+ * command (`memory load-workspace`, `memory list-workspaces`).
+ *
+ * Why every, not the first: normalizeContext stamps ONE workspaceId onto the
+ * whole batch. If `memory load-workspace X, content read --path a.md` were
+ * allowed through unbound, the read would run under 'default' while the
+ * session was being bound to X — the exact misfiling #214 reports. A mixed
+ * batch on an unbound session gets the steer and does the load in its own
+ * call first. Tokenises with the same splitter the executor uses, so a quoted
+ * comma inside a value cannot fake a second command.
+ */
+export function isWorkspaceSelectionOnlyCommand(toolString: unknown): boolean {
+  if (typeof toolString !== 'string' || toolString.trim().length === 0) {
+    return false;
+  }
+  const segments = splitTopLevelSegments(toolString);
+  if (segments.length === 0) {
+    return false;
+  }
+  return segments.every(segment => {
+    const tokens = tokenizeWithMeta(segment);
+    if (tokens.length < 2) {
+      return false;
+    }
+    const agent = normalizeCommandWord(tokens[0].value);
+    const tool = normalizeCommandWord(tokens[1].value);
+    return (agent === 'memory' || agent === 'memorymanager') && WORKSPACE_SELECTION_COMMANDS.has(tool);
+  });
+}
 
 /**
  * Accept the session's resolved workspaceId, or throw the recoverable

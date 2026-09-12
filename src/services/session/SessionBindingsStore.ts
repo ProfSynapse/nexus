@@ -21,14 +21,19 @@ export interface PersistedSessionHandle {
  * - `handleWorkspace` records the LAST DELIBERATE workspace bind per handle
  *   (#214). It is written only by an explicit `workspaceId` on a successful
  *   call or a successful `memory load-workspace` — never by trace capture.
+ * - `cliCurrentSession` is the handle the CLI last chose with an explicit
+ *   `--session` on a successful call — this vault's "where the CLI left off".
+ *   A CLI call with no `--session` continues it. Null until the CLI has chosen
+ *   once; the server's `'nexus-cli'` fallback for that case is a default, not
+ *   a bind, and is never written here.
  *
- * PR 2 of the plan adds a `cliCurrentSession` slot beside these two. The
- * parser ignores keys it does not know, so adding one is a shape extension,
- * not a migration.
+ * The parser ignores keys it does not know, so adding a slot is a shape
+ * extension, not a migration.
  */
 export interface PersistedSessionBindings {
   handles: Record<string, PersistedSessionHandle>;
   handleWorkspace: Record<string, string>;
+  cliCurrentSession: string | null;
 }
 
 /**
@@ -85,7 +90,13 @@ export function parsePersistedSessionBindings(raw: unknown): PersistedSessionBin
     }
   }
 
-  return { handles, handleWorkspace };
+  // A blank or non-string value reads as "the CLI has not chosen yet", the
+  // same as a file written before this slot existed.
+  const cliCurrentSession = typeof raw.cliCurrentSession === 'string' && raw.cliCurrentSession.trim().length > 0
+    ? raw.cliCurrentSession.trim()
+    : null;
+
+  return { handles, handleWorkspace, cliCurrentSession };
 }
 
 /**

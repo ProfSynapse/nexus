@@ -16,29 +16,16 @@
  * (persistence round-trip, deleted-session drop).
  */
 
-import { ToolExecutionStrategy } from '../../src/handlers/strategies/ToolExecutionStrategy';
-import type {
-  IRequestHandlerDependencies,
-  IRequestContext,
-  SessionInfo,
-  ToolExecutionResult
-} from '../../src/handlers/interfaces/IRequestHandlerServices';
+import type { IRequestContext } from '../../src/handlers/interfaces/IRequestHandlerServices';
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
 import type { ITool } from '../../src/agents/interfaces/ITool';
 import { SessionContextManager } from '../../src/services/SessionContextManager';
 import type { WorkspaceResolverLike } from '../../src/services/SessionContextManager';
 import {
   parsePersistedSessionBindings,
-  VaultSessionBindingsStore,
-  type PersistedSessionBindings,
-  type SessionBindingsStore
+  VaultSessionBindingsStore
 } from '../../src/services/session/SessionBindingsStore';
-import {
-  ToolCliNormalizer,
-  WORKSPACE_ID_REQUIRED_MESSAGE
-} from '../../src/agents/toolManager/services/ToolCliNormalizer';
-import { UseToolTool } from '../../src/agents/toolManager/tools/useTools';
-import { GetToolsTool } from '../../src/agents/toolManager/tools/getTools';
+import { WORKSPACE_ID_REQUIRED_MESSAGE } from '../../src/agents/toolManager/services/ToolCliNormalizer';
 import { ToolBatchExecutionService } from '../../src/agents/toolManager/services/ToolBatchExecutionService';
 import { RequestHandlerFactory } from '../../src/server/handlers/RequestHandlerFactory';
 import { AgentExecutionManager } from '../../src/server/execution/AgentExecutionManager';
@@ -46,211 +33,16 @@ import { AgentRegistry } from '../../src/server/services/AgentRegistry';
 import type { RequestRouter } from '../../src/handlers/RequestRouter';
 import type { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import type { App } from 'obsidian';
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-/** Two real workspaces plus the global one; `Reserch` is a deliberate near-miss. */
-const WORKSPACES = [
-  { id: 'ws-research-id', name: 'Research' },
-  { id: 'ws-blog-id', name: 'Blog' }
-];
-
-function makeResolver(): WorkspaceResolverLike & { getWorkspaceByNameOrId: jest.Mock } {
-  return {
-    getWorkspaceByNameOrId: jest.fn(async (identifier: string) => {
-      const match = WORKSPACES.find(ws => ws.id === identifier || ws.name.toLowerCase() === identifier.toLowerCase());
-      return match ? { id: match.id } : null;
-    })
-  };
-}
-
-interface SessionServiceStub {
-  getSession: jest.Mock;
-  getAllSessions: jest.Mock;
-  createSession: jest.Mock;
-  updateSession: jest.Mock;
-}
-
-function makeSessionService(): SessionServiceStub {
-  return {
-    getSession: jest.fn().mockResolvedValue(null),
-    getAllSessions: jest.fn().mockResolvedValue([]),
-    createSession: jest.fn().mockResolvedValue(undefined),
-    updateSession: jest.fn().mockResolvedValue(undefined)
-  };
-}
-
-/** In-memory store standing in for the vault file. */
-class MemoryBindingsStore implements SessionBindingsStore {
-  doc: PersistedSessionBindings | null = null;
-  saves = 0;
-  async load(): Promise<PersistedSessionBindings | null> {
-    return this.doc ? JSON.parse(JSON.stringify(this.doc)) : null;
-  }
-  async save(doc: PersistedSessionBindings): Promise<void> {
-    this.saves += 1;
-    this.doc = JSON.parse(JSON.stringify(doc));
-  }
-}
-
-function makeManager(options: {
-  sessionService?: SessionServiceStub;
-  resolver?: WorkspaceResolverLike | null;
-  store?: SessionBindingsStore | null;
-} = {}): { manager: SessionContextManager; sessionService: SessionServiceStub } {
-  const sessionService = options.sessionService ?? makeSessionService();
-  const manager = new SessionContextManager();
-  manager.setSessionService(sessionService);
-  manager.setWorkspaceResolver(options.resolver === undefined ? makeResolver() : options.resolver);
-  if (options.store) {
-    manager.setBindingsStore(options.store);
-  }
-  return { manager, sessionService };
-}
-
-/**
- * A toolManager agent whose useTools/getTools are the REAL tools over a real
- * ToolCliNormalizer, so the unbound-useTools steer comes from production code
- * rather than a stub. The batch service is stubbed: it records the context it
- * was handed and returns whatever the test says the workspace guard decided.
- * `batchResult` receives the batch params so a test can act mid-execution the
- * way the real service does (bind point 2 fires inside `execute`).
- */
-type BatchParams = Parameters<ToolBatchExecutionService['execute']>[0];
-
-function makeToolManagerAgent(
-  batchResult: (params: BatchParams) => unknown = () => ({ success: true })
-): {
-  agent: IAgent;
-  batchExecute: jest.Mock;
-} {
-  // Minimal registry so normalizeExecutionCalls can resolve `content read`
-  // and `memory load-workspace` — the normalizer rejects unknown commands.
-  const readTool = {
-    slug: 'read', name: 'Read', description: 'Read a note', version: '1.0.0',
-    execute: jest.fn().mockResolvedValue({ success: true }),
-    getParameterSchema: () => ({ type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }),
-    getResultSchema: () => ({ type: 'object' })
-  } as unknown as ITool;
-  const loadWorkspaceTool = {
-    slug: 'loadWorkspace', name: 'Load Workspace', description: 'Load a workspace', version: '1.0.0',
-    execute: jest.fn().mockResolvedValue({ success: true }),
-    getParameterSchema: () => ({ type: 'object', properties: { workspace: { type: 'string' } }, required: ['workspace'] }),
-    getResultSchema: () => ({ type: 'object' })
-  } as unknown as ITool;
-  const stubAgent = (name: string, tool: ITool): IAgent => ({
-    name, description: '', version: '1.0.0',
-    getTools: () => [tool],
-    getTool: (slug: string) => (slug === tool.slug ? tool : undefined),
-    initialize: jest.fn(), executeTool: jest.fn(), setAgentManager: jest.fn()
-  });
-  const registry = new Map<string, IAgent>([
-    ['contentManager', stubAgent('contentManager', readTool)],
-    ['memoryManager', stubAgent('memoryManager', loadWorkspaceTool)]
-  ]);
-  const normalizer = new ToolCliNormalizer(registry);
-  const batchExecute = jest.fn(async (params: BatchParams) => batchResult(params));
-  const batchService = { execute: batchExecute } as unknown as ToolBatchExecutionService;
-  const useTools = new UseToolTool(batchService, normalizer);
-  const getTools = new GetToolsTool(registry, { workspaces: [], customAgents: [], vaultRoot: [] });
-  const tools = new Map<string, ITool>([['useTools', useTools], ['getTools', getTools]]);
-  const agent: IAgent = {
-    name: 'toolManager',
-    description: '',
-    version: '1.0.0',
-    getTools: () => Array.from(tools.values()),
-    getTool: (slug: string) => tools.get(slug),
-    initialize: jest.fn(),
-    executeTool: jest.fn(async (slug: string, params: Record<string, unknown>) => {
-      const tool = tools.get(slug);
-      if (!tool) throw new Error(`unknown tool ${slug}`);
-      return tool.execute(params);
-    }),
-    setAgentManager: jest.fn()
-  };
-  return { agent, batchExecute };
-}
-
-interface Captured {
-  result?: ToolExecutionResult;
-  sessionInfo?: SessionInfo;
-}
-
-function makeDeps(captured: Captured): IRequestHandlerDependencies {
-  return {
-    validationService: {
-      validateToolParams: jest.fn(async (params: Record<string, unknown>) => params),
-      validateSessionId: jest.fn(),
-      validateBatchOperations: jest.fn(),
-      validateBatchPaths: jest.fn()
-    },
-    sessionService: {
-      processSessionId: jest.fn(async (sessionId: string | undefined) => ({
-        sessionId: sessionId ?? 's-fallback',
-        isNewSession: false,
-        isNonStandardId: false
-      })),
-      generateSessionId: jest.fn(),
-      isStandardSessionId: jest.fn(),
-      shouldInjectInstructions: jest.fn().mockReturnValue(false)
-    },
-    toolExecutionService: {
-      // Real dispatch into the agent so a thrown normalizer steer propagates
-      // exactly the way ToolExecutionService.executeAgent rethrows it.
-      executeAgent: jest.fn(async (agent: IAgent, tool: string, params: Record<string, unknown>) => {
-        return await agent.executeTool(tool, params) as ToolExecutionResult;
-      })
-    },
-    responseFormatter: {
-      formatToolExecutionResponse: jest.fn((result: ToolExecutionResult, sessionInfo?: SessionInfo) => {
-        captured.result = result;
-        captured.sessionInfo = sessionInfo;
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      }),
-      formatSessionInstructions: jest.fn((_id, r) => r),
-      formatErrorResponse: jest.fn((err) => ({ content: [{ type: 'text', text: err.message }] }))
-    },
-    toolListService: {} as never,
-    resourceListService: {} as never,
-    resourceReadService: {} as never,
-    promptsListService: {} as never,
-    toolHelpService: {} as never,
-    schemaEnhancementService: {} as never
-  };
-}
-
-const ENVELOPE = {
-  sessionId: 'nexus-cli',
-  memory: 'Listed the vault and the workspaces.',
-  goal: 'Read one note.'
-};
-
-function useToolsRequest(extra: Record<string, unknown> = {}) {
-  return {
-    params: {
-      name: 'toolManager_useTools',
-      arguments: { ...ENVELOPE, tool: 'content read --path notes/a.md', ...extra }
-    }
-  };
-}
-
-function getToolsRequest(extra: Record<string, unknown> = {}) {
-  return {
-    params: {
-      name: 'toolManager_getTools',
-      arguments: { ...ENVELOPE, tool: '--help', ...extra }
-    }
-  };
-}
-
-function makeStrategy(manager: SessionContextManager, agentFactory = makeToolManagerAgent) {
-  const captured: Captured = {};
-  const { agent, batchExecute } = agentFactory();
-  const strategy = new ToolExecutionStrategy(makeDeps(captured), () => agent, manager);
-  return { strategy, captured, batchExecute };
-}
+import {
+  MemoryBindingsStore,
+  getToolsRequest,
+  makeManager,
+  makeResolver,
+  makeSessionService,
+  makeStrategy,
+  makeToolManagerAgent,
+  useToolsRequest
+} from './helpers/sessionStickyFixtures';
 
 // ---------------------------------------------------------------------------
 // Resolution order
@@ -627,7 +419,8 @@ describe('persistence: session-bindings.json', () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'default::nexus-cli': { id: 's-20260101000000', displaySessionId: 'nexus-cli', workspaceId: 'default' } },
-      handleWorkspace: { 'nexus-cli': 'default' }
+      handleWorkspace: { 'nexus-cli': 'default' },
+      cliCurrentSession: null
     };
     const sessionService = makeSessionService();
     sessionService.getAllSessions.mockResolvedValue([]); // deleted while unloaded
@@ -647,7 +440,8 @@ describe('persistence: session-bindings.json', () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'default::nexus-cli': { id: 's-20260101000000', displaySessionId: 'nexus-cli', workspaceId: 'default' } },
-      handleWorkspace: {}
+      handleWorkspace: {},
+      cliCurrentSession: null
     };
     const sessionService = makeSessionService();
     sessionService.getAllSessions.mockRejectedValue(new Error('storage cold'));
@@ -681,10 +475,11 @@ describe('persistence: session-bindings.json', () => {
     expect(parsePersistedSessionBindings({
       handles: { ok: { id: 'a', displaySessionId: 'b', workspaceId: 'c' }, bad: { id: 1 } },
       handleWorkspace: { h: 'ws', blank: '   ', wrong: 7 },
-      cliCurrentSession: 'nexus-cli' // PR 2's slot: ignored, not fatal
+      cliCurrentSession: ' research '
     })).toEqual({
       handles: { ok: { id: 'a', displaySessionId: 'b', workspaceId: 'c' } },
-      handleWorkspace: { h: 'ws' }
+      handleWorkspace: { h: 'ws' },
+      cliCurrentSession: 'research'
     });
   });
 
@@ -725,10 +520,14 @@ describe('persistence: session-bindings.json', () => {
     const path = '.obsidian/plugins/nexus/data/session-bindings.json';
     const store = new VaultSessionBindingsStore(adapter as never, path);
 
-    await store.save({ handles: {}, handleWorkspace: { 'nexus-cli': 'ws-research-id' } });
+    await store.save({ handles: {}, handleWorkspace: { 'nexus-cli': 'ws-research-id' }, cliCurrentSession: null });
 
     expect(adapter.mkdir).toHaveBeenCalledWith('.obsidian/plugins/nexus/data');
-    expect(await store.load()).toEqual({ handles: {}, handleWorkspace: { 'nexus-cli': 'ws-research-id' } });
+    expect(await store.load()).toEqual({
+      handles: {},
+      handleWorkspace: { 'nexus-cli': 'ws-research-id' },
+      cliCurrentSession: null
+    });
   });
 });
 

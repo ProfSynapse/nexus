@@ -3,6 +3,7 @@ import { IRequestStrategy } from './IRequestStrategy';
 import { IRequestHandlerDependencies, IRequestContext, SessionInfo, ToolExecutionResult } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { SessionContextManager } from '../../services/SessionContextManager';
+import { isWorkspaceSelectionOnlyCommand } from '../../agents/toolManager/services/ToolCliNormalizer';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 
@@ -74,10 +75,46 @@ interface WorkspaceBindingIntent {
     priorBound?: string;
 }
 
+/**
+ * What processSession decided about the CLI's current session, carried to
+ * bind point 3. Present only when a CLI connection named a session
+ * EXPLICITLY on this call; an inherited or defaulted handle is not a choice.
+ */
+interface CliSessionBindingIntent {
+    handle: string;
+}
+
+/** Every session-related decision processSession hands back with the SessionInfo. */
+interface SessionResolution {
+    sessionInfo: SessionInfo;
+    workspaceBinding?: WorkspaceBindingIntent;
+    cliSessionBinding?: CliSessionBindingIntent;
+}
+
+type StrategyRequestContext = IRequestContext & {
+    sessionInfo: SessionInfo;
+    workspaceBinding?: WorkspaceBindingIntent;
+    cliSessionBinding?: CliSessionBindingIntent;
+};
+
 /** Tool names on the two-tool surface, as the strategy sees them after the prefix split. */
 const TOOL_MANAGER_AGENT = 'toolManager';
 const USE_TOOLS = 'useTools';
 const GET_TOOLS = 'getTools';
+
+/**
+ * The name the CLI sends as `clientInfo.name` on `initialize`
+ * (cli/mcpLineClient.ts). Only connections that identify this way get the
+ * current-session default and bind point 3; MCP clients and chat never do.
+ */
+export const CLI_CLIENT_NAME = 'nexus-cli';
+
+/**
+ * The handle a CLI call runs under when it names no session AND the vault has
+ * never remembered one. The CLI used to fill this client-side; it is a
+ * default, not a choice, and is never written to `cliCurrentSession`.
+ */
+export const CLI_DEFAULT_SESSION_HANDLE = 'nexus-cli';
 
 interface ToolExecutionResponse {
     content: Array<{
@@ -107,7 +144,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     async handle(request: ToolExecutionRequest): Promise<ToolExecutionResponse> {
         const startTime = Date.now();
-        let context: (IRequestContext & { sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }) | undefined;
+        let context: StrategyRequestContext | undefined;
         let success = false;
         let result: ToolExecutionResult;
 
@@ -117,6 +154,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             result = await this.executeTool(context, processedParams);
             success = true;
             this.bindWorkspaceFromResult(context, result);
+            this.bindCliSessionFromResult(context, result);
 
             // Trigger response capture callback if available
             if (this.onToolResponse) {
@@ -211,7 +249,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     private async buildRequestContext(
         request: ToolExecutionRequest
-    ): Promise<IRequestContext & { sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }> {
+    ): Promise<StrategyRequestContext> {
         const { name: fullToolName, arguments: parsedArgs } = request.params;
 
         if (!parsedArgs) {
@@ -248,7 +286,8 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             }
         }
 
-        const { sessionInfo, workspaceBinding } = await this.processSession(params, agentName, tool);
+        const { sessionInfo, workspaceBinding, cliSessionBinding } =
+            await this.processSession(params, agentName, tool, request.clientName);
 
         const shouldInjectInstructions = this.dependencies.sessionService.shouldInjectInstructions(
             sessionInfo.sessionId,
@@ -267,21 +306,32 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                 ...sessionInfo,
                 shouldInjectInstructions
             },
-            ...(workspaceBinding ? { workspaceBinding } : {})
+            ...(workspaceBinding ? { workspaceBinding } : {}),
+            ...(cliSessionBinding ? { cliSessionBinding } : {})
         };
     }
 
     /**
-     * Resolve the session and the workspace it runs in, in that order of
-     * dependency: the handle partition (`"<workspaceId>::<handle>"`) needs the
-     * workspace, so the workspace is settled FIRST (#214):
+     * Resolve the session handle, then the workspace it runs in, then validate
+     * the handle inside that workspace — in that order of dependency, because
+     * the handle partition (`"<workspaceId>::<handle>"`) needs the workspace
+     * and the workspace lookup needs the handle (#214):
      *
-     *   workspaceId:  explicit on this call  →  handle's last bind  →  UNBOUND
+     *   sessionId:    explicit  →  cliCurrentSession ?? 'nexus-cli' (CLI connections only)  →  today's fallback
+     *   workspaceId:  explicit  →  handle's last bind                                        →  UNBOUND
+     *
+     * The CLI default is applied only when the connection identified itself
+     * as the CLI on `initialize` (`clientName === CLI_CLIENT_NAME`); MCP
+     * clients and native chat behave exactly as before. Because the workspace
+     * is looked up for the RESOLVED handle, an inherited CLI session inherits
+     * its workspace too.
      *
      * UNBOUND is not an error here. `useTools` is left without a workspaceId so
      * ToolCliNormalizer.normalizeRequiredWorkspaceId throws its "pass it once"
      * steer; `getTools` is partitioned under 'default' so discovery can be a
-     * session's first call — WITHOUT binding, because nothing was chosen.
+     * session's first call — WITHOUT binding, because nothing was chosen. The
+     * same partition-without-bind applies to a `useTools` batch made ONLY of
+     * workspace-selection commands (see resolveUnboundPartition).
      *
      * The resolved canonical value is written back onto `params` so
      * normalizeContext and ToolBatchExecutionService.validateContext can stay
@@ -290,10 +340,23 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
     private async processSession(
         params: SessionEnvelopeParams,
         agentName: string,
-        tool: string
-    ): Promise<{ sessionInfo: SessionInfo; workspaceBinding?: WorkspaceBindingIntent }> {
-        // Use SessionContextManager for unified session handling instead of separate SessionService
-        const sessionId = params.context?.sessionId || params.sessionId;
+        tool: string,
+        clientName?: string
+    ): Promise<SessionResolution> {
+        const explicitSessionRaw = params.context?.sessionId || params.sessionId;
+        const explicitSession = typeof explicitSessionRaw === 'string' && explicitSessionRaw.trim().length > 0
+            ? explicitSessionRaw.trim()
+            : undefined;
+        const isCliConnection = clientName === CLI_CLIENT_NAME;
+
+        let sessionId = explicitSession;
+        if (!sessionId && isCliConnection && this.sessionContextManager) {
+            // Continue where the CLI left off in this vault, or fall back to the
+            // handle the CLI used to fill in client-side. Neither is a choice,
+            // so neither is bound (see bindCliSessionFromResult).
+            await this.sessionContextManager.ensureBindingsRestored();
+            sessionId = this.sessionContextManager.getCliCurrentSession() ?? CLI_DEFAULT_SESSION_HANDLE;
+        }
 
         if (!this.sessionContextManager || !sessionId) {
             // Fallback to original SessionService if no SessionContextManager or sessionId
@@ -307,6 +370,10 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         }
 
         const isToolManager = agentName === TOOL_MANAGER_AGENT;
+        // Bind point 3 intent: only an EXPLICIT handle on a CLI connection is a
+        // choice. Recorded before execution, acted on after (success gate).
+        const cliSessionBinding: CliSessionBindingIntent | undefined =
+            isCliConnection && explicitSession ? { handle: explicitSession } : undefined;
         let workspaceBinding: WorkspaceBindingIntent | undefined;
         try {
             // Legacy `agent_tool` calls carry the envelope under `context`; the
@@ -334,18 +401,42 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                     explicit: resolution.explicit,
                     priorBound: this.sessionContextManager.resolveHandleWorkspace(sessionId)
                 };
-            } else if (isToolManager && tool === USE_TOOLS) {
-                // Leave it absent. Deleting rather than skipping guards against a
-                // caller that sent `workspaceId: ""` — blank must fail exactly
-                // like omitted, not slip past `required` as a present key.
-                delete params.workspaceId;
             }
 
-            // Only discovery is partitioned under 'default' when unbound. For
-            // everything else the manager's own 'default' parameter applies,
-            // which is today's behaviour for legacy-format calls.
-            const partitionWorkspace = resolution.workspaceId
-                ?? (isToolManager && tool === GET_TOOLS ? 'default' : undefined);
+            // UNBOUND: what runs anyway, and under which partition. Discovery
+            // always does. So does a `useTools` batch made ENTIRELY of
+            // `memory load-workspace` / `memory list-workspaces` — the only
+            // exemption from the UNBOUND rule. A fresh session has to be able
+            // to see its workspaces and pick one, both of those live behind
+            // useTools, and the steer itself tells the caller to do exactly
+            // this; without the exemption `load-workspace` would need the
+            // workspace it is about to load. It is a partition, not a choice:
+            // no WorkspaceBindingIntent is recorded, so bind point 1 stays
+            // silent, and bind point 2 binds the workspace actually loaded on
+            // success. A MIXED batch does not qualify: normalizeContext stamps
+            // one workspaceId on the whole batch, so the trailing commands
+            // would run under 'default' while the session was being bound
+            // elsewhere — the misfiling #214 is about. It gets the steer.
+            let unboundPartition: string | undefined;
+            if (!resolution.workspaceId && isToolManager) {
+                if (tool === GET_TOOLS) {
+                    unboundPartition = 'default';
+                } else if (tool === USE_TOOLS) {
+                    if (isWorkspaceSelectionOnlyCommand(params.tool)) {
+                        unboundPartition = 'default';
+                        params.workspaceId = unboundPartition;
+                    } else {
+                        // Leave it absent. Deleting rather than skipping guards against a
+                        // caller that sent `workspaceId: ""` — blank must fail exactly
+                        // like omitted, not slip past `required` as a present key.
+                        delete params.workspaceId;
+                    }
+                }
+            }
+
+            // For everything else unbound the manager's own 'default' parameter
+            // applies, which is today's behaviour for legacy-format calls.
+            const partitionWorkspace = resolution.workspaceId ?? unboundPartition;
 
             const validationResult = await this.sessionContextManager.validateSessionId(
                 sessionId,
@@ -374,7 +465,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             if (workspaceBinding && validationResult.displaySessionId !== sessionId) {
                 workspaceBinding.displayHandle = validationResult.displaySessionId;
             }
-            return { sessionInfo, workspaceBinding };
+            return { sessionInfo, workspaceBinding, cliSessionBinding };
         } catch (error) {
             logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
             // Fallback to original SessionService if SessionContextManager fails
@@ -383,8 +474,37 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                 params.context.sessionId = sessionInfo.sessionId;
             }
             params.sessionId = sessionInfo.sessionId;
-            // No bind on the fallback path: the manager that would hold it just failed.
+            // No bind of any kind on the fallback path: the manager that would hold it just failed.
             return { sessionInfo };
+        }
+    }
+
+    /**
+     * Bind point 3 (#214): an EXPLICIT `--session` on a CLI connection becomes
+     * this vault's `cliCurrentSession` once the call succeeds, so the next CLI
+     * call with no `--session` continues it. Same success rule as bind point 1
+     * — for `useTools` the RESULT must not carry `success: false` (handle()'s
+     * local flag is true for any non-throwing call); for `getTools` any
+     * non-throwing result counts, since discovery has no failure payload of
+     * its own. A thrown call never reaches here. The default and inherited
+     * handles carry no intent and so are never bound.
+     */
+    private bindCliSessionFromResult(
+        context: StrategyRequestContext,
+        result: ToolExecutionResult
+    ): void {
+        const intent = context.cliSessionBinding;
+        if (!this.sessionContextManager || !intent) {
+            return;
+        }
+        if (context.agentName === TOOL_MANAGER_AGENT && context.tool === USE_TOOLS
+            && (!result || result.success === false)) {
+            return;
+        }
+        try {
+            this.sessionContextManager.setCliCurrentSession(intent.handle);
+        } catch (error) {
+            logger.systemWarn(`CLI current-session bind failed for "${intent.handle}": ${getErrorMessage(error)}`);
         }
     }
 
