@@ -76,6 +76,9 @@ function createMockConfiguration() {
   return {
     isWindows: jest.fn().mockReturnValue(false),
     getIPCPath: jest.fn().mockReturnValue('/tmp/test-nexus.sock'),
+    getVaultNotePath: jest.fn().mockReturnValue('/tmp/test-nexus.json'),
+    getVaultBasePath: jest.fn().mockReturnValue(null),
+    getSanitizedVaultName: jest.fn().mockReturnValue('test-nexus'),
     getServerInfo: jest.fn().mockReturnValue({ name: 'test', version: '1.0' }),
     getServerOptions: jest.fn().mockReturnValue({}),
   } as unknown as ServerConfiguration;

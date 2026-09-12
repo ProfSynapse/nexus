@@ -42,6 +42,18 @@ interface OwnedSocket {
 }
 
 /**
+ * The vault note is a plain file at a path every instance of this vault shares,
+ * so it has exactly the socket's ownership problem and is tracked the same way.
+ */
+type OwnedNote = OwnedSocket;
+
+/** What the note says. `cli/vaultDiscovery.ts` parses this shape. */
+interface VaultNote {
+    vaultName: string;
+    basePath: string;
+}
+
+/**
  * How long teardown waits on a single client before giving up on it. A client
  * that has not disconnected cleanly can leave close() pending indefinitely,
  * which would stall restartServer().
@@ -64,6 +76,8 @@ export class IPCTransportManager {
     private currentTransport: StdioServerTransport | null = null;
     /** The socket file we created, so teardown never deletes someone else's. */
     private ownedSocket: OwnedSocket | null = null;
+    /** The vault note we wrote beside the socket; same ownership rule. */
+    private ownedNote: OwnedNote | null = null;
 
     constructor(
         private configuration: ServerConfiguration,
@@ -329,11 +343,70 @@ export class IPCTransportManager {
             }
         }
 
+        this.publishVaultNote();
+
         this.ipcServer = server;
         this.isRunning = true;
-        
+
         logger.systemLog(`IPC server started on path: ${ipcPath}`);
         resolve(server);
+    }
+
+    /**
+     * Tell the CLI which folder this vault lives in, so `nexus` run from inside
+     * it needs no `--vault`. Written only once the socket is listening, so a
+     * note always describes a vault the CLI can reach; removed with the socket.
+     *
+     * The note is only ever an assertion of fact. With no filesystem adapter
+     * (mobile, or anything that cannot name a folder) nothing is written, and a
+     * stale note from an earlier run is cleared rather than left to mislead.
+     *
+     * Owner-only, like the socket: created 0o600 after unlinking whatever was
+     * there, because writeFile's mode applies only on create and a stale note
+     * could have been born wider.
+     */
+    private publishVaultNote(): void {
+        // Runs inside the 'listening' callback: nothing here may throw, or the
+        // transport would come up with an uncaught exception behind it.
+        let notePath: string;
+        let fs: typeof import('fs');
+        try {
+            notePath = this.configuration.getVaultNotePath();
+            fs = desktopRequire<typeof import('fs')>('fs');
+        } catch (error) {
+            logger.systemError(error as Error, 'Vault Note Path');
+            return;
+        }
+
+        try {
+            fs.unlinkSync(notePath);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                logger.systemError(error as Error, 'Vault Note Cleanup');
+            }
+        }
+
+        const basePath = this.configuration.getVaultBasePath();
+        if (!basePath) {
+            this.ownedNote = null;
+            return;
+        }
+
+        const note: VaultNote = {
+            vaultName: this.configuration.getSanitizedVaultName(),
+            basePath
+        };
+
+        try {
+            fs.writeFileSync(notePath, JSON.stringify(note), { encoding: 'utf8', mode: 0o600 });
+            if (!this.configuration.isWindows()) {
+                fs.chmodSync(notePath, 0o600);
+            }
+            this.ownedNote = this.readSocketIdentity(notePath);
+        } catch (error) {
+            logger.systemError(error as Error, 'Vault Note Write');
+            this.ownedNote = null;
+        }
     }
 
     /**
@@ -359,6 +432,7 @@ export class IPCTransportManager {
     async stopTransport(): Promise<void> {
         const hasWork = this.ipcServer !== null
             || this.ownedSocket !== null
+            || this.ownedNote !== null
             || this.currentTransport !== null
             || this.activeConnections.size > 0;
         if (!hasWork) {
@@ -370,6 +444,7 @@ export class IPCTransportManager {
         try {
             await this.closeActiveConnections();
             await this.releaseOwnedSocket();
+            await this.releaseOwnedNote();
 
             logger.systemLog('IPC transport stopped successfully');
         } catch (error) {
@@ -504,7 +579,53 @@ export class IPCTransportManager {
     }
 
     /**
-     * Stat the socket file for its identity, or null if it is not there.
+     * Remove the vault note, but only while it is still the one we wrote.
+     *
+     * Same hazard as the socket: on a hot reload the successor has already
+     * rewritten the note at this shared path by the time we get here, and
+     * deleting by name would take the successor's note with it — leaving its
+     * vault invisible to a cwd-based `nexus` until the next reload. So the note
+     * goes only when its identity matches what we wrote AND nothing is listening
+     * on the IPC path any more (our own listener closed first, so a live one is
+     * a successor's). Runs on every platform: a named pipe has no file, but the
+     * note under %TEMP% is a file all the same.
+     */
+    private async releaseOwnedNote(): Promise<void> {
+        const owned = this.ownedNote;
+        this.ownedNote = null;
+
+        if (!owned) {
+            return;
+        }
+
+        const current = this.readSocketIdentity(owned.path);
+        if (!current) {
+            return;
+        }
+
+        if (!this.isSameSocketFile(current, owned)) {
+            logger.systemLog(`Leaving the vault note at ${owned.path} alone — it belongs to another instance now`);
+            return;
+        }
+
+        if (await this.isSocketLive(this.configuration.getIPCPath())) {
+            logger.systemLog(`Leaving the vault note at ${owned.path} alone — another instance is listening`);
+            return;
+        }
+
+        try {
+            const fs = desktopRequire<typeof import('fs')>('fs').promises;
+            await fs.unlink(owned.path);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                logger.systemError(error as Error, 'Vault Note Cleanup');
+            }
+        }
+    }
+
+    /**
+     * Stat a file for its identity, or null if it is not there. Used for the
+     * socket and for the vault note alike — the check is the same.
      */
     private readSocketIdentity(ipcPath: string): OwnedSocket | null {
         try {
@@ -693,18 +814,26 @@ export class IPCTransportManager {
      * file alone and a human disagrees.
      */
     async forceCleanupSocket(): Promise<void> {
-        if (this.configuration.isWindows()) {
-            return;
+        this.ownedSocket = null;
+        this.ownedNote = null;
+
+        const fs = desktopRequire<typeof import('fs')>('fs').promises;
+        if (!this.configuration.isWindows()) {
+            try {
+                await fs.unlink(this.configuration.getIPCPath());
+                logger.systemLog('Socket force cleaned up successfully');
+            } catch (error) {
+                logger.systemError(error as Error, 'Force Socket Cleanup');
+            }
         }
 
-        this.ownedSocket = null;
-
+        // The note is a file on every platform, pipe or socket.
         try {
-            const fs = desktopRequire<typeof import('fs')>('fs').promises;
-            await fs.unlink(this.configuration.getIPCPath());
-            logger.systemLog('Socket force cleaned up successfully');
+            await fs.unlink(this.configuration.getVaultNotePath());
         } catch (error) {
-            logger.systemError(error as Error, 'Force Socket Cleanup');
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                logger.systemError(error as Error, 'Force Vault Note Cleanup');
+            }
         }
     }
 }

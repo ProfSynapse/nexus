@@ -6,7 +6,8 @@
 import { App } from 'obsidian';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { logger } from '../../utils/logger';
-import { getPrimaryServerKey, getPrimaryIpcPath } from '../../constants/branding';
+import { desktopRequire } from '../../utils/desktopRequire';
+import { getPrimaryServerKey, getPrimaryIpcPath, getPrimaryVaultNotePath } from '../../constants/branding';
 
 export interface ServerConfigurationOptions {
     serverName?: string;
@@ -112,6 +113,36 @@ export class ServerConfiguration {
      */
     getIPCPath(): string {
         return getPrimaryIpcPath(this.vaultName, this.isWindows());
+    }
+
+    /**
+     * Where this server publishes `{ vaultName, basePath }` for the CLI so a
+     * `nexus` run from inside the vault folder can pick this vault without
+     * `--vault`. Beside the socket on Unix; under %TEMP% on Windows, where the
+     * pipe namespace holds no files.
+     */
+    getVaultNotePath(): string {
+        const isWindows = this.isWindows();
+        const tempDir = isWindows ? desktopRequire<typeof import('os')>('os').tmpdir() : '';
+        return getPrimaryVaultNotePath(this.vaultName, isWindows, tempDir);
+    }
+
+    /**
+     * The vault's absolute folder on disk, or null when the adapter cannot say
+     * (mobile, or a non-filesystem adapter). Callers must treat null as "do not
+     * publish" rather than guess.
+     */
+    getVaultBasePath(): string | null {
+        try {
+            const adapter = this.app.vault.adapter as { getBasePath?: () => string };
+            if (typeof adapter.getBasePath !== 'function') {
+                return null;
+            }
+            const basePath = adapter.getBasePath();
+            return typeof basePath === 'string' && basePath.length > 0 ? basePath : null;
+        } catch {
+            return null;
+        }
     }
 
     /**

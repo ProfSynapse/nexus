@@ -6,29 +6,149 @@
  * reports ENOTDIR, so Windows enumeration uses the built-in PowerShell file
  * system provider. The command is fixed and receives no user-controlled text.
  */
-import { lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import * as nodePath from 'node:path';
 
 export const NAME_PREFIX = 'nexus_mcp_';
 export const UNIX_SOCK_DIR = '/tmp';
 export const UNIX_SUFFIX = '.sock';
 export const WIN_PIPE_DIR = '\\\\.\\pipe\\';
+/** The sidecar note a running plugin writes beside its socket. */
+export const NOTE_SUFFIX = '.json';
 
 export interface VaultSocket {
     name: string;
     path: string;
 }
 
+/**
+ * A live endpoint plus what its plugin published about itself. `basePath` is
+ * the vault's absolute folder; absent when the plugin wrote no note (mobile,
+ * an older plugin, or an unreadable note).
+ */
+export interface VaultEntry extends VaultSocket {
+    basePath?: string;
+}
+
 /** Format live endpoints for the dynamic section in `nexus --help`. */
-export function formatAvailableVaults(sockets: readonly VaultSocket[]): string {
+export function formatAvailableVaults(sockets: readonly VaultEntry[]): string {
     if (sockets.length === 0) {
         return '  (none detected — open Obsidian with Nexus enabled)';
     }
 
     const nameWidth = Math.max(...sockets.map((socket) => socket.name.length));
+    const pathWidth = Math.max(...sockets.map((socket) => socket.path.length));
     return sockets
-        .map((socket) => `  ${socket.name.padEnd(nameWidth)}  ${socket.path}`)
+        .map((socket) => {
+            const line = `  ${socket.name.padEnd(nameWidth)}  ${socket.path}`;
+            return socket.basePath ? `${line.padEnd(nameWidth + pathWidth + 4)}  ${socket.basePath}` : line;
+        })
         .join('\n');
+}
+
+/**
+ * Where the plugin for this socket publishes `{ vaultName, basePath }`.
+ *
+ * Beside the socket on Unix (`/tmp/nexus_mcp_<vault>.json`). The Windows pipe
+ * namespace holds no files, so there it lives under the temp directory. Mirrors
+ * `buildVaultNotePath` in src/constants/branding.ts — MUST stay identical.
+ */
+export function vaultNotePath(
+    socket: VaultSocket,
+    platform: NodeJS.Platform = process.platform,
+    tempDir: string = tmpdir()
+): string {
+    if (platform === 'win32') {
+        return `${tempDir.replace(/[\\/]+$/, '')}\\${NAME_PREFIX}${socket.name}${NOTE_SUFFIX}`;
+    }
+    return socket.path.endsWith(UNIX_SUFFIX)
+        ? `${socket.path.slice(0, -UNIX_SUFFIX.length)}${NOTE_SUFFIX}`
+        : `${socket.path}${NOTE_SUFFIX}`;
+}
+
+/** Parse a note's text; undefined for anything that is not exactly the published shape. */
+export function parseVaultNote(raw: string): { vaultName: string; basePath: string } | undefined {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return undefined;
+    }
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const { vaultName, basePath } = parsed as { vaultName?: unknown; basePath?: unknown };
+    if (typeof vaultName !== 'string' || typeof basePath !== 'string' || basePath.length === 0) {
+        return undefined;
+    }
+    return { vaultName, basePath };
+}
+
+/**
+ * Attach each live socket's published folder. Only sockets already listed are
+ * consulted, so a note whose plugin is gone is never seen; a missing, unreadable
+ * or malformed note simply leaves `basePath` unset. The folder is resolved to
+ * its real path (symlinks, on-disk casing) so it compares cleanly with a cwd
+ * resolved the same way.
+ */
+export function readVaultNotes(
+    sockets: readonly VaultSocket[],
+    platform: NodeJS.Platform = process.platform,
+    tempDir: string = tmpdir()
+): VaultEntry[] {
+    return sockets.map((socket) => {
+        let raw: string;
+        try {
+            raw = readFileSync(vaultNotePath(socket, platform, tempDir), 'utf8');
+        } catch {
+            return { ...socket };
+        }
+        const note = parseVaultNote(raw);
+        if (!note) return { ...socket };
+        return { ...socket, basePath: toRealPath(note.basePath) };
+    });
+}
+
+/** Canonicalise a path for comparison; falls back to the input when it cannot be resolved. */
+export function toRealPath(target: string): string {
+    try {
+        return realpathSync.native(target);
+    } catch {
+        return target;
+    }
+}
+
+/**
+ * Pick the vault whose folder contains `cwd`, innermost first.
+ *
+ * Pure: reads nothing from disk. Both sides are normalised with the platform's
+ * path rules, and containment is separator-aware, so `/x/Code` does not claim
+ * `/x/CodeOther`. When vault folders nest, the longest (innermost) match wins,
+ * because that is the vault the caller is most specifically inside. Windows
+ * paths compare case-insensitively. Entries with no `basePath` never match.
+ */
+export function resolveVaultByCwd(
+    cwd: string,
+    entries: readonly VaultEntry[],
+    platform: NodeJS.Platform = process.platform
+): VaultEntry | undefined {
+    const p = platform === 'win32' ? nodePath.win32 : nodePath.posix;
+    const fold = (value: string) => (platform === 'win32' ? value.toLowerCase() : value);
+    const here = fold(p.resolve(cwd));
+
+    let best: VaultEntry | undefined;
+    let bestLength = -1;
+    for (const entry of entries) {
+        if (!entry.basePath) continue;
+        const base = fold(p.resolve(entry.basePath));
+        const prefix = base.endsWith(p.sep) ? base : `${base}${p.sep}`;
+        const contains = here === base || here.startsWith(prefix);
+        if (contains && base.length > bestLength) {
+            best = entry;
+            bestLength = base.length;
+        }
+    }
+    return best;
 }
 
 const WINDOWS_PIPE_LIST_SCRIPT = "Get-ChildItem -LiteralPath '\\\\.\\pipe\\' -Name";

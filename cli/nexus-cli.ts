@@ -37,6 +37,9 @@ import {
     VaultSocket,
     formatAvailableVaults,
     isOwnUnixSocket,
+    readVaultNotes,
+    resolveVaultByCwd,
+    toRealPath,
 } from './vaultDiscovery';
 
 // Transport endpoints mirror connector.ts exactly:
@@ -74,11 +77,18 @@ function resolveVault(requested?: string): VaultSocket {
         return { name: s, path: p };
     }
     const sockets = listVaultSockets();
-    if (sockets.length === 1) return sockets[0];
     if (sockets.length === 0) {
         throw new Error('No open Nexus vaults found. Is Obsidian running with Nexus? Or pass --vault <name>.');
     }
-    throw new Error(`Multiple vaults open: ${sockets.map((x) => x.name).join(', ')}. Pass --vault <name>.`);
+    // Running from inside a vault's folder selects that vault. Each plugin publishes its
+    // folder beside its socket; the innermost containing folder wins when vaults nest.
+    const byCwd = resolveVaultByCwd(toRealPath(process.cwd()), readVaultNotes(sockets));
+    if (byCwd) return byCwd;
+    if (sockets.length === 1) return sockets[0];
+    throw new Error(
+        `Multiple vaults open: ${sockets.map((x) => x.name).join(', ')}. ` +
+        'Run from inside a vault folder to select it, or pass --vault <name>.'
+    );
 }
 
 function printToolResult(result: McpToolResult, asJson: boolean): number {
@@ -119,7 +129,7 @@ function buildUsage(): string {
     // should answer the immediate follow-up question: which value can I pass to --vault?
     let availableVaultLines: string;
     try {
-        availableVaultLines = formatAvailableVaults(listVaultSockets());
+        availableVaultLines = formatAvailableVaults(readVaultNotes(listVaultSockets()));
     } catch (error) {
         availableVaultLines = `  (could not enumerate: ${(error as Error).message})`;
     }
@@ -141,7 +151,7 @@ COMMANDS
                                      tools, in one call. \`nexus playbook\` lists them.
   nexus context [--json]             What this vault remembers for the CLI: current
                                      session and its workspace (read-only)
-  nexus vaults                       List open Nexus vaults (live sockets)
+  nexus vaults                       List open Nexus vaults (live sockets + vault folder)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
 
@@ -166,7 +176,8 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
                           to switch. \`nexus context\` shows both.
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
-  --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
+  --vault <name>          target a vault (else: $NEXUS_VAULT; else the open vault whose
+                          folder contains the current directory; else the single open one)
                           (a tool call may run up to 10 minutes — image edits and
                           slow models take a while; $NEXUS_CLI_TOOL_TIMEOUT_MS overrides)
   --json                  print the raw JSON result
@@ -238,7 +249,7 @@ GOTCHAS
     list of errors before touching disk); \`base analyze\` runs it and returns the rows
     a user would see.
   • No open vault → the socket is absent; open Obsidian with Nexus. Multiple open →
-    pass --vault <name>.
+    run from inside a vault's folder (cwd selects it) or pass --vault <name>.
 
 TOOL CATALOG
   Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
@@ -316,7 +327,9 @@ async function main(): Promise<number> {
             process.stdout.write('No open Nexus vaults. Is Obsidian running with Nexus enabled?\n');
             return 0;
         }
-        for (const s of sockets) process.stdout.write(`${s.name}\t${s.path}\n`);
+        for (const s of readVaultNotes(sockets)) {
+            process.stdout.write(`${s.name}\t${s.path}${s.basePath ? `\t${s.basePath}` : ''}\n`);
+        }
         return 0;
     }
 

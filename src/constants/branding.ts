@@ -85,3 +85,30 @@ export function getPrimaryIpcPath(vaultName: string, isWindows: boolean): string
     const sanitized = sanitizeVaultName(vaultName);
     return buildIpcPath(sanitized, isWindows, PIPE_NAME_PREFIXES.current);
 }
+
+/**
+ * Where a running plugin publishes its vault's folder for the CLI.
+ *
+ * Sits beside the socket on Unix (`/tmp/nexus_mcp_<vault>.json`). The Windows
+ * pipe namespace holds no files, so there it goes under the temp directory the
+ * caller passes (`os.tmpdir()`, i.e. %TEMP%). `cli/vaultDiscovery.ts` mirrors
+ * this shape and must stay identical.
+ */
+export function buildVaultNotePath(
+    sanitizedVaultName: string,
+    isWindows: boolean,
+    windowsTempDir: string
+): string {
+    const fileName = `${PIPE_NAME_PREFIXES.current}_${sanitizedVaultName}.json`;
+    return isWindows
+        ? `${windowsTempDir.replace(/[\\/]+$/, '')}\\${fileName}`
+        : `/tmp/${fileName}`;
+}
+
+export function getPrimaryVaultNotePath(
+    vaultName: string,
+    isWindows: boolean,
+    windowsTempDir: string
+): string {
+    return buildVaultNotePath(sanitizeVaultName(vaultName), isWindows, windowsTempDir);
+}
