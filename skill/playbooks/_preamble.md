@@ -6,13 +6,18 @@ so you can go straight to `nexus use` without a separate `nexus tools` call.
 
 **Every playbook starts the same way:**
 
-1. **Pick a workspace and load it.** Choose from *Your workspaces* below and run
-   `nexus use --memory … --goal … -- memory load-workspace "<name>"`. If
-   none fits, create one with `memory create-workspace`. Loading scopes your traces
-   and auto-loads that workspace's task summary. (This playbook only *lists*
-   workspaces — loading is your call, since only you know which one.)
-2. **Thread the workspace** into every following call with `--workspace <name>`
-   (the outer context flag), and keep a stable `--session <name>` for the task.
+1. **Name the session and load a workspace — once.** Choose from *Your
+   workspaces* below and run
+   `nexus use --session <task-name> --memory … --goal … -- memory load-workspace "<name>"`.
+   If none fits, create one with `memory create-workspace`, then load it. Loading
+   scopes your traces, auto-loads that workspace's task summary, and **binds the
+   session to it**. (This playbook only *lists* workspaces — loading is your
+   call, since only you know which one.)
+2. **Then omit `--session` and `--workspace`.** The vault remembers both: every
+   later call continues that session and inherits its workspace. Pass a
+   different value once to switch; `nexus context` shows what is remembered. A
+   session that never chose fails with "This session has no workspace yet" —
+   never pass `default` as a placeholder.
 3. **Always pass real `--memory` and `--goal`** — a running summary and the
    current objective. Placeholders are rejected.
 4. **Checkpoint at milestones** with `memory create-state` so the work is

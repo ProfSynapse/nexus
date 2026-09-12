@@ -12,6 +12,12 @@ offline and instant, so read it before your first command instead of guessing.
   Drill down: `nexus tools storage list` = one tool's full arg schema.
 - **Execute:** `nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>`.
   `--memory`/`--goal` are **required** on every `use`.
+- **Context is remembered:** add `--session <name> --workspace <name>` to the
+  **first** `use` of a task (or run `memory load-workspace <name>`), then omit
+  both — later calls continue that session and inherit its workspace. A session
+  that never chose a workspace fails with "This session has no workspace yet";
+  choose once, never pass `default` as a placeholder. `nexus context` shows what
+  the vault remembers.
 - **Multiline content:** keep Markdown/YAML and embedded quotes out of shell
   argv. After `--`, swap any value-taking flag for its transport form:
   `--<flag>-stdin` (piped input) or `--<flag>-file <local-path>` — e.g.

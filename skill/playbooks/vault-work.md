@@ -11,7 +11,8 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above), thread `--workspace`/`--session`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Find the note(s).** Pick the search that fits:
    - `search content --query "<terms>"` — semantic/keyword over note bodies.
    - `search directory --query "<name>" --paths "<folder>"` — by filename/path.
@@ -34,27 +35,25 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 ## Worked example — add a summary under a heading
 
 ```
-# 1. load the workspace you picked from the list above (--workspace = name or id)
+# 1. name the session and load the workspace you picked from the list above —
+#    this is the only call that needs --session; loading binds the workspace
 nexus use \
-  --memory "starting: summarize the auth notes" --goal "load the research workspace" \
   --session auth-summary \
+  --memory "starting: summarize the auth notes" --goal "load the research workspace" \
   -- memory load-workspace "research"
 
-# 2. find
+# 2. find — no --session/--workspace: the vault remembers auth-summary → research
 nexus use \
-  --workspace research --session auth-summary \
   --memory "looking for the main auth note" --goal "locate the auth flow note" \
   -- search content --query "authentication flow" --limit 5
 
 # 3. read the top hit (search gave a path, not the text)
 nexus use \
-  --workspace research --session auth-summary \
   --memory "found Projects/Auth/flow.md; reading it" --goal "read the auth flow note" \
   -- content read --path Projects/Auth/flow.md --start-line 1
 
 # 4. edit — anchor on exact text pulled from the read
 nexus use \
-  --workspace research --session auth-summary \
   --memory "have the body; inserting a summary" --goal "replace the Summary section" \
   -- content replace --path Projects/Auth/flow.md \
   --start "## Summary" --end "## Details" \
@@ -62,7 +61,6 @@ nexus use \
 
 # 5. checkpoint (create-state needs name + context + task + file/step arrays)
 nexus use \
-  --workspace research --session auth-summary \
   --memory "summary written to flow.md" --goal "checkpoint the finished edit" \
   -- memory create-state --name auth-summary-done \
   --conversation-context "summarized the auth flow note into a Summary section" \
@@ -79,6 +77,11 @@ nexus use \
   `start`/`end`. Copy the anchors verbatim from the read.
 - **Answering a question from `{path, score}`** — read the note; don't fabricate
   from the ranking.
-- **Losing trace scope** — pass `--workspace` on every call, not just the load.
+- **Switching sessions by accident** — a different `--session` name is a
+  different session with its own remembered workspace. Stay on one name per
+  task; `nexus context` shows which one is current.
+- **"This session has no workspace yet"** — this session never chose. Load one
+  (`memory load-workspace`, on its own) or pass `--workspace` once; don't answer
+  it with `--workspace default`.
 - **Writing outside the vault** — `..`/`~`/absolute paths are rejected; keep
   paths vault-relative.

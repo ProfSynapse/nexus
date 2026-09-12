@@ -7,7 +7,7 @@
  */
 
 /** Combined content hash — used to detect and refresh a stale on-disk install. */
-export const NEXUS_CLI_ASSETS_HASH = "12f4a7babd7333df";
+export const NEXUS_CLI_ASSETS_HASH = "5a6cadfe8840206d";
 
 /** Bundled standalone `nexus` CLI (written to <dataDir>/nexus-cli.js). */
 export const NEXUS_CLI_JS = `#!/usr/bin/env node
@@ -145,6 +145,10 @@ var McpLineClient = class {
   callTool(name, args) {
     return this.request("tools/call", { name, arguments: args }, this.toolCallTimeoutMs);
   }
+  /** Standard MCP \`resources/read\`; used for the server-answered \`nexus://context\` view. */
+  readResource(uri) {
+    return this.request("resources/read", { uri });
+  }
   close() {
     this.socket?.end();
     this.socket?.destroy();
@@ -180,6 +184,98 @@ function listPlaybooks(dir) {
   return (0, import_node_fs.readdirSync)(dir).filter((f) => f.endsWith(".md") && !f.startsWith("_")).map((f) => parseFrontmatter((0, import_node_fs.readFileSync)((0, import_node_path.join)(dir, f), "utf8")).meta).filter((m) => m.name);
 }
 
+// cli/envelope.ts
+function contextFromFlags(flags) {
+  const envelope = {};
+  if (typeof flags.workspace === "string") envelope.workspaceId = flags.workspace;
+  if (typeof flags.session === "string") envelope.sessionId = flags.session;
+  return envelope;
+}
+function buildToolsEnvelope(flags, selector) {
+  return {
+    tool: selector,
+    ...contextFromFlags(flags),
+    memory: typeof flags.memory === "string" ? flags.memory : "Discovering available Nexus tools.",
+    goal: typeof flags.goal === "string" ? flags.goal : \`Inspect "\${selector}" tools.\`
+  };
+}
+function buildPlaybookEnvelope(flags, name) {
+  return {
+    ...contextFromFlags(flags),
+    memory: \`Loading the "\${name}" playbook.\`,
+    goal: \`Prepare to run the \${name} task.\`
+  };
+}
+function buildUseEnvelope(flags, command, memory, goal) {
+  const args = {
+    tool: command,
+    ...contextFromFlags(flags),
+    memory,
+    goal
+  };
+  if (typeof flags.constraints === "string") args.constraints = flags.constraints;
+  if (typeof flags["operation-id"] === "string") args.operationId = flags["operation-id"];
+  return args;
+}
+
+// cli/context.ts
+var NEXUS_CONTEXT_RESOURCE_URI = "nexus://context";
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseContextSnapshot(result) {
+  const contents = result?.contents;
+  const entry = Array.isArray(contents) ? contents.find((c) => typeof c?.text === "string") : void 0;
+  if (!entry || typeof entry.text !== "string") {
+    throw new Error(\`Unexpected reply to \${NEXUS_CONTEXT_RESOURCE_URI}: no text content. Is the Nexus plugin up to date?\`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(entry.text);
+  } catch {
+    throw new Error(\`Unexpected reply to \${NEXUS_CONTEXT_RESOURCE_URI}: not JSON.\`);
+  }
+  if (!isRecord2(parsed) || typeof parsed.defaultSessionHandle !== "string" || !("cliSession" in parsed)) {
+    throw new Error(\`Unexpected reply to \${NEXUS_CONTEXT_RESOURCE_URI}: missing fields.\`);
+  }
+  const session = parsed.cliSession;
+  if (session !== null && (!isRecord2(session) || typeof session.handle !== "string")) {
+    throw new Error(\`Unexpected reply to \${NEXUS_CONTEXT_RESOURCE_URI}: malformed cliSession.\`);
+  }
+  const workspace = isRecord2(session) ? session.workspace : null;
+  return {
+    vault: typeof parsed.vault === "string" ? parsed.vault : null,
+    defaultSessionHandle: parsed.defaultSessionHandle,
+    cliSession: isRecord2(session) ? {
+      handle: session.handle,
+      displaySessionId: typeof session.displaySessionId === "string" ? session.displaySessionId : null,
+      workspace: isRecord2(workspace) && typeof workspace.id === "string" ? { id: workspace.id, ...typeof workspace.name === "string" ? { name: workspace.name } : {} } : null
+    } : null
+  };
+}
+function formatContextSnapshot(snapshot) {
+  const lines = [];
+  lines.push(\`Vault:      \${snapshot.vault ?? "(unknown)"}\`);
+  const session = snapshot.cliSession;
+  if (!session) {
+    lines.push(\`Session:    none \\u2014 the next CLI call runs as "\${snapshot.defaultSessionHandle}".\`);
+    lines.push("            Pass --session <name> once to choose one; later calls continue it.");
+    lines.push("Workspace:  unbound \\u2014 pass --workspace <name> once, or run \`memory load-workspace <name>\`.");
+    return lines.join("\\n") + "\\n";
+  }
+  const renamed = session.displaySessionId && session.displaySessionId !== session.handle ? \`  (display name: \${session.displaySessionId})\` : "";
+  lines.push(\`Session:    \${session.handle}\${renamed}\`);
+  if (session.workspace) {
+    const { id, name } = session.workspace;
+    lines.push(\`Workspace:  \${name && name !== id ? \`\${name}  (\${id})\` : id}\`);
+  } else {
+    lines.push("Workspace:  unbound \\u2014 pass --workspace <name> once, or run \`memory load-workspace <name>\`.");
+  }
+  lines.push("");
+  lines.push("Calls without --session/--workspace use these. Pass a different value once to switch.");
+  return lines.join("\\n") + "\\n";
+}
+
 // cli/commandLine.ts
 var CONTEXT_VALUE_FLAGS = /* @__PURE__ */ new Set([
   "memory",
@@ -210,7 +306,7 @@ var MISPLACEABLE_CONTEXT_FLAGS = /* @__PURE__ */ new Set([
   "json",
   "dry-run"
 ]);
-var VERBS = ["tools", "use", "playbook", "vaults", "doctor", "help"];
+var VERBS = ["tools", "use", "playbook", "context", "vaults", "doctor", "help"];
 function editDistance(a, b) {
   const rows = Array.from({ length: a.length + 1 }, (_, i) => {
     const row = new Array(b.length + 1).fill(0);
@@ -600,6 +696,8 @@ COMMANDS
   nexus use [context] -- <command>    EXECUTE a tool (useTools). See CONTEXT below.
   nexus playbook [name]              Task primer: recipe + your workspaces + preloaded
                                      tools, in one call. \\\`nexus playbook\\\` lists them.
+  nexus context [--json]             What this vault remembers for the CLI: current
+                                     session and its workspace (read-only)
   nexus vaults                       List open Nexus vaults (live sockets)
   nexus doctor [--vault <name>]      Connect + handshake; print server info
   nexus --help                       This manual
@@ -612,8 +710,16 @@ CONTEXT (flags on \\\`use\\\`; \\\`tools\\\` accepts them too. \\\`playbook\\\` 
   --memory "<text>"       REQUIRED \\u2014 rolling summary of what you've done/learned
   --goal "<text>"         REQUIRED \\u2014 this call's objective, one sentence
                           (empty or placeholder like "N/A" is REJECTED with a steer)
-  --workspace <id>        scope for traces/memory (default: "default")
-  --session <name>        continuity across calls (default: "nexus-cli"; keep it stable)
+  --workspace <name|id>   PASS ONCE \\u2014 the vault remembers it per session. A fresh
+                          session must choose: pass --workspace once, or run
+                          \\\`memory load-workspace <name>\\\`; every later call in that
+                          session inherits it. Nothing defaults silently: an unbound
+                          session's \\\`use\\\` fails with a steer (only \\\`memory
+                          list-workspaces\\\` / \\\`memory load-workspace\\\` run unbound).
+  --session <name>        PASS ONCE \\u2014 the vault remembers the CLI's current session.
+                          Omit it and the CLI continues where it left off (or runs as
+                          "nexus-cli" if it never chose). Pass a different name once
+                          to switch. \\\`nexus context\\\` shows both.
   --constraints "<text>"  optional guardrails
   --operation-id <id>     optional stable retry identity; reuse only for the exact same command
   --vault <name>          target a vault (else: the single open one, or $NEXUS_VAULT)
@@ -670,6 +776,15 @@ GOTCHAS
     --dryRun, and typos like --vualt fail with a suggestion instead of silently
     doing nothing. Tool flags are only recognized after \\\`--\\\`.
   \\u2022 --memory/--goal are enforced \\u2014 send real values or the call is rejected.
+  \\u2022 "This session has no workspace yet" means choose once: \\\`--workspace <name>\\\` on
+    this call, or \\\`memory load-workspace <name>\\\` in its own call (not batched with
+    other commands). Then drop --workspace; the session inherits it. Repeating
+    --workspace on every call is harmless but unnecessary. \\\`--workspace default\\\`
+    is the global workspace \\u2014 pass it deliberately, never as a placeholder.
+  \\u2022 --session works the same way: choose once, then omit. Two different --session
+    names are two different sessions with their own remembered workspace.
+    \\\`nexus context\\\` shows what the current vault remembers; a plugin reload
+    keeps it.
   \\u2022 Media generation is async \\u2014 \\\`prompt generate-image\\\` / \\\`generate-audio\\\` /
     \\\`generate-video\\\` return a job; poll \\\`prompt check-generated-artifact "<job-id>"\\\`.
   \\u2022 States: the AI gets archive (reversible), not delete.
@@ -693,10 +808,13 @@ PLAYBOOKS  (nexus playbook <name>)
 
 EXAMPLES
   nexus tools "content read, search content"
-  nexus use --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
-  nexus use --vault "My Notes" --memory "smoke test" --goal "list vault root" -- storage list
-  nexus use --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
+  # first call of a fresh session: choose the session and workspace ONCE...
+  nexus use --session daily-audit --workspace "My Notes" --memory "auditing notes" --goal "read today's daily" -- content read --path Daily/2026-07-17.md --start-line 1
+  # ...then omit both; this call runs in daily-audit / "My Notes"
+  nexus use --memory "read today's daily; checking the root" --goal "list vault root" -- storage list
+  nexus use --vault "My Notes" --dry-run --memory "resuming research" --goal "load workspace" -- memory load-workspace "NeuroAI Mapping" --limit 1
   nexus use --memory "reviewing saved views" --goal "see what the Tasks base returns" -- base analyze "Bases/Tasks.base" --limit 20
+  nexus context
   nexus playbook vault-work
 \`;
 }
@@ -759,14 +877,15 @@ Run \\\`nexus --help\\\` for the manual.
   if (cmd === "tools") {
     const selector = positionals.slice(1).join(" ") || "--help";
     return withClient(vaultFlag, async (client) => {
-      const result = await client.callTool("toolManager_getTools", {
-        tool: selector,
-        workspaceId: typeof flags.workspace === "string" ? flags.workspace : "default",
-        sessionId: typeof flags.session === "string" ? flags.session : "nexus-cli",
-        memory: typeof flags.memory === "string" ? flags.memory : "Discovering available Nexus tools.",
-        goal: typeof flags.goal === "string" ? flags.goal : \`Inspect "\${selector}" tools.\`
-      });
+      const result = await client.callTool("toolManager_getTools", buildToolsEnvelope(flags, selector));
       return printToolResult(result, asJson);
+    });
+  }
+  if (cmd === "context") {
+    return withClient(vaultFlag, async (client) => {
+      const snapshot = parseContextSnapshot(await client.readResource(NEXUS_CONTEXT_RESOURCE_URI));
+      process.stdout.write(asJson ? JSON.stringify(snapshot, null, 2) + "\\n" : formatContextSnapshot(snapshot));
+      return 0;
     });
   }
   if (cmd === "playbook") {
@@ -803,12 +922,7 @@ Run \\\`nexus --help\\\` for the manual.
     const preamblePath = (0, import_node_path2.join)(dir, "_preamble.md");
     const preamble = (0, import_node_fs3.existsSync)(preamblePath) ? (0, import_node_fs3.readFileSync)(preamblePath, "utf8").trim() : "";
     if (preamble) process.stdout.write(preamble + "\\n\\n");
-    const ctx = {
-      workspaceId: typeof flags.workspace === "string" ? flags.workspace : "default",
-      sessionId: typeof flags.session === "string" ? flags.session : "nexus-cli",
-      memory: \`Loading the "\${name}" playbook.\`,
-      goal: \`Prepare to run the \${name} task.\`
-    };
+    const ctx = buildPlaybookEnvelope(flags, name);
     try {
       const { workspaces, tools } = await withClient(vaultFlag, async (client) => {
         const ws = await client.callTool("toolManager_useTools", { ...ctx, tool: "memory list-workspaces" });
@@ -874,15 +988,7 @@ Write: nexus use --memory "<what you've done so far>" --goal "<this call's objec
       );
       return 2;
     }
-    const args = {
-      tool: command,
-      workspaceId: typeof flags.workspace === "string" ? flags.workspace : "default",
-      sessionId: typeof flags.session === "string" ? flags.session : "nexus-cli",
-      memory,
-      goal
-    };
-    if (typeof flags.constraints === "string") args.constraints = flags.constraints;
-    if (typeof flags["operation-id"] === "string") args.operationId = flags["operation-id"];
+    const args = buildUseEnvelope(flags, command, memory, goal);
     if (flags["dry-run"] === true) {
       process.stdout.write("DRY RUN \\u2014 no vault connection and no tool execution.\\n");
       process.stdout.write(JSON.stringify(args, null, 2) + "\\n");
@@ -946,6 +1052,14 @@ For a common task, **\`nexus playbook <name>\`** gives you a ready-to-run recipe
   hoping for vault content — that comes from \`nexus use --memory … --goal … -- content read …\`.
 - **\`--memory\` and \`--goal\` are real and enforced.** You're operating a person's
   live vault; pass a genuine running summary and objective, not placeholders.
+- **\`--workspace\` and \`--session\` are pass-once.** The vault remembers them:
+  name a session and choose its workspace on the first call of a task (or run
+  \`memory load-workspace <name>\`), then omit both — every later call continues
+  that session and inherits its workspace. Nothing defaults silently: a session
+  that never chose a workspace fails with *"This session has no workspace yet"*
+  (only \`memory list-workspaces\` / \`memory load-workspace\` run before the
+  choice). Pass a different value once to switch. \`nexus context\` shows what
+  the vault currently remembers.
 - **You can't escape the vault.** Paths are vault-relative; \`..\`, \`~\`, and
   absolute paths are rejected. That's a guardrail, not a bug.
 - **Nothing is destroyed.** The AI gets archive (reversible), not delete.
@@ -958,7 +1072,11 @@ For a common task, **\`nexus playbook <name>\`** gives you a ready-to-run recipe
 nexus tools [selector]              # discover — tool schemas (never vault data)
 nexus use --memory "<what you're doing>" --goal "<objective>" -- \\
     <agent command --flags>         # execute — runs one tool, prints the result
+nexus context                       # what this vault remembers: session + workspace
 \`\`\`
+
+Add \`--session <name> --workspace <name>\` to the **first** \`use\` of a task
+only; the vault remembers both for every call after it.
 
 The \`--\` delimiter is canonical: context belongs before it; the tool command
 belongs after it. This avoids nested command-string quoting, especially in
@@ -1015,6 +1133,12 @@ offline and instant, so read it before your first command instead of guessing.
   Drill down: \`nexus tools storage list\` = one tool's full arg schema.
 - **Execute:** \`nexus use --memory "<what you're doing>" --goal "<objective>" -- <agent command --flags>\`.
   \`--memory\`/\`--goal\` are **required** on every \`use\`.
+- **Context is remembered:** add \`--session <name> --workspace <name>\` to the
+  **first** \`use\` of a task (or run \`memory load-workspace <name>\`), then omit
+  both — later calls continue that session and inherit its workspace. A session
+  that never chose a workspace fails with "This session has no workspace yet";
+  choose once, never pass \`default\` as a placeholder. \`nexus context\` shows what
+  the vault remembers.
 - **Multiline content:** keep Markdown/YAML and embedded quotes out of shell
   argv. After \`--\`, swap any value-taking flag for its transport form:
   \`--<flag>-stdin\` (piped input) or \`--<flag>-file <local-path>\` — e.g.
@@ -1043,13 +1167,18 @@ so you can go straight to \`nexus use\` without a separate \`nexus tools\` call.
 
 **Every playbook starts the same way:**
 
-1. **Pick a workspace and load it.** Choose from *Your workspaces* below and run
-   \`nexus use --memory … --goal … -- memory load-workspace "<name>"\`. If
-   none fits, create one with \`memory create-workspace\`. Loading scopes your traces
-   and auto-loads that workspace's task summary. (This playbook only *lists*
-   workspaces — loading is your call, since only you know which one.)
-2. **Thread the workspace** into every following call with \`--workspace <name>\`
-   (the outer context flag), and keep a stable \`--session <name>\` for the task.
+1. **Name the session and load a workspace — once.** Choose from *Your
+   workspaces* below and run
+   \`nexus use --session <task-name> --memory … --goal … -- memory load-workspace "<name>"\`.
+   If none fits, create one with \`memory create-workspace\`, then load it. Loading
+   scopes your traces, auto-loads that workspace's task summary, and **binds the
+   session to it**. (This playbook only *lists* workspaces — loading is your
+   call, since only you know which one.)
+2. **Then omit \`--session\` and \`--workspace\`.** The vault remembers both: every
+   later call continues that session and inherits its workspace. Pass a
+   different value once to switch; \`nexus context\` shows what is remembered. A
+   session that never chose fails with "This session has no workspace yet" —
+   never pass \`default\` as a placeholder.
 3. **Always pass real \`--memory\` and \`--goal\`** — a running summary and the
    current objective. Placeholders are rejected.
 4. **Checkpoint at milestones** with \`memory create-state\` so the work is
@@ -1082,7 +1211,8 @@ Unlike \`vault-work\` (which edits note *bodies*), this moves and files whole no
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above); thread \`--workspace\`/\`--session\`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Map the current layout before touching anything.**
    - \`storage list --path "<folder>"\` — see what's in a folder.
    - \`search query-notes --sql "…"\` — query frontmatter as a database to *find*
@@ -1103,33 +1233,30 @@ Unlike \`vault-work\` (which edits note *bodies*), this moves and files whole no
 ## Worked example — archive old daily notes into a subfolder
 
 \`\`\`
-# 1. load the workspace
+# 1. name the session and load the workspace — the only call that needs --session;
+#    loading binds the workspace, so nothing below repeats either flag
 nexus use \\
-  --memory "tidying old dailies" --goal "load the journal workspace" \\
   --session tidy-dailies \\
+  --memory "tidying old dailies" --goal "load the journal workspace" \\
   -- memory load-workspace "journal"
 
 # 2. map — which dailies are from 2025? (query frontmatter; --describe to see columns first)
 nexus use \\
-  --workspace journal --session tidy-dailies \\
   --memory "finding 2025 dailies to archive" --goal "list 2025 daily notes" \\
   -- search query-notes --sql "SELECT path FROM notes WHERE path LIKE 'Daily/2025-%' ORDER BY path"
 
 # 3. make the destination folder
 nexus use \\
-  --workspace journal --session tidy-dailies \\
   --memory "have the 2025 list; creating archive folder" --goal "create Daily/Archive/2025" \\
   -- storage create-folder --path Daily/Archive/2025
 
 # 4. move each note (one call per file — verify each)
 nexus use \\
-  --workspace journal --session tidy-dailies \\
   --memory "moving 2025 dailies into the archive folder" --goal "move 2025-01-03.md" \\
   -- storage move --path Daily/2025-01-03.md --new-path Daily/Archive/2025/2025-01-03.md
 
 # 5. checkpoint after the batch
 nexus use \\
-  --workspace journal --session tidy-dailies \\
   --memory "2025 dailies archived" --goal "checkpoint the reorg" \\
   -- memory create-state --name dailies-archived \\
   --conversation-context "moved all 2025 daily notes into Daily/Archive/2025" \\
@@ -1187,7 +1314,8 @@ Full live schema: \`nexus tools prompt execute\`. Saved prompts: \`prompt list\`
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above); thread \`--workspace\`/\`--session\`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Pick the driver**: write an **inline** \`prompt\`, or find a **saved** one with
    \`prompt list\` and pass its name as \`customPrompt\`.
 3. **Attach the notes** the prompt should see via \`contextFiles\` (read them first
@@ -1213,11 +1341,14 @@ the inline JSON stays small.
 
 ## Worked examples
 
+All three examples share one session. Example A is the first call, so it names
+the session and the workspace once; B and C omit both and inherit them.
+
 **A — inline prompt, one note as context, result to stdout:**
 
 \`\`\`
 nexus use \\
-  --json --workspace research --session prompt-run \\
+  --json --session prompt-run --workspace research \\
   --memory "summarizing the auth flow note" --goal "get a 3-bullet summary" \\
   -- prompt execute --prompts '[{"type":"text","prompt":"Summarize this note in 3 bullets","contextFiles":["Projects/Auth/flow.md"]}]'
 \`\`\`
@@ -1229,14 +1360,13 @@ the **user** message. They are different roles, not alternatives — a request w
 \`customPrompt\` and no \`prompt\` sends the model no instruction to act on.
 
 \`\`\`
-# find the saved prompt's name
-nexus use --workspace research --session prompt-run \\
+# find the saved prompt's name (session + workspace inherited from A)
+nexus use \\
   --memory "looking for my weekly-review prompt" --goal "list saved prompts" \\
   -- prompt list
 
 # run it over this week's notes and append the output to the review note
 nexus use \\
-  --workspace research --session prompt-run \\
   --memory "have the daily notes; running weekly-review" --goal "append a weekly review" \\
   -- prompt execute --prompts '[{"type":"text","customPrompt":"weekly-review","prompt":"Write the weekly review from the attached daily notes.","contextFiles":["Daily/2026-07-14.md","Daily/2026-07-15.md"],"action":{"type":"append","targetPath":"Reviews/2026-W29.md"}}]'
 \`\`\`
@@ -1245,11 +1375,10 @@ nexus use \\
 
 \`\`\`
 nexus use \\
-  --workspace research --session prompt-run \\
   --memory "need a logo asset" --goal "generate a logo image" \\
   -- prompt execute --prompts '[{"type":"image","prompt":"a minimalist logo, teal on white","savePath":"Assets/logo.png","aspectRatio":"1:1"}]'
 # then poll:
-nexus use --workspace research --session prompt-run \\
+nexus use \\
   --memory "waiting on the logo" --goal "check image generation status" \\
   -- prompt check-generated-artifact "<job-id>"
 \`\`\`
@@ -1283,23 +1412,24 @@ the workspace, get or create a project (capture its \`projectId\`), then add tas
 
 ## The one thing to get right: workspace vs project
 
-- **Workspace** comes from the **top-level \`--workspace <name-or-id>\` context
-  flag** — the same flag you pass on every call, set to the workspace you loaded.
-  Task tools read their workspace scope from it automatically. **Do not** put
+- **Workspace** is the one your session is bound to — set once by loading it
+  (\`memory load-workspace\`) or by passing the top-level \`--workspace <name-or-id>\`
+  context flag once; every later call in the session inherits it, and task tools
+  read their workspace scope from it automatically. **Do not** put
   \`--workspace-id\` *inside* the tool string — it's a reserved context field and
   is rejected there.
 - **Project** is identified by a **\`projectId\`** that \`task create-project\` (or
   \`task list-projects\`) returns. Capture it and pass it to task calls as
   \`--project-id\`.
 
-So: load the workspace → thread \`--workspace\` on every call → create/find a
-project → capture its \`projectId\` → create tasks with \`--project-id\`.
+So: load the workspace once → create/find a project → capture its \`projectId\`
+→ create tasks with \`--project-id\`.
 
 ## Protocol
 
-1. **Load the workspace** (spine above); thread \`--workspace <name-or-id>\` on
-   every following call.
-2. **Get a project.** \`task list-projects\` (scoped by \`--workspace\`) to find one,
+1. **Name the session and load the workspace** (spine above) — once; later calls
+   inherit both.
+2. **Get a project.** \`task list-projects\` (scoped by the session's workspace) to find one,
    or \`task create-project --name "<name>"\` — note the **projectId** it returns.
 3. **Add tasks.** \`task create --project-id <projectId> --title "<title>"\` (add
    \`--description\`, dependencies, etc. — see \`nexus tools task create\`).
@@ -1314,39 +1444,35 @@ project → capture its \`projectId\` → create tasks with \`--project-id\`.
 ## Worked example — new project, two tasks, one depends on the other
 
 \`\`\`
-# 1. load the workspace — thread --workspace (name or id) on every later call
+# 1. name the session and load the workspace — once; loading binds the session
+#    to "product", so no later call repeats --session or --workspace
 nexus use \\
-  --memory "planning the launch" --goal "load the product workspace" \\
   --session launch-plan \\
+  --memory "planning the launch" --goal "load the product workspace" \\
   -- memory load-workspace "product"
 
-# 2. create a project — workspace comes from --workspace; capture the projectId
+# 2. create a project — workspace scope is inherited; capture the projectId
 nexus use \\
-  --workspace product --session launch-plan \\
   --memory "starting the Q3 launch project" --goal "create the Q3 Launch project" \\
   -- task create-project --name "Q3 Launch"
 # → result includes the projectId, e.g. "proj_def456"
 
 # 3. add tasks under that project
 nexus use \\
-  --workspace product --session launch-plan \\
   --memory "adding launch tasks" --goal "create the copy task" \\
   -- task create --project-id proj_def456 --title "Write launch copy"
 
 nexus use \\
-  --workspace product --session launch-plan \\
   --memory "adding the dependent task" --goal "create the publish task" \\
   -- task create --project-id proj_def456 --title "Publish blog post"
 
 # 4. see the board (statuses, what's blocked)
 nexus use \\
-  --workspace product --session launch-plan \\
   --memory "reviewing the launch tasks" --goal "list tasks in the project" \\
   -- task list --project-id proj_def456
 
 # 5. checkpoint
 nexus use \\
-  --workspace product --session launch-plan \\
   --memory "project + tasks created" --goal "checkpoint the setup" \\
   -- memory create-state --name launch-tasks-seeded \\
   --conversation-context "created Q3 Launch project with copy + publish tasks" \\
@@ -1361,8 +1487,11 @@ Run \`nexus tools task create\` / \`task move\` / \`task update\` for the exact 
 ## Pitfalls
 
 - **Putting \`--workspace-id\` inside the tool string** — rejected as a reserved
-  context field. Scope task tools with the top-level \`--workspace <name-or-id>\`
-  flag instead (the workspace you loaded); it accepts a name *or* an id.
+  context field. Task tools are scoped by the session's workspace — the one you
+  loaded, or the top-level \`--workspace <name-or-id>\` flag passed once; it
+  accepts a name *or* an id.
+- **"This session has no workspace yet"** — the session never chose. Load one
+  first (step 1); don't answer the steer with \`--workspace default\`.
 - **Creating tasks with no project** — \`task create\` needs \`--project-id\`; make or
   find the project first and capture the id it returns.
 - **\`task link-note\` needs a real \`--note-path\`** — a vault-relative path to an
@@ -1384,7 +1513,8 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 
 ## Protocol
 
-1. **Load a workspace** (see the spine above), thread \`--workspace\`/\`--session\`.
+1. **Name the session and load a workspace** (see the spine above) — once; later
+   calls inherit both.
 2. **Find the note(s).** Pick the search that fits:
    - \`search content --query "<terms>"\` — semantic/keyword over note bodies.
    - \`search directory --query "<name>" --paths "<folder>"\` — by filename/path.
@@ -1407,27 +1537,25 @@ update it," "answer a question from my notes," "add a section to Y," etc.
 ## Worked example — add a summary under a heading
 
 \`\`\`
-# 1. load the workspace you picked from the list above (--workspace = name or id)
+# 1. name the session and load the workspace you picked from the list above —
+#    this is the only call that needs --session; loading binds the workspace
 nexus use \\
-  --memory "starting: summarize the auth notes" --goal "load the research workspace" \\
   --session auth-summary \\
+  --memory "starting: summarize the auth notes" --goal "load the research workspace" \\
   -- memory load-workspace "research"
 
-# 2. find
+# 2. find — no --session/--workspace: the vault remembers auth-summary → research
 nexus use \\
-  --workspace research --session auth-summary \\
   --memory "looking for the main auth note" --goal "locate the auth flow note" \\
   -- search content --query "authentication flow" --limit 5
 
 # 3. read the top hit (search gave a path, not the text)
 nexus use \\
-  --workspace research --session auth-summary \\
   --memory "found Projects/Auth/flow.md; reading it" --goal "read the auth flow note" \\
   -- content read --path Projects/Auth/flow.md --start-line 1
 
 # 4. edit — anchor on exact text pulled from the read
 nexus use \\
-  --workspace research --session auth-summary \\
   --memory "have the body; inserting a summary" --goal "replace the Summary section" \\
   -- content replace --path Projects/Auth/flow.md \\
   --start "## Summary" --end "## Details" \\
@@ -1435,7 +1563,6 @@ nexus use \\
 
 # 5. checkpoint (create-state needs name + context + task + file/step arrays)
 nexus use \\
-  --workspace research --session auth-summary \\
   --memory "summary written to flow.md" --goal "checkpoint the finished edit" \\
   -- memory create-state --name auth-summary-done \\
   --conversation-context "summarized the auth flow note into a Summary section" \\
@@ -1452,7 +1579,12 @@ nexus use \\
   \`start\`/\`end\`. Copy the anchors verbatim from the read.
 - **Answering a question from \`{path, score}\`** — read the note; don't fabricate
   from the ranking.
-- **Losing trace scope** — pass \`--workspace\` on every call, not just the load.
+- **Switching sessions by accident** — a different \`--session\` name is a
+  different session with its own remembered workspace. Stay on one name per
+  task; \`nexus context\` shows which one is current.
+- **"This session has no workspace yet"** — this session never chose. Load one
+  (\`memory load-workspace\`, on its own) or pass \`--workspace\` once; don't answer
+  it with \`--workspace default\`.
 - **Writing outside the vault** — \`..\`/\`~\`/absolute paths are rejected; keep
   paths vault-relative.
 `,
