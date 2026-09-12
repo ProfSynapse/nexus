@@ -169,6 +169,14 @@ export interface IRequestContext {
     sessionId: string;
     fullToolName: string;
     sessionContextManager?: SessionContextManager;
+    /**
+     * `clientInfo.name` from the connection's MCP `initialize` handshake
+     * (`Server.getClientVersion()`), e.g. `'nexus-cli'`. Undefined when the
+     * SDK has no client info. Attached by RequestHandlerFactory so
+     * connection-specific policy (the CLI's current-session default, plan
+     * PR 2) can key off who is calling without a new wire-level field.
+     */
+    clientName?: string;
 }
 
 export interface ISchemaEnhancementService {

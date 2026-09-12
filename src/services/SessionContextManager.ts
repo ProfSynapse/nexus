@@ -1,5 +1,10 @@
 import { CommonResult } from '../types';
 import type { SessionData } from './session/SessionService';
+import type {
+  PersistedSessionBindings,
+  PersistedSessionHandle,
+  SessionBindingsStore
+} from './session/SessionBindingsStore';
 import { logger } from '../utils/logger';
 import { parseWorkspaceContext } from '../utils/contextUtils';
 import { generateSessionId, isStandardSessionId } from '../utils/sessionUtils';
@@ -33,12 +38,42 @@ interface SessionServiceLike {
 
 export type SessionDeletedListener = (sessionId: string, workspaceId: string) => void;
 
+/**
+ * The slice of WorkspaceService the manager needs to turn a caller-supplied
+ * workspace name into its canonical id. Structural so tests can stub it and
+ * so this file does not import the (heavy) WorkspaceService module.
+ */
+export interface WorkspaceResolverLike {
+  getWorkspaceByNameOrId(identifier: string): Promise<{ id: string } | null>;
+}
+
 export interface SessionValidationResult {
   id: string;
   created: boolean;
   displaySessionId: string;
   displaySessionIdChanged: boolean;
 }
+
+/**
+ * Outcome of resolving which workspace a tool call runs in (#214).
+ * `explicit` is true only when the caller named the workspace on THIS call;
+ * a value inherited from an earlier bind is not a new decision and must not
+ * re-bind (see ToolExecutionStrategy bind point 1).
+ */
+export interface SessionWorkspaceResolution {
+  workspaceId?: string;
+  explicit: boolean;
+}
+
+/** The global workspace id is not a name to look up — it passes through. */
+const GLOBAL_WORKSPACE_ID = 'default';
+
+/**
+ * How long consecutive binding changes are coalesced before one write. A
+ * session's first few calls (getTools, useTools, load-workspace) all mutate
+ * the map within a second or two; one file write per burst is plenty.
+ */
+const BINDINGS_SAVE_DEBOUNCE_MS = 300;
 
 /**
  * SessionContextManager
@@ -70,6 +105,34 @@ export class SessionContextManager {
   // the display-name entry without scanning the whole map.
   private sessionHandleMap: Map<string, { id: string; displaySessionId: string; workspaceId: string }> = new Map();
 
+  // Handle entries restored from session-bindings.json that have not yet been
+  // checked against storage. A restored entry is only trusted once
+  // `sessionService.getAllSessions(entry.workspaceId)` confirms the session
+  // still exists; a session deleted while the plugin was unloaded is dropped
+  // at that point instead of being silently resumed. The check is lazy (on the
+  // handle's first use) rather than at service init because storage is cold
+  // during startup hydration and would report every session as missing.
+  private unverifiedHandleKeys: Set<string> = new Set();
+
+  // Handle → workspace id of the LAST DELIBERATE bind (#214). Distinct from
+  // `sessionContextMap`, which ToolCallTraceService.captureToolCall overwrites
+  // on every call — including unbound discovery calls that ran under
+  // 'default' — so that map records where traces went, not what the caller
+  // chose. Only bindHandleWorkspace / bindSessionWorkspaceById write here.
+  private handleWorkspace: Map<string, string> = new Map();
+
+  // Canonicalises workspace names to ids before a bind or partition, the same
+  // way ToolCallTraceService.resolveWorkspaceId does for traces, so a session's
+  // sessions, states and traces land in one store whether the caller passed
+  // the name or the id.
+  private workspaceResolver: WorkspaceResolverLike | null = null;
+
+  // Persistence for handles + handleWorkspace. Null in tests and before wiring;
+  // every store operation is best-effort and degrades to "pass it once again".
+  private bindingsStore: SessionBindingsStore | null = null;
+  private bindingsSaveTimer: number | null = null;
+  private bindingsRestore: Promise<void> | null = null;
+
   // Disposer for the session-deleted subscription so re-wiring or teardown can
   // unregister cleanly.
   private sessionDeletedUnsubscribe: (() => void) | null = null;
@@ -98,6 +161,194 @@ export class SessionContextManager {
   }
 
   /**
+   * Wire the workspace lookup used to canonicalise names to ids. Optional: with
+   * no resolver, values bind and partition as given (the batch service still
+   * rejects unknown ones with its existing steer).
+   */
+  setWorkspaceResolver(resolver: WorkspaceResolverLike | null): void {
+    this.workspaceResolver = resolver;
+  }
+
+  /**
+   * Wire the persistence store and start restoring what it holds. Restoration
+   * is awaited by the first `validateSessionId` / `resolveWorkspaceForSession`
+   * call, so callers never race the read; a failed read logs and leaves the
+   * manager empty.
+   */
+  setBindingsStore(store: SessionBindingsStore | null): void {
+    this.bindingsStore = store;
+    this.bindingsRestore = store ? this.restorePersistedBindings(store) : null;
+  }
+
+  /** Resolves once the persisted bindings (if any) are loaded into memory. */
+  async ensureBindingsRestored(): Promise<void> {
+    if (this.bindingsRestore) {
+      await this.bindingsRestore;
+    }
+  }
+
+  private async restorePersistedBindings(store: SessionBindingsStore): Promise<void> {
+    let doc: PersistedSessionBindings | null = null;
+    try {
+      doc = await store.load();
+    } catch (error) {
+      logger.systemWarn(`Session bindings restore failed: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (!doc) {
+      return;
+    }
+
+    for (const [key, entry] of Object.entries(doc.handles)) {
+      // Never let a stale file clobber a handle the live process already
+      // created — the in-memory entry is newer by definition.
+      if (!this.sessionHandleMap.has(key)) {
+        this.sessionHandleMap.set(key, { ...entry });
+        this.unverifiedHandleKeys.add(key);
+      }
+    }
+    for (const [handle, workspaceId] of Object.entries(doc.handleWorkspace)) {
+      if (!this.handleWorkspace.has(handle)) {
+        this.handleWorkspace.set(handle, workspaceId);
+      }
+    }
+  }
+
+  private snapshotBindings(): PersistedSessionBindings {
+    const handles: Record<string, PersistedSessionHandle> = {};
+    for (const [key, entry] of this.sessionHandleMap.entries()) {
+      handles[key] = { id: entry.id, displaySessionId: entry.displaySessionId, workspaceId: entry.workspaceId };
+    }
+    return {
+      handles,
+      handleWorkspace: Object.fromEntries(this.handleWorkspace.entries())
+    };
+  }
+
+  /**
+   * Coalesce binding changes into one write. Fire-and-forget: a failed write
+   * is logged by the store and the next change retries.
+   */
+  private scheduleBindingsSave(): void {
+    if (!this.bindingsStore) {
+      return;
+    }
+    if (this.bindingsSaveTimer) {
+      window.clearTimeout(this.bindingsSaveTimer);
+    }
+    this.bindingsSaveTimer = window.setTimeout(() => {
+      this.bindingsSaveTimer = null;
+      void this.flushBindings();
+    }, BINDINGS_SAVE_DEBOUNCE_MS);
+  }
+
+  /** Write the current bindings now, cancelling any pending debounced write. */
+  async flushBindings(): Promise<void> {
+    if (this.bindingsSaveTimer) {
+      window.clearTimeout(this.bindingsSaveTimer);
+      this.bindingsSaveTimer = null;
+    }
+    if (!this.bindingsStore) {
+      return;
+    }
+    try {
+      await this.bindingsStore.save(this.snapshotBindings());
+    } catch (error) {
+      logger.systemWarn(`Session bindings save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Canonicalise a caller-supplied workspace handle to its id. 'default'
+   * passes through; a name or id that resolves becomes the id; anything else
+   * is returned untouched so ToolBatchExecutionService.validateWorkspaceId can
+   * reject it with its did-you-mean steer instead of this method guessing.
+   */
+  async canonicalizeWorkspaceId(value: string): Promise<string> {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed === GLOBAL_WORKSPACE_ID || !this.workspaceResolver) {
+      return trimmed;
+    }
+    try {
+      const workspace = await this.workspaceResolver.getWorkspaceByNameOrId(trimmed);
+      return workspace?.id ?? trimmed;
+    } catch (error) {
+      logger.systemWarn(`Workspace lookup failed for "${trimmed}": ${error instanceof Error ? error.message : String(error)}`);
+      return trimmed;
+    }
+  }
+
+  /**
+   * Resolution order for the workspace a call runs in (#214):
+   *   explicit on this call  →  the handle's last deliberate bind  →  unbound.
+   * An empty or blank explicit value counts as absent — `workspaceId: ""` used
+   * to be read as 'default', which is exactly the silent misfiling #214
+   * reports. Callers decide what UNBOUND means for their tool (useTools
+   * fails with the steer; getTools partitions under 'default' without binding).
+   */
+  async resolveWorkspaceForSession(
+    explicitRaw: unknown,
+    sessionHandle?: string
+  ): Promise<SessionWorkspaceResolution> {
+    await this.ensureBindingsRestored();
+
+    const explicit = typeof explicitRaw === 'string' ? explicitRaw.trim() : '';
+    if (explicit.length > 0) {
+      return { workspaceId: await this.canonicalizeWorkspaceId(explicit), explicit: true };
+    }
+
+    const bound = sessionHandle ? this.resolveHandleWorkspace(sessionHandle) : undefined;
+    return { workspaceId: bound, explicit: false };
+  }
+
+  /** The workspace a handle was last deliberately bound to, if any. */
+  resolveHandleWorkspace(handle: string): string | undefined {
+    return this.handleWorkspace.get(handle);
+  }
+
+  /**
+   * Record a deliberate workspace choice for a handle. `workspaceId` should
+   * already be canonical (see canonicalizeWorkspaceId); this method does not
+   * look it up so it can stay synchronous for the batch service's hot path.
+   */
+  bindHandleWorkspace(handle: string, workspaceId: string): void {
+    const trimmedHandle = handle.trim();
+    const trimmedWorkspace = workspaceId.trim();
+    if (!trimmedHandle || !trimmedWorkspace) {
+      logger.systemWarn('Attempted to bind a session handle with an empty handle or workspaceId');
+      return;
+    }
+    if (this.handleWorkspace.get(trimmedHandle) === trimmedWorkspace) {
+      return;
+    }
+    this.handleWorkspace.set(trimmedHandle, trimmedWorkspace);
+    logger.systemLog(`Bound session handle "${trimmedHandle}" to workspace ${trimmedWorkspace}`);
+    this.scheduleBindingsSave();
+  }
+
+  /**
+   * Bind by INTERNAL session id — for callers that only hold the id the
+   * strategy rewrote onto `params.sessionId` (ToolBatchExecutionService's
+   * `load-workspace` bind point). Every friendly handle that maps to this id
+   * is bound, and so is the id itself, so a caller that passes the standard
+   * `s-…` id straight through inherits too.
+   */
+  bindSessionWorkspaceById(internalSessionId: string, workspaceId: string): void {
+    if (!internalSessionId) {
+      return;
+    }
+    this.bindHandleWorkspace(internalSessionId, workspaceId);
+    for (const [key, entry] of this.sessionHandleMap.entries()) {
+      if (entry.id !== internalSessionId) {
+        continue;
+      }
+      const prefix = `${entry.workspaceId}::`;
+      const handle = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+      this.bindHandleWorkspace(handle, workspaceId);
+    }
+  }
+
+  /**
    * Build the partition key used for sessionHandleMap lookups.
    * Friendly handles are unique only within a workspace; the same string in two
    * workspaces must map to two distinct sessions.
@@ -107,18 +358,73 @@ export class SessionContextManager {
   }
 
   /**
+   * Confirm a restored handle's session still exists in storage. Returns the
+   * entry when it does (and marks it trusted), or null after dropping the
+   * entry when the session is gone. A lookup that THROWS keeps the entry
+   * unverified and returns it — a storage hiccup must not rename a live
+   * session to `<handle>-2`.
+   */
+  private async verifyRestoredHandle(
+    key: string,
+    entry: { id: string; displaySessionId: string; workspaceId: string }
+  ): Promise<{ id: string; displaySessionId: string; workspaceId: string } | null> {
+    if (!this.unverifiedHandleKeys.has(key)) {
+      return entry;
+    }
+    if (!this.sessionService?.getAllSessions) {
+      return entry;
+    }
+
+    let sessions: SessionData[];
+    try {
+      sessions = await this.sessionService.getAllSessions(entry.workspaceId);
+    } catch {
+      return entry;
+    }
+
+    if (sessions.some(session => session.id === entry.id)) {
+      // Trust every key that points at this session, not just the one looked up.
+      for (const [otherKey, other] of this.sessionHandleMap.entries()) {
+        if (other.id === entry.id) {
+          this.unverifiedHandleKeys.delete(otherKey);
+        }
+      }
+      return entry;
+    }
+
+    logger.systemLog(`Restored session handle "${key}" points at deleted session ${entry.id}; dropping it`);
+    for (const [otherKey, other] of this.sessionHandleMap.entries()) {
+      if (other.id === entry.id) {
+        this.sessionHandleMap.delete(otherKey);
+        this.unverifiedHandleKeys.delete(otherKey);
+      }
+    }
+    this.scheduleBindingsSave();
+    return null;
+  }
+
+  /**
    * Remove sessionHandleMap entries for a deleted session in a given workspace.
    * Called from the session-deleted listener registered on SessionService.
    */
   evictSessionHandles(sessionId: string, workspaceId = 'default'): void {
+    let removed = false;
     for (const [key, entry] of this.sessionHandleMap.entries()) {
       if (entry.id === sessionId && entry.workspaceId === workspaceId) {
         this.sessionHandleMap.delete(key);
+        this.unverifiedHandleKeys.delete(key);
+        removed = true;
       }
     }
     this.sessionContextMap.delete(sessionId);
     this.sessionActiveSkillsMap.delete(sessionId);
     this.instructedSessions.delete(sessionId);
+    // handleWorkspace is left alone on purpose: the workspace choice belongs
+    // to the handle, not the deleted session. The handle's next call creates a
+    // fresh session in the workspace the caller last chose.
+    if (removed) {
+      this.scheduleBindingsSave();
+    }
   }
   
   /**
@@ -281,6 +587,8 @@ export class SessionContextManager {
     this.sessionContextMap.clear();
     this.sessionActiveSkillsMap.clear();
     this.sessionHandleMap.clear();
+    this.unverifiedHandleKeys.clear();
+    this.handleWorkspace.clear();
     this.instructedSessions.clear();
     this.defaultWorkspaceContext = null;
   }
@@ -288,13 +596,22 @@ export class SessionContextManager {
   /**
    * ServiceContainer-detected cleanup hook. Runs on plugin teardown
    * (ServiceContainer.clear) so the in-memory handle map and session-deleted
-   * subscription do not survive a plugin reload.
+   * subscription do not survive a plugin reload. The persisted bindings DO
+   * survive — that is what lets a returning handle resume its session — so
+   * any pending debounced write is flushed before memory is cleared.
    */
   cleanup(): void {
     if (this.sessionDeletedUnsubscribe) {
       this.sessionDeletedUnsubscribe();
       this.sessionDeletedUnsubscribe = null;
     }
+    if (this.bindingsSaveTimer) {
+      // Snapshot before clearAll() empties the maps; the write itself is
+      // fire-and-forget because Obsidian does not await plugin unload.
+      void this.flushBindings();
+    }
+    this.bindingsStore = null;
+    this.bindingsRestore = null;
     this.clearAll();
   }
   
@@ -320,7 +637,10 @@ export class SessionContextManager {
     sessionDescription?: string,
     workspaceId = 'default'
   ): Promise<SessionValidationResult> {
-    
+    // Handles persisted before the last reload must be in memory before a
+    // lookup, or a returning handle is created anew and renamed `<handle>-2`.
+    await this.ensureBindingsRestored();
+
     // If no session ID is provided, generate a new one in our standard format
     if (!sessionId) {
       logger.systemWarn('Empty sessionId provided for validation, generating a new one');
@@ -336,7 +656,9 @@ export class SessionContextManager {
     
     // If the session ID doesn't match our standard format, it's a friendly name - create session
     if (!isStandardSessionId(sessionId)) {
-      const existingHandle = this.sessionHandleMap.get(this.handleKey(workspaceId, sessionId));
+      const key = this.handleKey(workspaceId, sessionId);
+      const knownHandle = this.sessionHandleMap.get(key);
+      const existingHandle = knownHandle ? await this.verifyRestoredHandle(key, knownHandle) : null;
       if (existingHandle) {
         return {
           id: existingHandle.id,
@@ -349,8 +671,9 @@ export class SessionContextManager {
       const newId = generateSessionId();
       const displaySessionId = await this.createUniqueSessionDisplayName(sessionId, workspaceId);
       const handleEntry = { id: newId, displaySessionId, workspaceId };
-      this.sessionHandleMap.set(this.handleKey(workspaceId, sessionId), handleEntry);
+      this.sessionHandleMap.set(key, handleEntry);
       this.sessionHandleMap.set(this.handleKey(workspaceId, displaySessionId), handleEntry);
+      this.scheduleBindingsSave();
       await this.createAutoSession(newId, displaySessionId, sessionDescription, workspaceId);
       return {
         id: newId,
@@ -430,10 +753,13 @@ export class SessionContextManager {
 
   private async createUniqueSessionDisplayName(baseName: string, workspaceId: string): Promise<string> {
     const usedNames = new Set<string>();
-    for (const entry of this.sessionHandleMap.values()) {
+    for (const [key, entry] of this.sessionHandleMap.entries()) {
       // Only collide names within the same workspace — same handle in two
-      // workspaces is allowed (workspaces are UX scoping).
-      if (entry.workspaceId === workspaceId) {
+      // workspaces is allowed (workspaces are UX scoping). Restored-but-
+      // unverified entries are skipped: if their session still exists the
+      // storage lookup below lists its name anyway, and if it was deleted its
+      // stale display name must not force a `-2` on a fresh handle.
+      if (entry.workspaceId === workspaceId && !this.unverifiedHandleKeys.has(key)) {
         usedNames.add(entry.displaySessionId.toLowerCase());
       }
     }

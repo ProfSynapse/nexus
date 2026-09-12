@@ -60,12 +60,13 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     const lines = [
       'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
       'This returns CLI-oriented command metadata for the tools you need next.',
-      'Send workspaceId, sessionId, memory, goal, and constraints at the top level.',
+      'Send sessionId, memory, goal, and constraints at the top level.',
+      'The workspace is remembered per session: the first useTools call of a fresh session passes "workspaceId" once ("default" or an exact name from the workspaces list this call returns) or runs "memory load-workspace"; later calls inherit it. Omit "workspaceId" unless you are deliberately switching. getTools itself never needs it.',
       'Use one stable human-readable session name for the conversation. Reuse that same sessionId value for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state. Nexus stores an internal UUID silently.',
       'Do not send a nested "context" object or legacy "request" array.',
       '',
       'Workflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands',
-      'Known-good example: {"workspaceId":"default","sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available storage tools.","tool":"storage move, content read"}',
+      'Known-good example: {"sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available storage tools.","tool":"storage move, content read"}',
       'Example selectors: tool="--help", tool="storage", tool="storage move", tool="storage move, content read"',
       '',
       'Agents:'
@@ -243,11 +244,11 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       properties: {
         workspaceId: {
           type: 'string',
-          description: 'Workspace name or ID. Required, and must be non-empty — an empty string is rejected, not read as "default". Pass "default" for the global workspace, or an exact value from the availableWorkspaces list this call returns.'
+          description: 'Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. Discovery never needs it — a fresh session names its workspace on its first useTools call ("default" for the global workspace, or an exact value from the workspaces list this call returns). An empty string is read as omitted, never as "default".'
         },
         sessionId: {
           type: 'string',
-          description: 'Stable human-readable session name for this chat. Required. Reuse the same value for every getTools/useTools call so traces and saved states attach to the current session; Nexus stores the internal UUID silently.'
+          description: 'Stable human-readable session name for this chat. Reuse the same value for every getTools/useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session.'
         },
         memory: {
           type: 'string',
@@ -266,7 +267,10 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
           description: 'CLI-style selector string. Supports one or more selectors separated by commas. Examples: "--help", "storage", "storage move", "storage move, content read".'
         }
       },
-      required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool']
+      // workspaceId and sessionId are deliberately NOT required (#214) — see the
+      // matching note in useTools.getParameterSchema. Discovery is often a
+      // session's first call, before any workspace has been chosen.
+      required: ['memory', 'goal', 'tool']
     };
   }
 

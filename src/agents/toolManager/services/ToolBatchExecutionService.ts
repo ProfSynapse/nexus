@@ -3,6 +3,7 @@ import { IAgent } from '../../interfaces/IAgent';
 import { CommonResult } from '../../../types';
 import { NormalizedUseToolParams, ToolCallParams, ToolCallResult, ToolContext, UseToolResult } from '../types';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { logger } from '../../../utils/logger';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { matchWorkspaces } from '../../memoryManager/services/WorkspaceMatcher';
@@ -20,6 +21,19 @@ interface NexusPluginLike {
   services?: { workspaceService?: WorkspaceService };
   getService?<T>(name: string, timeoutMs?: number): Promise<T | null>;
 }
+
+/**
+ * The slice of SessionContextManager bind point 2 needs (#214). Structural so
+ * this service does not import the manager module.
+ */
+interface SessionBinderLike {
+  canonicalizeWorkspaceId(value: string): Promise<string>;
+  bindSessionWorkspaceById(internalSessionId: string, workspaceId: string): void;
+}
+
+/** Agent + tool slug of the one command that binds a session by loading a workspace. */
+const LOAD_WORKSPACE_AGENT = 'memoryManager';
+const LOAD_WORKSPACE_TOOL = 'loadWorkspace';
 
 export interface ToolManagerWorkspaceInfo {
   name: string;
@@ -462,6 +476,10 @@ export class ToolBatchExecutionService {
         result.error = toolResult.error;
       }
 
+      if (toolResult.success && agentName === LOAD_WORKSPACE_AGENT && toolSlug === LOAD_WORKSPACE_TOOL) {
+        await this.bindSessionToLoadedWorkspace(context, toolResult);
+      }
+
       if (toolResult.success) {
         const toolResultPayload = {
           ...(toolResult as unknown as Record<string, unknown>)
@@ -501,6 +519,64 @@ export class ToolBatchExecutionService {
         error: `Error executing ${agentName}_${toolSlug}: ${getErrorMessage(error)}`
       };
     }
+  }
+
+  /**
+   * Bind point 2 (#214): a successful `memory load-workspace` binds the
+   * session to the workspace ACTUALLY loaded — which, on a near-miss, is the
+   * resolved match, not the string the caller typed (that string is what used
+   * to mint phantom `ws_<typo>/` stores when filed under verbatim).
+   *
+   * Reads the raw tool result before executeCall strips `workspaceContext`:
+   * `workspaceContext.workspaceId` is already the canonical id. The
+   * `resolution.resolvedTo.name` / `data.context.name` fallbacks cover a
+   * result without it (the system guides workspace) and are canonicalised.
+   * Only the internal session id is in hand here, so the bind goes by id.
+   * Best-effort: a missing manager or lookup failure is logged, never thrown.
+   */
+  private async bindSessionToLoadedWorkspace(context: ToolContext, toolResult: CommonResult): Promise<void> {
+    if (!context.sessionId) {
+      return;
+    }
+    try {
+      const binder = await this.getSessionBinder();
+      if (!binder) {
+        return;
+      }
+
+      const raw = toolResult as unknown as Record<string, unknown>;
+      const workspaceContext = raw.workspaceContext as { workspaceId?: unknown } | undefined;
+      const resolution = raw.resolution as { resolvedTo?: { id?: unknown; name?: unknown } } | undefined;
+      const data = raw.data as { context?: { name?: unknown } } | undefined;
+
+      const fromContext = typeof workspaceContext?.workspaceId === 'string' ? workspaceContext.workspaceId : undefined;
+      const fromResolution = typeof resolution?.resolvedTo?.id === 'string'
+        ? resolution.resolvedTo.id
+        : typeof resolution?.resolvedTo?.name === 'string' ? resolution.resolvedTo.name : undefined;
+      const fromName = typeof data?.context?.name === 'string' ? data.context.name : undefined;
+
+      const candidate = fromContext ?? fromResolution ?? fromName;
+      if (!candidate || candidate === 'Unknown') {
+        return;
+      }
+
+      const workspaceId = await binder.canonicalizeWorkspaceId(candidate);
+      binder.bindSessionWorkspaceById(context.sessionId, workspaceId);
+    } catch (error) {
+      logger.systemWarn(`[ToolBatchExecutionService] load-workspace bind skipped: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private async getSessionBinder(): Promise<SessionBinderLike | null> {
+    const plugin = getNexusPlugin(this.app) as NexusPluginLike | null;
+    if (!plugin?.getService) {
+      return null;
+    }
+    const manager = await plugin.getService<SessionBinderLike>('sessionContextManager');
+    if (!manager || typeof manager.bindSessionWorkspaceById !== 'function') {
+      return null;
+    }
+    return manager;
   }
 
   private applyContextDefaults(

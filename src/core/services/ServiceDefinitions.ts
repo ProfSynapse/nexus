@@ -10,7 +10,7 @@
  */
 
 import type { App, Plugin, PluginManifest } from 'obsidian';
-import { Events, Platform } from 'obsidian';
+import { Events, normalizePath, Platform } from 'obsidian';
 import type { ServiceManager } from '../ServiceManager';
 import type { Settings } from '../../settings';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
@@ -272,10 +272,24 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         dependencies: ['workspaceService', 'memoryService', 'sessionService'],
         create: defineService(async (context) => {
             const { SessionContextManager } = await import('../../services/SessionContextManager');
+            const { VaultSessionBindingsStore, SESSION_BINDINGS_FILE_NAME } = await import('../../services/session/SessionBindingsStore');
+            const { resolvePluginStorageRoot } = await import('../../database/storage/PluginStoragePathResolver');
             const sessionService = await context.serviceManager.getService<SessionService>('sessionService');
+            const workspaceService = await context.serviceManager.getService<WorkspaceService>('workspaceService');
 
             const manager = new SessionContextManager();
             manager.setSessionService(sessionService);
+            // Canonical ids for binds and handle partitions (#214), the same
+            // lookup ToolCallTraceService uses for traces.
+            manager.setWorkspaceResolver(workspaceService);
+            // Session bindings live in the plugin's own data folder inside the
+            // vault — resolved, never a literal root — so a handle's workspace
+            // and session survive a plugin reload.
+            const { dataRoot } = resolvePluginStorageRoot(context.app, context.plugin);
+            manager.setBindingsStore(new VaultSessionBindingsStore(
+                context.app.vault.adapter,
+                normalizePath(`${dataRoot}/${SESSION_BINDINGS_FILE_NAME}`)
+            ));
             return manager;
         })
     },

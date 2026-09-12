@@ -69,12 +69,16 @@ describe('HeadlessAgentStack', () => {
       properties?: Record<string, unknown>;
     };
 
+    // workspaceId/sessionId are present as properties but NOT required (#214):
+    // the workspace is inherited from the session's bind after the first call.
     expect(getToolsSchema.required).toEqual(
-      expect.arrayContaining(['workspaceId', 'sessionId', 'memory', 'goal', 'tool'])
+      expect.arrayContaining(['memory', 'goal', 'tool'])
     );
+    expect(getToolsSchema.required).not.toContain('workspaceId');
     expect(useToolsSchema.required).toEqual(
-      expect.arrayContaining(['workspaceId', 'sessionId', 'memory', 'goal', 'tool'])
+      expect.arrayContaining(['memory', 'goal', 'tool'])
     );
+    expect(useToolsSchema.required).not.toContain('workspaceId');
 
     expect(getToolsSchema.properties).toHaveProperty('workspaceId');
     expect(getToolsSchema.properties).toHaveProperty('sessionId');

@@ -224,8 +224,13 @@ export class SystemPromptBuilder {
    * Includes tools overview and context parameter instructions
    */
   private buildSessionContext(sessionId?: string, workspaceId?: string, toolCatalog?: ToolCatalogEntry[]): string | null {
-    const effectiveSessionId = sessionId || `session_${Date.now()}`;
-    const effectiveWorkspaceId = workspaceId || 'default';
+    // The chat runtime attaches its own selected workspace and session to every
+    // tool call (DirectToolExecutor), so the model must NOT restate them. A
+    // model that copied `"workspaceId": "default"` from an example here
+    // overrode the user's chat selection and filed the whole session under
+    // the wrong workspace (#214). The values are named for orientation only.
+    const workspaceLabel = workspaceId || 'the global "default" workspace';
+    const sessionLabel = sessionId ? `"${sessionId}"` : 'assigned by the runtime';
 
     let prompt = '<tools_and_context>\n';
 
@@ -234,16 +239,14 @@ export class SystemPromptBuilder {
 - useTools: execute tool calls
 
 Context (REQUIRED in every useTools call):
-- workspaceId: "${effectiveWorkspaceId}"
-- sessionId: "${effectiveSessionId}"
 - memory: brief summary of the conversation so far
 - goal: brief statement of the current objective
 - constraints: (optional) any rules or limits
 
+Workspace and session are already known to the runtime — this chat runs in workspace ${workspaceLabel}, session ${sessionLabel}. Do NOT include "workspaceId" or "sessionId" in tool calls. The only exception: to deliberately switch to a different workspace, pass "workspaceId" once with its exact name (or run "memory load-workspace"); later calls inherit the switch.
+
 Exact getTools payload shape:
 {
-  "workspaceId": "${effectiveWorkspaceId}",
-  "sessionId": "${effectiveSessionId}",
   "memory": "brief summary of the conversation so far",
   "goal": "brief statement of the current objective",
   "constraints": "optional rules or limits",
@@ -252,8 +255,6 @@ Exact getTools payload shape:
 
 Exact useTools payload shape:
 {
-  "workspaceId": "${effectiveWorkspaceId}",
-  "sessionId": "${effectiveSessionId}",
   "memory": "brief summary of the conversation so far",
   "goal": "brief statement of the current objective",
   "constraints": "optional rules or limits",
@@ -284,7 +285,7 @@ CLI string rules:
 
     prompt += `
 Call getTools first to get the exact command metadata, then useTools with correct CLI arguments.
-Keep workspaceId, sessionId, memory, goal, and constraints at the top level exactly as shown.
+Keep memory, goal, and constraints at the top level exactly as shown; leave workspaceId and sessionId out.
 Do not send a nested "context" object.
 Do not send a "calls" array.
 Do not place context fields inside the "tool" string as CLI flags.

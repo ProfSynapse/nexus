@@ -15,16 +15,22 @@
  *
  * That connector path was dead (no callers) and has been removed; the live
  * MCP path is `ToolExecutionStrategy.processSession`, which calls the same
- * 3-arg `validateSessionId(sessionId, memory, workspaceId)` seam. The
- * tests remain as a direct contract pin on
- * `SessionContextManager.validateSessionId` under those inputs.
+ * 3-arg `validateSessionId(sessionId, memory, workspaceId)` seam. No live
+ * path synthesizes the literal 'Default Session' any more — here it is just
+ * a friendly handle like any other — so these tests remain as a direct
+ * contract pin on `SessionContextManager.validateSessionId`: a friendly
+ * handle creates one session, is reused on the next call, carries `memory`
+ * as the description, and is partitioned under the supplied workspace.
  *
- * Backend-reviewer flag (preserved verbatim): the friendly-name
- * workspaceId is passed straight through to the validator, so a model
- * that sends `workspaceId: "Engineering"` will get a session bound to
- * the literal name "Engineering" rather than its resolved UUID. The
- * test below documents the current behavior; it is not asserted to
- * be desired or undesired.
+ * Backend-reviewer flag, now resolved upstream: `validateSessionId` still
+ * passes a friendly-name workspaceId straight through (it is the partition
+ * key, not a lookup), but the live callers — `processSession` and
+ * `AgentExecutionManager.processSessionContext` — canonicalise the value via
+ * `SessionContextManager.resolveWorkspaceForSession` BEFORE calling it, so a
+ * model that sends `workspaceId: "Engineering"` is partitioned under that
+ * workspace's id. The last test pins the seam's pass-through so the
+ * canonicalisation is known to live in exactly one place (#214;
+ * tests/unit/SessionStickyWorkspace.test.ts covers it).
  */
 
 import { SessionContextManager } from '../../src/services/SessionContextManager';
@@ -129,13 +135,11 @@ describe("connector session resolution — 'Default Session' default + 3-arg val
     );
   });
 
-  it('documents current behavior: friendly-name workspaceId is passed straight through to createSession', async () => {
-    // Backend-reviewer flag: the connector does not resolve a friendly
-    // workspace handle (e.g., "Engineering") to its UUID before calling
-    // validateSessionId. As a result, the resulting session is bound
-    // to the literal name as its workspaceId. This test pins that
-    // behavior; whether it is desired is a product decision, not a
-    // test concern.
+  it('passes the workspaceId it is given straight through to createSession (canonicalisation is the caller\'s job)', async () => {
+    // validateSessionId treats workspaceId as the partition key and never
+    // looks it up. The live callers canonicalise first (see the docblock);
+    // pinning the pass-through here keeps that lookup in one place instead
+    // of letting a second copy grow inside the validator.
     const manager = new SessionContextManager();
     const sessionService = makeSessionService();
     manager.setSessionService(sessionService);

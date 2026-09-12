@@ -154,16 +154,37 @@ export class RequestHandlerFactory {
     }
 
     /**
-     * Handle normal tool execution
+     * Handle normal tool execution.
+     *
+     * Each IPC connection has its own MCPSDKServer, and this factory holds it,
+     * so this is the one place that knows WHICH client sent the call. The
+     * client's `initialize` name (the CLI sends `'nexus-cli'`) rides along as a
+     * sibling of `params` — outside the tool arguments, so it can never be
+     * spoofed from the payload or mistaken for a tool parameter — and lands on
+     * `IRequestContext.clientName`.
      */
     private async handleNormalExecution(request: ToolCallRequestLike, parsedArgs: ToolArguments): Promise<MCPResult> {
         return await this.requestRouter.handleRequest('tools/call', {
             ...request,
+            clientName: this.resolveClientName(),
             params: {
                 ...request.params,
                 arguments: parsedArgs
             }
         }) as MCPResult;
+    }
+
+    /**
+     * `Server.getClientVersion()` is undefined until the handshake completes
+     * and on SDK builds that predate it; both read as "unknown client".
+     */
+    private resolveClientName(): string | undefined {
+        try {
+            const name = this.server.getClientVersion?.()?.name;
+            return typeof name === 'string' && name.length > 0 ? name : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     /**
