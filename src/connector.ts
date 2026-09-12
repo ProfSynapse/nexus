@@ -9,14 +9,11 @@ import { CustomPromptStorageService } from "./agents/promptManager/services/Cust
 
 // Extracted services
 import { MCPConnectionManager, MCPConnectionManagerInterface } from './services/mcp/MCPConnectionManager';
-import { ToolCallRouter, ToolCallRouterInterface } from './services/mcp/ToolCallRouter';
 import { AgentRegistrationService, AgentRegistrationServiceInterface } from './services/agent/AgentRegistrationService';
-import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
 import type { AppManager } from './services/apps/AppManager';
 import type { MCPServer } from './server/MCPServer';
 
 // Type definitions
-import { AgentToolParams } from './types/agent/AgentTypes';
 import { SearchManagerAgent } from './agents';
 import { MemoryManagerAgent } from './agents';
 import { IAgent } from './agents/interfaces/IAgent';
@@ -42,25 +39,18 @@ interface ToolExecutionParams extends Record<string, unknown> {
     };
 }
 
-function isToolManagerMetaTool(agent: string, tool: string): boolean {
-    return agent === 'toolManager' && (tool === 'getTools' || tool === 'useTools');
-}
-
-interface ToolSchemaLike extends Record<string, unknown> {
-    properties?: Record<string, unknown>;
-    required?: string[];
-}
-
 /**
  * MCP Connector
  * Orchestrates MCP server operations through extracted services:
  * - MCPConnectionManager: Handles server lifecycle
- * - ToolCallRouter: Routes tool calls to agents/tools
  * - AgentRegistrationService: Manages agent initialization and registration
+ *
+ * Tool execution itself is not routed here: every MCP tool call goes
+ * IPCTransportManager → RequestHandlerFactory → RequestRouter →
+ * ToolExecutionStrategy, which owns session and workspace resolution.
  */
 export class MCPConnector {
     private connectionManager: MCPConnectionManagerInterface;
-    private toolRouter: ToolCallRouterInterface;
     private agentRegistry: AgentRegistrationServiceInterface;
     private events: Events;
     private sessionContextManager: SessionContextManager | null = null;
@@ -115,8 +105,6 @@ export class MCPConnector {
             (toolName: string, params: unknown) => this.onToolCall(toolName, params),
             (toolName: string, params: unknown, response: unknown, success: boolean, executionTime: number) => this.onToolResponse(toolName, params, response, success, executionTime)
         );
-
-        this.toolRouter = new ToolCallRouter();
 
         this.agentRegistry = new AgentRegistrationService(
             this.app,
@@ -215,13 +203,9 @@ export class MCPConnector {
 
             // Initialize connection manager first
             await this.connectionManager.initialize();
-            
-            // Set up tool router with server reference
+
             const server = this.connectionManager.getServer();
-            if (server) {
-                this.toolRouter.setServer(server);
-            }
-            
+
             // Initialize all agents through the registration service
             await this.agentRegistry.initializeAllAgents();
 
@@ -249,38 +233,6 @@ export class MCPConnector {
         }
     }
     
-    /**
-     * Call a tool using the new agent-mode architecture with integrated tool call capture
-     * Now delegates to ToolCallRouter service for validation and execution
-     */
-    /**
-     * ═══════════════════════════════════════════════════════════════════
-     * META-TOOLS: Special Exception to Standard Agent/Mode Pattern
-     * ═══════════════════════════════════════════════════════════════════
-     *
-     * The following tools are defined directly in connector.ts and do NOT
-     * follow the standard agent/mode pattern used by all other tools.
-     *
-     * Current Meta-Tools:
-     * - get_tools: Dynamic tool discovery for bounded context architecture
-     *
-     * What get_tools Does:
-     * Allows LLMs to discover and load tool schemas on-demand by requesting
-     * specific agents (e.g., storageManager, contentManager). Instead of
-     * overwhelming the LLM with all 46 tools upfront, get_tools provides
-     * just-in-time access to the tools needed for the current task.
-     *
-     * Why This Exception Exists:
-     * - Tool discovery is a meta-operation, not a domain operation
-     * - Requires direct access to agent registry and connector internals
-     * - Must dynamically generate schemas based on registered agents
-     * - Bounded context architecture intentionally has this meta-layer
-     *
-     * If adding more meta-tools in the future, consider creating a
-     * dedicated meta-tools service to maintain consistency.
-     * ═══════════════════════════════════════════════════════════════════
-     */
-
     /**
      * Get available tools for ChatService - Two-Tool Architecture
      * Returns only toolManager_getTools and toolManager_useTools
@@ -310,304 +262,6 @@ export class MCPConnector {
         }));
     }
 
-    /**
-     * Get overview of all agents and their available tools (no schemas)
-     * Used when get_tools is called with empty tools array
-     */
-    private getAgentToolOverview(): Record<string, { description: string; tools: string[] }> {
-        const overview: Record<string, { description: string; tools: string[] }> = {};
-
-        if (!this.agentRegistry) {
-            return overview;
-        }
-
-        const registeredAgents = this.agentRegistry.getAllAgents();
-
-        for (const [agentName, agent] of registeredAgents) {
-            const tools = agent.getTools();
-            const agentDescription = agent.description;
-
-            overview[agentName] = {
-                description: agentDescription,
-                tools: tools.map((tool: ITool<unknown, unknown>) => tool.slug || tool.name || 'unknown')
-            };
-        }
-
-        return overview;
-    }
-
-    /**
-     * Get schemas for specific tool names (called via get_tools meta-tool)
-     * Returns clean schemas WITHOUT common parameters to reduce context bloat
-     *
-     * @param toolNames Array of specific tool names like ["contentManager_createNote", "searchManager_directory"]
-     */
-    private getToolsForSpecificNames(toolNames: string[]): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
-        const toolSchemas: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
-
-        if (!this.agentRegistry) {
-            return [];
-        }
-
-        const registeredAgents = this.agentRegistry.getAllAgents();
-
-        for (const toolName of toolNames) {
-            // Parse tool name: "contentManager_createNote" -> agentName="contentManager", toolSlug="createNote"
-            const parts = toolName.split('_');
-            if (parts.length < 2) {
-                continue; // Invalid tool name format
-            }
-
-            const agentName = parts[0];
-            const toolSlug = parts.slice(1).join('_'); // Handle tool names with underscores
-
-            // Find the agent
-            const agent = registeredAgents.get(agentName);
-            if (!agent) {
-                continue; // Agent not found
-            }
-
-            // Find the tool
-            const tools = agent.getTools();
-            const toolInstance = tools.find((t: ITool<unknown, unknown>) =>
-                (t.slug || t.name) === toolSlug
-            );
-
-            if (!toolInstance) {
-                continue; // Tool not found
-            }
-
-            // Get and clean the schema
-            if (typeof toolInstance.getParameterSchema === 'function') {
-                try {
-                    const paramSchema = toolInstance.getParameterSchema();
-
-                    // Strip common parameters to reduce context bloat
-                    // The instruction in get_tools result will tell LLM to add them
-                    const cleanSchema = this.stripCommonParameters(paramSchema);
-                    if (!cleanSchema) {
-                        continue;
-                    }
-
-                    toolSchemas.push({
-                        name: toolName,
-                        description: toolInstance.description || `Execute ${toolSlug} on ${agentName}`,
-                        inputSchema: cleanSchema
-                    });
-                } catch {
-                    // Skip tools with invalid schemas
-                }
-            }
-        }
-
-        return toolSchemas;
-    }
-
-    /**
-     * Strip common parameters from tool schema to reduce context bloat
-     * Common parameters (context, workspaceContext, sessionId) are documented in get_tools instruction
-     */
-    private stripCommonParameters(schema: ToolSchemaLike | null | undefined): ToolSchemaLike | null | undefined {
-        if (!schema || !schema.properties) {
-            return schema;
-        }
-
-        const cleanProperties = { ...schema.properties };
-        delete cleanProperties.context;
-        delete cleanProperties.workspaceContext;
-        delete cleanProperties.sessionId;
-        const cleanRequired = (schema.required || []).filter(
-            (field: string) => field !== 'context' && field !== 'workspaceContext' && field !== 'sessionId'
-        );
-
-        return {
-            ...schema,
-            properties: cleanProperties,
-            required: cleanRequired.length > 0 ? cleanRequired : undefined
-        };
-    }
-
-    async callTool(params: AgentToolParams): Promise<unknown> {
-        try {
-            const { agent, tool, params: toolParams } = params;
-
-            // ========================================
-            // BOUNDED CONTEXT TOOL DISCOVERY - Intercept get_tools meta-tool
-            // ========================================
-            if (agent === 'get' && tool === 'tools') {
-                // This is a call to the get_tools meta-tool
-                const toolParamsTyped = toolParams;
-                const contextTyped = toolParamsTyped.context as Record<string, unknown> | undefined;
-                const toolNames = (toolParamsTyped.tools || contextTyped?.tools || []) as string[];
-
-                if (!Array.isArray(toolNames)) {
-                    return {
-                        success: false,
-                        error: 'tools parameter must be an array'
-                    };
-                }
-
-                const sessionId = contextTyped?.sessionId as string | undefined;
-                const workspaceId = (contextTyped?.workspaceId || 'default') as string;
-
-                // TIER 1: Discovery mode (empty array) - return agent/tool overview
-                if (toolNames.length === 0) {
-                    const overview = this.getAgentToolOverview();
-
-                    return {
-                        success: true,
-                        overview: overview,
-                        sessionId: sessionId,
-                        workspaceId: workspaceId,
-                        instruction: 'Above is the overview of all available agents and their tools. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "searchManager_directory"] }))'
-                    };
-                }
-
-                // TIER 2: Specific tool retrieval - return schemas for requested tools
-                const tools = this.getToolsForSpecificNames(toolNames);
-
-                if (tools.length === 0) {
-                    return {
-                        success: false,
-                        error: `No valid tools found for the requested names: ${toolNames.join(', ')}. Make sure to use exact tool names like "contentManager_createNote".`
-                    };
-                }
-
-                // Instruction for LLM to add common parameters to every tool call
-                // Uses new memory/goal/constraints format (not legacy sessionDescription/sessionMemory)
-                const instruction = `
-IMPORTANT: All ${tools.length} tools returned require a 'context' parameter that was omitted from schemas to reduce token usage.
-
-You MUST add the following 'context' object to EVERY tool call:
-
-{
-  "context": {
-    "workspaceId": "${workspaceId}",
-    "sessionId": "${sessionId || 'REQUIRED'}",
-    "memory": "Essence of conversation so far (1-3 sentences)",
-    "goal": "Current objective (1-3 sentences)",
-    "constraints": "Optional rules/limits to follow (1-3 sentences)"
-  }
-}
-
-The 4 required fields are: workspaceId, sessionId, memory, goal. constraints is optional.
-Update memory and goal as the conversation evolves.
-Keep workspaceId and sessionId values EXACTLY as shown above throughout the conversation.
-`.trim();
-
-                return {
-                    success: true,
-                    tools: tools,
-                    requestedTools: toolNames,
-                    toolCount: tools.length,
-                    instruction: instruction
-                };
-            }
-
-            // ========================================
-            // SESSION VALIDATION & WORKSPACE CONTEXT INJECTION
-            // ========================================
-
-            // Type the toolParams for proper access
-            const typedParams = toolParams as Record<string, unknown> & {
-                context?: Record<string, unknown>;
-                sessionId?: string;
-                workspaceContext?: { workspaceId?: string };
-            };
-
-            const toolManagerMetaTool = isToolManagerMetaTool(agent, tool);
-
-            const sessionContextManager = this.getSessionContextManagerFromService();
-
-            // 1. SESSION HANDLE VALIDATION: Extract and resolve the model-facing
-            // session name to an internal ID. The internal ID is not surfaced to
-            // the model; callers should keep sending the same readable handle.
-            const providedSessionId = (toolManagerMetaTool ? typedParams.sessionId : (typedParams.context?.sessionId || typedParams.sessionId)) as string | undefined;
-            const validationResult = await sessionContextManager.validateSessionId(
-                providedSessionId || 'Default Session',
-                typeof typedParams.memory === 'string' ? typedParams.memory : undefined,
-                typeof typedParams.workspaceId === 'string' ? typedParams.workspaceId : undefined
-            );
-            const validatedSessionId = validationResult.id;
-
-            // 2. INJECT VALIDATED SESSION ID into all relevant locations
-            typedParams.sessionId = validatedSessionId;
-            typedParams._displaySessionId = validationResult.displaySessionId;
-            if (!toolManagerMetaTool) {
-                if (!typedParams.context) {
-                    typedParams.context = {};
-                }
-                typedParams.context.sessionId = validatedSessionId;
-                typedParams.context.sessionName = validationResult.displaySessionId;
-            }
-
-            // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
-            const workspaceContext = sessionContextManager.getWorkspaceContext(validatedSessionId);
-
-            if (workspaceContext) {
-                // Inject workspace context from session
-                typedParams.workspaceContext = workspaceContext;
-                typedParams.workspaceId = (typedParams.workspaceId) || workspaceContext.workspaceId;
-                if (!toolManagerMetaTool && typedParams.context) {
-                    typedParams.context.workspaceId = workspaceContext.workspaceId;
-                }
-            } else {
-                // Fallback to default if no session workspace
-                if (!typedParams.workspaceContext) {
-                    typedParams.workspaceContext = { workspaceId: 'default' };
-                } else if (!typedParams.workspaceContext.workspaceId) {
-                    typedParams.workspaceContext.workspaceId = 'default';
-                }
-
-                typedParams.workspaceId = (typedParams.workspaceId) || typedParams.workspaceContext.workspaceId;
-                if (!toolManagerMetaTool && typedParams.context && !typedParams.context.workspaceId) {
-                    typedParams.context.workspaceId = typedParams.workspaceContext.workspaceId;
-                }
-            }
-
-            // Delegate validation and execution to ToolCallRouter
-            this.toolRouter.validateBatchOperations(typedParams);
-            const startTime = Date.now();
-            const result = await this.toolRouter.executeAgentTool(agent, tool, typedParams);
-            const executionTime = Date.now() - startTime;
-
-            // ========================================
-            // CAPTURE TOOL CALL TRACE TO WORKSPACE
-            // ========================================
-            const traceService = this.serviceManager?.getServiceIfReady<ToolCallTraceService>('toolCallTraceService');
-            if (traceService && typeof traceService.captureToolCall === 'function') {
-                const toolTraceName = `${agent}_${tool}`;
-                const resultObj = result as Record<string, unknown> | null;
-                const success = !resultObj?.error;
-
-                traceService.captureToolCall(
-                    toolTraceName,
-                    typedParams,
-                    result,
-                    success,
-                    executionTime
-                ).catch(() => {
-                    // Silent error handling for tool trace capture
-                });
-            }
-
-            // Don't inject sessionId/workspaceId into result - LLM already knows these
-            // since it passed them in. Adding them wastes tokens.
-            // Session instructions only needed for new sessions via MCP Server path.
-
-            return result;
-            
-        } catch (error) {
-            if (error instanceof McpError) {
-                throw error;
-            }
-            throw new McpError(
-                ErrorCode.InvalidParams,
-                (error as Error).message || 'Failed to call tool',
-                error
-            );
-        }
-    }
     /**
      * Start the MCP server - delegates to MCPConnectionManager
      */
@@ -676,13 +330,6 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
      */
     getConnectionManager(): MCPConnectionManagerInterface {
         return this.connectionManager;
-    }
-    
-    /**
-     * Get the tool router instance
-     */
-    getToolRouter(): ToolCallRouterInterface {
-        return this.toolRouter;
     }
     
     /**

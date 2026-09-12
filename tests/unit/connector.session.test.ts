@@ -1,24 +1,23 @@
 /**
- * Connector session-handle resolution — coverage of the
- * 'Default Session' defaulting + 3-arg validateSessionId path
- * introduced in commit b90ce865 (B4 of review/workspace-memory-batch).
+ * Session-handle resolution — coverage of the 'Default Session'
+ * defaulting + 3-arg validateSessionId path introduced in commit
+ * b90ce865 (B4 of review/workspace-memory-batch).
  *
- * The MCPConnector's `callTool` (src/connector.ts:529-534) computes:
+ * These tests originally mirrored the inputs synthesized by the
+ * MCPConnector's since-removed direct tool-call method (see git history
+ * for src/connector.ts), which computed:
  *
- *   const providedSessionId = (toolManagerMetaTool ? typedParams.sessionId
- *     : (typedParams.context?.sessionId || typedParams.sessionId));
  *   const validationResult = await sessionContextManager.validateSessionId(
  *     providedSessionId || 'Default Session',
  *     typeof typedParams.memory === 'string' ? typedParams.memory : undefined,
  *     typeof typedParams.workspaceId === 'string' ? typedParams.workspaceId : undefined
  *   );
  *
- * Building a full MCPConnector requires plugin + agentManager + service
- * container wiring, all far beyond the surface this test cares about.
- * Instead, this test exercises the contract the connector relies on:
- * `SessionContextManager.validateSessionId` is the seam the connector
- * calls into, and these tests pin its behavior under exactly the inputs
- * the connector synthesizes.
+ * That connector path was dead (no callers) and has been removed; the live
+ * MCP path is `ToolExecutionStrategy.processSession`, which calls the same
+ * 3-arg `validateSessionId(sessionId, memory, workspaceId)` seam. The
+ * tests remain as a direct contract pin on
+ * `SessionContextManager.validateSessionId` under those inputs.
  *
  * Backend-reviewer flag (preserved verbatim): the friendly-name
  * workspaceId is passed straight through to the validator, so a model
