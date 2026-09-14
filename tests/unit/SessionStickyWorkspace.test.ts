@@ -13,7 +13,7 @@
  * REAL throughout; only storage (SessionService), the workspace lookup and the
  * persistence store are stubbed — and none of them supplies the value an
  * assertion depends on, except where the test is about that stub's data
- * (persistence round-trip, deleted-session drop).
+ * (persistence round-trip, storage-miss re-create).
  */
 
 import type { IRequestContext } from '../../src/handlers/interfaces/IRequestHandlerServices';
@@ -34,6 +34,7 @@ import type { RequestRouter } from '../../src/handlers/RequestRouter';
 import type { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import type { App } from 'obsidian';
 import {
+  HeldBindingsStore,
   MemoryBindingsStore,
   getToolsRequest,
   makeManager,
@@ -41,6 +42,7 @@ import {
   makeSessionService,
   makeStrategy,
   makeToolManagerAgent,
+  settle,
   useToolsRequest
 } from './helpers/sessionStickyFixtures';
 
@@ -415,7 +417,15 @@ describe('persistence: session-bindings.json', () => {
     expect(afterService.createSession).not.toHaveBeenCalled();
   });
 
-  it('a restored handle whose session was deleted is dropped, and the handle gets a fresh session', async () => {
+  // A restored handle is never dropped on a storage miss. `getAllSessions`
+  // returns [] while storage is still hydrating after a reload, and a call a
+  // few seconds in saw exactly that: the handle was dropped and a new id
+  // minted — the regression this map exists to prevent. Continuity wins: the
+  // same id is kept either way. Only a DEFINITE delete (a non-empty list that
+  // lacks the id) re-creates the record; an empty list is ambiguous between
+  // cold and empty, and re-creating there would append a duplicate
+  // session_created event to the JSONL source of truth on every cold reload.
+  it('a restored handle whose session was deleted (non-empty list without it) keeps the SAME id and re-creates the record with it', async () => {
     const store = new MemoryBindingsStore();
     store.doc = {
       handles: { 'default::nexus-cli': { id: 's-20260101000000', displaySessionId: 'nexus-cli', workspaceId: 'default' } },
@@ -423,17 +433,70 @@ describe('persistence: session-bindings.json', () => {
       cliCurrentSession: null
     };
     const sessionService = makeSessionService();
-    sessionService.getAllSessions.mockResolvedValue([]); // deleted while unloaded
+    // Storage is warm — it lists another session — and ours is not there.
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-20260101000001', workspaceId: 'default', name: 'other' }]);
     const { manager } = makeManager({ store, sessionService });
 
-    const result = await manager.validateSessionId('nexus-cli', undefined, 'default');
+    const result = await manager.validateSessionId('nexus-cli', 'resumed after reload', 'default');
 
-    expect(result.created).toBe(true);
-    expect(result.id).not.toBe('s-20260101000000');
-    // Not renamed either: the stale display name must not force a suffix.
+    expect(result.id).toBe('s-20260101000000');
+    expect(result.created).toBe(false);
     expect(result.displaySessionId).toBe('nexus-cli');
+    expect(sessionService.createSession).toHaveBeenCalledTimes(1);
+    expect(sessionService.createSession).toHaveBeenCalledWith({
+      id: 's-20260101000000',
+      name: 'nexus-cli',
+      description: 'resumed after reload',
+      workspaceId: 'default'
+    });
     await manager.flushBindings();
-    expect(store.doc?.handles['default::nexus-cli']?.id).toBe(result.id);
+    expect(store.doc?.handles['default::nexus-cli']?.id).toBe('s-20260101000000');
+  });
+
+  it('cold storage (empty list, then warm) never renames and does NOT re-create: same id every call, check runs once', async () => {
+    const store = new MemoryBindingsStore();
+    store.doc = {
+      handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
+      handleWorkspace: { 'live-check': 'ws-research-id' },
+      cliCurrentSession: 'live-check'
+    };
+    const sessionService = makeSessionService();
+    sessionService.getAllSessions.mockResolvedValueOnce([]); // ~3 s after reload: still hydrating
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-20260912194746', workspaceId: 'ws-research-id', name: 'live-check' }]);
+    const { manager } = makeManager({ store, sessionService });
+
+    const cold = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+    const warm = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+
+    expect(cold.id).toBe('s-20260912194746');
+    expect(cold.displaySessionId).toBe('live-check');
+    expect(cold.displaySessionIdChanged).toBe(false);
+    expect(warm).toEqual(cold);
+    expect(sessionService.getAllSessions).toHaveBeenCalledTimes(1);
+    // The empty list is ambiguous (cold or empty workspace): no re-create,
+    // so a cold reload never appends a duplicate session_created event.
+    expect(sessionService.createSession).not.toHaveBeenCalled();
+    expect(await manager.resolveWorkspaceForSession(undefined, 'live-check'))
+      .toEqual({ workspaceId: 'ws-research-id', explicit: false });
+  });
+
+  it('a failed re-create (e.g. workspace not found) only logs; the handle is still kept', async () => {
+    const store = new MemoryBindingsStore();
+    store.doc = {
+      handles: { 'ws-research-id::live-check': { id: 's-20260912194746', displaySessionId: 'live-check', workspaceId: 'ws-research-id' } },
+      handleWorkspace: {},
+      cliCurrentSession: null
+    };
+    const sessionService = makeSessionService();
+    sessionService.getAllSessions.mockResolvedValue([{ id: 's-other', workspaceId: 'ws-research-id', name: 'other' }]);
+    sessionService.createSession.mockRejectedValue(new Error('Workspace ws-research-id not found'));
+    const { manager } = makeManager({ store, sessionService });
+
+    const result = await manager.validateSessionId('live-check', undefined, 'ws-research-id');
+
+    expect(result.id).toBe('s-20260912194746');
+    expect(result.created).toBe(false);
+    expect(manager.describeHandle('live-check', 'ws-research-id')?.id).toBe('s-20260912194746');
   });
 
   it('a storage lookup that throws keeps the restored handle rather than renaming a live session', async () => {
@@ -483,29 +546,89 @@ describe('persistence: session-bindings.json', () => {
     });
   });
 
-  it('writes are debounced into one save per burst and flushed on cleanup', async () => {
-    jest.useFakeTimers();
-    try {
-      const store = new MemoryBindingsStore();
-      const { manager } = makeManager({ store });
+  // Persistence is write-through, not debounced: a 300 ms timer sat pending
+  // for minutes while Obsidian was in the background (Electron throttles
+  // background renderer timers, and the CLI runs precisely then), so the file
+  // lagged the in-memory state. No timers anywhere in this block — the
+  // HeldBindingsStore controls what is in flight.
+  it('the first change writes immediately, with no timer to wait on', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
 
-      manager.bindHandleWorkspace('a', 'ws-research-id');
-      manager.bindHandleWorkspace('b', 'ws-blog-id');
-      manager.bindHandleWorkspace('c', 'default');
-      expect(store.saves).toBe(0);
+    manager.bindHandleWorkspace('a', 'ws-research-id');
 
-      await jest.advanceTimersByTimeAsync(1000);
-      expect(store.saves).toBe(1);
-      expect(Object.keys(store.doc?.handleWorkspace ?? {})).toEqual(['a', 'b', 'c']);
+    expect(store.started).toHaveLength(1);
+    expect(store.started[0].handleWorkspace).toEqual({ a: 'ws-research-id' });
+  });
 
-      manager.bindHandleWorkspace('d', 'default');
-      manager.cleanup();
-      await Promise.resolve();
-      expect(store.saves).toBe(2);
-      expect(store.doc?.handleWorkspace.d).toBe('default');
-    } finally {
-      jest.useRealTimers();
-    }
+  it('a burst of N binds while a write is in flight produces exactly 2 writes, and the second carries all N', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id'); // write 1 starts, held
+    manager.bindHandleWorkspace('b', 'ws-blog-id');
+    manager.bindHandleWorkspace('c', 'default');
+    manager.setCliCurrentSession('c');
+    expect(store.started).toHaveLength(1);
+
+    expect(store.release()).toBe(true); // write 1 settles
+    await settle();
+
+    // One follow-up, snapshotting the state as it stands now — not one write
+    // per change, and not a stale copy taken when the changes happened.
+    expect(store.started).toHaveLength(2);
+    expect(Object.keys(store.started[1].handleWorkspace)).toEqual(['a', 'b', 'c']);
+    expect(store.started[1].cliCurrentSession).toBe('c');
+
+    expect(store.release()).toBe(true);
+    await settle();
+    expect(store.started).toHaveLength(2);
+    expect(store.doc?.handleWorkspace).toEqual({ a: 'ws-research-id', b: 'ws-blog-id', c: 'default' });
+  });
+
+  it('flushBindings resolves once the changes made during an in-flight write are on disk', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id');
+    manager.bindHandleWorkspace('b', 'ws-blog-id');
+    let flushed = false;
+    const flush = manager.flushBindings().then(() => { flushed = true; });
+
+    store.release();
+    await settle();
+    expect(flushed).toBe(false); // the follow-up carrying b is still in flight
+
+    store.release();
+    await flush;
+    expect(store.doc?.handleWorkspace).toEqual({ a: 'ws-research-id', b: 'ws-blog-id' });
+
+    // Nothing in flight: flush writes now, so a caller can rely on "current
+    // state is on disk" without knowing the writer's history.
+    const second = manager.flushBindings();
+    expect(store.started).toHaveLength(3);
+    store.release();
+    await second;
+  });
+
+  it('cleanup snapshots before the maps are cleared and writes it after the in-flight write, never the emptied state', async () => {
+    const store = new HeldBindingsStore();
+    const { manager } = makeManager({ store });
+
+    manager.bindHandleWorkspace('a', 'ws-research-id'); // held
+    manager.bindHandleWorkspace('d', 'default');       // dirty
+    manager.cleanup();                                  // maps now empty
+
+    expect(store.started).toHaveLength(1);
+    store.release();
+    await settle();
+
+    expect(store.started).toHaveLength(2);
+    expect(store.started[1].handleWorkspace).toEqual({ a: 'ws-research-id', d: 'default' });
+    store.release();
+    await settle();
+    expect(store.doc?.handleWorkspace.d).toBe('default');
+    expect(store.inFlight).toBe(0);
   });
 
   it('the vault store creates the data folder and writes through the adapter, never Node fs', async () => {

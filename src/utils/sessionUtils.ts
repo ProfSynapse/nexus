@@ -4,13 +4,40 @@
  */
 
 /**
- * Generate a standardized session ID based on current datetime
+ * The whole-second UTC timestamp (ms) the last id was issued for, or null
+ * before the first call. Module-level so every caller in the process shares
+ * one monotonic sequence.
+ */
+let lastIssuedSecondMs: number | null = null;
+
+/**
+ * Format a whole-second UTC timestamp as s-YYYYMMDDhhmmss.
+ */
+function formatSessionId(secondMs: number): string {
+    return `s-${new Date(secondMs).toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`;
+}
+
+/**
+ * Generate a standardized session ID based on current datetime, strictly
+ * increasing within a process.
+ *
+ * The format has one-second resolution, so two sessions created in the same
+ * second used to get the same id and the second `createSession` was a no-op —
+ * two handles then pointed at one record (seen live: `nexus-cli` on an unbound
+ * call, then `--session live-check`, both `s-20260912194746`). When the clock
+ * has not moved past the last issued id, the id is taken from the last one
+ * plus one second, computed on a Date so minute/hour/day carry correctly.
+ * The `s-` + 14 digits format is unchanged; `isStandardSessionId` still holds.
+ *
  * @returns Session ID in the format s-YYYYMMDDhhmmss
  */
 export function generateSessionId(): string {
-    const now = new Date();
-    const formattedDate = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-    return `s-${formattedDate}`;
+    let secondMs = Math.floor(Date.now() / 1000) * 1000;
+    if (lastIssuedSecondMs !== null && secondMs <= lastIssuedSecondMs) {
+        secondMs = lastIssuedSecondMs + 1000;
+    }
+    lastIssuedSecondMs = secondMs;
+    return formatSessionId(secondMs);
 }
 
 /**

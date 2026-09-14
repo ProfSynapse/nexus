@@ -69,13 +69,6 @@ export interface SessionWorkspaceResolution {
 const GLOBAL_WORKSPACE_ID = 'default';
 
 /**
- * How long consecutive binding changes are coalesced before one write. A
- * session's first few calls (getTools, useTools, load-workspace) all mutate
- * the map within a second or two; one file write per burst is plenty.
- */
-const BINDINGS_SAVE_DEBOUNCE_MS = 300;
-
-/**
  * SessionContextManager
  * 
  * Provides a centralized service for managing and persisting workspace context
@@ -106,12 +99,16 @@ export class SessionContextManager {
   private sessionHandleMap: Map<string, { id: string; displaySessionId: string; workspaceId: string }> = new Map();
 
   // Handle entries restored from session-bindings.json that have not yet been
-  // checked against storage. A restored entry is only trusted once
-  // `sessionService.getAllSessions(entry.workspaceId)` confirms the session
-  // still exists; a session deleted while the plugin was unloaded is dropped
-  // at that point instead of being silently resumed. The check is lazy (on the
-  // handle's first use) rather than at service init because storage is cold
-  // during startup hydration and would report every session as missing.
+  // checked against storage. On the handle's first use
+  // `sessionService.getAllSessions(entry.workspaceId)` is consulted once; the
+  // entry is KEPT either way — a miss re-creates the session record with the
+  // same id (best-effort) rather than minting a new one. The check is lazy
+  // rather than at service init because storage is cold during startup
+  // hydration, and it cannot be allowed to drop anything for the same reason:
+  // a call a few seconds after reload saw an empty list and renumbered a live
+  // session (see verifyRestoredHandle). What the check still buys is the
+  // display-name uniqueness pass in createUniqueSessionDisplayName, which
+  // skips unverified entries so a stale name never forces a `-2`.
   private unverifiedHandleKeys: Set<string> = new Set();
 
   // Handle → workspace id of the LAST DELIBERATE bind (#214). Distinct from
@@ -138,8 +135,19 @@ export class SessionContextManager {
   // Persistence for handles + handleWorkspace. Null in tests and before wiring;
   // every store operation is best-effort and degrades to "pass it once again".
   private bindingsStore: SessionBindingsStore | null = null;
-  private bindingsSaveTimer: number | null = null;
   private bindingsRestore: Promise<void> | null = null;
+
+  // Write-through with in-flight coalescing, deliberately NOT a timer. A
+  // debounced `window.setTimeout` sat pending for minutes while Obsidian was
+  // in the background — Electron throttles background renderer timers, and the
+  // CLI is used precisely when Obsidian is not focused — so the file lagged
+  // the in-memory state and a quit in that window lost the bind. Instead: a
+  // change with no write in flight starts one now; a change during a write
+  // sets `bindingsDirty`, and the writer runs once more when it settles. Each
+  // write snapshots the state as it is when that write starts, so a burst
+  // collapses to at most two writes and the file always ends current.
+  private bindingsWrite: Promise<void> | null = null;
+  private bindingsDirty = false;
 
   // Disposer for the session-deleted subscription so re-wiring or teardown can
   // unregister cleanly.
@@ -272,35 +280,71 @@ export class SessionContextManager {
   }
 
   /**
-   * Coalesce binding changes into one write. Fire-and-forget: a failed write
-   * is logged by the store and the next change retries.
+   * Persist a binding change. Write-through: starts a write immediately when
+   * none is in flight, otherwise marks the state dirty so the in-flight
+   * writer runs once more when it settles (see `bindingsWrite`). Fire-and-
+   * forget: a failed write is logged and the next change retries.
    */
   private scheduleBindingsSave(): void {
     if (!this.bindingsStore) {
       return;
     }
-    if (this.bindingsSaveTimer) {
-      window.clearTimeout(this.bindingsSaveTimer);
+    if (this.bindingsWrite) {
+      this.bindingsDirty = true;
+      return;
     }
-    this.bindingsSaveTimer = window.setTimeout(() => {
-      this.bindingsSaveTimer = null;
-      void this.flushBindings();
-    }, BINDINGS_SAVE_DEBOUNCE_MS);
+    this.startBindingsWrite(this.snapshotBindings());
   }
 
-  /** Write the current bindings now, cancelling any pending debounced write. */
-  async flushBindings(): Promise<void> {
-    if (this.bindingsSaveTimer) {
-      window.clearTimeout(this.bindingsSaveTimer);
-      this.bindingsSaveTimer = null;
+  /**
+   * Begin the writer with `doc` as its first payload. Must only be called
+   * with no write in flight. The writer keeps going while changes arrive
+   * mid-write, each pass snapshotting the state as it stands at that moment,
+   * and stops as soon as the store is unwired (cleanup) so it can never write
+   * the emptied maps over the file.
+   */
+  private startBindingsWrite(doc: PersistedSessionBindings): void {
+    const store = this.bindingsStore;
+    if (!store) {
+      return;
     }
+    this.bindingsDirty = false;
+    this.bindingsWrite = (async () => {
+      try {
+        await this.saveBindings(store, doc);
+        while (this.bindingsDirty && this.bindingsStore === store) {
+          this.bindingsDirty = false;
+          await this.saveBindings(store, this.snapshotBindings());
+        }
+      } finally {
+        this.bindingsWrite = null;
+      }
+    })();
+  }
+
+  private async saveBindings(store: SessionBindingsStore, doc: PersistedSessionBindings): Promise<void> {
+    try {
+      await store.save(doc);
+    } catch (error) {
+      logger.systemWarn(`Session bindings save failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Resolve once the current bindings are on disk: waits for any in-flight
+   * write (and the follow-up it owes for changes made meanwhile), or starts a
+   * write now when nothing is in flight.
+   */
+  async flushBindings(): Promise<void> {
     if (!this.bindingsStore) {
       return;
     }
-    try {
-      await this.bindingsStore.save(this.snapshotBindings());
-    } catch (error) {
-      logger.systemWarn(`Session bindings save failed: ${error instanceof Error ? error.message : String(error)}`);
+    if (!this.bindingsWrite) {
+      this.startBindingsWrite(this.snapshotBindings());
+    }
+    const inFlight = this.bindingsWrite;
+    if (inFlight) {
+      await inFlight;
     }
   }
 
@@ -421,16 +465,35 @@ export class SessionContextManager {
   }
 
   /**
-   * Confirm a restored handle's session still exists in storage. Returns the
-   * entry when it does (and marks it trusted), or null after dropping the
-   * entry when the session is gone. A lookup that THROWS keeps the entry
-   * unverified and returns it — a storage hiccup must not rename a live
-   * session to `<handle>-2`.
+   * Check a restored handle's session against storage once, and ALWAYS keep
+   * the entry. The handle's continuity is what the caller wants; what varies
+   * on a miss is only whether the session RECORD is re-created here:
+   *
+   * - Storage lists the session → trust the entry.
+   * - Storage returned a NON-EMPTY list without it → a definite delete while
+   *   the plugin was unloaded. Re-create the record with the same id
+   *   (best-effort) so the handle resumes rather than renumbering — the
+   *   lesser evil.
+   * - Storage returned `[]` → ambiguous. `SessionService.getAllSessions`
+   *   swallows errors and returns `[]` while storage is still hydrating after
+   *   a reload (a call a few seconds in saw exactly that and dropped
+   *   `default::live-check` — the regression this map exists to prevent), and
+   *   an empty workspace looks the same. Do NOT re-create here:
+   *   SessionRepository.create appends the JSONL `session_created` event
+   *   before the SQLite INSERT, so re-creating a session that merely was not
+   *   listed yet would leave a duplicate event in the source of truth on
+   *   every cold reload. Keep the entry, mark it verified, and let trace
+   *   capture's own auto-create supply the record later if it really is
+   *   missing (it already creates sessions for trace storage).
+   *
+   * A lookup that THROWS keeps the entry unverified (re-checked next call)
+   * and returns it, as before.
    */
   private async verifyRestoredHandle(
     key: string,
-    entry: { id: string; displaySessionId: string; workspaceId: string }
-  ): Promise<{ id: string; displaySessionId: string; workspaceId: string } | null> {
+    entry: { id: string; displaySessionId: string; workspaceId: string },
+    sessionDescription?: string
+  ): Promise<{ id: string; displaySessionId: string; workspaceId: string }> {
     if (!this.unverifiedHandleKeys.has(key)) {
       return entry;
     }
@@ -445,25 +508,38 @@ export class SessionContextManager {
       return entry;
     }
 
-    if (sessions.some(session => session.id === entry.id)) {
-      // Trust every key that points at this session, not just the one looked up.
-      for (const [otherKey, other] of this.sessionHandleMap.entries()) {
-        if (other.id === entry.id) {
-          this.unverifiedHandleKeys.delete(otherKey);
-        }
-      }
-      return entry;
-    }
-
-    logger.systemLog(`Restored session handle "${key}" points at deleted session ${entry.id}; dropping it`);
+    // Trust every key that points at this session, not just the one looked up.
     for (const [otherKey, other] of this.sessionHandleMap.entries()) {
       if (other.id === entry.id) {
-        this.sessionHandleMap.delete(otherKey);
         this.unverifiedHandleKeys.delete(otherKey);
       }
     }
-    this.scheduleBindingsSave();
-    return null;
+
+    if (sessions.some(session => session.id === entry.id)) {
+      return entry;
+    }
+
+    if (sessions.length === 0) {
+      logger.systemLog(
+        `Restored session handle "${key}" points at session ${entry.id}, but storage listed no sessions for workspace ${entry.workspaceId} (cold or empty); keeping the handle, record not re-created`
+      );
+    } else {
+      logger.systemLog(
+        `Restored session handle "${key}" points at session ${entry.id}, which storage no longer lists; keeping the handle and re-creating the record`
+      );
+      try {
+        // createAutoSession already logs and swallows a failed createSession
+        // (e.g. "Workspace X not found" while storage is cold); the guard here
+        // is belt-and-braces so nothing on this path can throw or drop.
+        await this.createAutoSession(entry.id, entry.displaySessionId, sessionDescription, entry.workspaceId);
+      } catch (error) {
+        logger.systemWarn(
+          `Could not re-create session ${entry.id} for restored handle "${key}": ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    return entry;
   }
 
   /**
@@ -662,17 +738,25 @@ export class SessionContextManager {
    * (ServiceContainer.clear) so the in-memory handle map and session-deleted
    * subscription do not survive a plugin reload. The persisted bindings DO
    * survive — that is what lets a returning handle resume its session — so
-   * any pending debounced write is flushed before memory is cleared.
+   * anything the writer still owes is written before memory is cleared.
    */
   cleanup(): void {
     if (this.sessionDeletedUnsubscribe) {
       this.sessionDeletedUnsubscribe();
       this.sessionDeletedUnsubscribe = null;
     }
-    if (this.bindingsSaveTimer) {
-      // Snapshot before clearAll() empties the maps; the write itself is
-      // fire-and-forget because Obsidian does not await plugin unload.
-      void this.flushBindings();
+    const store = this.bindingsStore;
+    const inFlight = this.bindingsWrite;
+    if (store && inFlight) {
+      // Every change already started its own write; the only state not yet on
+      // disk is what arrived while that write was in flight. Snapshot it NOW,
+      // synchronously, before clearAll() empties the maps, and write it after
+      // the in-flight write settles so the two cannot land out of order. The
+      // writer's own follow-up stops once the store is unwired below, so this
+      // is the last write. Fire-and-forget: Obsidian does not await unload.
+      const finalDoc = this.snapshotBindings();
+      this.bindingsDirty = false;
+      void inFlight.then(() => this.saveBindings(store, finalDoc));
     }
     this.bindingsStore = null;
     this.bindingsRestore = null;
@@ -722,7 +806,9 @@ export class SessionContextManager {
     if (!isStandardSessionId(sessionId)) {
       const key = this.handleKey(workspaceId, sessionId);
       const knownHandle = this.sessionHandleMap.get(key);
-      const existingHandle = knownHandle ? await this.verifyRestoredHandle(key, knownHandle) : null;
+      const existingHandle = knownHandle
+        ? await this.verifyRestoredHandle(key, knownHandle, sessionDescription)
+        : null;
       if (existingHandle) {
         return {
           id: existingHandle.id,
