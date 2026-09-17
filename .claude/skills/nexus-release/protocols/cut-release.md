@@ -134,9 +134,14 @@ class of defect is unguarded for that release, and a startup defect is exactly
 what has shipped past a green suite before. If you have Obsidian, make it say
 VERIFIED.
 
-The vault it reloads is whatever build is installed in that vault's
-`.obsidian/plugins/nexus/`. Unless that folder is a symlink to this checkout, run
-your deploy step first or you have verified an older bundle.
+The vault it reloads is whatever build is installed in that vault's plugin
+folder — Obsidian identifies the plugin by the manifest id `nexus`, not by the
+folder name. When this checkout sits inside the vault's `.obsidian/plugins/`
+(the usual dev layout: `Code/.obsidian/plugins/claudesidian-mcp`, vault `Code`),
+step 6 wrote `main.js` in place and there is nothing to deploy; confirm with
+`ls <vault>/.obsidian/plugins/*/manifest.json`. Otherwise, copy the bundle in
+first or you have verified an older bundle — `npm run deploy` is a
+Windows-only PowerShell script and does not help on macOS.
 
 ### 9. Commit and push
 ```bash

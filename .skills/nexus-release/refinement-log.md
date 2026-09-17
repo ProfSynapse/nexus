@@ -60,3 +60,13 @@ half-done bump could only be caught by the workflow after the tag was pushed. |
 Rebuilt as a router plus protocols/references, corrected every claim against the
 tree, and added `scripts/check_release_ready.py`, which reproduces the workflow's
 version guard locally. | whole skill.
+
+2026-09-17 | Cutting 5.18.7 (clean release). Step 8 said verify reloads
+`.obsidian/plugins/nexus/` and to "run your deploy step first" unless that
+folder is a symlink. Neither held: the vault's `nexus/` folder held only `data/`,
+the live plugin folder was this checkout itself (`claudesidian-mcp/`, manifest id
+`nexus`, inside vault `Code`), and `npm run deploy` is a Windows PowerShell
+script. The executor had to inspect the vault's plugin folders before trusting
+VERIFIED. | Reworded the step-8 paragraph: Obsidian keys on the manifest id, the
+in-vault checkout is built in place with nothing to deploy, one `ls` confirms
+it, and the deploy script is Windows-only. | `protocols/cut-release.md`.
