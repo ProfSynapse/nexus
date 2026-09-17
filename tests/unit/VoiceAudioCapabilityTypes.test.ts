@@ -245,6 +245,19 @@ describe('RealtimeVoiceTypes', () => {
     }));
   });
 
+  it('keeps Universal 3.5 Pro as the AssemblyAI realtime default ahead of the undocumented 3.6 ids', () => {
+    const ids = getRealtimeVoiceModelsForProvider('assemblyai').map(model => model.id);
+    expect(ids[0]).toBe('universal-3-5-pro');
+    expect(ids).toEqual(expect.arrayContaining(['universal-3-6-pro', 'universal-3-6']));
+    expect(ids).not.toContain('universal-3-7-preview');
+    for (const id of ['universal-3-6-pro', 'universal-3-6']) {
+      expect(getRealtimeVoiceModel('assemblyai', id)).toEqual(expect.objectContaining({
+        transport: 'websocket',
+        execution: 'transcription-pipeline'
+      }));
+    }
+  });
+
   it('declares AssemblyAI Universal 3.5 as a composed realtime pipeline', () => {
     const model = getRealtimeVoiceModel('assemblyai', 'universal-3-5-pro');
 
