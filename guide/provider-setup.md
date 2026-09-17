@@ -20,7 +20,7 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 
 - **Standard text chat**: any configured chat provider works in the chat model picker
 - **Image generation and editing**: configure an OpenAI key to select GPT Image 2.5 Sunburst or Flare. Both use medium quality and accept reference images. Adding these models does not change your saved default.
-- **Live voice**: configure OpenAI, then choose the live voice provider/model in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. Only OpenAI realtime/WebRTC is wired in the current build
+- **Live voice**: configure OpenAI, Google AI, or AssemblyAI, then choose the live voice provider/model in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. See [Native Chat](native-chat.md) for which models run the whole conversation and which only transcribe
 - **Read aloud and `generateAudio`**: configure a speech-capable backend such as OpenAI, ElevenLabs, Google AI, Mistral, or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. This is a different surface from live voice and is not OpenAI-only
 - **`generateVideo`**: configure Google AI or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Video**
 

@@ -3,6 +3,29 @@
 ## September 2026
 
 
+**v5.18.7** — The vault remembers your session and workspace, the CLI picks the vault you are standing in, and new live voice models
+
+**Pass `--workspace` and `--session` once, not on every call**
+- A session's workspace is bound the first time you pass `workspaceId` on a successful call or run `memory load-workspace`, and every later call in that session that omits it inherits it. Nothing defaults silently: a session that never chose still gets the "load or pass a workspace" steer, but answering it with `--workspace default` is no longer the expected move ([#386](https://github.com/ProfSynapse/nexus/pull/386)).
+- The vault also remembers which session the CLI last named with `--session`, so a `nexus use` with no flags continues that session (and its workspace). The CLI no longer fills in `workspaceId: "default"` / `sessionId: "nexus-cli"` client-side; only flags you actually pass are sent. New `nexus context` shows what the current vault remembers — session handle, display name, bound workspace — or that nothing has been chosen yet ([#387](https://github.com/ProfSynapse/nexus/pull/387)).
+- A fresh session can still `memory list-workspaces`, `create-workspace` and `load-workspace` before it has a workspace, since choosing one is how it gets bound. The CLI skill, playbooks and `--help` now teach "choose once, it is remembered" instead of restating both flags on every line.
+- `workspaceId` and `sessionId` are no longer marked required in the `useTools` / `getTools` schemas, and the examples no longer show `"workspaceId":"default"`.
+
+**The CLI selects the vault by working directory**
+- Running `nexus` from inside an open vault's folder targets that vault with no `--vault` flag. Resolution order is now `--vault` → `$NEXUS_VAULT` → the innermost open vault whose folder contains the current directory → the single open vault → an error listing the options. `nexus vaults` and `--help` print each vault's folder ([#385](https://github.com/ProfSynapse/nexus/pull/385)).
+
+**Session bindings survive a backgrounded Obsidian and a cold reload**
+- Session bindings used to be written on a 300 ms timer, and Electron throttles that timer while Obsidian is in the background — which is exactly when the CLI is in use — so a quit could lose a binding the in-memory state already had. Bindings are now written through immediately, with bursts collapsed to at most two writes ([#388](https://github.com/ProfSynapse/nexus/pull/388)).
+- A CLI call a few seconds after a plugin reload found storage still hydrating and quietly minted a new session id in place of the restored one. A restored handle is now kept when storage cannot list it yet; only a definite delete re-creates the record under the same id.
+- Two sessions created in the same second received the same `s-YYYYMMDDhhmmss` id and collapsed into one record. Ids are now strictly increasing per process.
+
+**New live voice models**
+- Gemini 3.8 Live and Gemini 3.8 Live Extended Thinking are available as Google live voice models, and 3.8 Live is the auto-selected Google default. Extended Thinking follows your app-wide thinking effort (low/medium/high). Gemini 3.1 Flash Live Preview stays so a saved selection is not invalidated ([#389](https://github.com/ProfSynapse/nexus/pull/389)).
+- AssemblyAI Universal 3.6 Pro and Universal 3.6 join Universal 3.5 Pro as realtime transcription models; 3.5 Pro remains the default ([#392](https://github.com/ProfSynapse/nexus/pull/392)).
+- The live voice guide and provider setup page list the current native-agent and transcription models; provider setup no longer claims only OpenAI realtime is wired.
+
+---
+
 **v5.18.6** — GPT-6 Astra and GPT Image 2.5
 
 - GPT-6 Astra is available in the OpenAI, OpenRouter, and ChatGPT/Codex model lists. OpenAI requests omit the sampling parameters Astra rejects. Live completions and tool calls were verified through OpenAI and OpenRouter; ChatGPT/Codex verification remains pending a refreshed login and compatible client.

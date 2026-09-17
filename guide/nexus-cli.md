@@ -136,8 +136,11 @@ The vault name lives in the socket name, so selection happens at call time:
 
 1. `--vault <name>` — the human vault name works (`--vault "My Notes"`).
 2. `NEXUS_VAULT` env var — pin a vault for a shell/session.
-3. exactly one vault open → used automatically.
-4. multiple open, none specified → error listing them (run `nexus vaults`).
+3. the current directory — running from inside an open vault's folder selects
+   that vault (the innermost containing vault wins when vaults nest).
+4. exactly one vault open → used automatically.
+5. multiple open, none matched → error listing them (run `nexus vaults`, which
+   also shows each vault's folder).
 
 ## Timeouts
 
@@ -179,7 +182,7 @@ timed-out image or file write can still land in the vault afterwards.
   -> External agents -> Local CLI**: if it says "not yet on your PATH", it shows
   the line to paste and where. An account with no shell profile at all is the
   usual cause on macOS — nothing has ever added `~/.local/bin`.
-- **"Multiple vaults open"** — run `nexus vaults`, then pass `--vault <name>`.
+- **"Multiple vaults open"** — run from inside the vault's folder, or run `nexus vaults` and pass `--vault <name>`.
 - **Rejected for missing memory/goal** — every `use` needs `--memory` and
   `--goal`.
 - **PowerShell split a legacy command** — move context flags before `--` and

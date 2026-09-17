@@ -58,8 +58,8 @@ Live voice comes in two shapes, and the model you pick decides which one you get
 
 | Shape | Models | How it works |
 |-------|--------|--------------|
-| **Native agent** | OpenAI GPT Realtime (WebRTC), Gemini Flash Live (WebSocket) | The voice provider owns the whole conversation — it listens, thinks, and speaks |
-| **Composed pipeline** | OpenAI GPT Live Transcribe, AssemblyAI Universal 3.5 Pro Realtime | The provider only transcribes. Your reply comes from your normal Nexus chat model and tools, then the configured speech model speaks it |
+| **Native agent** | OpenAI GPT Realtime (WebRTC), Gemini 3.8 Live, Gemini 3.8 Live Extended Thinking, Gemini 3.1 Flash Live (WebSocket) | The voice provider owns the whole conversation — it listens, thinks, and speaks |
+| **Composed pipeline** | OpenAI GPT Live Transcribe, AssemblyAI Universal 3.5 Pro / 3.6 Pro / 3.6 Realtime | The provider only transcribes. Your reply comes from your normal Nexus chat model and tools, then the configured speech model speaks it |
 
 Composed pipelines are the option to pick when you want live voice to use your actual chat model rather than whatever the voice provider hosts. For those models the voice dropdown reads *"Uses speech default"* and is disabled, since the voice comes from your speech model. Talking over a reply interrupts it — the answer you spoke over is discarded rather than spoken.
 
