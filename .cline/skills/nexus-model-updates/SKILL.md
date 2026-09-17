@@ -36,16 +36,22 @@ python3 .claude/skills/nexus-model-updates/scripts/check_model_registry.py \
    models live in the image adapters' own catalogs, not in `<Provider>Models.ts`,
    the structural gate does not see them, and the committed tool catalogs embed
    their enum.
-5. **Before calling any of the above done** — run `protocols/verify-model.md`. You
+5. **A Live / realtime voice model** (Google `*-live*`, OpenAI `gpt-realtime*`)
+   — follow `protocols/add-realtime-voice-model.md`. These ids answer only over
+   a WebSocket session, so they do not belong in `<Provider>Models.ts`, the
+   structural gate does not see them, and the provider smoke lane cannot prove
+   them; the realtime smoke lane drives the shipped session instead.
+6. **Before calling any of the above done** — run `protocols/verify-model.md`. You
    MUST get a zero exit from
    `scripts/check_model_registry.py --repo-root . <provider>`, and you MUST NOT
    report a model as working on the strength of a registry entry: the entry is a
    claim about an id, and only a live call tests it.
-6. **End of a session that used this skill** — run `protocols/self-refine.md`.
+7. **End of a session that used this skill** — run `protocols/self-refine.md`.
 
 ## Map
-- `protocols/` the procedures: add-model, add-image-model, change-default,
-  add-provider-registry, verify-model, self-refine.
+- `protocols/` the procedures: add-model, add-image-model,
+  add-realtime-voice-model, change-default, add-provider-registry,
+  verify-model, self-refine.
 - `references/` mechanism, read on demand: `registry-anatomy.md` (what a
   `ModelSpec` field means and how to fill it), `consumers.md` (who reads the
   registries and what silently breaks when metadata is wrong),
