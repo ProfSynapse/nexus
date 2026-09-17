@@ -223,6 +223,30 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     supportsTools: true,
     supportsTranscripts: true
   },
+  // Accepted by the v3 streaming endpoint (its validation enum lists them) but
+  // absent from AssemblyAI's published model and pricing pages as of
+  // 2026-09-17, so 3.5 Pro stays the default until they are documented. Both
+  // transcribed a spoken phrase through the shipped session on that date;
+  // `universal-3-7-preview`, also in the enum, opens and then cancels the
+  // session with an error, so it is deliberately not listed.
+  {
+    provider: 'assemblyai',
+    id: 'universal-3-6-pro',
+    name: 'Universal 3.6 Pro Realtime',
+    transport: 'websocket',
+    execution: 'transcription-pipeline',
+    supportsTools: true,
+    supportsTranscripts: true
+  },
+  {
+    provider: 'assemblyai',
+    id: 'universal-3-6',
+    name: 'Universal 3.6 Realtime',
+    transport: 'websocket',
+    execution: 'transcription-pipeline',
+    supportsTools: true,
+    supportsTranscripts: true
+  },
   {
     provider: 'elevenlabs',
     id: 'eleven-agents-conversation',
