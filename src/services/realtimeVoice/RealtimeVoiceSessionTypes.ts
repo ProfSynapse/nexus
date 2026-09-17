@@ -1,4 +1,4 @@
-import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
+import type { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTypes';
 import type { LiveVoiceComposerState } from '../../ui/chat/types/LiveVoiceTypes';
 
 export interface RealtimeVoiceSessionCallbacks {
@@ -38,6 +38,8 @@ export interface ResolvedOpenAIRealtimeVoiceSessionRequest extends BaseResolvedR
 
 export interface ResolvedGoogleRealtimeVoiceSessionRequest extends BaseResolvedRealtimeVoiceSessionRequest {
   provider: 'google';
+  /** Set only for models that require a thinking level; sent as `thinkingConfig.thinkingLevel`. */
+  thinkingEffort?: ThinkingEffort;
 }
 
 export interface ResolvedAssemblyAIRealtimeVoiceSessionRequest extends BaseResolvedRealtimeVoiceSessionRequest {

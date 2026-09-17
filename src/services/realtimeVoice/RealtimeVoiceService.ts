@@ -1,4 +1,4 @@
-import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
+import type { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTypes';
 import {
   buildRealtimeVoiceProviderAvailability,
   getRealtimeVoiceModel,
@@ -72,6 +72,7 @@ export class RealtimeVoiceService {
         voice: selection.voice,
         apiKey: this.getGoogleApiKey(),
         instructions: request.instructions,
+        thinkingEffort: this.resolveGoogleThinkingEffort(selection.model),
         callbacks: request.callbacks,
       };
     }
@@ -99,6 +100,21 @@ export class RealtimeVoiceService {
       instructions: request.instructions,
       callbacks: request.callbacks,
     };
+  }
+
+  /**
+   * Translate the app's unified thinking effort for Live models that demand a
+   * thinking level, mirroring the chat adapter's Gemini 3 mapping. "Thinking
+   * off" has no legal encoding on such a model, so it lands on the model's
+   * floor. Models without a floor get nothing — Google rejects the field.
+   */
+  private resolveGoogleThinkingEffort(model: string): ThinkingEffort | undefined {
+    const floor = getRealtimeVoiceModel('google', model)?.thinkingLevelFloor;
+    if (!floor) {
+      return undefined;
+    }
+    const thinking = this.llmSettings?.defaultThinking;
+    return thinking?.enabled ? thinking.effort : floor;
   }
 
   private resolveSelection(): RealtimeVoiceSelection | null {

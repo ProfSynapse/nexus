@@ -213,6 +213,38 @@ describe('RealtimeVoiceTypes', () => {
     expect(model?.voices?.some(voice => voice.id === 'Kore')).toBe(true);
   });
 
+  it('auto-selects Gemini 3.8 Live as the Google realtime default', () => {
+    const settings = makeSettings({
+      providers: {
+        ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+        openai: providerConfig({ enabled: false }),
+        google: providerConfig()
+      }
+    });
+
+    const selection = resolveDefaultRealtimeVoiceSelection(settings);
+
+    expect(selection).toEqual(expect.objectContaining({
+      provider: 'google',
+      model: 'gemini-3.8-live',
+      source: 'auto',
+      status: 'resolved'
+    }));
+  });
+
+  it('declares a thinking floor only for Gemini 3.8 Live Extended Thinking', () => {
+    // The base model closes the socket if thinkingConfig is present; the
+    // extended model closes it if thinkingConfig is absent. The floor is how
+    // the session tells them apart.
+    expect(getRealtimeVoiceModel('google', 'gemini-3.8-live')?.thinkingLevelFloor).toBeUndefined();
+    expect(getRealtimeVoiceModel('google', 'gemini-3.8-live-extended-thinking')).toEqual(expect.objectContaining({
+      transport: 'websocket',
+      execution: 'native-agent',
+      defaultVoice: 'Kore',
+      thinkingLevelFloor: 'low'
+    }));
+  });
+
   it('declares AssemblyAI Universal 3.5 as a composed realtime pipeline', () => {
     const model = getRealtimeVoiceModel('assemblyai', 'universal-3-5-pro');
 
