@@ -9,6 +9,7 @@
 import type {
   DefaultRealtimeVoiceModelSettings,
   LLMProviderSettings,
+  ThinkingEffort,
   VoiceDefaultSelectionSource
 } from '../../../types/llm/ProviderTypes';
 
@@ -35,6 +36,13 @@ export interface RealtimeVoiceModelDeclaration {
   supportsTranscripts: boolean;
   maxSessionMinutes?: number;
   requiresAgent?: boolean;
+  /**
+   * The model rejects a session unless a thinking level is sent, and rejects
+   * any level below this floor. The session translates the app's unified
+   * `ThinkingEffort` the same way the chat adapter does; models without this
+   * field must not receive a `thinkingConfig` at all — Google rejects that too.
+   */
+  thinkingLevelFloor?: ThinkingEffort;
 }
 
 export interface RealtimeVoiceProviderAvailability {
@@ -158,6 +166,33 @@ const REALTIME_VOICE_MODELS: RealtimeVoiceModelDeclaration[] = [
     supportsTools: true,
     supportsTranscripts: true,
     maxSessionMinutes: 60
+  },
+  // Gemini 3.8 Live (GA, September 2026). The base model rejects any
+  // thinkingConfig; the Extended Thinking variant refuses to start without one
+  // and accepts low/medium/high (minimal is rejected). Both proven over the
+  // Live API WebSocket with the session's setup shape on 2026-09-17.
+  {
+    provider: 'google',
+    id: 'gemini-3.8-live',
+    name: 'Gemini 3.8 Live',
+    transport: 'websocket',
+    execution: 'native-agent',
+    defaultVoice: 'Kore',
+    voices: GOOGLE_REALTIME_VOICES,
+    supportsTools: true,
+    supportsTranscripts: true
+  },
+  {
+    provider: 'google',
+    id: 'gemini-3.8-live-extended-thinking',
+    name: 'Gemini 3.8 Live Extended Thinking',
+    transport: 'websocket',
+    execution: 'native-agent',
+    defaultVoice: 'Kore',
+    voices: GOOGLE_REALTIME_VOICES,
+    supportsTools: true,
+    supportsTranscripts: true,
+    thinkingLevelFloor: 'low'
   },
   {
     provider: 'google',

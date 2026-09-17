@@ -145,4 +145,42 @@ describe('RealtimeVoiceService', () => {
       },
     }).mode).toBe('composed');
   });
+
+  describe('Google thinking effort translation', () => {
+    function googleSettings(model: string, overrides: Partial<LLMProviderSettings> = {}): LLMProviderSettings {
+      return buildSettings({
+        providers: {
+          openai: { enabled: false, apiKey: '' },
+          google: { enabled: true, apiKey: 'google-key' },
+        },
+        defaultRealtimeVoiceModel: { provider: 'google', model, source: 'user' },
+        ...overrides,
+      });
+    }
+
+    function resolvedThinkingEffort(settings: LLMProviderSettings): string | undefined {
+      const session = new RealtimeVoiceService(settings).createSession({
+        callbacks: { onStateChange: jest.fn(), onError: jest.fn() },
+      }) as unknown as { request: { thinkingEffort?: string } };
+      return session.request.thinkingEffort;
+    }
+
+    it('carries the app-wide thinking effort to a model that requires a level', () => {
+      expect(resolvedThinkingEffort(googleSettings('gemini-3.8-live-extended-thinking', {
+        defaultThinking: { enabled: true, effort: 'high' },
+      }))).toBe('high');
+    });
+
+    it('falls back to the model floor when thinking is off', () => {
+      expect(resolvedThinkingEffort(googleSettings('gemini-3.8-live-extended-thinking', {
+        defaultThinking: { enabled: false, effort: 'high' },
+      }))).toBe('low');
+    });
+
+    it('sends no thinking level to models that reject one', () => {
+      expect(resolvedThinkingEffort(googleSettings('gemini-3.8-live', {
+        defaultThinking: { enabled: true, effort: 'high' },
+      }))).toBeUndefined();
+    });
+  });
 });

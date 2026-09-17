@@ -119,6 +119,11 @@ export class GoogleRealtimeVoiceSession implements RealtimeVoiceSession {
             model: `models/${this.request.model}`,
             generationConfig: {
               responseModalities: ['AUDIO'],
+              // Only models declaring a thinking floor get this; the others
+              // close the socket with 1007 if it is present.
+              ...(this.request.thinkingEffort
+                ? { thinkingConfig: { thinkingLevel: this.request.thinkingEffort } }
+                : {}),
               speechConfig: {
                 voiceConfig: {
                   prebuiltVoiceConfig: {
