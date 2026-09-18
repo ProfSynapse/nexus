@@ -314,3 +314,81 @@ describe('TraceIndexer', () => {
     });
   });
 });
+
+/**
+ * Phase 0 characterization for docs/plans/sqlite-cache-persistence-plan.md.
+ *
+ * Unlike the other two call sites, this one is already correct, and that is why
+ * it is pinned. `IndexingQueue` lets a failed final save abort the whole run and
+ * `ConversationIndexer` lets one wipe its resume checkpoint; `TraceIndexer`
+ * swallows both and returns its counts. Three call sites, three behaviours for
+ * the same failure.
+ *
+ * Phase 2 makes the other two behave like this one. These tests exist so that
+ * refactor cannot quietly make this one behave like the other two instead.
+ *
+ * What the fakes decide, and what they do not: `embedTrace` always succeeds,
+ * which matches production (`embedTrace()` catches its own failures and never
+ * rethrows), and `db.save()` is made to reject. Everything asserted on is the
+ * real TraceIndexer.start() loop.
+ */
+describe('TraceIndexer save path (Phase 0 characterization)', () => {
+  function createSaveHarness(traceCount: number, saveInterval: number) {
+    const mocks = createMockDependencies();
+    const traces = Array.from({ length: traceCount }, (_, i) => createTraceRow(`trace-${i}`));
+    mocks.mockDb.query
+      .mockResolvedValueOnce(traces)   // all traces
+      .mockResolvedValueOnce([]);      // none already embedded
+    const indexer = createIndexer(mocks, saveInterval, 0);
+    return { mocks, indexer, traces };
+  }
+
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  function loggedMessages(): string[] {
+    return errorSpy.mock.calls.map(call => String(call[0]));
+  }
+
+  it('keeps embedding traces after a periodic save fails, and finishes the run', async () => {
+    const { mocks, indexer } = createSaveHarness(6, 2);
+    mocks.mockDb.save.mockRejectedValue(new RangeError('Array buffer allocation failed'));
+
+    const result = await indexer.start(null, () => false, noOpAsync);
+
+    // Every trace was embedded despite three failed periodic saves plus the
+    // failed final one. A run that embedded everything and could not write the
+    // snapshot is a partial success, not an aborted run.
+    expect(mocks.mockEmbeddingService.embedTrace).toHaveBeenCalledTimes(6);
+    expect(result).toEqual({ total: 6, processed: 6 });
+    expect(indexer.getIsRunning()).toBe(false);
+
+    // And it says what actually failed, naming persistence rather than the
+    // trace. This is the wording IndexingQueue does not have.
+    const saveFailures = loggedMessages().filter(m => m.includes('Failed to persist embeddings around trace'));
+    expect(saveFailures.length).toBeGreaterThan(0);
+  });
+
+  it('returns normally when only the final save fails', async () => {
+    // Three traces with a save interval of ten: no periodic save fires, so the
+    // only save is the final one and the failure is attributable to it.
+    const { mocks, indexer } = createSaveHarness(3, 10);
+    mocks.mockDb.save.mockRejectedValue(new RangeError('Array buffer allocation failed'));
+
+    const result = await indexer.start(null, () => false, noOpAsync);
+
+    expect(mocks.mockDb.save).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ total: 3, processed: 3 });
+    // The outer handler caught it and the progress callback still reported the
+    // final count, so the owning queue is not left believing nothing happened.
+    expect(loggedMessages().some(m => m.includes('Trace processing failed'))).toBe(true);
+    expect(mocks.progressCalls.at(-1)).toEqual({ totalTraces: 3, processedTraces: 3 });
+  });
+});

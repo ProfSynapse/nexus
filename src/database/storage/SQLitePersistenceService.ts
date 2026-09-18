@@ -10,9 +10,17 @@ interface SQLitePersistenceServiceOptions {
   bridge: SQLiteWasmBridge;
 }
 
+/**
+ * Floor between two cache-size console lines. One a minute is discoverable
+ * without being the reason a long index run's console is unreadable.
+ */
+const SIZE_REPORT_INTERVAL_MS = 60_000;
+
 export class SQLitePersistenceService {
   private readonly bridge: SQLiteWasmBridge;
   private readonly blobStore: CacheBlobStore;
+  /** Epoch ms of the last size line, or null when none has been emitted yet. */
+  private lastSizeReportAt: number | null = null;
 
   constructor(options: SQLitePersistenceServiceOptions) {
     this.blobStore = options.blobStore;
@@ -109,10 +117,57 @@ export class SQLitePersistenceService {
       }
 
       await this.blobStore.write(buffer);
+      this.reportSavedSize(buffer.byteLength);
     } catch (error) {
       console.error('[SQLiteCacheManager] Failed to save to blob store:', error);
       throw error;
     }
+  }
+
+  /**
+   * Say how big the thing we just wrote was, once per successful save, rate
+   * limited.
+   *
+   * The number matters because every save allocates roughly three copies of
+   * it (the WASM heap original, the exported JS buffer, and the backend's own
+   * copy), and a `RangeError: Array buffer allocation failed` during indexing
+   * is that figure meeting a fragmented heap. Until now nothing anywhere told a
+   * user or a bug report what that figure was; `getStatistics().dbSizeBytes`
+   * had to be asked for deliberately, which nobody does before filing.
+   *
+   * `buffer.byteLength` is the exact size that was written and costs nothing:
+   * the buffer is already in hand, no extra read, no extra query, and this runs
+   * only after the write has already succeeded, so it cannot change save
+   * behaviour or introduce a new failure.
+   *
+   * `console.warn`, which is not a free choice: `logger.systemWarn` and
+   * `systemLog` are no-ops in this build, and the repo's ESLint config enforces
+   * the Obsidian plugin guideline that only `warn` and `error` may be used, so
+   * `info` and `log` are not available however well they would fit. Between the
+   * two that remain, `error` would dress a routine success up as a failure.
+   * `warn` also reads correctly once the number is large, which is the only
+   * situation in which anyone goes looking for it. Same reasoning as
+   * reportCacheRebuild above, one level quieter because nothing has failed.
+   *
+   * Rate limited because a full index currently saves every ten notes: an
+   * 18k-note vault would otherwise put roughly 1800 identical lines in the
+   * console and bury everything else. First save always reports, then at most
+   * one line per interval.
+   */
+  private reportSavedSize(byteLength: number): void {
+    const now = Date.now();
+    if (this.lastSizeReportAt !== null && now - this.lastSizeReportAt < SIZE_REPORT_INTERVAL_MS) {
+      return;
+    }
+    this.lastSizeReportAt = now;
+
+    const megabytes = (byteLength / (1024 * 1024)).toFixed(1);
+    console.warn(
+      `[SQLiteCacheManager] Saved cache database: ${byteLength} bytes (${megabytes} MB). ` +
+      'Each save copies this much out of the WASM heap and again into the backing store, so if ' +
+      'saves start failing with an allocation error this is the number that explains it. ' +
+      'Reported at most once per minute.'
+    );
   }
 
   async recreateCorruptedDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {

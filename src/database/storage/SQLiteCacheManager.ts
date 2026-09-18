@@ -36,7 +36,7 @@ import {
 import { SQLiteTransactionCoordinator } from './SQLiteTransactionCoordinator';
 import { SQLiteSyncStateStore } from './SQLiteSyncStateStore';
 import { SQLitePersistenceService } from './SQLitePersistenceService';
-import { SQLiteMaintenanceService, SQLiteMaintenanceStatistics } from './SQLiteMaintenanceService';
+import { SQLiteMaintenanceService, SQLiteMaintenanceStatistics, SQLiteObjectPageUsage } from './SQLiteMaintenanceService';
 import type { CacheBlobStore } from './CacheBlobStore';
 import { createCacheBlobStore, computeIdbKey } from './CacheBlobStoreFactory';
 import { resolveActivePluginFolderName } from './PluginStoragePathResolver';
@@ -623,6 +623,17 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async getStatistics(): Promise<SQLiteMaintenanceStatistics> {
     return this.getMaintenanceService().getStatistics();
+  }
+
+  /**
+   * Per-table byte breakdown of the persisted database, from `dbstat`.
+   *
+   * On-demand only: it walks every page, so it is not part of getStatistics()
+   * and does not belong on any startup or save path. Returns null when dbstat
+   * is not available. See SQLiteMaintenanceService.getObjectPageUsage.
+   */
+  async getObjectPageUsage(): Promise<SQLiteObjectPageUsage[] | null> {
+    return this.getMaintenanceService().getObjectPageUsage();
   }
 
   // ==================== Utilities ====================

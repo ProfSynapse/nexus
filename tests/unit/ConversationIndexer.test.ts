@@ -584,3 +584,212 @@ describe('ConversationIndexer', () => {
     });
   });
 });
+
+/**
+ * Phase 0 characterization for docs/plans/sqlite-cache-persistence-plan.md,
+ * section 6b. No production code changes with this; it pins what the code does
+ * today so Phase 2 has to turn a red test green.
+ *
+ * The defect: the final `db.save()` is inside the outer try. When it throws,
+ * the handler writes `lastProcessedConversationId: null` and
+ * `processedConversations: 0`. The resume logic keys entirely off
+ * `lastProcessedConversationId`, so the next launch restarts the backfill at
+ * conversation zero and re-embeds every conversation in the vault at full API
+ * cost. On the machine that motivated the plan the save is exactly the thing
+ * that keeps failing, so this is not hypothetical.
+ *
+ * What the fake decides, and what it does not: the db here is STATEFUL. It
+ * really stores the `embedding_backfill_state` row that `updateBackfillState`
+ * writes and really hands it back to the next run's resume query. That is the
+ * whole point: an assertion that a field was written proves nothing, because
+ * the damage is what the next run does with it. The resume decision, the
+ * restart, and the re-embedding are all the real ConversationIndexer.
+ */
+describe('ConversationIndexer resume checkpoint (Phase 0 characterization)', () => {
+  interface StoredBackfillState {
+    id: string;
+    lastProcessedConversationId: string | null;
+    totalConversations: number;
+    processedConversations: number;
+    status: string;
+    startedAt: number | null;
+    completedAt: number | null;
+    errorMessage: string | null;
+  }
+
+  /**
+   * A db fake that persists the one table this behaviour turns on, so a second
+   * run reads back what the first run actually wrote.
+   */
+  function createStatefulDb(conversationIds: string[]) {
+    let state: StoredBackfillState | null = null;
+    const save = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
+    /** Conversation ids whose messages were fetched, in order, across all runs. */
+    const messageFetches: string[] = [];
+
+    const conversations = conversationIds.map(id => ({
+      id,
+      metadataJson: null,
+      workspaceId: 'ws-1',
+      sessionId: 'sess-1'
+    }));
+
+    const db = {
+      queryOne: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT * FROM embedding_backfill_state')) {
+          return state ? { ...state } : null;
+        }
+        if (sql.includes('SELECT id FROM embedding_backfill_state')) {
+          return state ? { id: state.id } : null;
+        }
+        return null;
+      }),
+      query: jest.fn(async (sql: string, params?: unknown[]) => {
+        if (sql.includes('FROM conversations')) {
+          return conversations.map(c => ({ ...c }));
+        }
+        if (sql.includes('FROM messages')) {
+          const conversationId = String(params?.[0] ?? '');
+          messageFetches.push(conversationId);
+          return [
+            { ...createMessageRow({ id: `${conversationId}-m0`, conversationId, role: 'user', sequenceNumber: 0 }) },
+            { ...createMessageRow({ id: `${conversationId}-m1`, conversationId, role: 'assistant', sequenceNumber: 1 }) }
+          ];
+        }
+        return [];
+      }),
+      run: jest.fn(async (sql: string, params?: unknown[]) => {
+        const values = params ?? [];
+        if (sql.includes('UPDATE embedding_backfill_state')) {
+          state = {
+            id: String(values[6]),
+            lastProcessedConversationId: values[0] as string | null,
+            totalConversations: values[1] as number,
+            processedConversations: values[2] as number,
+            status: String(values[3]),
+            startedAt: state?.startedAt ?? null,
+            completedAt: values[4] as number | null,
+            errorMessage: values[5] as string | null
+          };
+        } else if (sql.includes('INSERT INTO embedding_backfill_state')) {
+          state = {
+            id: String(values[0]),
+            lastProcessedConversationId: values[1] as string | null,
+            totalConversations: values[2] as number,
+            processedConversations: values[3] as number,
+            status: String(values[4]),
+            startedAt: values[5] as number | null,
+            completedAt: values[6] as number | null,
+            errorMessage: values[7] as string | null
+          };
+        }
+        return undefined;
+      }),
+      save
+    };
+
+    return {
+      db,
+      save,
+      messageFetches,
+      readState: () => state,
+      seedState: (seed: Partial<StoredBackfillState>) => {
+        state = {
+          id: 'conversation_backfill',
+          lastProcessedConversationId: null,
+          totalConversations: conversationIds.length,
+          processedConversations: 0,
+          status: 'running',
+          startedAt: Date.now(),
+          completedAt: null,
+          errorMessage: null,
+          ...seed
+        };
+      }
+    };
+  }
+
+  function createIndexerOn(
+    stateful: ReturnType<typeof createStatefulDb>,
+    saveInterval = 100
+  ) {
+    const embeddingService = {
+      isServiceEnabled: jest.fn().mockReturnValue(true),
+      embedConversationTurn: jest.fn().mockResolvedValue(undefined)
+    };
+    const indexer = new ConversationIndexer(
+      stateful.db as unknown as SQLiteCacheManager,
+      embeddingService as unknown as EmbeddingService,
+      jest.fn(),
+      saveInterval
+    );
+    return { indexer, embeddingService };
+  }
+
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  // PHASE 2 INVERTS THIS. Option B's third item: a failing save must preserve
+  // `lastProcessedConversationId` and `processedConversations` so the resume at
+  // ConversationIndexer:153-161 still works. This is described in the plan as
+  // the highest-value single line in the document measured in dollars of
+  // re-embedding.
+  it('nulls the resume checkpoint when the final save fails, so the next run restarts at zero', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+
+    // Run one: every conversation is embedded, then the snapshot cannot be
+    // written. saveInterval is above the conversation count, so the only save
+    // is the final one.
+    const first = createIndexerOn(stateful);
+    stateful.save.mockRejectedValue(new RangeError('Array buffer allocation failed'));
+    await first.indexer.start(null, 100);
+
+    expect(first.embeddingService.embedConversationTurn).toHaveBeenCalled();
+    expect(stateful.messageFetches).toEqual(['conv-1', 'conv-2', 'conv-3']);
+
+    // The checkpoint the next run needs has been overwritten with nothing.
+    const afterFailure = stateful.readState();
+    expect(afterFailure?.status).toBe('error');
+    expect(afterFailure?.lastProcessedConversationId).toBeNull();
+    expect(afterFailure?.processedConversations).toBe(0);
+
+    // The consequence, which is the part that costs money. Run two reads that
+    // checkpoint back through the real resume path and starts from the top.
+    stateful.messageFetches.length = 0;
+    stateful.save.mockResolvedValue(undefined);
+    const second = createIndexerOn(stateful);
+    const result = await second.indexer.start(null, 100);
+
+    expect(stateful.messageFetches).toEqual(['conv-1', 'conv-2', 'conv-3']);
+    expect(result).toEqual({ total: 3, processed: 3 });
+  });
+
+  // The control that makes the test above mean something. The resume path is
+  // live and works: with a checkpoint intact, the next run skips what was
+  // already done. So the restart above is caused by the null and by nothing
+  // else, and preserving the checkpoint in Phase 2 is sufficient to fix it.
+  it('resumes after the checkpoint when a failed run left one intact', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+    stateful.seedState({
+      status: 'error',
+      lastProcessedConversationId: 'conv-1',
+      processedConversations: 1,
+      errorMessage: 'Array buffer allocation failed'
+    });
+
+    const { indexer } = createIndexerOn(stateful);
+    const result = await indexer.start(null, 100);
+
+    // conv-1 is not re-embedded.
+    expect(stateful.messageFetches).toEqual(['conv-2', 'conv-3']);
+    expect(result).toEqual({ total: 3, processed: 3 });
+    expect(stateful.readState()?.status).toBe('completed');
+  });
+});
