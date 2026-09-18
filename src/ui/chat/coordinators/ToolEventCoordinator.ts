@@ -370,7 +370,8 @@ export class ToolEventCoordinator {
   /**
    * Remember a meaningful goal string for the active turn (trimmed).
    * Deliberately uncapped: ToolStatusLine streams the words and follows
-   * them past the row edge, so length costs display time, never clipping.
+   * them past the row edge, then carousels the finished line on a loop, so
+   * length costs display time, never clipping.
    */
   private captureGoal(value: unknown): void {
     if (typeof value !== 'string') return;
