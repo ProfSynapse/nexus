@@ -2,6 +2,23 @@
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
+2026-09-18 | A user hit `RangeError: Array buffer allocation failed` during
+background indexing on a large vault, reported by the plugin as
+`[IndexingQueue] Failed to embed <path>`. Nothing in this skill pointed at
+persistence: `failure-modes.md` had no entry for an allocation failure, and
+`storage-model.md` described the export path without its cost. The diagnosis
+had to be rebuilt from the source, and the misleading log line meant the first
+hypothesis was the embedding provider. Separately, `storage-model.md` said the
+SQLite cache is rebuildable without saying that embeddings are not in the event
+store, which makes a rebuild cost a full re-embed of the vault in provider API
+calls. Both gaps invite an expensive wrong move. | Added the allocation-failure
+symptom entry to `failure-modes.md` (the stack is the tell, the two aggravators
+to check first, which statistics confirm it, and fix at the persistence layer
+rather than catching the RangeError at the call site), and a "rebuildable does
+not mean cheap" section to `storage-model.md`. Measurements behind both are in
+`docs/plans/sqlite-cache-persistence-spike-findings.md`. |
+`references/failure-modes.md`, `references/storage-model.md`,
+`refinement-log.md`.
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
 2026-08-24 | A 2026-08-21 entry below repointed this skill's validator command at
