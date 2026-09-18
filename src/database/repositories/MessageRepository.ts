@@ -41,6 +41,7 @@ interface MessageRow extends DatabaseRow {
   toolCallsJson?: string | null;
   toolCallId?: string | null;
   reasoningContent?: string | null;
+  reasoningSegmentsJson?: string | null;
   alternativesJson?: string | null;
   activeAlternativeIndex?: number | null;
   metadataJson?: string | null;
@@ -371,6 +372,12 @@ export class MessageRepository
             })),
             tool_call_id: data.toolCallId,
             state: data.state,
+            // JSONL is the source of truth and SQLite is a rebuildable cache, so
+            // reasoning written only to the INSERT below would vanish on the next
+            // rebuild. The event type has always declared this field and the
+            // applier has always read it -- only the writer was missing it.
+            reasoning: data.reasoning,
+            reasoning_segments: data.reasoningSegments,
             sequenceNumber,
             // Branching support
             alternatives: this.convertAlternativesToEvent(data.alternatives),
@@ -382,8 +389,8 @@ export class MessageRepository
       // 2. Update SQLite cache
       await this.sqliteCache.run(
         `INSERT INTO ${this.tableName}
-         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent, alternativesJson, activeAlternativeIndex)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent, reasoningSegmentsJson, alternativesJson, activeAlternativeIndex)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           conversationId,
@@ -395,6 +402,7 @@ export class MessageRepository
           data.toolCallId ?? null,
           sequenceNumber,
           data.reasoning ?? null,
+          data.reasoningSegments ? JSON.stringify(data.reasoningSegments) : null,
           data.alternatives ? JSON.stringify(data.alternatives) : null,
           data.activeAlternativeIndex ?? 0
         ]
@@ -417,6 +425,7 @@ export class MessageRepository
           toolCalls: data.toolCalls,
           toolCallId: data.toolCallId,
           reasoning: data.reasoning,
+          reasoningSegments: data.reasoningSegments,
           alternatives: data.alternatives,
           activeAlternativeIndex: data.activeAlternativeIndex ?? 0,
         });
@@ -468,6 +477,7 @@ export class MessageRepository
             content: data.content ?? undefined,
             state: data.state,
             reasoning: data.reasoning,
+            reasoning_segments: data.reasoningSegments,
             // Persist full tool call data including results so tool bubbles can be reconstructed
             tool_calls: data.toolCalls?.map(tc => ({
               id: tc.id,
@@ -502,6 +512,10 @@ export class MessageRepository
       if (data.reasoning !== undefined) {
         setClauses.push('reasoningContent = ?');
         params.push(data.reasoning);
+      }
+      if (data.reasoningSegments !== undefined) {
+        setClauses.push('reasoningSegmentsJson = ?');
+        params.push(data.reasoningSegments ? JSON.stringify(data.reasoningSegments) : null);
       }
       if (data.toolCalls !== undefined) {
         setClauses.push('toolCallsJson = ?');
@@ -560,6 +574,11 @@ export class MessageRepository
     }
     if (updates.reasoning !== undefined && updates.reasoning !== current.reasoning) {
       return true;
+    }
+    if (updates.reasoningSegments !== undefined) {
+      const currentJson = current.reasoningSegments ? JSON.stringify(current.reasoningSegments) : null;
+      const incomingJson = updates.reasoningSegments ? JSON.stringify(updates.reasoningSegments) : null;
+      if (currentJson !== incomingJson) return true;
     }
     if (updates.toolCallId !== undefined && updates.toolCallId !== current.toolCallId) {
       return true;
@@ -630,6 +649,10 @@ export class MessageRepository
     const toolCalls = parseJsonColumn<MessageData['toolCalls']>(row.toolCallsJson, `MessageRepository.toolCalls#${row.id}`);
     const metadata = parseJsonColumn<MessageJSONValue>(row.metadataJson, `MessageRepository.metadata#${row.id}`);
     const alternatives = parseJsonColumn<AlternativeMessage[]>(row.alternativesJson, `MessageRepository.alternatives#${row.id}`);
+    const reasoningSegments = parseJsonColumn<MessageData['reasoningSegments']>(
+      row.reasoningSegmentsJson,
+      `MessageRepository.reasoningSegments#${row.id}`
+    );
 
     return {
       id: row.id,
@@ -642,6 +665,7 @@ export class MessageRepository
       toolCalls,
       toolCallId: row.toolCallId ?? undefined,
       reasoning: row.reasoningContent ?? undefined,
+      reasoningSegments,
       metadata,
       alternatives,
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0
@@ -686,6 +710,7 @@ export class MessageRepository
         executionTime: tc.executionTime
       })),
       reasoning: alt.reasoning,
+      reasoning_segments: alt.reasoningSegments,
       state: alt.state
     }));
   }

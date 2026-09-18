@@ -119,6 +119,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private readonly persistenceService: SQLitePersistenceService;
   private readonly blobStore: CacheBlobStore;
   private maintenanceService?: SQLiteMaintenanceService;
+  /**
+   * Set when a schema migration ran that cannot fix existing rows in place.
+   * Consumed once by the adapter's startup path, because `initialize()` is
+   * re-entered by rebuildCache() and a stale flag would rebuild twice.
+   */
+  private pendingSchemaRebuild = false;
 
   constructor(options: SQLiteCacheManagerOptions) {
     this.app = options.app;
@@ -329,6 +335,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       if (migrationResult.applied > 0) {
         await this.saveToFile(); // Save after migrations
       }
+      // Hand the signal to the caller rather than dropping it: the result object
+      // used to die in this scope, so `needsRebuild` could never mean anything.
+      this.pendingSchemaRebuild = migrationResult.needsRebuild;
 
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
@@ -346,6 +355,17 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       console.error('[SQLiteCacheManager] Initialization failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * Whether the schema migration that just ran needs the cache replayed from
+   * JSONL, clearing the flag as it reports it. Consume-once so the second
+   * `initialize()` that rebuildCache() performs does not rebuild again.
+   */
+  consumeSchemaRebuildRequest(): boolean {
+    const pending = this.pendingSchemaRebuild;
+    this.pendingSchemaRebuild = false;
+    return pending;
   }
 
   /**

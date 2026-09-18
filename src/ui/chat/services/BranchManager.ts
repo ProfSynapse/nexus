@@ -43,6 +43,7 @@ interface BranchMessageUpdateParams {
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   toolCalls?: ToolCall[];
   reasoning?: string;
+  reasoningSegments?: ConversationMessage['reasoningSegments'];
   metadata?: Record<string, unknown>;
 }
 
@@ -231,6 +232,7 @@ export class BranchManager {
     const updates: BranchMessageUpdateParams = {
       state,
       reasoning: message.reasoning,
+      reasoningSegments: message.reasoningSegments,
     };
 
     if (message.toolCalls) {
