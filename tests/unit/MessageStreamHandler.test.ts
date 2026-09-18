@@ -123,7 +123,9 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     const result = await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
     const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
 
-    expect(onReasoningUpdate).toHaveBeenLastCalledWith('msg_ai', 'Think', true);
+    expect(onReasoningUpdate).toHaveBeenLastCalledWith('msg_ai', 'Think', true, [
+      { text: 'Think', contentOffset: 0 },
+    ]);
     expect(aiMessage?.reasoning).toBe('Think');
     expect(aiMessage?.usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
     expect(aiMessage?.metadata).toEqual({ responseId: 'response-1', zero: 0 });

@@ -138,6 +138,7 @@ export class BranchService {
       state?: string;
       toolCalls?: ChatMessage['toolCalls'];
       reasoning?: string;
+      reasoningSegments?: ChatMessage['reasoningSegments'];
     }
   ): Promise<void> {
     await this.conversationService.updateMessage(branchId, messageId, {
@@ -145,6 +146,7 @@ export class BranchService {
       state: updates.state as ChatMessage['state'],
       toolCalls: updates.toolCalls,
       reasoning: updates.reasoning,
+      reasoningSegments: updates.reasoningSegments,
     });
   }
 

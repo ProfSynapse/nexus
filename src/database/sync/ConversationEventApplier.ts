@@ -147,8 +147,8 @@ export class ConversationEventApplier {
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO messages
-       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, sequenceNumber, alternativesJson, activeAlternativeIndex)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, reasoningSegmentsJson, sequenceNumber, alternativesJson, activeAlternativeIndex)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
         event.conversationId,
@@ -159,6 +159,7 @@ export class ConversationEventApplier {
         event.data.tool_calls ? JSON.stringify(event.data.tool_calls) : null,
         event.data.tool_call_id ?? null,
         event.data.reasoning ?? null,
+        event.data.reasoning_segments ? JSON.stringify(event.data.reasoning_segments) : null,
         event.data.sequenceNumber ?? 0,
         event.data.alternatives ? JSON.stringify(event.data.alternatives) : null,
         event.data.activeAlternativeIndex ?? 0
@@ -179,6 +180,10 @@ export class ConversationEventApplier {
     if (event.data.content !== undefined) { updates.push('content = ?'); values.push(event.data.content); }
     if (event.data.state !== undefined) { updates.push('state = ?'); values.push(event.data.state); }
     if (event.data.reasoning !== undefined) { updates.push('reasoningContent = ?'); values.push(event.data.reasoning); }
+    if (event.data.reasoning_segments !== undefined) {
+      updates.push('reasoningSegmentsJson = ?');
+      values.push(event.data.reasoning_segments ? JSON.stringify(event.data.reasoning_segments) : null);
+    }
     if (event.data.tool_calls !== undefined) {
       updates.push('toolCallsJson = ?');
       values.push(event.data.tool_calls ? JSON.stringify(event.data.tool_calls) : null);

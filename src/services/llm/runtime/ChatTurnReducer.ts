@@ -1,6 +1,7 @@
 import type {
   MessageCost,
   MessageUsage,
+  ReasoningSegment,
   ToolCall,
 } from '../../../types/chat/ChatTypes';
 import {
@@ -24,6 +25,15 @@ export interface ChatTurnReasoningState {
   complete: boolean;
   blockId?: string;
   encryptedContent?: string;
+  /**
+   * `text` split into the runs the model emitted, each anchored to the content
+   * length at the moment it opened. A run stays open only while reasoning
+   * deltas keep arriving; visible text, a tool call or a reasoning.completed
+   * closes it, so the next delta starts a new run.
+   */
+  segments: ReasoningSegment[];
+  /** Index into `segments` of the run still accepting deltas, if any. */
+  openSegmentIndex?: number;
 }
 
 export interface ChatTurnState {
@@ -47,6 +57,7 @@ export function createInitialChatTurnState(): ChatTurnState {
     reasoning: {
       text: '',
       complete: false,
+      segments: [],
     },
     toolCalls: [],
     metadata: {},
@@ -77,6 +88,7 @@ export function reduceChatTurn(
         ...state,
         phase: activePhase(state.phase),
         content: state.content + event.text,
+        reasoning: closeReasoningSegment(state.reasoning),
       };
     case 'reasoning.delta':
       return {
@@ -87,6 +99,7 @@ export function reduceChatTurn(
           complete: false,
           blockId: event.blockId ?? state.reasoning.blockId,
           encryptedContent: event.encryptedContent ?? state.reasoning.encryptedContent,
+          ...appendReasoningDelta(state.reasoning, event.text, state.content.length, event.blockId),
         },
       };
     case 'reasoning.completed':
@@ -94,7 +107,7 @@ export function reduceChatTurn(
         ...state,
         phase: activePhase(state.phase),
         reasoning: {
-          ...state.reasoning,
+          ...closeReasoningSegment(state.reasoning),
           complete: true,
           blockId: event.blockId ?? state.reasoning.blockId,
         },
@@ -112,6 +125,7 @@ export function reduceChatTurn(
           ? 'waiting-for-tool'
           : activePhase(state.phase),
         toolCalls,
+        reasoning: closeReasoningSegment(state.reasoning),
       };
     }
     case 'tool.execution.started':
@@ -119,12 +133,14 @@ export function reduceChatTurn(
         ...state,
         phase: 'executing-tool',
         toolCalls: mergeToolCallSnapshots(state.toolCalls, [event.call]),
+        reasoning: closeReasoningSegment(state.reasoning),
       };
     case 'tool.execution.completed':
       return {
         ...state,
         phase: 'streaming',
         toolCalls: mergeToolCallSnapshots(state.toolCalls, [event.call]),
+        reasoning: closeReasoningSegment(state.reasoning),
       };
     case 'usage.updated':
       return { ...state, usage: { ...event.usage } };
@@ -147,6 +163,7 @@ export function reduceChatTurn(
         phase: event.finishReason === 'tool_calls'
           ? 'waiting-for-tool'
           : activePhase(state.phase),
+        reasoning: closeReasoningSegment(state.reasoning),
       };
     case 'turn.completed':
       return settle(state, event, 'complete');
@@ -158,6 +175,49 @@ export function reduceChatTurn(
         error: event.error,
       };
   }
+}
+
+/**
+ * Route a reasoning delta into the open run, or open a new one. A new run opens
+ * when nothing is open (text, a tool call or a completion closed the last one)
+ * or when the provider hands us a different thinking block id.
+ */
+function appendReasoningDelta(
+  reasoning: ChatTurnReasoningState,
+  text: string,
+  contentLength: number,
+  blockId?: string
+): Pick<ChatTurnReasoningState, 'segments' | 'openSegmentIndex'> {
+  const openIndex = reasoning.openSegmentIndex;
+  const open = openIndex === undefined ? undefined : reasoning.segments[openIndex];
+  const continuesOpenRun = open !== undefined
+    && (blockId === undefined || open.blockId === undefined || open.blockId === blockId);
+
+  if (continuesOpenRun && openIndex !== undefined && open) {
+    const segments = reasoning.segments.slice();
+    segments[openIndex] = {
+      ...open,
+      text: open.text + text,
+      blockId: open.blockId ?? blockId,
+    };
+    return { segments, openSegmentIndex: openIndex };
+  }
+
+  const segments = [
+    ...reasoning.segments,
+    { text, contentOffset: contentLength, ...(blockId ? { blockId } : {}) },
+  ];
+  return { segments, openSegmentIndex: segments.length - 1 };
+}
+
+/** Close the run currently accepting deltas so the next one starts fresh. */
+function closeReasoningSegment(reasoning: ChatTurnReasoningState): ChatTurnReasoningState {
+  if (reasoning.openSegmentIndex === undefined) {
+    return reasoning;
+  }
+  const next = { ...reasoning };
+  delete next.openSegmentIndex;
+  return next;
 }
 
 function activePhase(phase: ChatTurnPhase): ChatTurnPhase {

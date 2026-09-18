@@ -403,8 +403,20 @@ export interface AlternativeMessageEvent {
   }>;
   /** Reasoning/thinking content for this alternative */
   reasoning?: string;
+  /** That reasoning split into the runs the model emitted */
+  reasoning_segments?: ReasoningSegmentEvent[];
   /** Message lifecycle state */
   state?: string;
+}
+
+/**
+ * One contiguous run of model reasoning as stored in JSONL, anchored to the
+ * length of message content that had been written when the run opened.
+ */
+export interface ReasoningSegmentEvent {
+  text: string;
+  contentOffset: number;
+  blockId?: string;
 }
 
 /**
@@ -443,6 +455,8 @@ export interface MessageEvent extends BaseStorageEvent {
     state?: string;
     /** Reasoning/thinking content (for extended thinking models) */
     reasoning?: string;
+    /** That reasoning split into the runs the model emitted, anchored to content offsets */
+    reasoning_segments?: ReasoningSegmentEvent[];
     /** Sequence number for ordering */
     sequenceNumber: number;
     /** Alternative responses for branching */
@@ -468,6 +482,7 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
     content: string;
     state: string;
     reasoning: string;
+    reasoning_segments: ReasoningSegmentEvent[];
     tool_calls: Array<{
       id: string;
     type: string;
@@ -588,6 +603,7 @@ export interface BranchMessageUpdatedEvent extends BaseStorageEvent {
     content: string;
     state: string;
     reasoning: string;
+    reasoning_segments: ReasoningSegmentEvent[];
     tool_calls: Array<{
       id: string;
     type: string;

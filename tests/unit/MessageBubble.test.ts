@@ -92,6 +92,16 @@ function matchesClassSelector(element: MockElement, selector: string): boolean {
   return element._classes.has(selector.slice(1));
 }
 
+function collectBySelector(element: MockElement, selector: string, found: MockElement[] = []): MockElement[] {
+  if (matchesClassSelector(element, selector)) {
+    found.push(element);
+  }
+  for (const child of element.children) {
+    collectBySelector(child, selector, found);
+  }
+  return found;
+}
+
 function findBySelector(element: MockElement, selector: string): MockElement | null {
   if (matchesClassSelector(element, selector)) {
     return element;
@@ -307,6 +317,73 @@ describe('MessageBubble', () => {
     expect(mockRenderContent).toHaveBeenCalledTimes(1);
     expect(mockRenderContent.mock.calls[0][1]).toBe('Branch response');
     expect(activeBranchToolCall.id).toBe('tc_branch_active');
+  });
+
+  it('renders a thinking block above each stretch of text it produced', () => {
+    const message = createAssistantMessage({
+      id: 'msg_segmented',
+      content: 'Step one. Step two.',
+      toolCalls: undefined,
+      reasoning: 'FirstSecond',
+      reasoningSegments: [
+        { text: 'First', contentOffset: 0 },
+        { text: 'Second', contentOffset: 'Step one.'.length }
+      ]
+    });
+
+    const bubble = new MessageBubble(
+      message,
+      app,
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+    activeBubble = bubble;
+
+    const element = bubble.createElement() as unknown as MockElement;
+
+    // One text run per segment, each carrying only the text that followed it --
+    // the second thought must not push the first answer down the bubble.
+    expect(mockRenderContent).toHaveBeenCalledTimes(2);
+    expect(mockRenderContent.mock.calls[0][1]).toBe('Step one.');
+    expect(mockRenderContent.mock.calls[1][1]).toBe(' Step two.');
+
+    const blocks = collectBySelector(element, '.message-reasoning');
+    expect(blocks).toHaveLength(2);
+    expect(blocks.map(block => block.getAttribute('data-reasoning-index'))).toEqual(['0', '1']);
+
+    const runs = collectBySelector(element, '.message-turn-text');
+    expect(runs).toHaveLength(2);
+  });
+
+  it('keeps a single leading thinking block for a message with no segments', () => {
+    const message = createAssistantMessage({
+      id: 'msg_legacy_reasoning',
+      content: 'Answer',
+      toolCalls: undefined,
+      reasoning: 'Legacy thinking'
+    });
+
+    const bubble = new MessageBubble(
+      message,
+      app,
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+    activeBubble = bubble;
+
+    const element = bubble.createElement() as unknown as MockElement;
+
+    expect(collectBySelector(element, '.message-reasoning')).toHaveLength(1);
+    expect(mockRenderContent).toHaveBeenCalledTimes(1);
+    expect(mockRenderContent.mock.calls[0][1]).toBe('Answer');
   });
 
   it('renders source links from assistant metadata', async () => {

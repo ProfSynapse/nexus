@@ -40,6 +40,7 @@ export interface UpdateMessageData {
   content?: string | null;
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   reasoning?: string;
+  reasoningSegments?: MessageData['reasoningSegments'];
   toolCalls?: MessageData['toolCalls'];
   toolCallId?: string | null;
   /** Alternative responses for branching */

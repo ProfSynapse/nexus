@@ -91,6 +91,9 @@ export interface ConversationMessage {
   // Reasoning/thinking content from LLMs (Claude, GPT-5, Gemini)
   reasoning?: string;
 
+  // That reasoning split into the runs the model emitted, anchored to content offsets
+  reasoningSegments?: Array<{ text: string; contentOffset: number; blockId?: string }>;
+
   // Provider-specific message metadata (citations, references, etc.)
   metadata?: Record<string, unknown>;
 

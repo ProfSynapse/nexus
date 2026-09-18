@@ -4,16 +4,32 @@
  * Shows conversation messages with user and assistant bubbles.
  */
 
-import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage, ReasoningSegment } from '../../../types/chat/ChatTypes';
 import { MessageBubble } from './MessageBubble';
 import { BranchManager } from '../services/BranchManager';
-import { App, setIcon, ButtonComponent } from 'obsidian';
+import { App, Component, setIcon, ButtonComponent } from 'obsidian';
+
+/**
+ * How close to the bottom the reader has to be for the transcript to keep
+ * following new output. Wide enough to survive a partially rendered line or a
+ * sub-pixel scroll height, tight enough that scrolling up to read really stops
+ * the chase.
+ */
+const STICKY_BOTTOM_THRESHOLD_PX = 64;
 
 export class MessageDisplay {
   private conversation: ConversationData | null = null;
   private currentConversationId: string | null = null;
   private messageBubbles: Map<string, MessageBubble> = new Map();
   private transientEventRow: HTMLElement | null = null;
+  /**
+   * Whether the transcript follows new output. True until the reader scrolls
+   * up, and true again as soon as they come back to the bottom -- so a long
+   * answer or a growing "Thinking" block stays in view without ever yanking
+   * someone away from what they scrolled back to read.
+   */
+  private stickToBottom = true;
+  private pendingScrollFrame: number | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -21,9 +37,37 @@ export class MessageDisplay {
     private branchManager: BranchManager,
     private onRetryMessage?: (messageId: string) => void,
     private onEditMessage?: (messageId: string, newContent: string) => void,
-    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void
+    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
+    private component?: Component
   ) {
+    this.trackScrollPosition();
     this.render();
+  }
+
+  /**
+   * Watch the reader's scroll position so streaming output can follow them
+   * instead of fighting them. Bound once, in the capture phase on the stable
+   * outer container: scroll does not bubble, but it does propagate on capture,
+   * and `.messages-container` is rebuilt on every conversation switch.
+   */
+  private trackScrollPosition(): void {
+    if (!this.component) {
+      return;
+    }
+
+    this.component.registerDomEvent(
+      this.container,
+      'scroll',
+      (event: Event) => {
+        const target = event.target as HTMLElement | null;
+        if (!target || typeof target.scrollHeight !== 'number') {
+          return;
+        }
+        const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+        this.stickToBottom = distanceFromBottom <= STICKY_BOTTOM_THRESHOLD_PX;
+      },
+      true
+    );
   }
 
   /**
@@ -39,8 +83,10 @@ export class MessageDisplay {
 
     // Full render for conversation switches or first load
     if (previousConversationId !== conversation.id) {
+      // A freshly opened conversation always starts pinned to its newest message
+      this.stickToBottom = true;
       this.render();
-      this.scrollToBottom();
+      this.scrollToBottom(true);
       return;
     }
 
@@ -136,7 +182,9 @@ export class MessageDisplay {
     if (messagesContainer) {
       messagesContainer.appendChild(bubble);
     }
-    this.scrollToBottom();
+    // The reader just sent this: follow it wherever they had scrolled to
+    this.stickToBottom = true;
+    this.scrollToBottom(true);
   }
 
   /**
@@ -149,7 +197,8 @@ export class MessageDisplay {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
-    this.scrollToBottom();
+    this.stickToBottom = true;
+    this.scrollToBottom(true);
   }
 
   /**
@@ -159,7 +208,8 @@ export class MessageDisplay {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
-    this.scrollToBottom();
+    this.stickToBottom = true;
+    this.scrollToBottom(true);
   }
 
   /**
@@ -170,16 +220,43 @@ export class MessageDisplay {
     if (messageBubble) {
       messageBubble.updateContent(content);
     }
+    this.followNewOutput();
   }
 
   /**
-   * Live-update a message's reasoning ("Thinking") block during streaming.
+   * Live-update a message's reasoning ("Thinking") blocks during streaming.
+   *
+   * Returns true when this update opened a NEW thinking block, so the caller
+   * can seal the text run above it and start the next one below.
    */
-  updateMessageReasoning(messageId: string, reasoningText: string, isComplete: boolean): void {
+  updateMessageReasoning(
+    messageId: string,
+    reasoningText: string,
+    isComplete: boolean,
+    segments?: ReasoningSegment[]
+  ): boolean {
     const messageBubble = this.messageBubbles.get(messageId);
-    if (messageBubble) {
-      messageBubble.updateReasoning(reasoningText, isComplete);
+    const openedNewBlock = messageBubble
+      ? messageBubble.updateReasoning(reasoningText, isComplete, segments)
+      : false;
+    this.followNewOutput();
+    return openedNewBlock;
+  }
+
+  /**
+   * Keep the newest output in view as it grows, unless the reader has scrolled
+   * up. Coalesced onto one animation frame so a fast token stream does not
+   * force a layout read per chunk.
+   */
+  followNewOutput(): void {
+    if (!this.stickToBottom || this.pendingScrollFrame !== null) {
+      return;
     }
+
+    this.pendingScrollFrame = window.requestAnimationFrame(() => {
+      this.pendingScrollFrame = null;
+      this.scrollToBottom();
+    });
   }
 
   /**
@@ -201,6 +278,10 @@ export class MessageDisplay {
     if (messageBubble) {
       messageBubble.updateWithNewMessage(updatedMessage);
     }
+
+    // Tool accordions land here as they resolve, so the transcript follows them
+    // the same way it follows streamed text
+    this.followNewOutput();
   }
 
   /**
@@ -267,7 +348,9 @@ export class MessageDisplay {
 
     this.ensureTransientEventRowPosition(messagesContainer);
 
-    this.scrollToBottom();
+    // A rebuild throws the old scroll position away, so it lands at the newest
+    // message regardless of where the reader had been
+    this.scrollToBottom(true);
   }
 
   showTransientEventRow(message: string): void {
@@ -525,7 +608,10 @@ export class MessageDisplay {
   /**
    * Scroll to bottom of messages
    */
-  private scrollToBottom(): void {
+  private scrollToBottom(force = false): void {
+    if (!force && !this.stickToBottom) {
+      return;
+    }
     const messagesContainer = this.container.querySelector('.messages-container');
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -554,6 +640,10 @@ export class MessageDisplay {
    * Cleanup resources
    */
   cleanup(): void {
+    if (this.pendingScrollFrame !== null) {
+      window.cancelAnimationFrame(this.pendingScrollFrame);
+      this.pendingScrollFrame = null;
+    }
     for (const bubble of this.messageBubbles.values()) {
       bubble.cleanup();
     }

@@ -295,8 +295,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // The SQLite schema is ready by this point — sync below populates
       // data in the background, but the adapter is already usable. Waiters
       // registered before now will settle when initLifecycle.run() returns.
+      // A schema migration that cannot fix existing rows in place leaves the
+      // cache holding wrong data that only a JSONL replay can correct. Most
+      // migrations are additive DDL or backfill in place and never set this,
+      // so an ordinary plugin update still takes the cheap incremental path.
+      const schemaNeedsRebuild = this.sqliteCache.consumeSchemaRebuildRequest();
+
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
-      if (!syncState || actuallyMigrated || shouldBlockStartupHydration) {
+      if (!syncState || actuallyMigrated || schemaNeedsRebuild || shouldBlockStartupHydration) {
         await this.runStartupFullRebuild(shouldBlockStartupHydration);
       } else {
         try {

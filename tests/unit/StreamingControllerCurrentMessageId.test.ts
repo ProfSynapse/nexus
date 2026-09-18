@@ -94,3 +94,50 @@ describe('StreamingController — getCurrentMessageId lifecycle', () => {
     expect(controller.getCurrentMessageId()).toBeNull();
   });
 });
+
+describe('StreamingController — detached run recovery', () => {
+  it('reopens a run when a conversation switch detached the one it was writing to', () => {
+    // The parser state is keyed by messageId and outlives the transcript
+    // rebuild that a conversation switch performs. Writing on into the old
+    // detached run swallowed the rest of the turn with no error anywhere.
+    const run = { isConnected: true, className: '', classList: { contains: () => false } };
+    const contentEl = {
+      getAttribute: () => null,
+      parentElement: null,
+      createDiv: jest.fn(),
+      children: [],
+      querySelector: jest.fn(() => null),
+      appendChild: jest.fn(),
+      insertBefore: jest.fn(),
+    };
+    const messageEl = { querySelector: jest.fn(() => contentEl) };
+    const containerEl = { querySelector: jest.fn(() => messageEl) };
+
+    const controller = new StreamingController(
+      containerEl as unknown as HTMLElement,
+      {} as App,
+      {} as Component
+    );
+
+    // Pretend startStreaming bound the parser to `run`
+    (controller as unknown as { activeRuns: Map<string, unknown> }).activeRuns.set('msg-1', run);
+    (controller as unknown as { streamingStates: Map<string, unknown> })
+      .streamingStates.set('msg-1', { mock: 'streaming-state' });
+
+    (MarkdownRenderer.writeStreamingChunk as jest.Mock).mockClear();
+    (MarkdownRenderer.initializeStreamingParser as jest.Mock).mockClear();
+
+    // Still attached: write straight through, no re-init
+    controller.updateStreamingChunk('msg-1', 'a');
+    expect(MarkdownRenderer.initializeStreamingParser).not.toHaveBeenCalled();
+    expect(MarkdownRenderer.writeStreamingChunk).toHaveBeenCalledTimes(1);
+
+    // The transcript is rebuilt underneath it
+    run.isConnected = false;
+
+    controller.updateStreamingChunk('msg-1', 'b');
+    // A fresh parser is opened rather than writing into the detached node
+    expect(MarkdownRenderer.initializeStreamingParser).toHaveBeenCalledTimes(1);
+    expect(MarkdownRenderer.writeStreamingChunk).toHaveBeenCalledTimes(2);
+  });
+});

@@ -75,7 +75,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 export interface Migration {
   version: number;
@@ -84,6 +84,19 @@ export interface Migration {
   sql: string[];
   /** Optional JavaScript migration function for logic that cannot be expressed in SQL alone (e.g., JSON parsing). */
   migrationFn?: (db: MigratableDatabase) => void;
+  /**
+   * Set this only when existing rows cannot be made correct in place and the
+   * cache must be replayed from JSONL to fix them.
+   *
+   * It is deliberately per-migration rather than "any migration ran": a full
+   * rebuild re-reads every JSONL file in the vault and reindexes FTS, with the
+   * chat, task and notes surfaces in a loading state until it finishes. Most
+   * migrations do not need it -- additive DDL whose NULL column already reads
+   * correctly (v17), or a `migrationFn` that backfills in place (v9, v13, v16).
+   * Paying that cost on every plugin update that happens to carry a migration
+   * would be a sledgehammer.
+   */
+  requiresRebuild?: boolean;
 }
 
 interface LegacyConversationMetadata {
@@ -611,6 +624,28 @@ export const MIGRATIONS: Migration[] = [
       }
     }
   },
+
+  // A reasoning model interleaves thinking with text: think, write, call a
+  // tool, think again, write again. `reasoningContent` keeps only the
+  // concatenation, which is enough to show the thinking but not to place it,
+  // so a reloaded conversation collapsed every run into one block above the
+  // whole answer. This column stores those runs with the content offset each
+  // one opened at.
+  //
+  // No backfill is possible or needed: the offsets exist only in the live
+  // stream, and a row with NULL here renders exactly as it does today, from
+  // the flat `reasoningContent`. Nullable with no default for that reason.
+  {
+    version: 17,
+    description: 'Add reasoningSegmentsJson to messages so interleaved thinking survives a reload',
+    sql: [
+      'ALTER TABLE messages ADD COLUMN reasoningSegmentsJson TEXT'
+    ],
+    // NULL already renders correctly (falls back to flat reasoningContent), and
+    // the offsets exist only in the live stream, so a replay would restore
+    // nothing a NULL does not already say.
+    requiresRebuild: false
+  },
 ];
 
 /**
@@ -689,14 +724,16 @@ export class SchemaMigrator {
    * Run all pending migrations
    * Returns migration result including whether a rebuild is needed
    *
-   * NOTE: When migrations are applied, the SQLite cache should be rebuilt from JSONL
-   * because the existing data doesn't have the new columns populated correctly.
+   * `needsRebuild` reports whether any migration that actually ran declared
+   * `requiresRebuild` -- i.e. whether existing rows are wrong in a way only a
+   * JSONL replay can fix. It is not "a migration ran": see the field's comment
+   * on the Migration interface for why that distinction matters.
    */
   migrate(): Promise<{
     applied: number;
     fromVersion: number;
     toVersion: number;
-    needsRebuild: boolean;  // True if migrations were applied and data should be rebuilt from JSONL
+    needsRebuild: boolean;  // True if an applied migration declared requiresRebuild
   }> {
     const currentVersion = this.getCurrentVersion();
     const targetVersion = CURRENT_SCHEMA_VERSION;
@@ -717,6 +754,7 @@ export class SchemaMigrator {
     }
 
     let appliedCount = 0;
+    let needsRebuild = false;
 
     for (const migration of pendingMigrations) {
       try {
@@ -741,6 +779,7 @@ export class SchemaMigrator {
 
         this.setVersion(migration.version);
         appliedCount++;
+        needsRebuild = needsRebuild || migration.requiresRebuild === true;
       } catch (error) {
         console.error(`[SchemaMigrator] Migration v${migration.version} failed:`, error);
         throw error;
@@ -751,7 +790,7 @@ export class SchemaMigrator {
       applied: appliedCount,
       fromVersion: currentVersion,
       toVersion: targetVersion,
-      needsRebuild: false
+      needsRebuild
     });
   }
 

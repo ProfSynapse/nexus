@@ -282,8 +282,26 @@ export interface AlternativeMessage {
   /** Reasoning/thinking content for this alternative */
   reasoning?: string;
 
+  /** That reasoning split into the runs the model emitted */
+  reasoningSegments?: ReasoningSegment[];
+
   /** Message lifecycle state */
   state: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
+}
+
+/**
+ * One contiguous run of model reasoning, anchored to the point in the visible
+ * answer where the model produced it. Structurally identical to the chat
+ * layer's `ReasoningSegment`; declared here so the storage types stay
+ * self-contained, as `ToolCall` below already is.
+ */
+export interface ReasoningSegment {
+  /** Thinking text for this run */
+  text: string;
+  /** Length of the message content already written when this run opened */
+  contentOffset: number;
+  /** Provider block id, when the provider labels its thinking blocks */
+  blockId?: string;
 }
 
 /**
@@ -322,6 +340,9 @@ export interface MessageData {
 
   /** Optional reasoning/thinking content from LLMs */
   reasoning?: string;
+
+  /** That reasoning split into the runs the model emitted, anchored to content offsets */
+  reasoningSegments?: ReasoningSegment[];
 
   /** Optional metadata */
   metadata?: Record<string, unknown>;

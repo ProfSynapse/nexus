@@ -101,6 +101,7 @@ export class MessageAlternativeService {
     const originalContent = aiMessage.content;
     const originalToolCalls = aiMessage.toolCalls ? [...aiMessage.toolCalls] : undefined;
     const originalReasoning = aiMessage.reasoning;
+    const originalReasoningSegments = aiMessage.reasoningSegments;
     const originalState = aiMessage.state || 'complete';
 
     try {
@@ -115,7 +116,8 @@ export class MessageAlternativeService {
         conversationId: conversation.id,
         state: aiMessage.state || 'complete',
         toolCalls: originalToolCalls,
-        reasoning: originalReasoning
+        reasoning: originalReasoning,
+        reasoningSegments: originalReasoningSegments
       };
 
       const branchId = await this.branchManager.createHumanBranch(
@@ -143,6 +145,8 @@ export class MessageAlternativeService {
       aiMessage.content = '';
       aiMessage.toolCalls = undefined;
       aiMessage.reasoning = undefined;
+      // Offsets point into the old content, so they must go with it
+      aiMessage.reasoningSegments = undefined;
       aiMessage.isLoading = true;
       aiMessage.state = 'draft';
 
@@ -204,7 +208,8 @@ export class MessageAlternativeService {
               originalContent,
               originalToolCalls,
               originalReasoning,
-              originalState
+              originalState,
+              originalReasoningSegments
             );
 
             await this.chatService.updateConversation(conversation);
@@ -220,7 +225,8 @@ export class MessageAlternativeService {
             originalContent,
             originalToolCalls,
             originalReasoning,
-            originalState
+            originalState,
+            originalReasoningSegments
           );
           await this.chatService.updateConversation(conversation);
           this.events.onConversationUpdated(conversation);
@@ -262,11 +268,13 @@ export class MessageAlternativeService {
     originalContent: string,
     originalToolCalls: ConversationMessage['toolCalls'],
     originalReasoning: string | undefined,
-    originalState: NonNullable<ConversationMessage['state']>
+    originalState: NonNullable<ConversationMessage['state']>,
+    originalReasoningSegments?: ConversationMessage['reasoningSegments']
   ): void {
     message.content = originalContent;
     message.toolCalls = originalToolCalls;
     message.reasoning = originalReasoning;
+    message.reasoningSegments = originalReasoningSegments;
     message.state = originalState;
     message.isLoading = false;
     message.activeAlternativeIndex = 0;

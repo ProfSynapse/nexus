@@ -335,6 +335,27 @@ export function createMockElement(tagName: string): HTMLElement {
     focus: jest.fn()
   } as unknown as HTMLElement;
 
+  // CSS custom properties are the sanctioned way production code parameterizes
+  // an animation (styles stay in styles.css), so the mock has to accept them.
+  // Defined non-enumerably: tests that assert "no inline styles were set" read
+  // Object.keys(el.style) and must still see an empty object.
+  Object.defineProperty(el.style, 'setProperty', {
+    enumerable: false,
+    value: jest.fn((name: string, value: string) => {
+      (el.style as unknown as Record<string, string>)[name] = value;
+    })
+  });
+  Object.defineProperty(el.style, 'removeProperty', {
+    enumerable: false,
+    value: jest.fn((name: string) => {
+      delete (el.style as unknown as Record<string, string>)[name];
+    })
+  });
+  Object.defineProperty(el.style, 'getPropertyValue', {
+    enumerable: false,
+    value: jest.fn((name: string) => (el.style as unknown as Record<string, string>)[name] ?? '')
+  });
+
   const normalizeOpts = (o?: string | Record<string, unknown>) =>
     typeof o === 'string' ? { cls: o } : o;
   (el.createDiv as jest.Mock).mockImplementation((o?: string | Record<string, unknown>) =>

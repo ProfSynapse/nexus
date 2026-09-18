@@ -48,6 +48,7 @@ export function convertToConversationBranch(branchConversation: IndividualConver
       state: m.state,
       toolCalls: m.toolCalls as unknown as ChatToolCall[] | undefined, // Storage ToolCall type differs only in narrower type field
       reasoning: m.reasoning,
+      reasoningSegments: m.reasoningSegments,
     })),
     created: branchConversation.created,
     updated: branchConversation.updated,
@@ -116,6 +117,7 @@ export function convertToLegacyConversation(
         };
       }),
       reasoning: msg.reasoning,
+      reasoningSegments: msg.reasoningSegments,
       metadata: msg.metadata,
       // Branching support - cast needed due to AlternativeMessage vs ConversationMessage type differences
       alternatives: msg.alternatives as unknown as import('../../types/storage/StorageTypes').ConversationMessage[] | undefined,
