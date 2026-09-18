@@ -504,7 +504,9 @@ describe('SQLiteCacheManager save path', () => {
     }
   }
 
-  async function createSaveHarness(options: { autoSaveInterval?: number } = {}): Promise<SaveHarness> {
+  async function createSaveHarness(
+    options: { autoSaveInterval?: number; existingBlobBytes?: number } = {}
+  ): Promise<SaveHarness> {
     const exportedBuffers: ArrayBuffer[] = [];
     const writtenBuffers: ArrayBuffer[] = [];
     const held: Array<{ resolve: () => void }> = [];
@@ -547,15 +549,18 @@ describe('SQLiteCacheManager save path', () => {
       close: jest.fn()
     };
 
+    // An existing cache, when the test asks for one, so the size the manager
+    // reports at startup is the size the blob store said it was.
+    const existingBlobBytes = options.existingBlobBytes ?? 0;
     const blobStore = {
-      read: jest.fn(async () => null),
+      read: jest.fn(async () => (existingBlobBytes > 0 ? new ArrayBuffer(existingBlobBytes) : null)),
       write: jest.fn((buffer: ArrayBuffer) => {
         writtenBuffers.push(buffer);
         if (!gated) return Promise.resolve();
         return new Promise<void>(resolve => held.push({ resolve }));
       }),
       remove: jest.fn(async () => undefined),
-      getMetadata: jest.fn(async () => null)
+      getMetadata: jest.fn(async () => (existingBlobBytes > 0 ? { size: existingBlobBytes } : null))
     };
 
     const app = {
@@ -849,6 +854,47 @@ describe('SQLiteCacheManager save path', () => {
       expect(harness.exportCount()).toBe(exportsBeforeClose + 1);
       expect(harness.manager.hasUnsavedChanges()).toBe(false);
       expect(harness.manager.isReady()).toBe(false);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  /**
+   * Phase 2 needs a size to scale the indexers' save cadence off, and it needs
+   * it on a per-item path, so it has to be free. These two say where the
+   * number comes from: the metadata initialize() already reads, and the byte
+   * count the write already computed. No query, no pragma, no extra read.
+   */
+  it('reports the size of the blob it opened before anything has been saved', async () => {
+    const existingBlobBytes = 8 * 1024 * 1024;
+    const harness = await createSaveHarness({ existingBlobBytes });
+    try {
+      expect(harness.manager.getLastSavedBytes()).toBe(existingBlobBytes);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it('reports the byte count of the last successful save once one has happened', async () => {
+    const harness = await createSaveHarness({ existingBlobBytes: 8 * 1024 * 1024 });
+    try {
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['t1']);
+      await harness.manager.save();
+
+      // The fake export is 4096 bytes, which is deliberately not the size the
+      // blob store reported at startup, so this cannot pass on the seed.
+      expect(harness.manager.getLastSavedBytes()).toBe(4096);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it('reports the fresh database it wrote itself when there was no blob to open', async () => {
+    const harness = await createSaveHarness();
+    try {
+      // No blob existed, so initialize() created and saved a fresh database:
+      // the number is that save's, not a size invented from nowhere.
+      expect(harness.manager.getLastSavedBytes()).toBe(4096);
     } finally {
       await harness.dispose();
     }

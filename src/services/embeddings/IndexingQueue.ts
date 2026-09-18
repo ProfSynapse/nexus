@@ -11,7 +11,7 @@
  * - Progress events with ETA calculation
  * - Pause/resume/cancel controls
  * - Resumable via content hash comparison
- * - Saves DB every 10 notes
+ * - Saves the DB on a size-aware cadence (see CacheSavePolicy)
  * - Delegates conversation backfill to ConversationIndexer
  * - Delegates trace backfill to TraceIndexer
  *
@@ -29,6 +29,12 @@ import { preprocessContent, hashContent } from './EmbeddingUtils';
 import { TraceIndexer } from './TraceIndexer';
 import { ConversationIndexer } from './ConversationIndexer';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import {
+  SaveCadence,
+  describeCacheSaveFailure,
+  readCacheSizeBytes,
+  type CacheSaveStage
+} from './CacheSavePolicy';
 
 export interface IndexingProgress {
   phase: 'idle' | 'loading_model' | 'indexing' | 'complete' | 'paused' | 'error';
@@ -73,7 +79,16 @@ export class IndexingQueue extends Events {
   // Tuning parameters
   private readonly BATCH_SIZE = 1;           // Process one at a time for memory
   private readonly YIELD_INTERVAL_MS = 50;   // Yield to UI between notes
-  private readonly SAVE_INTERVAL = 10;       // Save DB every N notes
+  /**
+   * Floor on how often a snapshot is written, in items.
+   *
+   * A floor, not the interval. The interval itself comes from CacheSavePolicy
+   * and scales with the size of the database, because that is what a save
+   * costs: ten notes is nearly free on a small cache and roughly 380 ms of
+   * wall clock every ten notes on the 152 MB one that motivated
+   * docs/plans/sqlite-cache-persistence-plan.md.
+   */
+  private readonly MIN_SAVE_ITEMS = 10;
   private readonly CONVERSATION_YIELD_INTERVAL = 5;  // Yield every N conversations during backfill
 
   private processedCount = 0;
@@ -171,7 +186,7 @@ export class IndexingQueue extends Events {
           estimatedTimeRemaining: null
         });
       },
-      this.SAVE_INTERVAL,
+      this.MIN_SAVE_ITEMS,
       this.YIELD_INTERVAL_MS
     );
 
@@ -233,7 +248,7 @@ export class IndexingQueue extends Events {
           estimatedTimeRemaining: null
         });
       },
-      this.SAVE_INTERVAL
+      this.MIN_SAVE_ITEMS
     );
 
     this.emitProgress({
@@ -423,6 +438,8 @@ export class IndexingQueue extends Events {
         estimatedTimeRemaining: null
       });
 
+      const saveCadence = new SaveCadence({ minItems: this.MIN_SAVE_ITEMS, db: this.db });
+
       while (this.queue.length > 0) {
         if (this.destroyed || this.abortController?.signal.aborted) {
           this.emitProgress({
@@ -457,6 +474,7 @@ export class IndexingQueue extends Events {
 
           await this.embeddingService.embedNote(notePath);
           this.processedCount++;
+          saveCadence.recordItem();
 
           const elapsed = Date.now() - noteStart;
           this.processingTimes.push(elapsed);
@@ -464,18 +482,28 @@ export class IndexingQueue extends Events {
             this.processingTimes.shift();
           }
 
-          if (this.processedCount % this.SAVE_INTERVAL === 0) {
-            await this.db.save();
-          }
-
         } catch (error) {
           console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
+        }
+
+        // Outside the per-note try, which is the whole point. The save used to
+        // sit inside it, so a snapshot failure was logged as
+        // "Failed to embed <path>" against whichever note happened to be tenth
+        // although its embedding had already succeeded and its vector was
+        // already in the database.
+        if (saveCadence.shouldSave()) {
+          await this.persistCache(saveCadence, 'periodic');
         }
 
         await new Promise(r => window.setTimeout(r, this.YIELD_INTERVAL_MS));
       }
 
-      await this.db.save();
+      // Non-fatal. A run that embedded four thousand notes and could not write
+      // the snapshot is a partial success with a loud warning, not an aborted
+      // run: the vectors are in the in-memory database, the next successful
+      // save writes them, and phase `complete` is what tells everything
+      // downstream the run finished.
+      await this.persistCache(saveCadence, 'final');
 
       this.emitProgress({
         phase: 'complete',
@@ -503,6 +531,29 @@ export class IndexingQueue extends Events {
   // ---------------------------------------------------------------------------
   // Private: shared helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Write a cache snapshot. Never throws, and says what failed when it fails.
+   *
+   * Both halves matter. The message names persistence and carries the byte
+   * count, because a `RangeError: Array buffer allocation failed` is the
+   * allocator refusing one contiguous request of roughly that size and nothing
+   * in the old line said so. Swallowing keeps a failed snapshot from aborting
+   * a run whose work is already done, which is how TraceIndexer has always
+   * behaved and is now what all three call sites do.
+   */
+  private async persistCache(cadence: SaveCadence, stage: CacheSaveStage): Promise<void> {
+    try {
+      await this.db.save();
+    } catch (error) {
+      console.error(
+        describeCacheSaveFailure('IndexingQueue', stage, readCacheSizeBytes(this.db)),
+        error
+      );
+    } finally {
+      cadence.markSaveAttempt();
+    }
+  }
 
   /**
    * Calculate estimated time remaining

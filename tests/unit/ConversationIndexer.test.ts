@@ -586,17 +586,21 @@ describe('ConversationIndexer', () => {
 });
 
 /**
- * Phase 0 characterization for docs/plans/sqlite-cache-persistence-plan.md,
- * section 6b. No production code changes with this; it pins what the code does
- * today so Phase 2 has to turn a red test green.
+ * The conversation resume checkpoint, section 6b of
+ * docs/plans/sqlite-cache-persistence-plan.md.
  *
- * The defect: the final `db.save()` is inside the outer try. When it throws,
- * the handler writes `lastProcessedConversationId: null` and
- * `processedConversations: 0`. The resume logic keys entirely off
- * `lastProcessedConversationId`, so the next launch restarts the backfill at
- * conversation zero and re-embeds every conversation in the vault at full API
- * cost. On the machine that motivated the plan the save is exactly the thing
- * that keeps failing, so this is not hypothetical.
+ * The defect these were written to pin: the final `db.save()` was inside the
+ * outer try, and when it threw the handler wrote
+ * `lastProcessedConversationId: null` and `processedConversations: 0`. The
+ * resume logic keys entirely off `lastProcessedConversationId`, so the next
+ * launch restarted the backfill at conversation zero and re-embedded every
+ * conversation in the vault at full API cost. On the machine that motivated
+ * the plan the save is exactly the thing that keeps failing, so this was not
+ * hypothetical.
+ *
+ * Phase 2 fixed it twice over: a failed snapshot no longer reaches that
+ * handler at all, and the handler no longer nulls the checkpoint whatever
+ * reaches it. There is a test for each.
  *
  * What the fake decides, and what it does not: the db here is STATEFUL. It
  * really stores the `embedding_backfill_state` row that `updateBackfillState`
@@ -605,7 +609,7 @@ describe('ConversationIndexer', () => {
  * the damage is what the next run does with it. The resume decision, the
  * restart, and the re-embedding are all the real ConversationIndexer.
  */
-describe('ConversationIndexer resume checkpoint (Phase 0 characterization)', () => {
+describe('ConversationIndexer resume checkpoint', () => {
   interface StoredBackfillState {
     id: string;
     lastProcessedConversationId: string | null;
@@ -736,12 +740,13 @@ describe('ConversationIndexer resume checkpoint (Phase 0 characterization)', () 
     errorSpy.mockRestore();
   });
 
-  // PHASE 2 INVERTS THIS. Option B's third item: a failing save must preserve
-  // `lastProcessedConversationId` and `processedConversations` so the resume at
-  // ConversationIndexer:153-161 still works. This is described in the plan as
-  // the highest-value single line in the document measured in dollars of
-  // re-embedding.
-  it('nulls the resume checkpoint when the final save fails, so the next run restarts at zero', async () => {
+  // PHASE 2 INVERTED THIS. It used to assert that the state row came back
+  // `status: 'error'`, `lastProcessedConversationId: null`,
+  // `processedConversations: 0`, and that the next run therefore re-fetched and
+  // re-embedded all three conversations. The plan calls this the
+  // highest-value single line in the document measured in dollars of
+  // re-embedding, and this is what it buys.
+  it('keeps the resume checkpoint when the final save fails, so the next run re-embeds nothing', async () => {
     const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
 
     // Run one: every conversation is embedded, then the snapshot cannot be
@@ -749,26 +754,70 @@ describe('ConversationIndexer resume checkpoint (Phase 0 characterization)', () 
     // is the final one.
     const first = createIndexerOn(stateful);
     stateful.save.mockRejectedValue(new RangeError('Array buffer allocation failed'));
-    await first.indexer.start(null, 100);
+    const firstResult = await first.indexer.start(null, 100);
 
     expect(first.embeddingService.embedConversationTurn).toHaveBeenCalled();
     expect(stateful.messageFetches).toEqual(['conv-1', 'conv-2', 'conv-3']);
+    // The backfill did its work, so it reports it. A snapshot it could not
+    // write does not turn three embedded conversations into zero.
+    expect(firstResult).toEqual({ total: 3, processed: 3 });
 
-    // The checkpoint the next run needs has been overwritten with nothing.
+    // The checkpoint the next run needs is intact, and the run is recorded as
+    // finished rather than as an error, because the backfill itself did finish.
     const afterFailure = stateful.readState();
-    expect(afterFailure?.status).toBe('error');
-    expect(afterFailure?.lastProcessedConversationId).toBeNull();
-    expect(afterFailure?.processedConversations).toBe(0);
+    expect(afterFailure?.status).toBe('completed');
+    expect(afterFailure?.lastProcessedConversationId).toBe('conv-3');
+    expect(afterFailure?.processedConversations).toBe(3);
 
     // The consequence, which is the part that costs money. Run two reads that
-    // checkpoint back through the real resume path and starts from the top.
+    // checkpoint back through the real resume path and has nothing left to do.
     stateful.messageFetches.length = 0;
     stateful.save.mockResolvedValue(undefined);
     const second = createIndexerOn(stateful);
-    const result = await second.indexer.start(null, 100);
+    await second.indexer.start(null, 100);
 
-    expect(stateful.messageFetches).toEqual(['conv-1', 'conv-2', 'conv-3']);
-    expect(result).toEqual({ total: 3, processed: 3 });
+    expect(stateful.messageFetches).toEqual([]);
+    expect(second.embeddingService.embedConversationTurn).not.toHaveBeenCalled();
+  });
+
+  // The other half of the fix, and the reason it is two changes rather than
+  // one. A save failure no longer reaches the error handler at all, so the
+  // handler could go on nulling the checkpoint and the test above would still
+  // pass. Anything else that throws mid-run still lands there, and the
+  // checkpoint has to survive that too: the conversations already embedded are
+  // already embedded whatever threw.
+  it('keeps the resume checkpoint when something other than the save throws mid-run', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+    const { indexer, embeddingService } = createIndexerOn(stateful);
+
+    // The progress callback is not inside any per-conversation try, so this
+    // reaches the outer handler the way a real surprise would.
+    let progressCalls = 0;
+    (indexer as unknown as { onProgress: () => void }).onProgress = () => {
+      progressCalls++;
+      if (progressCalls > 2) {
+        throw new Error('progress subscriber exploded');
+      }
+    };
+
+    const result = await indexer.start(null, 100);
+
+    const afterFailure = stateful.readState();
+    expect(afterFailure?.status).toBe('error');
+    expect(afterFailure?.errorMessage).toContain('progress subscriber exploded');
+    // Everything reached before the throw is still on the record. The first
+    // call is the pre-loop progress emission, so the throw lands after the
+    // second conversation.
+    expect(afterFailure?.lastProcessedConversationId).toBe('conv-2');
+    expect(afterFailure?.processedConversations).toBe(2);
+    expect(result).toEqual({ total: 3, processed: 2 });
+    expect(embeddingService.embedConversationTurn).toHaveBeenCalled();
+
+    // And the next run picks up after it instead of starting again.
+    stateful.messageFetches.length = 0;
+    const second = createIndexerOn(stateful);
+    await second.indexer.start(null, 100);
+    expect(stateful.messageFetches).toEqual(['conv-3']);
   });
 
   // The control that makes the test above mean something. The resume path is

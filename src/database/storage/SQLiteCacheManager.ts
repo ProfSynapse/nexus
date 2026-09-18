@@ -133,6 +133,14 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private pendingSave: Promise<void> | null = null;
   /** Set by stopAutoSave() and close() to cancel a scheduled follow-up. */
   private followUpCancelled = false;
+  /**
+   * How big the cache is, in bytes, as far as anything here knows: the size of
+   * the blob loaded at startup, then the byte count of the last successful
+   * save. Both numbers are already in hand, so reading this costs nothing,
+   * which is the point. The save cadence in CacheSavePolicy is driven off it,
+   * and a cadence on a hot path may not run a query to find its own inputs.
+   */
+  private lastSavedBytes: number | null = null;
   private autoSaveInterval: number;
   private autoSaveTimer: number | null = null;
   private readonly transactionCoordinator: SQLiteTransactionCoordinator;
@@ -336,6 +344,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // use into the cache manager.
       const meta = await this.blobStore.getMetadata();
       const dbExists = meta !== null && meta.size > 0;
+      if (dbExists) {
+        this.lastSavedBytes = meta.size;
+      }
 
       if (dbExists) {
         // Load existing database from blob store
@@ -424,6 +435,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
       await this.persistenceService.saveDatabase(sqlite3, db);
+      this.lastSavedBytes = this.persistenceService.getLastSavedBytes() ?? this.lastSavedBytes;
       // Only the writes this snapshot contains are clean. Anything that landed
       // during the write bumped the counter and stays dirty, so the autosave
       // timer and close() still see work outstanding.
@@ -813,6 +825,20 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   hasUnsavedChanges(): boolean {
     return this.hasUnsavedData;
+  }
+
+  /**
+   * Bytes written by the most recent successful save, or the size of the blob
+   * that was loaded at startup, or null when neither has happened yet.
+   *
+   * Free to call: both figures are recorded as they go past, so this is a
+   * field read with no query, no pragma and no blob store round trip. That is
+   * what makes it usable from the indexers' per-item loop, where
+   * getStatistics() would not be and getObjectPageUsage() emphatically would
+   * not be, since the latter walks every page.
+   */
+  getLastSavedBytes(): number | null {
+    return this.lastSavedBytes;
   }
 
   // ==================== IStorageBackend interface methods ====================

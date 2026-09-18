@@ -316,23 +316,28 @@ describe('TraceIndexer', () => {
 });
 
 /**
- * Phase 0 characterization for docs/plans/sqlite-cache-persistence-plan.md.
+ * TraceIndexer save path.
  *
- * Unlike the other two call sites, this one is already correct, and that is why
- * it is pinned. `IndexingQueue` lets a failed final save abort the whole run and
- * `ConversationIndexer` lets one wipe its resume checkpoint; `TraceIndexer`
- * swallows both and returns its counts. Three call sites, three behaviours for
- * the same failure.
+ * Written as Phase 0 characterization for
+ * docs/plans/sqlite-cache-persistence-plan.md. Unlike the other two call
+ * sites, this one was already safe, and that is why it was pinned:
+ * `IndexingQueue` let a failed final save abort the whole run and
+ * `ConversationIndexer` let one wipe its resume checkpoint, while
+ * `TraceIndexer` swallowed both and returned its counts.
  *
- * Phase 2 makes the other two behave like this one. These tests exist so that
- * refactor cannot quietly make this one behave like the other two instead.
+ * Phase 2 made the other two behave like this one, and these tests are what
+ * kept that refactor from quietly making this one behave like the other two
+ * instead. Every behavioural assertion below is unchanged. What Phase 2 did
+ * change here is the wording: the periodic save moved out of the per-trace
+ * try, so a failed snapshot no longer has to be reported under the id of a
+ * trace that embedded perfectly well, and it now names the byte count.
  *
  * What the fakes decide, and what they do not: `embedTrace` always succeeds,
  * which matches production (`embedTrace()` catches its own failures and never
  * rethrows), and `db.save()` is made to reject. Everything asserted on is the
  * real TraceIndexer.start() loop.
  */
-describe('TraceIndexer save path (Phase 0 characterization)', () => {
+describe('TraceIndexer save path', () => {
   function createSaveHarness(traceCount: number, saveInterval: number) {
     const mocks = createMockDependencies();
     const traces = Array.from({ length: traceCount }, (_, i) => createTraceRow(`trace-${i}`));
@@ -370,10 +375,14 @@ describe('TraceIndexer save path (Phase 0 characterization)', () => {
     expect(result).toEqual({ total: 6, processed: 6 });
     expect(indexer.getIsRunning()).toBe(false);
 
-    // And it says what actually failed, naming persistence rather than the
-    // trace. This is the wording IndexingQueue does not have.
-    const saveFailures = loggedMessages().filter(m => m.includes('Failed to persist embeddings around trace'));
+    // PHASE 2 CHANGED THIS MESSAGE. It used to read "Failed to persist
+    // embeddings around trace <id>", which named persistence but still had to
+    // name a trace, because the save was inside that trace's try. It is now
+    // the same line all three call sites log, and it carries the byte count.
+    const saveFailures = loggedMessages().filter(m => m.includes('Failed to save the cache'));
     expect(saveFailures.length).toBeGreaterThan(0);
+    expect(saveFailures.some(m => m.includes('trace-'))).toBe(false);
+    expect(saveFailures[0]).toContain('size unknown');
   });
 
   it('returns normally when only the final save fails', async () => {
@@ -386,9 +395,16 @@ describe('TraceIndexer save path (Phase 0 characterization)', () => {
 
     expect(mocks.mockDb.save).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ total: 3, processed: 3 });
-    // The outer handler caught it and the progress callback still reported the
-    // final count, so the owning queue is not left believing nothing happened.
-    expect(loggedMessages().some(m => m.includes('Trace processing failed'))).toBe(true);
+    // PHASE 2 CHANGED THIS MESSAGE. The run finishing normally is the part
+    // that was pinned and it is unchanged. What changed is which handler says
+    // so: the failure used to reach the outer catch and be logged as
+    // "Trace processing failed", which is the line a genuinely broken run
+    // logs too. A failed snapshot now says it is a failed snapshot and the
+    // outer catch is left for real surprises.
+    expect(loggedMessages().some(m => m.includes('Trace processing failed'))).toBe(false);
+    const saveFailures = loggedMessages().filter(m => m.includes('Failed to save the cache'));
+    expect(saveFailures).toHaveLength(1);
+    expect(saveFailures[0]).toContain('final save');
     expect(mocks.progressCalls.at(-1)).toEqual({ totalTraces: 3, processedTraces: 3 });
   });
 });

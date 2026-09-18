@@ -24,6 +24,7 @@ module.exports = {
     'src/services/embeddings/ConversationEmbeddingService.ts',
     'src/services/embeddings/ConversationIndexer.ts',
     'src/services/embeddings/TraceIndexer.ts',
+    'src/services/embeddings/CacheSavePolicy.ts',
     // SQLite cache persistence (docs/plans/sqlite-cache-persistence-plan.md).
     // Added together with the per-file thresholds below, never without: a file
     // in this list and not in coverageThreshold is subtracted from nothing and
@@ -168,6 +169,15 @@ module.exports = {
       functions: 80,
       lines: 75,
       statements: 75
+    },
+    // Phase 2's save cadence and save-failure wording. Pure arithmetic over a
+    // byte count and a clock, driven directly by its own suite, so there is no
+    // excuse for a low bar here.
+    './src/services/embeddings/CacheSavePolicy.ts': {
+      branches: 90,
+      functions: 90,
+      lines: 95,
+      statements: 95
     },
     // SQLite cache persistence (docs/plans/sqlite-cache-persistence-plan.md).
     // Phase 0 added characterization cover for the save path: saveToFile, the

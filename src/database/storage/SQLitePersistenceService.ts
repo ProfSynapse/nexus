@@ -21,6 +21,8 @@ export class SQLitePersistenceService {
   private readonly blobStore: CacheBlobStore;
   /** Epoch ms of the last size line, or null when none has been emitted yet. */
   private lastSizeReportAt: number | null = null;
+  /** Byte count of the last blob this service wrote successfully. */
+  private lastSavedBytes: number | null = null;
 
   constructor(options: SQLitePersistenceServiceOptions) {
     this.blobStore = options.blobStore;
@@ -103,6 +105,16 @@ export class SQLitePersistenceService {
     );
   }
 
+  /**
+   * Byte count of the most recent successful save, or null if none has
+   * happened on this handle. Recorded as the write goes past, so reading it
+   * costs nothing; SQLiteCacheManager.getLastSavedBytes() is how the indexers
+   * reach it, and the save cadence is driven off it.
+   */
+  getLastSavedBytes(): number | null {
+    return this.lastSavedBytes;
+  }
+
   async saveDatabase(sqlite3: SQLiteWasmModule, db: SQLiteDatabaseHandle): Promise<void> {
     try {
       const consoleRef = console;
@@ -117,6 +129,7 @@ export class SQLitePersistenceService {
       }
 
       await this.blobStore.write(buffer);
+      this.lastSavedBytes = buffer.byteLength;
       this.reportSavedSize(buffer.byteLength);
     } catch (error) {
       console.error('[SQLiteCacheManager] Failed to save to blob store:', error);
