@@ -85,6 +85,10 @@ export class ConversationMigrator extends BaseMigrator<ConversationMigrationResu
             role: message.role,
             content: message.content,
             state: message.state,
+            // Without this the migration silently drops an assistant message's
+            // thinking: legacy JSON carries it, the event type declares it, and
+            // nothing writes it back afterwards.
+            reasoning: message.reasoning,
             sequenceNumber: i,
             tool_calls: message.toolCalls?.map((tc) => ({
               id: tc.id,

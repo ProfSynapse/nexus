@@ -10,7 +10,7 @@
  * MessageEditController, and helper renderers for specific concerns.
  */
 
-import { ConversationMessage } from '../../../types/chat/ChatTypes';
+import { ConversationMessage, ReasoningSegment } from '../../../types/chat/ChatTypes';
 import { setIcon, Component, App } from 'obsidian';
 
 // Extracted classes
@@ -20,6 +20,7 @@ import { MessageEditController } from '../controllers/MessageEditController';
 import { MessageBubbleBranchNavigatorBinder } from './helpers/MessageBubbleBranchNavigatorBinder';
 import { MessageBubbleImageRenderer } from './helpers/MessageBubbleImageRenderer';
 import { MessageBubbleStateResolver } from './helpers/MessageBubbleStateResolver';
+import { ReasoningSegmentSplitter } from './helpers/ReasoningSegmentSplitter';
 import { ThinkingLoader } from './ThinkingLoader';
 
 export class MessageBubble extends Component {
@@ -37,6 +38,12 @@ export class MessageBubble extends Component {
   private imageRenderer: MessageBubbleImageRenderer;
   private textBubbleElement: HTMLElement | null = null;
   private imageBubbleElement: HTMLElement | null = null;
+  // Open/closed state we last applied to each thinking block, keyed by segment
+  // index. The toggle handler compares against it to tell a user's click apart
+  // from our own auto-collapse; once they have taken control of a block their
+  // choice is recorded and wins over auto-collapse, re-renders included.
+  private reasoningAutoState = new Map<number, boolean>();
+  private reasoningUserState = new Map<number, boolean>();
 
   constructor(
     private message: ConversationMessage,
@@ -110,15 +117,13 @@ export class MessageBubble extends Component {
 
     const bubble = messageContainer.createDiv('message-bubble');
 
-    // Render the collapsible "Thinking" block (if the message carries reasoning)
-    // before the content so it sits at the top of the bubble.
-    this.syncReasoningBlock(bubble);
-
-    // Message content. The "working" ticker for empty assistant streaming is
-    // attached by createElement() via ensureWorkingTicker() so it sits inside
-    // this bubble's .message-content (kept attached even when there is no text).
+    // Message body. `.message-content` holds the turn in the order the model
+    // produced it: each "Thinking" block above the stretch of text it preceded.
+    // The "working" ticker for empty assistant streaming is attached by
+    // createElement() via ensureWorkingTicker() so it sits inside this
+    // container (kept attached even when there is no text).
     const content = bubble.createDiv('message-content');
-    this.renderContent(content, messageContent).catch(error => {
+    this.renderBody(content, messageContent).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
     });
 
@@ -192,17 +197,62 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Render message content using enhanced markdown renderer
+   * Render the whole message body into `.message-content`: the turn's thinking
+   * blocks and text runs in the order the model produced them, then the source
+   * footer. Rebuilds from scratch, so callers empty the container first.
    */
-  private async renderContent(container: HTMLElement, content: string): Promise<void> {
-    // Skip rendering if loading with empty content
-    if (this.message.isLoading && this.message.role === 'assistant' && !content.trim()) {
+  private async renderBody(container: HTMLElement, content: string): Promise<void> {
+    const state = MessageBubbleStateResolver.resolve(this.message);
+
+    // Nothing to lay out yet: an assistant placeholder with neither text nor
+    // thinking is the working ticker's job, not this one's.
+    const hasReasoning = !!state.activeReasoning?.trim();
+    if (this.message.isLoading && this.message.role === 'assistant' && !content.trim() && !hasReasoning) {
       return;
     }
 
+    const parts = ReasoningSegmentSplitter.split(
+      content,
+      state.activeReasoningSegments,
+      state.activeReasoning
+    );
+    const stillThinking = this.message.state === 'streaming' || !!this.message.isLoading;
     const referenceMetadata = ReferenceBadgeRenderer.getReferenceMetadata(this.message.metadata);
-    await MessageContentRenderer.renderContent(container, content, this.app, this, referenceMetadata);
+
+    this.reasoningAutoState.clear();
+
+    // Build the whole structure synchronously so the DOM order is settled before
+    // any markdown render resolves — the streaming parser looks for the trailing
+    // run the moment the next token lands.
+    const pending: Array<Promise<void>> = [];
+
+    for (let index = 0; index < parts.length; index++) {
+      const part = parts[index];
+
+      if (part.reasoning && part.reasoningIndex !== undefined) {
+        // Only the last block stays open, and only while the turn is still
+        // running: once text follows, the thinking that produced it folds away
+        // instead of pushing the answer off screen.
+        const isLast = index === parts.length - 1;
+        this.syncReasoningBlock(
+          container,
+          part.reasoningIndex,
+          part.reasoning.text,
+          stillThinking && isLast && !part.text.trim()
+        );
+      }
+
+      // Always create the run, even when empty: it is what the streaming parser
+      // binds to for the next stretch of text.
+      const run = container.createDiv('message-turn-text');
+      pending.push(
+        MessageContentRenderer.renderContent(run, part.text, this.app, this, referenceMetadata)
+      );
+    }
+
     this.renderSourceFooter(container);
+
+    await Promise.all(pending);
   }
 
   private renderSourceFooter(container: HTMLElement): void {
@@ -374,50 +424,117 @@ export class MessageBubble extends Component {
     }
   }
 
-  /** Create/update a collapsible "Thinking" block from the message's reasoning text. */
-  private syncReasoningBlock(bubble: HTMLElement): void {
-    const reasoning = MessageBubbleStateResolver.getActiveReasoning(this.message);
-    const existing = bubble.querySelector(':scope > .message-reasoning');
-    if (!reasoning || !reasoning.trim()) {
-      if (existing) existing.remove();
-      return;
+  /**
+   * Create or update one collapsible "Thinking" block inside `.message-content`,
+   * keyed by its index in the turn's reasoning segments. New blocks are appended
+   * after everything rendered so far (above the working ticker), which is where
+   * the thinking belongs: directly over the text it is about to produce.
+   */
+  private syncReasoningBlock(
+    container: HTMLElement,
+    segmentIndex: number,
+    text: string,
+    open: boolean
+  ): HTMLDetailsElement | null {
+    if (!text || !text.trim()) {
+      return null;
     }
 
-    let details: HTMLDetailsElement;
-    // Avoid `instanceof HTMLDetailsElement` (unreliable across Obsidian popout
-    // windows, like the file's isHTMLElement helper) — match on tagName instead.
-    if (this.isHTMLElement(existing) && existing.tagName === 'DETAILS') {
-      details = existing as HTMLDetailsElement;
-    } else {
-      if (existing) existing.remove();
+    let details = this.findReasoningBlock(container, segmentIndex);
+
+    if (!details) {
+      // Avoid `instanceof HTMLDetailsElement` (unreliable across Obsidian popout
+      // windows, like the file's isHTMLElement helper) — match on tagName instead.
       details = createEl('details');
       details.addClass('message-reasoning');
+      details.setAttribute('data-reasoning-index', String(segmentIndex));
       details.createEl('summary', { cls: 'message-reasoning-summary', text: 'Thinking' });
       details.createDiv('message-reasoning-content');
-      bubble.insertBefore(details, bubble.firstChild);
+
+      const block = details;
+      this.registerDomEvent(details, 'toggle', () => {
+        // `toggle` fires for our own auto-collapse too, and asynchronously, so
+        // compare against the state we last applied rather than assuming a click.
+        if (block.open !== this.reasoningAutoState.get(segmentIndex)) {
+          this.reasoningUserState.set(segmentIndex, block.open);
+        }
+      });
+
+      if (this.workingTickerEl && this.workingTickerEl.parentElement === container) {
+        container.insertBefore(details, this.workingTickerEl);
+      } else {
+        container.appendChild(details);
+      }
     }
 
     const body = details.querySelector('.message-reasoning-content');
     if (this.isHTMLElement(body)) {
-      body.textContent = reasoning;
+      body.textContent = text;
     }
-    // Auto-expand while the model is still thinking; collapse once the turn completes.
-    const stillThinking = this.message.state === 'streaming' || !!this.message.isLoading;
-    details.open = stillThinking;
+
+    const desired = this.reasoningUserState.get(segmentIndex) ?? open;
+    this.reasoningAutoState.set(segmentIndex, desired);
+    details.open = desired;
+
+    return details;
   }
 
-  /** Live update during streaming: write reasoning text into the block, creating it if needed. */
-  updateReasoning(reasoningText: string, isComplete: boolean): void {
-    if (!this.element) return;
-    const bubble = this.element.querySelector('.message-bubble');
-    if (!this.isHTMLElement(bubble)) return;
-    // Temporarily reflect the incoming text on the in-memory message so syncReasoningBlock renders it.
-    this.message = { ...this.message, reasoning: reasoningText };
-    this.syncReasoningBlock(bubble);
-    const details = bubble.querySelector(':scope > .message-reasoning');
-    if (this.isHTMLElement(details) && details.tagName === 'DETAILS') {
-      (details as HTMLDetailsElement).open = !isComplete;
+  private findReasoningBlock(container: HTMLElement, segmentIndex: number): HTMLDetailsElement | null {
+    const existing = container.querySelector(
+      `:scope > .message-reasoning[data-reasoning-index="${segmentIndex}"]`
+    );
+    return this.isHTMLElement(existing) && existing.tagName === 'DETAILS'
+      ? existing as HTMLDetailsElement
+      : null;
+  }
+
+  /** Fold every thinking block before `segmentIndex` the reader has not opened themselves. */
+  private collapseReasoningBlocksBefore(container: HTMLElement, segmentIndex: number): void {
+    const blocks = container.querySelectorAll(':scope > .message-reasoning');
+    blocks.forEach(block => {
+      if (!this.isHTMLElement(block) || block.tagName !== 'DETAILS') return;
+      const index = Number.parseInt(block.getAttribute('data-reasoning-index') ?? '', 10);
+      if (!Number.isInteger(index) || index >= segmentIndex) return;
+      if (this.reasoningUserState.has(index)) return;
+      this.reasoningAutoState.set(index, false);
+      (block as HTMLDetailsElement).open = false;
+    });
+  }
+
+  /**
+   * Live update during streaming: write the newest thinking into its own block.
+   *
+   * Returns true when this delta opened a NEW block, which is the caller's cue
+   * to seal the text run above it so the next tokens start a fresh run below.
+   */
+  updateReasoning(
+    reasoningText: string,
+    isComplete: boolean,
+    segments?: ReasoningSegment[]
+  ): boolean {
+    if (!this.element) return false;
+    const container = this.element.querySelector('.message-bubble .message-content');
+    if (!this.isHTMLElement(container)) return false;
+
+    // Reflect the incoming reasoning on the in-memory message so a later
+    // re-render (updateContent, reconcile) rebuilds the same layout.
+    this.message = { ...this.message, reasoning: reasoningText, reasoningSegments: segments };
+
+    const list: ReasoningSegment[] = segments && segments.length > 0
+      ? segments
+      : [{ text: reasoningText, contentOffset: 0 }];
+    const lastIndex = list.length - 1;
+
+    const isNewBlock = this.findReasoningBlock(container, lastIndex) === null;
+    if (isNewBlock) {
+      this.collapseReasoningBlocksBefore(container, lastIndex);
     }
+
+    const block = this.syncReasoningBlock(container, lastIndex, list[lastIndex].text, !isComplete);
+
+    // Only report a block that actually rendered: a segment whose first delta is
+    // whitespace must not seal the text run above an element that is not there.
+    return isNewBlock && block !== null;
   }
 
   /**
@@ -432,8 +549,11 @@ export class MessageBubble extends Component {
     this.stopLoadingAnimation();
 
     contentElement.empty();
+    // The message the bubble holds carries the turn's reasoning segments (kept
+    // current by updateReasoning), so the rebuild reproduces the interleaving.
+    this.message = { ...this.message, content };
 
-    this.renderContent(contentElement as HTMLElement, content).catch(error => {
+    this.renderBody(contentElement as HTMLElement, content).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
       const fallbackDiv = createDiv();
       fallbackDiv.textContent = content;
@@ -475,18 +595,12 @@ export class MessageBubble extends Component {
 
     contentElement.empty();
 
+    // Thinking blocks live inside .message-content, so the rebuild below
+    // reproduces them from the new message's segments in one pass.
     const activeContent = nextState.activeContent;
-    this.renderContent(contentElement, activeContent).catch(error => {
+    this.renderBody(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
-
-    // Re-sync the "Thinking" block from the new message's reasoning. The bubble
-    // is the parent of .message-content; contentElement.empty() above does not
-    // touch the reasoning block (it is a sibling, not a child of content).
-    const bubbleEl = contentElement.parentElement;
-    if (this.isHTMLElement(bubbleEl)) {
-      this.syncReasoningBlock(bubbleEl);
-    }
 
     if (this.message.role === 'assistant' && this.isHTMLElement(this.element)) {
       this.imageRenderer.renderLoadedToolResults(nextState.activeToolCalls, this.element);

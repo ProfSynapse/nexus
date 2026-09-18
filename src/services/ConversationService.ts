@@ -30,6 +30,7 @@ interface ConversationMessageUpdate {
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   toolCalls?: ToolCall[];
   reasoning?: string;
+  reasoningSegments?: MessageData['reasoningSegments'];
   metadata?: Record<string, unknown>;
 }
 
@@ -69,6 +70,16 @@ function toHybridToolCall(toolCall: LegacyToolCall): ToolCall {
   };
 }
 
+/**
+ * Stable string form of a message's reasoning segments, for the fast-path
+ * change comparison. Undefined and an empty array are the same "no segments".
+ */
+function serializeReasoningSegments(
+  segments: MessageData['reasoningSegments'] | undefined
+): string | undefined {
+  return segments && segments.length > 0 ? JSON.stringify(segments) : undefined;
+}
+
 function toAlternativeMessage(message: LegacyConversationMessage): AlternativeMessage {
   return {
     id: message.id,
@@ -77,6 +88,7 @@ function toAlternativeMessage(message: LegacyConversationMessage): AlternativeMe
     toolCalls: message.toolCalls?.map(toHybridToolCall),
     metadata: message.metadata,
     reasoning: message.reasoning,
+    reasoningSegments: message.reasoningSegments,
     state: message.state ?? 'complete'
   };
 }
@@ -93,6 +105,7 @@ function toMessageData(message: LegacyConversationMessage, conversationId: strin
     toolCalls: message.toolCalls?.map(toHybridToolCall),
     toolCallId: message.toolCallId,
     reasoning: message.reasoning,
+    reasoningSegments: message.reasoningSegments,
     metadata: message.metadata,
     alternatives: message.alternatives?.map(toAlternativeMessage),
     activeAlternativeIndex: message.activeAlternativeIndex
@@ -261,6 +274,7 @@ export class ConversationService {
             sequenceNumber: msg.sequenceNumber,
             toolCalls: msg.toolCalls,
             reasoning: msg.reasoning,
+            reasoningSegments: msg.reasoningSegments,
             metadata: msg.metadata,
             alternatives: msg.alternatives,
             activeAlternativeIndex: msg.activeAlternativeIndex
@@ -509,6 +523,7 @@ export class ConversationService {
                 && (msg.content ?? null) === prev.content
                 && (msg.state ?? 'complete') === prev.state
                 && (msg.reasoning ?? undefined) === (prev.reasoning ?? undefined)
+                && serializeReasoningSegments(msg.reasoningSegments) === prev.reasoningSegments
                 && (msg.toolCallId ?? undefined) === (prev.toolCallId ?? undefined)
                 && (msg.activeAlternativeIndex ?? 0) === (prev.activeAlternativeIndex ?? 0)) {
               continue;
@@ -531,6 +546,7 @@ export class ConversationService {
               content: msg.content ?? null,
               state: msg.state,
               reasoning: msg.reasoning,
+              reasoningSegments: msg.reasoningSegments,
               toolCalls: convertedToolCalls,
               toolCallId: msg.toolCallId,
               metadata: msg.metadata,
@@ -580,8 +596,8 @@ export class ConversationService {
    * full objects enable content/state comparison that avoids redundant writes
    * (the data is already fetched by adapter.getMessages, so this is free).
    */
-  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; toolCallId?: string; activeAlternativeIndex?: number }>> {
-    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; toolCallId?: string; activeAlternativeIndex?: number }> = [];
+  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number }>> {
+    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number }> = [];
     let page = 0;
     let hasNextPage = true;
 
@@ -596,6 +612,7 @@ export class ConversationService {
         content: message.content,
         state: message.state,
         reasoning: message.reasoning,
+        reasoningSegments: serializeReasoningSegments(message.reasoningSegments),
         toolCallId: message.toolCallId,
         activeAlternativeIndex: message.activeAlternativeIndex,
       })));
@@ -769,6 +786,7 @@ export class ConversationService {
           if (updates.state !== undefined) message.state = updates.state;
           if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls.map(toLegacyToolCall);
           if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
+          if (updates.reasoningSegments !== undefined) message.reasoningSegments = updates.reasoningSegments;
           if (updates.metadata !== undefined) message.metadata = updates.metadata;
 
           conversation.updated = Date.now();

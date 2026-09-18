@@ -35,8 +35,8 @@ class FakeDatabase implements MigratableDatabase {
 }
 
 describe('SchemaMigrator v11 -> v12 shard_cursors migration', () => {
-  it('declares CURRENT_SCHEMA_VERSION as 16', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(16);
+  it('declares CURRENT_SCHEMA_VERSION as 17', () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(17);
   });
 
   it('includes a v12 migration with the shard_cursors DDL', () => {
@@ -63,7 +63,7 @@ describe('SchemaMigrator v11 -> v12 shard_cursors migration', () => {
     }
   });
 
-  it('runs the v12 through v16 migrations when starting at v11', async () => {
+  it('runs the v12 through v17 migrations when starting at v11', async () => {
     const db = new FakeDatabase();
 
     // Pretend schema_version table exists and currently reports v11.
@@ -76,8 +76,8 @@ describe('SchemaMigrator v11 -> v12 shard_cursors migration', () => {
     const result = await migrator.migrate();
 
     expect(result.fromVersion).toBe(11);
-    expect(result.toVersion).toBe(16);
-    expect(result.applied).toBe(5);
+    expect(result.toVersion).toBe(17);
+    expect(result.applied).toBe(6);
 
     const ddlRun = db.runCalls.map(c => c.sql).filter(s => /shard_cursors/.test(s));
     expect(ddlRun.some(s => /CREATE TABLE IF NOT EXISTS shard_cursors/.test(s))).toBe(true);
@@ -85,7 +85,7 @@ describe('SchemaMigrator v11 -> v12 shard_cursors migration', () => {
     expect(ddlRun.some(s => /CREATE INDEX IF NOT EXISTS idx_shard_cursors_kind/.test(s))).toBe(true);
 
     // Each applied version is stamped (setVersion runs per migration).
-    for (const v of [12, 13, 14, 15, 16]) {
+    for (const v of [12, 13, 14, 15, 16, 17]) {
       const versionStamp = db.runCalls.find(
         c => /INSERT OR REPLACE INTO schema_version/.test(c.sql) &&
              Array.isArray(c.params) && c.params[0] === v
@@ -98,15 +98,15 @@ describe('SchemaMigrator v11 -> v12 shard_cursors migration', () => {
     const db = new FakeDatabase();
     db.execResponders.push(
       { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
-      { match: /MAX\(version\)/i, rows: [[16]] }
+      { match: /MAX\(version\)/i, rows: [[17]] }
     );
 
     const migrator = new SchemaMigrator(db);
     const result = await migrator.migrate();
 
     expect(result.applied).toBe(0);
-    expect(result.fromVersion).toBe(16);
-    expect(result.toVersion).toBe(16);
+    expect(result.fromVersion).toBe(17);
+    expect(result.toVersion).toBe(17);
     expect(db.runCalls.find(c => /shard_cursors/.test(c.sql))).toBeUndefined();
   });
 });
@@ -146,8 +146,8 @@ describe('SchemaMigrator v12 -> v13 skills migration', () => {
     const result = await migrator.migrate();
 
     expect(result.fromVersion).toBe(12);
-    expect(result.toVersion).toBe(16);
-    expect(result.applied).toBe(4);
+    expect(result.toVersion).toBe(17);
+    expect(result.applied).toBe(5);
 
     const ddlRun = db.runCalls.map(c => c.sql).filter(s => /skills/.test(s));
     expect(ddlRun.some(s => /CREATE TABLE IF NOT EXISTS skills/.test(s))).toBe(true);
@@ -192,7 +192,7 @@ describe('SchemaMigrator v13 -> v14 notes query index migration', () => {
     }
   });
 
-  it('runs the v14, v15 and v16 migrations when starting at v13', async () => {
+  it('runs the v14 through v17 migrations when starting at v13', async () => {
     const db = new FakeDatabase();
     db.execResponders.push(
       { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
@@ -203,8 +203,8 @@ describe('SchemaMigrator v13 -> v14 notes query index migration', () => {
     const result = await migrator.migrate();
 
     expect(result.fromVersion).toBe(13);
-    expect(result.toVersion).toBe(16);
-    expect(result.applied).toBe(3);
+    expect(result.toVersion).toBe(17);
+    expect(result.applied).toBe(4);
 
     const ddlRun = db.runCalls.map(c => c.sql);
     expect(ddlRun.some(s => /CREATE TABLE IF NOT EXISTS notes\b/.test(s))).toBe(true);
@@ -239,7 +239,7 @@ describe('SchemaMigrator v14 -> v15 durable operation receipts migration', () =>
     }
   });
 
-  it('runs v15 and v16 when starting at v14', async () => {
+  it('runs v15 through v17 when starting at v14', async () => {
     const db = new FakeDatabase();
     db.execResponders.push(
       { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
@@ -248,7 +248,7 @@ describe('SchemaMigrator v14 -> v15 durable operation receipts migration', () =>
 
     const result = await new SchemaMigrator(db).migrate();
 
-    expect(result).toMatchObject({ fromVersion: 14, toVersion: 16, applied: 2 });
+    expect(result).toMatchObject({ fromVersion: 14, toVersion: 17, applied: 3 });
     expect(db.runCalls.some(call => /CREATE TABLE IF NOT EXISTS tool_operation_receipts/.test(call.sql))).toBe(true);
     expect(db.runCalls.some(call => /CREATE TABLE IF NOT EXISTS notes\b/.test(call.sql))).toBe(false);
   });
@@ -285,7 +285,7 @@ describe('SchemaMigrator v15 -> v16 state archive flag migration', () => {
     }
   });
 
-  it('runs only the v16 migration when starting at v15', async () => {
+  it('runs the v16 and v17 migrations when starting at v15', async () => {
     const db = new FakeDatabase();
     db.execResponders.push(
       { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
@@ -296,8 +296,8 @@ describe('SchemaMigrator v15 -> v16 state archive flag migration', () => {
     const result = await migrator.migrate();
 
     expect(result.fromVersion).toBe(15);
-    expect(result.toVersion).toBe(16);
-    expect(result.applied).toBe(1);
+    expect(result.toVersion).toBe(17);
+    expect(result.applied).toBe(2);
 
     const ddlRun = db.runCalls.map(c => c.sql);
     expect(ddlRun.some(s => /ALTER TABLE states ADD COLUMN isArchived/.test(s))).toBe(true);
@@ -340,5 +340,102 @@ describe('SchemaMigrator v15 -> v16 state archive flag migration', () => {
     expect(backfills[0].params).toEqual([1, 'Ship the migration', 's-archived']);
     expect(backfills[1].params).toEqual([0, 'Explicit description', 's-live']);
     expect(backfills.find(c => Array.isArray(c.params) && c.params[2] === 's-broken')).toBeUndefined();
+  });
+});
+
+describe('SchemaMigrator v16 -> v17 reasoning segments migration', () => {
+  it('includes a v17 migration that adds messages.reasoningSegmentsJson', () => {
+    const v17 = MIGRATIONS.find(m => m.version === 17);
+    expect(v17).toBeDefined();
+    expect(v17!.description.toLowerCase()).toContain('reasoningsegments');
+    expect(v17!.sql.join('\n')).toContain('ALTER TABLE messages ADD COLUMN reasoningSegmentsJson TEXT');
+  });
+
+  it('uses additive-only DDL for v17 (ADD COLUMN, no DROP or RENAME)', () => {
+    const v17 = MIGRATIONS.find(m => m.version === 17)!;
+    for (const sql of v17.sql) {
+      const upper = sql.toUpperCase();
+      expect(upper).not.toContain('DROP TABLE');
+      expect(upper).not.toContain('DROP INDEX');
+      expect(upper).not.toContain('RENAME');
+      expect(upper).toContain('ADD COLUMN');
+    }
+  });
+
+  it('leaves the column nullable with no default so pre-v17 rows stay unknown', () => {
+    // A DEFAULT here would claim every existing message has zero thinking runs.
+    // NULL means "no segments recorded" and renders from flat reasoningContent.
+    const v17 = MIGRATIONS.find(m => m.version === 17)!;
+    const alter = v17.sql.find(s => /ALTER TABLE messages ADD COLUMN reasoningSegmentsJson/i.test(s))!;
+    expect(alter).not.toMatch(/DEFAULT/i);
+    expect(alter).not.toMatch(/NOT NULL/i);
+  });
+
+  it('runs only the v17 migration when starting at v16', async () => {
+    const db = new FakeDatabase();
+    db.execResponders.push(
+      { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
+      { match: /MAX\(version\)/i, rows: [[16]] }
+    );
+
+    const result = await new SchemaMigrator(db).migrate();
+
+    expect(result).toMatchObject({ fromVersion: 16, toVersion: 17, applied: 1 });
+    expect(db.runCalls.some(c => /ALTER TABLE messages ADD COLUMN reasoningSegmentsJson/.test(c.sql))).toBe(true);
+    // Earlier migrations must NOT re-run.
+    expect(db.runCalls.find(c => /ALTER TABLE states ADD COLUMN isArchived/.test(c.sql))).toBeUndefined();
+    expect(db.runCalls.find(c => /shard_cursors/.test(c.sql))).toBeUndefined();
+  });
+});
+
+describe('SchemaMigrator needsRebuild', () => {
+  it('is false when no migration ran', async () => {
+    const db = new FakeDatabase();
+    db.execResponders.push(
+      { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
+      { match: /MAX\(version\)/i, rows: [[CURRENT_SCHEMA_VERSION]] }
+    );
+
+    const result = await new SchemaMigrator(db).migrate();
+
+    expect(result.applied).toBe(0);
+    expect(result.needsRebuild).toBe(false);
+  });
+
+  it('is false for migrations that fix existing rows in place', async () => {
+    // Upgrading from the very first versioned schema runs every migration we
+    // ship. None of them currently needs a replay -- they are additive DDL, or
+    // they backfill in-DB -- so an ordinary plugin update must NOT cost a user
+    // a full re-read of their vault plus an FTS reindex.
+    const db = new FakeDatabase();
+    db.execResponders.push(
+      { match: /sqlite_master.*schema_version/i, rows: [['schema_version']] },
+      { match: /MAX\(version\)/i, rows: [[11]] }
+    );
+
+    const result = await new SchemaMigrator(db).migrate();
+
+    expect(result.applied).toBeGreaterThan(0);
+    expect(result.needsRebuild).toBe(false);
+  });
+
+  it('reports the flag of the migration that ran, not merely that one ran', () => {
+    // The signal is per-migration on purpose. If this ever reads `applied > 0`
+    // again, every schema bump replays the whole vault.
+    const source: string = require('fs').readFileSync(
+      'src/database/schema/SchemaMigrator.ts',
+      'utf8'
+    );
+    expect(source).toContain('migration.requiresRebuild === true');
+    expect(source).not.toMatch(/needsRebuild:\s*appliedCount\s*>\s*0/);
+  });
+
+  it('every migration that declares requiresRebuild says why in its description or comment', () => {
+    for (const migration of MIGRATIONS) {
+      if (migration.requiresRebuild === true) {
+        // A rebuild is expensive enough that it should never be set silently.
+        expect(migration.description.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

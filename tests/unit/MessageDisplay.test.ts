@@ -441,4 +441,95 @@ describe('MessageDisplay', () => {
       expect(messagesContainer.insertBefore).toHaveBeenCalled();
     });
   });
+
+  // ==========================================================================
+  // Auto-scroll: follow streaming output without fighting the reader
+  // ==========================================================================
+
+  describe('followNewOutput', () => {
+    let scrollHandler: (event: Event) => void;
+    let stickyDisplay: MessageDisplay;
+    let frames: Array<() => void>;
+
+    function scrollTo(distanceFromBottom: number): void {
+      messagesContainer.scrollHeight = 1000;
+      (messagesContainer as unknown as { clientHeight: number }).clientHeight = 400;
+      messagesContainer.scrollTop = 1000 - 400 - distanceFromBottom;
+      scrollHandler({ target: messagesContainer } as unknown as Event);
+    }
+
+    function flushFrames(): void {
+      const queued = frames.splice(0, frames.length);
+      queued.forEach(callback => callback());
+    }
+
+    beforeEach(() => {
+      frames = [];
+      // MessageDisplay coalesces onto window.requestAnimationFrame; drive it by hand
+      const win = (globalThis as unknown as { window: Record<string, unknown> }).window;
+      win.requestAnimationFrame = jest.fn((callback: () => void) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      win.cancelAnimationFrame = jest.fn();
+
+      const component = {
+        registerDomEvent: jest.fn((_el: unknown, _type: string, handler: (event: Event) => void) => {
+          scrollHandler = handler;
+        })
+      };
+
+      stickyDisplay = new MessageDisplay(
+        container,
+        mockApp,
+        mockBranchManager,
+        undefined,
+        undefined,
+        undefined,
+        component as never
+      );
+      messagesContainer.scrollTop = 0;
+    });
+
+    it('pins the transcript to the newest output while the reader is at the bottom', () => {
+      scrollTo(0);
+
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+    });
+
+    it('stops chasing the output once the reader scrolls up to read', () => {
+      scrollTo(500);
+      const parked = messagesContainer.scrollTop;
+
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(parked);
+    });
+
+    it('resumes following when the reader returns to the bottom', () => {
+      scrollTo(500);
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      scrollTo(0);
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+    });
+
+    it('coalesces a burst of tokens onto a single frame', () => {
+      scrollTo(0);
+
+      stickyDisplay.followNewOutput();
+      stickyDisplay.followNewOutput();
+      stickyDisplay.followNewOutput();
+
+      expect(frames).toHaveLength(1);
+    });
+  });
 });

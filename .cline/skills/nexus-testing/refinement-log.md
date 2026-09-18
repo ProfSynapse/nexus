@@ -92,3 +92,6 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 - 2026-09-08 | Request-body assertions caught unsupported sampling parameters; removing the production guards made all new regression cases fail. Skill validation also treated optional machine-private hook paths as broken references. | Clarified the optional local hook without repository links and added the missing Next section in protocols/merge-a-pr.md.
 
 - 2026-09-08 | Quality and dimension guards were tested at the outgoing request boundary; disabling them made the regression cases fail. | No procedure change.
+
+- 2026-09-18 | headless-obsidian step 5 copies only `main.js manifest.json styles.css`, but the build also emits `sqlite3.wasm`. Without it SQLite never initialises and ConversationService silently falls back to the legacy `.conversations/*.json` backend — the plugin loads, `dev:errors` is clean, conversations save and reload, and a storage round-trip test passes against a backend the change never touched. Cost a full round of "proven" results that proved nothing about the hybrid path. | Added `sqlite3.wasm` to the copy list, pointed at `npm run build | grep -i copied` to derive it instead, and added a storage-backend stop condition to step 6 that asserts the schema version. | protocols/headless-obsidian.md
+

@@ -64,11 +64,13 @@ otherwise is not.
    ./obsidian-cli --help    # prints the command list once the CLI is live
    ```
 
-5. **Install the plugin into the vault** and let Obsidian past Restricted Mode:
+5. **Install the plugin into the vault** and let Obsidian past Restricted Mode.
+   Copy every build artifact, not just the three the manifest names —
+   `sqlite3.wasm` is emitted by the build and the cache cannot start without it:
 
    ```bash
    cd /home/user/nexus && npm run build
-   cp main.js manifest.json styles.css /tmp/test-vault/.obsidian/plugins/nexus/
+   cp main.js manifest.json styles.css sqlite3.wasm /tmp/test-vault/.obsidian/plugins/nexus/
    echo '["nexus"]' > /tmp/test-vault/.obsidian/community-plugins.json
    cd /tmp/squashfs-root
    ./obsidian-cli eval code="app.plugins.setEnable(true); 'ok'"
@@ -77,6 +79,13 @@ otherwise is not.
    A fresh vault opens in Restricted Mode, where `app.plugins.isEnabled()` is
    false and no community plugin loads. Listing the plugin in
    `community-plugins.json` is not enough on its own.
+
+   Derive the list rather than trusting this one — the build's copy steps say
+   what it emits:
+
+   ```bash
+   cd /home/user/nexus && npm run build 2>&1 | grep -i copied
+   ```
 
 6. **Confirm the plugin actually loaded**, which is a different question from
    whether Obsidian started:
@@ -90,6 +99,19 @@ otherwise is not.
    findings — the first run of this setup surfaced a startup ordering bug that
    every Jest lane was blind to. Do not treat a noisy `dev:errors` as setup
    failure without reading it.
+
+   Then confirm the **storage backend** came up, which is a third question again
+   and the one that fails silently:
+
+   ```bash
+   ./obsidian-cli eval code="(async()=>{const a=await app.plugins.plugins['nexus'].serviceManager.getService('hybridStorageAdapter');const c=a.getSqliteCache?a.getSqliteCache():a.sqliteCache;try{const r=await c.query('SELECT MAX(version) AS v FROM schema_version');return 'schema v'+r[0].v}catch(e){return 'CACHE DOWN: '+e}})()"
+   ```
+
+   A missing `sqlite3.wasm` leaves SQLite uninitialised, and `ConversationService`
+   then quietly falls back to the legacy `.conversations/*.json` backend. Nothing
+   errors — the plugin loads, conversations save and reload — so a storage test
+   run in that state passes against the wrong backend entirely. Assert the schema
+   version before trusting any storage result.
 
 7. Hand off to `live-loop.md`, which owns the build → reload → observe cycle.
 

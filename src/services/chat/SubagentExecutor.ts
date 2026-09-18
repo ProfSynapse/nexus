@@ -33,6 +33,10 @@ import type { DirectToolExecutor } from './DirectToolExecutor';
 import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
 import { isTextOnlyProvider } from '../llm/utils/ToolSchemaSupport';
 import type { ChatRuntimeEvent } from '../llm/runtime/ChatRuntimeEvent';
+import {
+  createInitialChatTurnState,
+  reduceChatTurn,
+} from '../llm/runtime/ChatTurnReducer';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -318,10 +322,18 @@ export class SubagentExecutor {
       throw new Error('Branch not found');
     }
 
-    // Generate response - streaming handles tool pingpong automatically
+    // Generate response - streaming handles tool pingpong automatically.
+    //
+    // A subagent branch IS a conversation, and it is inspectable like any other,
+    // so it accumulates its turn through the same reducer the main chat uses
+    // rather than hand-rolling the arithmetic. That is what gives a subagent
+    // transcript merged tool snapshots and positioned thinking segments instead
+    // of one flat blob of reasoning.
+    let turnState = createInitialChatTurnState();
     let responseContent = '';
     let toolCalls: ToolCall[] | undefined;
     let reasoning = '';
+    let reasoningSegments: ChatMessage['reasoningSegments'];
     let toolIterations = 0;
     let lastToolUsed: string | undefined;
     let sawTerminalEvent = false;
@@ -376,28 +388,37 @@ export class SubagentExecutor {
         };
       }
 
+      // This loop does not break on turn.completed -- it falls through to emit
+      // the final streaming update -- so stop folding once the turn has settled.
+      // Feeding the reducer a second terminal event is an error by design.
+      if (!turnState.terminalEvent) {
+        turnState = reduceChatTurn(turnState, event);
+        responseContent = turnState.content;
+        reasoning = turnState.reasoning.text;
+        reasoningSegments = turnState.reasoning.segments.length > 0
+          ? turnState.reasoning.segments
+          : undefined;
+        toolCalls = turnState.toolCalls.length > 0 ? turnState.toolCalls : undefined;
+      }
+
       let incrementalText = '';
       let isComplete = false;
 
       if (event.type === 'assistant.delta') {
         incrementalText = event.text;
-        responseContent += event.text;
       }
       if (event.type === 'tool.snapshot') {
-        // These are ALREADY-EXECUTED tool calls (with results)
-        // They accumulate across all pingpong iterations
-        toolCalls = event.calls;
-        toolIterations = event.calls.length; // Approximate iteration count
+        // These are ALREADY-EXECUTED tool calls (with results). The reducer
+        // merges successive snapshots by stable id, so the count is the number
+        // of distinct calls rather than the size of the latest snapshot.
+        toolIterations = turnState.toolCalls.length; // Approximate iteration count
 
         // Track the last tool used for UI display
-        const latestTool = event.calls[event.calls.length - 1];
+        const latestTool = turnState.toolCalls[turnState.toolCalls.length - 1];
         if (latestTool?.function?.name) {
           lastToolUsed = latestTool.function.name;
           this.updateStatus(subagentId, { iterations: toolIterations, lastToolUsed });
         }
-      }
-      if (event.type === 'reasoning.delta') {
-        reasoning += event.text;
       }
       if (event.type === 'turn.failed') {
         throw new Error(event.error.message);
@@ -423,6 +444,7 @@ export class SubagentExecutor {
       streamingAssistantMessage.content = responseContent;
       streamingAssistantMessage.toolCalls = toolCalls;
       streamingAssistantMessage.reasoning = reasoning || undefined;
+      streamingAssistantMessage.reasoningSegments = reasoningSegments;
 
       // Emit tool calls event - SAME as parent chat does
       // This allows ToolEventCoordinator to dynamically create/update tool bubbles
@@ -460,6 +482,7 @@ export class SubagentExecutor {
       state: 'complete',
       toolCalls: finalToolCalls,
       reasoning: reasoning || undefined,
+      reasoningSegments,
     });
 
     // Streaming completed = LLM is done (all tool calls already handled internally)

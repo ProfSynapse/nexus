@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 16
+ * Current Version: 17
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS messages (
   toolCallsJson TEXT,
   toolCallId TEXT,
   reasoningContent TEXT,
+  reasoningSegmentsJson TEXT,
   sequenceNumber INTEGER NOT NULL,
   alternativesJson TEXT,
   activeAlternativeIndex INTEGER DEFAULT 0,
@@ -550,5 +551,5 @@ CREATE INDEX IF NOT EXISTS idx_np_note ON note_properties(note_id);
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (16, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (17, strftime('%s', 'now') * 1000);
 `;

@@ -19,6 +19,24 @@ export interface MessageCost {
   currency: string;
 }
 
+/**
+ * One contiguous run of model reasoning, anchored to the point in the visible
+ * answer where the model produced it. A turn that thinks, writes, thinks again
+ * and writes again yields two segments, so the UI can render each block of
+ * thinking above the text it preceded instead of piling all of it on top.
+ */
+export interface ReasoningSegment {
+  /** Thinking text for this run. */
+  text: string;
+  /**
+   * Length of the assistant content already streamed when this run opened.
+   * Renderers slice `content` on these offsets to interleave thinking and text.
+   */
+  contentOffset: number;
+  /** Provider block id, when the provider labels its thinking blocks. */
+  blockId?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -32,6 +50,12 @@ export interface ChatMessage {
   metadata?: Record<string, unknown>;
   // Reasoning/thinking content from LLMs that support it (Claude, GPT-5, Gemini)
   reasoning?: string;
+  /**
+   * The same reasoning split into the runs the model actually emitted, each
+   * anchored to a `content` offset. Optional: messages stored before this
+   * existed (and providers that never split) fall back to `reasoning`.
+   */
+  reasoningSegments?: ReasoningSegment[];
 
   // Provider/model that generated this message
   provider?: string;

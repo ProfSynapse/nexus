@@ -43,6 +43,7 @@ interface BranchMessageUpdateParams {
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   toolCalls?: ToolCall[];
   reasoning?: string;
+  reasoningSegments?: ConversationMessage['reasoningSegments'];
   metadata?: Record<string, unknown>;
 }
 
@@ -231,6 +232,7 @@ export class BranchManager {
     const updates: BranchMessageUpdateParams = {
       state,
       reasoning: message.reasoning,
+      reasoningSegments: message.reasoningSegments,
     };
 
     if (message.toolCalls) {
@@ -418,6 +420,22 @@ export class BranchManager {
       return undefined;
     }
     return message.reasoning;
+  }
+
+  /**
+   * Get the currently active message's reasoning segments
+   */
+  getActiveMessageReasoningSegments(
+    message: ConversationMessage
+  ): ConversationMessage['reasoningSegments'] {
+    const branch = this.getActiveBranch(message);
+    if (branch) {
+      if (branch.messages.length > 0) {
+        return branch.messages[branch.messages.length - 1].reasoningSegments;
+      }
+      return undefined;
+    }
+    return message.reasoningSegments;
   }
 
   /**
