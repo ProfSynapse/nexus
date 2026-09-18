@@ -4,6 +4,18 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-18 | `references/lanes.md` told readers that adding a file to the coverage
+allowlist without a per-file `coverageThreshold` reds the run, and prescribed "add
+both or neither". The prescribed remedy does nothing: `npm run test:coverage` passes
+`--coverageThreshold` on the command line, which *replaces* the config object rather
+than merging, so none of the ~35 per-file entries in jest.config.js are read by that
+command. Verified by running it: only `"global"` threshold failures are reported,
+while the four per-file failures a bare `jest --coverage` reports are absent. Also
+found that command already red on main at 76.44% statements, so it gates nothing. |
+Replaced the Coverage section with a table separating what each command reads, kept
+the advice to add the per-file entry (a bare `jest --coverage` does read it) while
+removing the false claim that it protects `test:coverage`, and added the two
+discovery commands. | `references/lanes.md`, `refinement-log.md`.
 2026-08-24 | A 2026-08-21 entry below repointed this skill's validator command at
 `.codex/skills` on the premise that the `.claude/skills` mirror had been removed.
 The premise was false: `scripts/sync-agent-context.mjs` copies `.skills/` into all
