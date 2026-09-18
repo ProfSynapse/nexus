@@ -24,6 +24,23 @@ module.exports = {
     'src/services/embeddings/ConversationEmbeddingService.ts',
     'src/services/embeddings/ConversationIndexer.ts',
     'src/services/embeddings/TraceIndexer.ts',
+    'src/services/embeddings/CacheSavePolicy.ts',
+    // SQLite cache persistence (docs/plans/sqlite-cache-persistence-plan.md).
+    // Added together with the per-file thresholds below, never without: a file
+    // in this list and not in coverageThreshold is subtracted from nothing and
+    // drags the global number down. See
+    // .skills/nexus-testing/references/lanes.md.
+    //
+    // Worth knowing while reading that rule: the `test:coverage` script passes
+    // its own coverageThreshold on the command line, which REPLACES this whole
+    // object rather than merging with it, so under that script none of the
+    // per-file entries in this file apply and every listed file counts toward
+    // the one global 80. The per-file entries below are what a bare
+    // `jest --coverage` enforces, and they are where the Phase 1 and Phase 2
+    // ratchet belongs.
+    'src/database/storage/SQLiteCacheManager.ts',
+    'src/database/storage/SQLitePersistenceService.ts',
+    'src/database/storage/SQLiteMaintenanceService.ts',
     'src/agents/searchManager/services/ConversationSearchStrategy.ts',
     // OAuth service layer + providers + adapter
     'src/services/oauth/PKCEUtils.ts',
@@ -152,6 +169,45 @@ module.exports = {
       functions: 80,
       lines: 75,
       statements: 75
+    },
+    // Phase 2's save cadence and save-failure wording. Pure arithmetic over a
+    // byte count and a clock, driven directly by its own suite, so there is no
+    // excuse for a low bar here.
+    './src/services/embeddings/CacheSavePolicy.ts': {
+      branches: 90,
+      functions: 90,
+      lines: 95,
+      statements: 95
+    },
+    // SQLite cache persistence (docs/plans/sqlite-cache-persistence-plan.md).
+    // Phase 0 added characterization cover for the save path: saveToFile, the
+    // autosave timer, the hasUnsavedData transitions, overlap, and close().
+    // SQLiteCacheManager.ts stays low because most of the remaining file is
+    // query/pagination/sync delegation to services that have their own suites,
+    // plus the WASM init path, which needs a real sqlite3 module. Phases 1 and
+    // 2 raise the save-path share; raise these numbers with them rather than
+    // leaving slack behind.
+    './src/database/storage/SQLiteCacheManager.ts': {
+      branches: 30,
+      functions: 48,
+      lines: 58,
+      statements: 58
+    },
+    // Uncovered here is reportCacheRebuild's message body, which is asserted on
+    // as a string by the corrupt-cache suite rather than executed line by line.
+    './src/database/storage/SQLitePersistenceService.ts': {
+      branches: 70,
+      functions: 85,
+      lines: 95,
+      statements: 95
+    },
+    // Branches stay low because the dbSizeBytes fallback chain and the
+    // table-absent guards each have a rarely-taken side.
+    './src/database/storage/SQLiteMaintenanceService.ts': {
+      branches: 44,
+      functions: 88,
+      lines: 85,
+      statements: 85
     },
     './src/agents/searchManager/services/ConversationSearchStrategy.ts': {
       branches: 80,

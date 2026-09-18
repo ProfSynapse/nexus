@@ -54,7 +54,29 @@ runs in CI. `scripts/check_live_lane_gates.py` is the mechanical guard.
 
 jest.config.js carries an explicit `collectCoverageFrom` allowlist and per-file
 `coverageThreshold` entries, many deliberately low with a comment explaining
-what is unreachable without a real DOM. `npm run test:coverage` layers a global
-80% threshold on top. Adding a file to the allowlist without its own threshold
-therefore pulls the *global* number down and reds the whole run — add both or
-neither.
+what is unreachable without a real DOM.
+
+**The two coverage commands do not read the same thresholds.** A CLI
+`--coverageThreshold` *replaces* the config object rather than merging into it,
+and `npm run test:coverage` passes one (`package.json`):
+
+| Command | Thresholds actually applied |
+|---|---|
+| `npx jest --coverage` | the per-file entries in jest.config.js; no global gate |
+| `npm run test:coverage` | one global 80% gate; **every per-file entry is ignored** |
+
+So adding a file to `collectCoverageFrom` pulls the global number down under
+`npm run test:coverage`, and giving it a per-file threshold does **not** protect
+it there, because that entry is not read by that command. Add the per-file entry
+anyway, because a bare `jest --coverage` does read it and that is where a
+per-file ratchet belongs, but do not expect it to keep `test:coverage` green.
+
+Note that `npm run test:coverage` is red on main and has been for some time
+(76.44% statements against the 80% gate, all four global thresholds failing),
+so it is not a gate anything currently passes. `npm run test` is the gate that
+matters. Verify with:
+
+```bash
+npm run test:coverage 2>&1 | grep "coverage threshold"   # global lines only
+npx jest --coverage 2>&1 | grep "coverage threshold"     # per-file lines
+```

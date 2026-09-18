@@ -242,3 +242,85 @@ Fixing teardown is necessary but not sufficient: a write scheduled before the
 close still has to fail safely. Give the detached paths (`void this.flush()`,
 `void service.deleteNote(...)`) a `catch`, or the shutdown detail is reported as
 a plugin error.
+
+## "RangeError: Array buffer allocation failed", or "Failed to embed \<path\>" on a large vault
+
+Not an embedding failure and not out-of-memory. The cache is persisted by exporting
+the **entire** database out of the WASM heap and handing it to the blob store, which
+copies it again. `SQLiteWasmBridge.exportDatabase` calls `sqlite3_js_db_export`, which
+copies the image inside the WASM heap and then copies that into a contiguous JS
+`ArrayBuffer`; `SQLitePersistenceService.saveDatabase` passes it to
+`IndexedDBCacheBlobStore.write` (structured clone) on desktop or
+`vault.adapter.writeBinary` on mobile. Peak live bytes per save measured at 3x the
+database size, the WASM heap reached 310.6 MB resident for a 152 MB database, and it
+never shrinks. At a 150 MB cache with a save every ten notes, a full index performs
+hundreds of allocate-and-discard cycles and the JS heap fragments until no contiguous
+run that size remains. The allocator is refusing one contiguous request, which is why
+the first saves succeed and later ones fail.
+
+It is reported as an embed failure because the periodic `db.save()` sat inside the
+per-note `try` in `IndexingQueue`. `TraceIndexer` has the same shape and says so in a
+comment. **The stack is the tell**: `sqlite3_js_db_export` / `saveDatabase` /
+`saveToFile` means persistence, whatever the message says.
+
+Two aggravators worth checking before fixing anything:
+
+- Interleaved `Auto-save failed` lines mean the 30 s timer started a *second*
+  full-size export while the first was still awaiting its write. Two concurrent
+  exports measured at 5x database size against 3x for one.
+- A save failure used to be able to null the conversation backfill's resume
+  checkpoint, restarting it at zero on the next run. If a backfill keeps starting
+  over, look at the save path, not the backfill.
+
+Confirm with `getStatistics()`: `dbSizeBytes` is what the last save wrote, while
+`pageCount * pageSizeBytes` is the logical size inside the WASM heap that every save
+has to copy out. A large `freelistCount` means a `VACUUM` would shrink the blob. For a
+per-table breakdown call `getObjectPageUsage()`, which reads `dbstat` and is on-demand
+only because it walks every page.
+
+Fix at the persistence layer, never by catching the `RangeError` at the call site. The
+structural fix is `sqlite3_serialize` with `SQLITE_SERIALIZE_NOCOPY` plus a chunked
+blob format, which brings the contiguous requirement from the full database size down
+to one chunk. Note that the NOCOPY pointer moves when a `RESIZEABLE` database grows,
+so it must be re-taken immediately before every use. OPFS is not the answer here: the
+sahpool VFS needs a dedicated Worker because `createSyncAccessHandle` is
+`[Exposed=DedicatedWorker]`. See `docs/plans/sqlite-cache-persistence-plan.md` and
+`docs/plans/sqlite-cache-persistence-spike-findings.md`.
+
+## "`await db.save()` returned, so the rows are on disk"
+
+Usually true, and the two ways it is not are both silent.
+
+`SQLiteCacheManager.save()` is `saveToFile()`, which branches three ways over a
+write counter (`markDirty()` bumps `writeGeneration` on every write). Nothing in
+flight: `startSave()` captures the generation **before** `saveDatabase` exports, so
+the snapshot covers every write that had landed when the caller asked. Something in
+flight and the generation has not moved: the caller joins it, because that export
+already holds what this caller wants persisted. Something in flight and the
+generation has moved: one follow-up is scheduled, shared by every caller that asks
+while the first runs, and it exports after that one settles. All three branches mean
+the same thing, so a resolved `save()` is a real durability point for the caller's
+own writes. That is what lets an indexer treat a returned `save()` as proof
+(`CacheSavePolicy.markSaveSuccess`), and it is why that call belongs on the path
+where `save()` returned rather than in a `finally` beside the attempt.
+
+**First exception: a cancelled follow-up resolves without writing anything.**
+`scheduleFollowUpSave` returns early when `stopAutoSave()` or `close()` cancelled it,
+or when the handle is already gone. That is protecting data, not cutting a corner:
+Rebuild Cache calls `stopAutoSave()`, then `close()`, then `blobStore.remove()`, and
+a follow-up landing after the remove would write the deleted database straight back.
+The price is that the promise cannot distinguish a save that wrote from one that
+stood down. Anything long-running that counts successful saves therefore has to stop
+on unload and on rebuild for its own reasons; it cannot learn from the save that it
+should.
+
+**Second exception: a resolved save does not mean the cache is clean.**
+`hasUnsavedChanges()` is still true when a write landed while the export was in
+flight, because `startSave` clears the flag only if `writeGeneration` has not moved
+since it captured it. Both facts hold at once and both are correct: the caller's rows
+are in the snapshot, newer rows are not. Do not clear the flag to make them agree. It
+is what stops rows that are in no snapshot anywhere from being dropped at `close()`,
+and that matters most for data the event store cannot replay. Workspace and
+conversation rows survive a lost snapshot because a rebuild replays them; embeddings
+do not, so for those the flag is the only thing standing between a mid-save write and
+a silent re-embed of the vault.

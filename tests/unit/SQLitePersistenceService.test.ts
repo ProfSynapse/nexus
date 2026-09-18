@@ -302,4 +302,105 @@ describe('SQLitePersistenceService', () => {
       }
     });
   });
+  /**
+   * Phase 0 characterization for docs/plans/sqlite-cache-persistence-plan.md.
+   *
+   * The real-world defect: on a large vault every save exports the whole
+   * database into one contiguous ArrayBuffer and hands it to the blob store,
+   * and the allocator eventually refuses. Nothing in this suite ever asserted
+   * what happens when that write fails, so nothing pinned down the fact that
+   * the rejection travels all the way back to the caller. That travel is the
+   * whole mechanism by which a persistence failure surfaces as
+   * "[IndexingQueue] Failed to embed <path>" on some arbitrary tenth note.
+   *
+   * This pins CURRENT behaviour and stays true through every later phase: the
+   * error must keep reaching the caller and must keep being logged here. A
+   * later phase changes who catches it, never whether it is thrown.
+   */
+  describe('a failing save reaches the caller', () => {
+    it('logs the blob store write failure and rethrows it unchanged', async () => {
+      const { service, blobStore, bridge, db, sqlite3 } = createService();
+      // The exact shape reported from the field: the allocator refusing one
+      // contiguous request while the backend copies the exported buffer.
+      const allocationFailure = new RangeError('Array buffer allocation failed');
+      blobStore.write.mockRejectedValue(allocationFailure);
+
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        // toBe, not toThrow: the caller has to receive the original error, not
+        // a wrapper that has lost the cause a bug report needs.
+        await expect(service.saveDatabase(sqlite3, db)).rejects.toBe(allocationFailure);
+
+        expect(bridge.exportDatabase).toHaveBeenCalledWith(sqlite3, db);
+        expect(formattedFrom(errSpy)).toContain('Failed to save to blob store');
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+
+    it('restores console.log before propagating a failure from the export itself', async () => {
+      // saveDatabase silences console.log around exportDatabase to suppress the
+      // WASM heap-resize chatter. If an export that throws could leave that
+      // silencing in place, one allocation failure would mute console.log for
+      // the rest of the session and take every other diagnostic with it.
+      const { service, bridge, db, sqlite3 } = createService();
+      const originalLog = console.log;
+      (bridge.exportDatabase as jest.Mock).mockImplementation(() => {
+        throw new RangeError('Array buffer allocation failed');
+      });
+
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await expect(service.saveDatabase(sqlite3, db)).rejects.toThrow('Array buffer allocation failed');
+        expect(console.log).toBe(originalLog);
+      } finally {
+        errSpy.mockRestore();
+      }
+    });
+  });
+
+  /**
+   * Phase 0 size measurement (same plan). Every save already holds the exact
+   * byte count of what it wrote; until now nothing said it out loud, so a bug
+   * report arrived with an allocation failure and no idea how big the thing
+   * being allocated was.
+   */
+  describe('successful saves report the cache size', () => {
+    it('reports the written byte count on the first save and rate limits the rest', async () => {
+      const { service, bridge, db, sqlite3 } = createService();
+      (bridge.exportDatabase as jest.Mock).mockReturnValue(new ArrayBuffer(3 * 1024 * 1024));
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        await service.saveDatabase(sqlite3, db);
+        await service.saveDatabase(sqlite3, db);
+        await service.saveDatabase(sqlite3, db);
+
+        // Three saves, one line. A full index saves every ten notes; an
+        // unthrottled line here would bury the console on a large vault.
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const line = String(warnSpy.mock.calls[0][0]);
+        expect(line).toContain(String(3 * 1024 * 1024));
+        expect(line).toContain('3.0 MB');
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('says nothing when the save failed', async () => {
+      const { service, blobStore, db, sqlite3 } = createService();
+      blobStore.write.mockRejectedValue(new RangeError('Array buffer allocation failed'));
+
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await expect(service.saveDatabase(sqlite3, db)).rejects.toThrow();
+        // A size line after a failed write would read as a successful save.
+        expect(warnSpy).not.toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+        errSpy.mockRestore();
+      }
+    });
+  });
 });

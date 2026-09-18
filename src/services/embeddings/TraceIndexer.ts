@@ -14,6 +14,12 @@
 
 import { EmbeddingService } from './EmbeddingService';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import {
+  SaveCadence,
+  describeCacheSaveFailure,
+  readCacheSizeBytes,
+  type CacheSaveStage
+} from './CacheSavePolicy';
 
 /**
  * Progress callback signature emitted by the indexer to the owning queue.
@@ -42,6 +48,10 @@ export class TraceIndexer {
     db: SQLiteCacheManager,
     embeddingService: EmbeddingService,
     onProgress: (progress: TraceIndexerProgress) => void,
+    /**
+     * Floor on how often a snapshot is written, in traces. The interval in
+     * force also scales with the size of the database; see CacheSavePolicy.
+     */
     saveInterval = 10,
     yieldIntervalMs = 50
   ) {
@@ -107,6 +117,8 @@ export class TraceIndexer {
 
     this.onProgress({ totalTraces: totalCount, processedTraces: 0 });
 
+    const saveCadence = new SaveCadence({ minItems: this.saveInterval, db: this.db });
+
     try {
       for (const trace of needsIndexing) {
         if (abortSignal?.aborted) {
@@ -126,27 +138,33 @@ export class TraceIndexer {
             trace.content
           );
           processedCount++;
-
-          if (processedCount % this.saveInterval === 0) {
-            await this.db.save();
-          }
-
+          saveCadence.recordItem();
         } catch (error) {
-          // Not the embedding itself: embedTrace() catches its own failures and
-          // never rethrows, so the only thing that can land here is the periodic
-          // db.save() above, on every saveInterval-th item.
+          // embedTrace() catches its own failures and never rethrows, so this
+          // is now a genuine surprise rather than the periodic save, which
+          // used to be the only thing that could land here and was reported
+          // under this trace's id for that reason. The save has moved out.
           console.error(
-            `[TraceIndexer] Failed to persist embeddings around trace ${trace.id}:`,
+            `[TraceIndexer] Failed to embed trace ${trace.id}:`,
             error
           );
+        }
+
+        // Outside the per-trace try: a failed snapshot is reported as a failed
+        // snapshot, the same way it now is in IndexingQueue and
+        // ConversationIndexer.
+        if (saveCadence.shouldSave()) {
+          await this.persistCache(saveCadence, 'periodic');
         }
 
         // Yield to UI
         await new Promise(r => window.setTimeout(r, this.yieldIntervalMs));
       }
 
-      // Final save
-      await this.db.save();
+      // Final save. Non-fatal, as it has always been here: the outer catch
+      // below used to be what made that true, and now the failure does not
+      // reach it at all.
+      await this.persistCache(saveCadence, 'final');
 
     } catch (error: unknown) {
       console.error('[TraceIndexer] Trace processing failed:', error);
@@ -156,5 +174,26 @@ export class TraceIndexer {
     }
 
     return { total: totalCount, processed: processedCount };
+  }
+
+  /**
+   * Write a cache snapshot. Never throws, and names persistence and a byte
+   * count when it fails. Same contract as IndexingQueue.persistCache.
+   */
+  private async persistCache(cadence: SaveCadence, stage: CacheSaveStage): Promise<void> {
+    try {
+      await this.db.save();
+      // Only here, and only on the path where save() returned without
+      // throwing. This is what clears the data-at-risk ceiling, and a
+      // save that threw has cleared nothing.
+      cadence.markSaveSuccess();
+    } catch (error) {
+      console.error(
+        describeCacheSaveFailure('TraceIndexer', stage, readCacheSizeBytes(this.db)),
+        error
+      );
+    } finally {
+      cadence.markSaveAttempt();
+    }
   }
 }

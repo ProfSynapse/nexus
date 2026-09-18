@@ -584,3 +584,261 @@ describe('ConversationIndexer', () => {
     });
   });
 });
+
+/**
+ * The conversation resume checkpoint, section 6b of
+ * docs/plans/sqlite-cache-persistence-plan.md.
+ *
+ * The defect these were written to pin: the final `db.save()` was inside the
+ * outer try, and when it threw the handler wrote
+ * `lastProcessedConversationId: null` and `processedConversations: 0`. The
+ * resume logic keys entirely off `lastProcessedConversationId`, so the next
+ * launch restarted the backfill at conversation zero and re-embedded every
+ * conversation in the vault at full API cost. On the machine that motivated
+ * the plan the save is exactly the thing that keeps failing, so this was not
+ * hypothetical.
+ *
+ * Phase 2 fixed it twice over: a failed snapshot no longer reaches that
+ * handler at all, and the handler no longer nulls the checkpoint whatever
+ * reaches it. There is a test for each.
+ *
+ * What the fake decides, and what it does not: the db here is STATEFUL. It
+ * really stores the `embedding_backfill_state` row that `updateBackfillState`
+ * writes and really hands it back to the next run's resume query. That is the
+ * whole point: an assertion that a field was written proves nothing, because
+ * the damage is what the next run does with it. The resume decision, the
+ * restart, and the re-embedding are all the real ConversationIndexer.
+ */
+describe('ConversationIndexer resume checkpoint', () => {
+  interface StoredBackfillState {
+    id: string;
+    lastProcessedConversationId: string | null;
+    totalConversations: number;
+    processedConversations: number;
+    status: string;
+    startedAt: number | null;
+    completedAt: number | null;
+    errorMessage: string | null;
+  }
+
+  /**
+   * A db fake that persists the one table this behaviour turns on, so a second
+   * run reads back what the first run actually wrote.
+   */
+  function createStatefulDb(conversationIds: string[]) {
+    let state: StoredBackfillState | null = null;
+    const save = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
+    /** Conversation ids whose messages were fetched, in order, across all runs. */
+    const messageFetches: string[] = [];
+
+    const conversations = conversationIds.map(id => ({
+      id,
+      metadataJson: null,
+      workspaceId: 'ws-1',
+      sessionId: 'sess-1'
+    }));
+
+    const db = {
+      queryOne: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT * FROM embedding_backfill_state')) {
+          return state ? { ...state } : null;
+        }
+        if (sql.includes('SELECT id FROM embedding_backfill_state')) {
+          return state ? { id: state.id } : null;
+        }
+        return null;
+      }),
+      query: jest.fn(async (sql: string, params?: unknown[]) => {
+        if (sql.includes('FROM conversations')) {
+          return conversations.map(c => ({ ...c }));
+        }
+        if (sql.includes('FROM messages')) {
+          const conversationId = String(params?.[0] ?? '');
+          messageFetches.push(conversationId);
+          return [
+            { ...createMessageRow({ id: `${conversationId}-m0`, conversationId, role: 'user', sequenceNumber: 0 }) },
+            { ...createMessageRow({ id: `${conversationId}-m1`, conversationId, role: 'assistant', sequenceNumber: 1 }) }
+          ];
+        }
+        return [];
+      }),
+      run: jest.fn(async (sql: string, params?: unknown[]) => {
+        const values = params ?? [];
+        if (sql.includes('UPDATE embedding_backfill_state')) {
+          state = {
+            id: String(values[6]),
+            lastProcessedConversationId: values[0] as string | null,
+            totalConversations: values[1] as number,
+            processedConversations: values[2] as number,
+            status: String(values[3]),
+            startedAt: state?.startedAt ?? null,
+            completedAt: values[4] as number | null,
+            errorMessage: values[5] as string | null
+          };
+        } else if (sql.includes('INSERT INTO embedding_backfill_state')) {
+          state = {
+            id: String(values[0]),
+            lastProcessedConversationId: values[1] as string | null,
+            totalConversations: values[2] as number,
+            processedConversations: values[3] as number,
+            status: String(values[4]),
+            startedAt: values[5] as number | null,
+            completedAt: values[6] as number | null,
+            errorMessage: values[7] as string | null
+          };
+        }
+        return undefined;
+      }),
+      save
+    };
+
+    return {
+      db,
+      save,
+      messageFetches,
+      readState: () => state,
+      seedState: (seed: Partial<StoredBackfillState>) => {
+        state = {
+          id: 'conversation_backfill',
+          lastProcessedConversationId: null,
+          totalConversations: conversationIds.length,
+          processedConversations: 0,
+          status: 'running',
+          startedAt: Date.now(),
+          completedAt: null,
+          errorMessage: null,
+          ...seed
+        };
+      }
+    };
+  }
+
+  function createIndexerOn(
+    stateful: ReturnType<typeof createStatefulDb>,
+    saveInterval = 100
+  ) {
+    const embeddingService = {
+      isServiceEnabled: jest.fn().mockReturnValue(true),
+      embedConversationTurn: jest.fn().mockResolvedValue(undefined)
+    };
+    const indexer = new ConversationIndexer(
+      stateful.db as unknown as SQLiteCacheManager,
+      embeddingService as unknown as EmbeddingService,
+      jest.fn(),
+      saveInterval
+    );
+    return { indexer, embeddingService };
+  }
+
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  // PHASE 2 INVERTED THIS. It used to assert that the state row came back
+  // `status: 'error'`, `lastProcessedConversationId: null`,
+  // `processedConversations: 0`, and that the next run therefore re-fetched and
+  // re-embedded all three conversations. The plan calls this the
+  // highest-value single line in the document measured in dollars of
+  // re-embedding, and this is what it buys.
+  it('keeps the resume checkpoint when the final save fails, so the next run re-embeds nothing', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+
+    // Run one: every conversation is embedded, then the snapshot cannot be
+    // written. saveInterval is above the conversation count, so the only save
+    // is the final one.
+    const first = createIndexerOn(stateful);
+    stateful.save.mockRejectedValue(new RangeError('Array buffer allocation failed'));
+    const firstResult = await first.indexer.start(null, 100);
+
+    expect(first.embeddingService.embedConversationTurn).toHaveBeenCalled();
+    expect(stateful.messageFetches).toEqual(['conv-1', 'conv-2', 'conv-3']);
+    // The backfill did its work, so it reports it. A snapshot it could not
+    // write does not turn three embedded conversations into zero.
+    expect(firstResult).toEqual({ total: 3, processed: 3 });
+
+    // The checkpoint the next run needs is intact, and the run is recorded as
+    // finished rather than as an error, because the backfill itself did finish.
+    const afterFailure = stateful.readState();
+    expect(afterFailure?.status).toBe('completed');
+    expect(afterFailure?.lastProcessedConversationId).toBe('conv-3');
+    expect(afterFailure?.processedConversations).toBe(3);
+
+    // The consequence, which is the part that costs money. Run two reads that
+    // checkpoint back through the real resume path and has nothing left to do.
+    stateful.messageFetches.length = 0;
+    stateful.save.mockResolvedValue(undefined);
+    const second = createIndexerOn(stateful);
+    await second.indexer.start(null, 100);
+
+    expect(stateful.messageFetches).toEqual([]);
+    expect(second.embeddingService.embedConversationTurn).not.toHaveBeenCalled();
+  });
+
+  // The other half of the fix, and the reason it is two changes rather than
+  // one. A save failure no longer reaches the error handler at all, so the
+  // handler could go on nulling the checkpoint and the test above would still
+  // pass. Anything else that throws mid-run still lands there, and the
+  // checkpoint has to survive that too: the conversations already embedded are
+  // already embedded whatever threw.
+  it('keeps the resume checkpoint when something other than the save throws mid-run', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+    const { indexer, embeddingService } = createIndexerOn(stateful);
+
+    // The progress callback is not inside any per-conversation try, so this
+    // reaches the outer handler the way a real surprise would.
+    let progressCalls = 0;
+    (indexer as unknown as { onProgress: () => void }).onProgress = () => {
+      progressCalls++;
+      if (progressCalls > 2) {
+        throw new Error('progress subscriber exploded');
+      }
+    };
+
+    const result = await indexer.start(null, 100);
+
+    const afterFailure = stateful.readState();
+    expect(afterFailure?.status).toBe('error');
+    expect(afterFailure?.errorMessage).toContain('progress subscriber exploded');
+    // Everything reached before the throw is still on the record. The first
+    // call is the pre-loop progress emission, so the throw lands after the
+    // second conversation.
+    expect(afterFailure?.lastProcessedConversationId).toBe('conv-2');
+    expect(afterFailure?.processedConversations).toBe(2);
+    expect(result).toEqual({ total: 3, processed: 2 });
+    expect(embeddingService.embedConversationTurn).toHaveBeenCalled();
+
+    // And the next run picks up after it instead of starting again.
+    stateful.messageFetches.length = 0;
+    const second = createIndexerOn(stateful);
+    await second.indexer.start(null, 100);
+    expect(stateful.messageFetches).toEqual(['conv-3']);
+  });
+
+  // The control that makes the test above mean something. The resume path is
+  // live and works: with a checkpoint intact, the next run skips what was
+  // already done. So the restart above is caused by the null and by nothing
+  // else, and preserving the checkpoint in Phase 2 is sufficient to fix it.
+  it('resumes after the checkpoint when a failed run left one intact', async () => {
+    const stateful = createStatefulDb(['conv-1', 'conv-2', 'conv-3']);
+    stateful.seedState({
+      status: 'error',
+      lastProcessedConversationId: 'conv-1',
+      processedConversations: 1,
+      errorMessage: 'Array buffer allocation failed'
+    });
+
+    const { indexer } = createIndexerOn(stateful);
+    const result = await indexer.start(null, 100);
+
+    // conv-1 is not re-embedded.
+    expect(stateful.messageFetches).toEqual(['conv-2', 'conv-3']);
+    expect(result).toEqual({ total: 3, processed: 3 });
+    expect(stateful.readState()?.status).toBe('completed');
+  });
+});

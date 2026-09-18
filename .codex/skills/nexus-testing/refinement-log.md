@@ -4,6 +4,62 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-18 | Ran `headless-obsidian.md` and `live-loop.md` end to end against
+Obsidian 1.13.7 on Linux (Electron 43.3.0, Chrome 150), driving a real
+measurement harness. Five findings: (1) `vault=` is not validated on Linux at
+all, `obsidian-cli eval vault=nope-not-a-vault code="1+1"` ran against the open
+vault and returned `=> 2`, so the only safe check is asserting
+`app.vault.getName()` in-band, and that name is the directory basename, not the
+`obsidian.json` key; (2) `eval` stdout interleaves console output with its own
+`=> ` line, so a naive strip of the whole output breaks on a stray console
+warning, take the last `^=> ` line instead; (3) the CLI reinstalls its own
+console hook on every `eval` connection and silently displaces an earlier
+wrapper, a plain `console.error = wrapper` caught 1 line out of about 50,000
+and looked exactly like the plugin logging nothing, an accessor-based
+save-and-restore hook (the same shape as `SQLiteCacheManager.initialize` and
+`SQLitePersistenceService.saveDatabase`) is what held; (4) `enablePluginAndSave`
+persists to `community-plugins.json`, so the next launch auto-loads the plugin
+and starts background indexing before any harness attaches, the fix is
+resetting `community-plugins.json` to `[]` before each launch and polling at
+about 10 ms after an explicit enable, `plugin.embeddingManager` appeared at
+about 3.3 s; (5) `xvfb-run` leaves its X server running after a SIGKILL, so the
+existing `pkill` patterns need `pkill -9 -f Xvfb` too, or servers accumulate
+across runs. Also confirmed the `loadManifests()` plus `enablePluginAndSave()`
+rescan added earlier the same day was required in this run and worked exactly
+as documented. | Added the Linux vault-targeting warning and the
+`app.vault.getName()` check to `live-loop.md` step 1, the `eval` output-parsing
+and console-hook notes to `live-loop.md` step 5, the persisted-enable and
+instrumentation timing to `headless-obsidian.md` step 5 with the rescan
+confirmation, the `Xvfb` pkill target and an IndexedDB-wiping warning to
+`headless-obsidian.md`'s guidelines. | `protocols/live-loop.md`,
+`protocols/headless-obsidian.md`, `refinement-log.md`.
+
+2026-09-18 | Ran `headless-obsidian.md` end to end against Obsidian 1.13.7 on
+2026-09-18 while measuring the SQLite save path. The protocol worked as written
+(xvfb-run present, obsidian.md still 403 and github.com reachable, the full GPU flag
+set still required, `"cli": true` written while not running still took effect), but
+step 5 has a silent failure: Obsidian reads `.obsidian/plugins/` once at vault load,
+so a plugin folder created after launch is invisible. `enablePlugin()` then resolves
+without error and without loading anything, `app.plugins.manifests` lacks the entry,
+and `dev:errors` stays empty, so it presents exactly like a plugin that failed to
+load. Also, when walking plugin internals with `eval`, a harness plugin parked on
+`window` is reachable via `plugin.app.workspace...` and via `secretStore.host.plugins`
+and gets mistaken for the plugin under test. | Added the `loadManifests()` +
+`enablePluginAndSave()` rescan to step 5 with the symptom described, so the next
+reader does not diagnose a working plugin as broken. | `protocols/headless-obsidian.md`,
+`refinement-log.md`.
+2026-09-18 | `references/lanes.md` told readers that adding a file to the coverage
+allowlist without a per-file `coverageThreshold` reds the run, and prescribed "add
+both or neither". The prescribed remedy does nothing: `npm run test:coverage` passes
+`--coverageThreshold` on the command line, which *replaces* the config object rather
+than merging, so none of the ~35 per-file entries in jest.config.js are read by that
+command. Verified by running it: only `"global"` threshold failures are reported,
+while the four per-file failures a bare `jest --coverage` reports are absent. Also
+found that command already red on main at 76.44% statements, so it gates nothing. |
+Replaced the Coverage section with a table separating what each command reads, kept
+the advice to add the per-file entry (a bare `jest --coverage` does read it) while
+removing the false claim that it protects `test:coverage`, and added the two
+discovery commands. | `references/lanes.md`, `refinement-log.md`.
 2026-08-24 | A 2026-08-21 entry below repointed this skill's validator command at
 `.codex/skills` on the premise that the `.claude/skills` mirror had been removed.
 The premise was false: `scripts/sync-agent-context.mjs` copies `.skills/` into all

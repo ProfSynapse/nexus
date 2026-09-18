@@ -87,6 +87,40 @@ otherwise is not.
    cd /home/user/nexus && npm run build 2>&1 | grep -i copied
    ```
 
+   **If the plugin folder did not exist before Obsidian launched, this silently
+   does nothing.** Obsidian reads `.obsidian/plugins/` once at vault load, so a
+   folder copied in afterwards is invisible: `app.plugins.manifests` lacks it, and
+   `enablePlugin('<id>')` resolves without an error and without loading anything,
+   which looks exactly like a load failure. `dev:errors` stays empty and gives no
+   hint. Either create the folder before step 4, or rescan first:
+
+   ```bash
+   ./obsidian-cli eval code="await app.plugins.loadManifests(); await app.plugins.enablePluginAndSave('nexus'); 'ok'"
+   ```
+
+   Confirmed 2026-09-18: in a real run where the plugin folder was copied in
+   after launch, this rescan was required and worked exactly as documented,
+   with no further workaround needed.
+
+   **`enablePluginAndSave` persists the enabled state to
+   `community-plugins.json`.** That gets you past Restricted Mode once, but it
+   also means the *next* launch auto-loads the plugin before any harness has
+   attached, and the plugin's background indexing is already running by the
+   time `obsidian-cli` answers (roughly 30 s in). If you intend to measure
+   anything from enable onward, that head start makes the measurement wrong.
+   For a launch you intend to instrument:
+
+   ```bash
+   echo '[]' > /tmp/test-vault/.obsidian/community-plugins.json   # before launch
+   # launch (step 4), install the payload (above), then, once the CLI answers:
+   ./obsidian-cli eval code="await app.plugins.enablePluginAndSave('nexus'); 'ok'"
+   ```
+
+   and poll for readiness at roughly 10 ms rather than waiting a fixed delay,
+   clearing your poll timer as soon as `plugin.embeddingManager` appears on the
+   loaded instance: measured at roughly 3.3 s after enable, well ahead of the
+   CLI's own ~30 s.
+
 6. **Confirm the plugin actually loaded**, which is a different question from
    whether Obsidian started:
 
@@ -121,7 +155,16 @@ otherwise is not.
   matches only helper processes and leaves the main process serving a stale
   config, which looks exactly like your setting being ignored. Use
   `pkill -9 -x obsidian; pkill -9 -f 'squashfs-root/obsidian'`, and put it in a
-  script — a `pkill -f` pattern typed inline also matches the shell running it.
+  script (a `pkill -f` pattern typed inline also matches the shell running it).
+- Pattern: `xvfb-run` leaves its X server behind when the child is SIGKILLed,
+  so the two `pkill` targets above are not enough by themselves. Add
+  `pkill -9 -f Xvfb` to the same cleanup script, or `xvfb-run -a` accumulates
+  orphaned X servers across runs.
+- Anti-pattern: wiping `/root/.config/obsidian/IndexedDB` to force a clean
+  cache without checking what else lives there. It is where the desktop cache
+  blob is stored, but it is also every other IndexedDB database the renderer
+  holds for that profile, so clearing it clears all of them. Fine to blow away
+  in a throwaway container, destructive against a real profile.
 - Pattern: restart, do not reload, when testing anything about startup order.
   `plugin:reload` re-runs `onload` against an already-initialised app.
 - Pattern: `dev:console` returns nothing until `dev:debug on` has been run.

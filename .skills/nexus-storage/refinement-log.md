@@ -2,6 +2,50 @@
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
+2026-09-18 | Second entry for the same session, added because the knowledge was
+already established and deferring it to "a future session that touches storage" would
+have lost it. Two rules govern the cache save path that are visible in no single file:
+that nothing may reach the blob store after `close()` returns (Rebuild Cache runs
+stopAutoSave, close, remove, reopen, so a surviving save writes the removed blob back
+and the rebuild silently does nothing), and that no `await` may precede the export
+(which is what makes the write generation capture sound). Both had to be reasoned out
+from source while implementing the single-flight save. One drafted claim was corrected
+against the tree first: `exportDatabase` is not the first statement of `saveDatabase`,
+console suppression is, so the invariant is the absence of an `await` before it, not
+its position. | Added the section "A save outlives its caller, and must not outlive
+the database" to `references/storage-model.md`. | `references/storage-model.md`,
+`refinement-log.md`.
+
+2026-09-18 | Adding a data-at-risk ceiling to the embedding save cadence required
+knowing whether a resolved `db.save()` is a durability point for the caller's own
+writes: if it were not, the success counter would have been measuring fiction and
+`markSaveSuccess()` would have needed a different signal. The skill was silent, so
+answering it meant reading `saveToFile`, `startSave`, `scheduleFollowUpSave`,
+`markDirty` and the write generation pair. The answer is yes, with two silent
+exceptions, one of which (a cancelled follow-up resolves without writing) was missed
+on the first reading and only found while drafting this entry. | Added the entry
+"`await db.save()` returned, so the rows are on disk" to `references/failure-modes.md`,
+covering the three branches, the cancelled-follow-up case and why `hasUnsavedChanges()`
+can stay true after a successful save. Two weaker candidates were rejected as stale
+counts or as facts that belong beside the tunable they describe. |
+`references/failure-modes.md`, `refinement-log.md`.
+2026-09-18 | A user hit `RangeError: Array buffer allocation failed` during
+background indexing on a large vault, reported by the plugin as
+`[IndexingQueue] Failed to embed <path>`. Nothing in this skill pointed at
+persistence: `failure-modes.md` had no entry for an allocation failure, and
+`storage-model.md` described the export path without its cost. The diagnosis
+had to be rebuilt from the source, and the misleading log line meant the first
+hypothesis was the embedding provider. Separately, `storage-model.md` said the
+SQLite cache is rebuildable without saying that embeddings are not in the event
+store, which makes a rebuild cost a full re-embed of the vault in provider API
+calls. Both gaps invite an expensive wrong move. | Added the allocation-failure
+symptom entry to `failure-modes.md` (the stack is the tell, the two aggravators
+to check first, which statistics confirm it, and fix at the persistence layer
+rather than catching the RangeError at the call site), and a "rebuildable does
+not mean cheap" section to `storage-model.md`. Measurements behind both are in
+`docs/plans/sqlite-cache-persistence-spike-findings.md`. |
+`references/failure-modes.md`, `references/storage-model.md`,
+`refinement-log.md`.
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
 2026-08-24 | A 2026-08-21 entry below repointed this skill's validator command at

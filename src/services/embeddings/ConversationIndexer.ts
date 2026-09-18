@@ -17,6 +17,12 @@ import { EmbeddingService } from './EmbeddingService';
 import { buildQAPairs } from './QAPairBuilder';
 import type { MessageData } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import {
+  SaveCadence,
+  describeCacheSaveFailure,
+  readCacheSizeBytes,
+  type CacheSaveStage
+} from './CacheSavePolicy';
 
 /**
  * Row shape for the embedding_backfill_state table.
@@ -67,6 +73,10 @@ export class ConversationIndexer {
     db: SQLiteCacheManager,
     embeddingService: EmbeddingService,
     onProgress: (progress: ConversationIndexerProgress) => void,
+    /**
+     * Floor on how often a snapshot is written, in conversations. The interval
+     * in force also scales with the size of the database; see CacheSavePolicy.
+     */
     saveInterval = 10
   ) {
     this.db = db;
@@ -103,12 +113,32 @@ export class ConversationIndexer {
 
     this.abortSignal = abortSignal;
 
+    // The resume checkpoint as it currently stands, kept outside the try so
+    // the catch can write it back instead of nulling it.
+    //
+    // Nulling it is what the catch used to do, and it is expensive: the resume
+    // at the top of this method keys entirely off lastProcessedConversationId,
+    // so a null restarts the backfill at conversation zero and re-embeds every
+    // conversation in the vault at full API cost. Section 6b of
+    // docs/plans/sqlite-cache-persistence-plan.md. These are seeded from the
+    // stored row before anything can throw, so an error early in the run
+    // preserves what the last run reached rather than erasing it.
+    let checkpointId: string | null = null;
+    let checkpointProcessed = 0;
+    let checkpointTotal = 0;
+
+    const saveCadence = new SaveCadence({ minItems: this.saveInterval, db: this.db });
+
     try {
       // Check existing backfill state for resume support
       const existingState = await this.db.queryOne<BackfillStateRow>(
         'SELECT * FROM embedding_backfill_state WHERE id = ?',
         [CONVERSATION_BACKFILL_ID]
       );
+
+      checkpointId = existingState?.lastProcessedConversationId ?? null;
+      checkpointProcessed = existingState?.processedConversations ?? 0;
+      checkpointTotal = existingState?.totalConversations ?? 0;
 
       // If already completed, nothing to do
       if (existingState && existingState.status === 'completed') {
@@ -161,6 +191,7 @@ export class ConversationIndexer {
       }
 
       const totalCount = nonBranchConversations.length;
+      checkpointTotal = totalCount;
 
       // Nothing remaining to process
       if (startIndex >= totalCount) {
@@ -209,18 +240,22 @@ export class ConversationIndexer {
 
         processedSoFar++;
         lastProcessedId = conv.id;
+        checkpointId = lastProcessedId;
+        checkpointProcessed = processedSoFar;
+        saveCadence.recordItem();
 
         this.onProgress({ totalConversations: totalCount, processedConversations: processedSoFar });
 
-        // Persist progress periodically
-        if (processedSoFar % this.saveInterval === 0) {
+        // Persist progress periodically, on a cadence that scales with the
+        // size of the database rather than a flat count of conversations.
+        if (saveCadence.shouldSave()) {
           await this.updateBackfillState({
             status: 'running',
             totalConversations: totalCount,
             processedConversations: processedSoFar,
             lastProcessedConversationId: lastProcessedId,
           });
-          await this.db.save();
+          await this.persistCache(saveCadence, 'periodic');
         }
 
         // Yield to main thread periodically
@@ -236,22 +271,54 @@ export class ConversationIndexer {
         processedConversations: processedSoFar,
         lastProcessedConversationId: lastProcessedId,
       });
-      await this.db.save();
+      // Non-fatal: the backfill did its work, and a snapshot that could not be
+      // written is a warning, not a reason to declare the run an error and
+      // throw away what it reached.
+      await this.persistCache(saveCadence, 'final');
 
       return { total: totalCount, processed: processedSoFar };
 
     } catch (error: unknown) {
       console.error('[ConversationIndexer] Conversation backfill failed:', error);
+      // Record the error WITHOUT touching the checkpoint. Whatever threw, the
+      // conversations already embedded are already embedded, and the next run
+      // must resume after them rather than start again from the top.
       await this.updateBackfillState({
         status: 'error',
-        totalConversations: 0,
-        processedConversations: 0,
-        lastProcessedConversationId: null,
+        totalConversations: checkpointTotal,
+        processedConversations: checkpointProcessed,
+        lastProcessedConversationId: checkpointId,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      return { total: 0, processed: 0 };
+      return { total: checkpointTotal, processed: checkpointProcessed };
     } finally {
       this.isRunning = false;
+    }
+  }
+
+  /**
+   * Write a cache snapshot. Never throws, and names persistence and a byte
+   * count when it fails. Same contract as IndexingQueue.persistCache.
+   *
+   * Never throwing is load-bearing here beyond the message: a throw out of
+   * this call reaches the outer catch, and the outer catch writes the backfill
+   * state. That path is exactly how a failed save used to cost a full
+   * re-embed of every conversation.
+   */
+  private async persistCache(cadence: SaveCadence, stage: CacheSaveStage): Promise<void> {
+    try {
+      await this.db.save();
+      // Only here, and only on the path where save() returned without
+      // throwing. This is what clears the data-at-risk ceiling, and a
+      // save that threw has cleared nothing.
+      cadence.markSaveSuccess();
+    } catch (error) {
+      console.error(
+        describeCacheSaveFailure('ConversationIndexer', stage, readCacheSizeBytes(this.db)),
+        error
+      );
+    } finally {
+      cadence.markSaveAttempt();
     }
   }
 
