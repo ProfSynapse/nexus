@@ -112,7 +112,7 @@ export class StreamingController {
   updateStreamingChunk(messageId: string, chunk: string): void {
     const streamingState = this.streamingStates.get(messageId);
 
-    if (streamingState) {
+    if (streamingState && this.activeRunIsAttached(messageId)) {
       MarkdownRenderer.writeStreamingChunk(streamingState, chunk);
       this.runText.set(messageId, (this.runText.get(messageId) ?? '') + chunk);
       return;
@@ -166,6 +166,24 @@ export class StreamingController {
         });
       }
     }
+  }
+
+  /**
+   * Whether the run this message is streaming into is still in the document.
+   *
+   * The parser state is keyed by message id and outlives a conversation switch,
+   * which rebuilds the transcript from scratch. Writing on into the old detached
+   * run silently swallows the rest of the turn, so a detached run is treated as
+   * no state at all and the next chunk opens a fresh run in the rebuilt bubble.
+   */
+  private activeRunIsAttached(messageId: string): boolean {
+    const run = this.activeRuns.get(messageId);
+    if (!run) {
+      // No run recorded (e.g. a harness element that could not host one):
+      // nothing to invalidate, keep the existing behaviour.
+      return true;
+    }
+    return run.isConnected !== false;
   }
 
   /**
