@@ -18,14 +18,15 @@ import type { CacheBlobStore } from '../../src/database/storage/CacheBlobStore';
  * (`sqlite3_js_db_export`) and hands it to a blob store that copies it again
  * (IndexedDB structured-clones on `put`; `vault.adapter.writeBinary` copies
  * across the platform boundary). The WASM heap copy never shrinks. So one save
- * holds roughly three times the database size at once, and because nothing
- * guards against overlap, the 30 s autosave timer routinely starts a second
- * full-size export while a queue-driven save is still awaiting its write.
+ * holds roughly three times the database size at once. Before Phase 1 nothing
+ * guarded against overlap either, so the 30 s autosave timer routinely started
+ * a second full-size export while a queue-driven save was still awaiting its
+ * write, doubling that again.
  *
- * On a 150 MB cache that is a 450 MB peak for one save and a 750 MB peak for an
- * overlapping pair, in contiguous allocations, hundreds of times per full
- * index. The reported `RangeError: Array buffer allocation failed` is the
- * allocator refusing one of those once the heap has fragmented.
+ * On a 150 MB cache that is a 450 MB peak for one save, and it was a 750 MB
+ * peak for an overlapping pair, in contiguous allocations, hundreds of times
+ * per full index. The reported `RangeError: Array buffer allocation failed` is
+ * the allocator refusing one of those once the heap has fragmented.
  *
  * WHAT THIS CAN AND CANNOT SEE. It counts allocations the save path asks for,
  * against a fake bridge and a fake blob store whose copy costs are modelled
@@ -36,7 +37,9 @@ import type { CacheBlobStore } from '../../src/database/storage/CacheBlobStore';
  * moment, which is the thing every option in the plan is trying to reduce.
  *
  * Expected movement per phase:
- *   Phase 1 (save lock)          overlapping pair falls to the single-save peak
+ *   Phase 1 (save lock)          DONE: overlapping pair fell to the single-save
+ *                                peak, and a pair that a mid-save write forces
+ *                                apart still peaks at one save's worth
  *   Phase 5 option C (OPFS VFS)  per-save peak falls to roughly one page
  *   Phase 5 option D (NOCOPY +
  *     chunked write)             per-save peak falls to about 1x plus one chunk
@@ -287,7 +290,8 @@ function report(rows: Array<{ scenario: string; exports: number; peakBytes: numb
   lines.push('');
   lines.push('Buffers counted: the WASM heap copy that never shrinks, the exported JS');
   lines.push('ArrayBuffer, and the copy the backing store makes of it. At a real 150 MB');
-  lines.push('cache the same ratios are 450 MB for one save and 750 MB for a pair.');
+  lines.push('cache the 3x rows are 450 MB. Before Phase 1 the overlapping pair was 5x,');
+  lines.push('750 MB at that size; the single-flight save is why it is not any more.');
   lines.push('');
   console.log(lines.join('\n'));
 }
@@ -332,14 +336,15 @@ describe('cache save peak allocation', () => {
     }
   });
 
-  // PHASE 1 CHANGES THIS NUMBER. Option A's single-flight guard means the
-  // second save cannot start its own export, so this peak has to fall to the
-  // single-save peak above. Until then a save requested while one is in flight
-  // costs a second export and a second backend copy, and the 30 s autosave
-  // timer requests exactly that on every queue-driven save, guaranteed rather
-  // than occasionally: the dirty flag is not cleared until the first write
-  // returns, so the timer never skips.
-  it('holds five full-size buffers when two saves overlap', async () => {
+  // PHASE 1 CHANGED THESE NUMBERS, which is what it was for. This row used to
+  // read 2 exports and a 5x peak: the WASM heap, two exported buffers and two
+  // backend copies, all alive at once, because nothing stopped a second save
+  // starting its own export. The 30 s autosave timer requested exactly that on
+  // every queue-driven save, guaranteed rather than occasionally, since the
+  // dirty flag was not cleared until the first write returned and so the timer
+  // never skipped. Option A's single-flight guard collapses the pair onto one
+  // export, so the overlapping peak is now the single-save peak.
+  it('holds no more buffers when two saves overlap than one save does', async () => {
     const harness = await createAllocationHarness();
     try {
       harness.gateWrites();
@@ -362,14 +367,47 @@ describe('cache save peak allocation', () => {
         peakBuffers
       });
 
+      // One export for both callers: no write landed between them, so the
+      // second joined the first rather than allocating again.
+      expect(harness.exportCount()).toBe(1);
+      // WASM heap + one exported buffer + one backend copy, same as a single
+      // save. This equality is the Phase 1 contract.
+      expect(peakBuffers).toBe(3);
+      expect(peakBytes).toBe(3 * DB_SIZE_BYTES);
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  // The pair that cannot be collapsed, measured separately so the row above
+  // cannot be read as "Phase 1 made saves free". A write landing during an
+  // export has to be exported again, and the follow-up is what does it. What
+  // Phase 1 guarantees is that the second export starts only once the first
+  // buffer has been released, so the peak is still one save's worth.
+  it('keeps the peak at one save when a write forces a follow-up export', async () => {
+    const harness = await createAllocationHarness();
+    try {
+      harness.gateWrites();
+
+      const first = harness.manager.save();
+      await flushMicrotasks();
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['during-save']);
+      const second = harness.manager.save();
+      await flushMicrotasks();
+
+      harness.releaseWrites();
+      await Promise.all([first, second]);
+
+      const peakBytes = harness.ledger.getPeakBytes();
+      rows.push({
+        scenario: 'forced follow-up',
+        exports: harness.exportCount(),
+        peakBytes,
+        peakBuffers: harness.ledger.getPeakBufferCount()
+      });
+
       expect(harness.exportCount()).toBe(2);
-      // WASM heap + two exported buffers + two backend copies.
-      expect(peakBuffers).toBe(5);
-      expect(peakBytes).toBe(5 * DB_SIZE_BYTES);
-      // The contract in one line: overlapping saves cost strictly more than a
-      // single one. Phase 1 makes these equal, and this assertion is what says
-      // so when it does.
-      expect(peakBytes).toBeGreaterThan(3 * DB_SIZE_BYTES);
+      expect(peakBytes).toBe(3 * DB_SIZE_BYTES);
     } finally {
       harness.dispose();
     }

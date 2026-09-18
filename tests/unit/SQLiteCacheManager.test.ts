@@ -478,7 +478,10 @@ describe('SQLiteCacheManager', () => {
   });
 });
 
-describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
+// Started life as the Phase 0 characterization of the save path in
+// docs/plans/sqlite-cache-persistence-plan.md. Phase 1 inverted four of the
+// assertions here; each one says on itself what it used to pin and why.
+describe('SQLiteCacheManager save path', () => {
   interface SaveHarness {
     manager: SQLiteCacheManager;
     /** Number of full-database exports performed since the harness was armed. */
@@ -628,12 +631,14 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
     jest.useRealTimers();
   });
 
-  // PHASE 1 INVERTS THIS. Option A gives saveToFile() a single-flight guard, at
-  // which point a second save() while one is in flight must NOT start a second
-  // export: it either joins the in-flight promise or schedules exactly one
-  // follow-up. Until then, two full-size buffers are alive simultaneously,
-  // which on a 150 MB cache is 300 MB of contiguous allocation.
-  it('starts a second export when save() is called while one is already in flight', async () => {
+  // PHASE 1 INVERTED THIS. It was pinned as `toBe(2)`: no in-flight guard, so
+  // a second save() exported again while the first export's buffer was still
+  // held by its pending write, which on a 150 MB cache is 300 MB of contiguous
+  // allocation for one logical save. Option A's single-flight guard means the
+  // second caller joins the running save instead, because no write has landed
+  // since that save exported and its buffer therefore already holds everything
+  // the second caller wants persisted.
+  it('joins the in-flight save instead of exporting again when nothing has been written since', async () => {
     const harness = await createSaveHarness();
     try {
       harness.gateWrites();
@@ -645,27 +650,113 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
       const second = harness.manager.save();
       await flushMicrotasks();
 
-      // Current behaviour: no in-flight guard, so the second call exports again
-      // while the first export's buffer is still held by the pending write.
-      expect(harness.exportCount()).toBe(2);
-      expect(harness.heldWriteCount()).toBe(2);
-      // Two distinct buffers, not the same one twice, so two live allocations.
-      const [a, b] = harness.writtenBuffers();
-      expect(a).not.toBe(b);
+      expect(harness.exportCount()).toBe(1);
+      expect(harness.heldWriteCount()).toBe(1);
+      expect(harness.writtenBuffers()).toHaveLength(1);
 
       harness.releaseWrites();
       await Promise.all([first, second]);
+
+      // Both callers settle on the one save, which is the contract that lets
+      // the autosave timer and a queue-driven save share an export.
+      expect(harness.exportCount()).toBe(1);
     } finally {
       await harness.dispose();
     }
   });
 
-  // PHASE 1 INVERTS THIS. The dirty flag is cleared only after the awaited
-  // write returns, so mid-save it is still true and the timer is guaranteed to
-  // fire a second full-size export rather than skip. This is the source of the
-  // "Auto-save failed" lines interleaved with the queue-path failures in the
-  // reported log, and it is not a race that sometimes happens, it is certain.
-  it('lets the autosave timer start another export while a save is still in flight', async () => {
+  // The other half of the guard: when a write DID land since the running
+  // export, the callers cannot be fobbed off with it, because those rows are
+  // not in it. Exactly one follow-up is scheduled however many ask, so there
+  // is never a second export alive alongside the first.
+  it('schedules exactly one follow-up export however many callers ask during a save', async () => {
+    const harness = await createSaveHarness();
+    try {
+      harness.gateWrites();
+
+      const first = harness.manager.save();
+      await flushMicrotasks();
+      expect(harness.exportCount()).toBe(1);
+
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['during-save']);
+
+      const followers = [
+        harness.manager.save(),
+        harness.manager.save(),
+        harness.manager.save()
+      ];
+      await flushMicrotasks();
+
+      // Still one export: the follow-up cannot start until the running one has
+      // let go of its buffer.
+      expect(harness.exportCount()).toBe(1);
+      expect(harness.heldWriteCount()).toBe(1);
+
+      harness.releaseWrites();
+      await Promise.all([first, ...followers]);
+      await flushMicrotasks();
+
+      // One follow-up for all three callers, not three.
+      expect(harness.exportCount()).toBe(2);
+      expect(harness.writtenBuffers()).toHaveLength(2);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  // The one real correctness risk in Phase 1, and the reason the follow-up is
+  // cancellable at all. StorageMaintenanceService.rebuildCache calls
+  // stopAutoSave(), then close(), then blobStore.remove(). A follow-up that
+  // survived that sequence would write the old database straight back over the
+  // rebuild, and the next launch would load a cache the user asked to be gone.
+  it('never writes after close(), so a rebuild removing the blob cannot be undone', async () => {
+    const harness = await createSaveHarness();
+    try {
+      harness.gateWrites();
+
+      const first = harness.manager.save();
+      await flushMicrotasks();
+
+      // A write lands mid-save, so a follow-up is scheduled rather than the
+      // in-flight promise being shared.
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['during-save']);
+      const follower = harness.manager.save();
+      await flushMicrotasks();
+
+      // What rebuildCache does, in its order.
+      harness.manager.stopAutoSave();
+      harness.releaseWrites();
+      await Promise.all([first, follower]);
+      await flushMicrotasks();
+
+      // The cancelled follow-up did not export.
+      expect(harness.exportCount()).toBe(1);
+
+      await harness.manager.close();
+      // close() is still allowed to persist the outstanding write; that save
+      // happens BEFORE the blob is removed, which is the safe order.
+      const exportsAfterClose = harness.exportCount();
+      expect(exportsAfterClose).toBe(2);
+
+      // Nothing at all after close() returns. This is the assertion that says
+      // blobStore.remove() stands.
+      await flushMicrotasks();
+      expect(harness.exportCount()).toBe(exportsAfterClose);
+      expect(harness.writtenBuffers()).toHaveLength(exportsAfterClose);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  // PHASE 1 INVERTED THIS. It was pinned as a second export: the dirty flag is
+  // cleared only after the awaited write returns, so mid-save it is still true
+  // and the timer was guaranteed to fire a second full-size export rather than
+  // skip. That is the source of the "Auto-save failed" lines interleaved with
+  // the queue-path failures in the reported log. The flag still reads true
+  // mid-save, deliberately, because there genuinely is unsaved work; what
+  // changed is that the timer's save now joins the running one.
+  it('does not let the autosave timer start a second export while a save is in flight', async () => {
     jest.useFakeTimers();
     const harness = await createSaveHarness({ autoSaveInterval: 1000 });
     try {
@@ -683,7 +774,8 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
       jest.advanceTimersByTime(1000);
       await flushMicrotasks();
 
-      expect(harness.exportCount()).toBe(2);
+      expect(harness.exportCount()).toBe(1);
+      expect(harness.heldWriteCount()).toBe(1);
 
       harness.releaseWrites();
       await inFlight;
@@ -693,16 +785,16 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
     }
   });
 
-  // PHASE 1 INVERTS THE LAST ASSERTION. This is section 6a of the plan: the
-  // lost-update window. saveToFile() exports, awaits the write, then clears the
-  // flag unconditionally. A row written during that await is not in the buffer
-  // that was just persisted, yet is now marked as saved. Today it is latent
-  // because indexing dirties the database again within milliseconds; it becomes
-  // real data loss the moment Phase 2 lengthens the save interval, which is why
-  // Phase 1 has to land first. A generation counter captured before the export
-  // and compared after the write closes it, and this assertion becomes
-  // `toBe(true)`.
-  it('marks a write that landed during an in-flight save as saved', async () => {
+  // PHASE 1 INVERTED THE LAST ASSERTION, from `toBe(false)` to `toBe(true)`.
+  // This is section 6a of the plan: the lost-update window. saveToFile() used
+  // to export, await the write, then clear the flag unconditionally, so a row
+  // written during that await was not in the buffer that had just been
+  // persisted yet was marked as saved. It was latent only because indexing
+  // dirties the database again within milliseconds, and it becomes real data
+  // loss the moment Phase 2 lengthens the save interval, which is why Phase 1
+  // lands first. The write generation captured before the export and compared
+  // after the write is what closes it.
+  it('leaves a write that landed during an in-flight save marked as unsaved', async () => {
     const harness = await createSaveHarness();
     try {
       await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['before-save']);
@@ -721,18 +813,22 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
       harness.releaseWrites();
       await inFlight;
 
-      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+      // Those bytes are in no snapshot anywhere, so the flag has to keep
+      // saying so: the autosave timer and close() both key off it.
+      expect(harness.manager.hasUnsavedChanges()).toBe(true);
     } finally {
       await harness.dispose();
     }
   });
 
-  // The consequence of the above, and the reason it is data loss rather than a
-  // curiosity: close() trusts the flag. With the flag wrongly false, the final
-  // save is skipped, the rows written during the last in-flight save are
-  // discarded when the handle closes, and nothing is logged anywhere. Phase 1's
-  // generation counter makes close() see work outstanding and save.
-  it('skips the final save in close() when the flag says there is nothing to write', async () => {
+  // PHASE 1 INVERTED THIS. It is the consequence of the test above and the
+  // reason that one is data loss rather than a curiosity: close() trusts the
+  // flag. With the flag wrongly false, the final save was skipped, the rows
+  // written during the last in-flight save were discarded when the handle
+  // closed, and nothing was logged anywhere. It was pinned as "no extra
+  // export"; the generation counter makes close() see the outstanding write
+  // and persist it.
+  it('performs the final save in close() for a write that landed during an in-flight save', async () => {
     const harness = await createSaveHarness();
     try {
       await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['before-save']);
@@ -748,9 +844,10 @@ describe('SQLiteCacheManager save path (Phase 0 characterization)', () => {
       const exportsBeforeClose = harness.exportCount();
       await harness.manager.close();
 
-      // No extra export: the row written mid-save is never persisted and the
-      // user is never told.
-      expect(harness.exportCount()).toBe(exportsBeforeClose);
+      // The row written mid-save is persisted on the way out instead of being
+      // dropped in silence.
+      expect(harness.exportCount()).toBe(exportsBeforeClose + 1);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
       expect(harness.manager.isReady()).toBe(false);
     } finally {
       await harness.dispose();

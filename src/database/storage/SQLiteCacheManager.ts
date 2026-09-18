@@ -112,6 +112,27 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private isInitialized = false;
   private searchService: SQLiteSearchService;
   private hasUnsavedData = false;
+  /**
+   * Monotonic count of writes applied to this handle.
+   *
+   * A boolean dirty flag cannot tell "dirty because of the writes the running
+   * save is writing" from "dirty because of a write that landed after that
+   * save took its snapshot", because it is already true in both cases.
+   * Clearing it after the write therefore marks rows clean that are in no
+   * snapshot anywhere, and they are dropped at close() with nothing logged.
+   * That is section 6a of docs/plans/sqlite-cache-persistence-plan.md. A save
+   * captures this number before its export and clears the flag afterwards only
+   * if it has not moved.
+   */
+  private writeGeneration = 0;
+  /** The save that is currently exporting or writing, if there is one. */
+  private saveInFlight: Promise<void> | null = null;
+  /** The write generation the in-flight save captured before its export. */
+  private inFlightGeneration = 0;
+  /** The one coalesced save scheduled to follow the in-flight one, if any. */
+  private pendingSave: Promise<void> | null = null;
+  /** Set by stopAutoSave() and close() to cancel a scheduled follow-up. */
+  private followUpCancelled = false;
   private autoSaveInterval: number;
   private autoSaveTimer: number | null = null;
   private readonly transactionCoordinator: SQLiteTransactionCoordinator;
@@ -258,6 +279,11 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       return;
     }
 
+    // A previous close() latched this to stop a follow-up writing after the
+    // handle went away. Rebuild Cache reopens the same instance, so clear it
+    // or the reopened handle would never run a coalesced save again.
+    this.followUpCancelled = false;
+
     try {
       // Load WASM binary using Obsidian's vault adapter
       // The WASM file is copied to the plugin directory by esbuild
@@ -359,13 +385,96 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
-   * Save database to file using sqlite3_js_db_export
+   * Save the database to the blob store, with at most one export alive.
+   *
+   * Every export allocates one contiguous buffer the full size of the database
+   * and the backing store copies it again, so two overlapping saves are two of
+   * those at once. Before this guard existed the 30 s autosave timer started
+   * exactly that on every queue-driven save, because the dirty flag stays true
+   * until a save finishes and so the timer never skipped.
+   *
+   * Three outcomes, and no fourth:
+   * - nothing in flight: export now;
+   * - in flight and nothing written since its export: join it, because that
+   *   export already holds everything this caller wants persisted;
+   * - in flight and something written since: one follow-up, shared by however
+   *   many callers ask for it.
    */
-  private async saveToFile(): Promise<void> {
-    const db = this.getDbOrThrow();
-    const sqlite3 = this.getSqlite3OrThrow();
-    await this.persistenceService.saveDatabase(sqlite3, db);
-    this.hasUnsavedData = false;
+  private saveToFile(): Promise<void> {
+    if (this.saveInFlight) {
+      if (this.writeGeneration === this.inFlightGeneration) {
+        return this.saveInFlight;
+      }
+      return this.scheduleFollowUpSave();
+    }
+    return this.startSave();
+  }
+
+  /**
+   * Export and write, holding the lock for the whole round trip.
+   */
+  private startSave(): Promise<void> {
+    // Captured BEFORE saveDatabase is called, not inside it: that method
+    // exports the database as the first thing it does, so every write after
+    // this line is newer than the bytes about to be written.
+    const generation = this.writeGeneration;
+    this.inFlightGeneration = generation;
+
+    const save = async (): Promise<void> => {
+      const db = this.getDbOrThrow();
+      const sqlite3 = this.getSqlite3OrThrow();
+      await this.persistenceService.saveDatabase(sqlite3, db);
+      // Only the writes this snapshot contains are clean. Anything that landed
+      // during the write bumped the counter and stays dirty, so the autosave
+      // timer and close() still see work outstanding.
+      if (this.writeGeneration === generation) {
+        this.hasUnsavedData = false;
+      }
+    };
+
+    const inFlight = save().finally(() => {
+      if (this.saveInFlight === inFlight) {
+        this.saveInFlight = null;
+      }
+    });
+    this.saveInFlight = inFlight;
+    return inFlight;
+  }
+
+  /**
+   * Schedule exactly one save to run after the in-flight one.
+   *
+   * Every caller that asks while a save is running gets this same promise, so
+   * however many ask, one follow-up export happens and never two at once.
+   *
+   * The follow-up re-checks before exporting, and does nothing when
+   * stopAutoSave() or close() cancelled it. That check is what keeps a
+   * coalesced save from resurrecting a blob that Rebuild Cache has just
+   * removed: StorageMaintenanceService.rebuildCache calls stopAutoSave(), then
+   * close(), then blobStore.remove(), and a follow-up landing after the remove
+   * would write the old database straight back.
+   */
+  private scheduleFollowUpSave(): Promise<void> {
+    if (this.pendingSave) {
+      return this.pendingSave;
+    }
+
+    const precedingSave = this.saveInFlight;
+    this.followUpCancelled = false;
+
+    const pending = (async (): Promise<void> => {
+      // Wait for the running export to be done with, whatever its outcome: its
+      // failure belongs to the caller that asked for it, not to this one.
+      await precedingSave?.then(() => undefined, () => undefined);
+      this.pendingSave = null;
+      if (this.followUpCancelled || this.db === null || !this.hasUnsavedData) {
+        return;
+      }
+      await this.saveToFile();
+    })();
+
+    this.pendingSave = pending;
+    return pending;
   }
 
   /**
@@ -377,6 +486,19 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       if (this.autoSaveTimer) {
         window.clearInterval(this.autoSaveTimer);
         this.autoSaveTimer = null;
+      }
+
+      // Cancel any scheduled follow-up. The final save below covers everything
+      // it would have written, and nothing may reach the blob store after
+      // close() returns: Rebuild Cache removes the blob on the next line.
+      this.followUpCancelled = true;
+
+      // Let an export that is already running finish before starting another,
+      // so closing never puts a second full-size buffer alongside it. Its
+      // outcome belongs to whoever asked for it; what matters here is the
+      // dirty flag it leaves behind.
+      if (this.saveInFlight) {
+        await this.saveInFlight.then(() => undefined, () => undefined);
       }
 
       // Final save
@@ -404,7 +526,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
     try {
       this.bridge.exec(this.db, sql);
-      this.hasUnsavedData = true;
+      this.markDirty();
       return Promise.resolve();
     } catch (error) {
       console.error('[SQLiteCacheManager] Exec failed:', error);
@@ -448,7 +570,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const sqlite3 = this.getSqlite3OrThrow();
       const { changes, lastInsertRowid } = this.bridge.run(db, sqlite3, sql, params);
 
-      this.hasUnsavedData = true;
+      this.markDirty();
       return Promise.resolve({ changes, lastInsertRowid });
     } catch (error) {
       console.error('[SQLiteCacheManager] Run failed:', error, { sql, params });
@@ -469,7 +591,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   commit(): Promise<void> {
     this.bridge.exec(this.getDbOrThrow(), 'COMMIT');
-    this.hasUnsavedData = true;
+    this.markDirty();
     return Promise.resolve();
   }
 
@@ -582,7 +704,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
   async vacuum(): Promise<void> {
     await this.getMaintenanceService().vacuum();
-    this.hasUnsavedData = true;
+    this.markDirty();
   }
 
   // ==================== Full-text search ====================
@@ -668,6 +790,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       window.clearInterval(this.autoSaveTimer);
       this.autoSaveTimer = null;
     }
+    // Stopping the timer is not enough on its own: a coalesced follow-up is
+    // already scheduled independently of it, and it would export after the
+    // caller believes writes have stopped.
+    this.followUpCancelled = true;
+  }
+
+  /**
+   * Record that the database changed: set the flag and move the generation on.
+   *
+   * Both, always. The flag answers "is there anything to save" and the
+   * generation answers "is what the running save exported still current", and
+   * a save clears the flag only when the answer to the second is yes.
+   */
+  private markDirty(): void {
+    this.hasUnsavedData = true;
+    this.writeGeneration++;
   }
 
   /**
