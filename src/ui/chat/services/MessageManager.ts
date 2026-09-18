@@ -50,7 +50,12 @@ export interface MessageManagerEvents {
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
   onToolCallsDetected: (messageId: string, toolCalls: StreamToolCallLike[]) => void;
-  onReasoningUpdate?: (messageId: string, reasoningText: string, isComplete: boolean) => void;
+  onReasoningUpdate?: (
+    messageId: string,
+    reasoningText: string,
+    isComplete: boolean,
+    segments?: import('../../../types/chat/ChatTypes').ReasoningSegment[]
+  ) => void;
   onToolExecutionStarted: (messageId: string, toolCall: { id: string; name: string; parameters?: Record<string, unknown> }) => void;
   onToolExecutionCompleted: (messageId: string, toolId: string, result: unknown, success: boolean, error?: string) => void;
   onMessageIdUpdated: (oldId: string, newId: string, updatedMessage: ConversationMessage) => void;

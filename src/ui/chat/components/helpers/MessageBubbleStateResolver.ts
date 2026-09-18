@@ -1,9 +1,10 @@
-import { ConversationMessage } from '../../../../types/chat/ChatTypes';
+import { ConversationMessage, ReasoningSegment } from '../../../../types/chat/ChatTypes';
 
 export interface MessageBubbleResolvedState {
   activeContent: string;
   activeToolCalls: ConversationMessage['toolCalls'] | undefined;
   activeReasoning: string | undefined;
+  activeReasoningSegments: ReasoningSegment[] | undefined;
   shouldRenderTextBubble: boolean;
 }
 
@@ -12,11 +13,13 @@ export class MessageBubbleStateResolver {
     const activeContent = this.getActiveMessageContent(message);
     const activeToolCalls = this.getActiveToolCalls(message);
     const activeReasoning = this.getActiveReasoning(message);
+    const activeReasoningSegments = this.getActiveReasoningSegments(message);
 
     return {
       activeContent,
       activeToolCalls,
       activeReasoning,
+      activeReasoningSegments,
       shouldRenderTextBubble: message.role === 'assistant' && (
         !!activeContent.trim() ||
         message.state === 'streaming' ||
@@ -40,6 +43,11 @@ export class MessageBubbleStateResolver {
   static getActiveReasoning(message: ConversationMessage): string | undefined {
     const activeBranchMessage = this.getActiveBranchMessage(message);
     return activeBranchMessage?.reasoning ?? message.reasoning;
+  }
+
+  static getActiveReasoningSegments(message: ConversationMessage): ReasoningSegment[] | undefined {
+    const activeBranchMessage = this.getActiveBranchMessage(message);
+    return activeBranchMessage?.reasoningSegments ?? message.reasoningSegments;
   }
 
   private static getActiveBranchMessage(message: ConversationMessage): ConversationMessage | null {

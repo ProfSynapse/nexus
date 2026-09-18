@@ -548,9 +548,19 @@ export class ChatView extends ItemView {
           toolCalls as unknown as DetectedToolCalls
         );
       },
-      onReasoningUpdate: (messageId, reasoningText, isComplete) => {
+      onReasoningUpdate: (messageId, reasoningText, isComplete, segments) => {
         this.workingIndicatorController.noteToolActivity(messageId);
-        this.messageDisplay.updateMessageReasoning(messageId, reasoningText, isComplete);
+        const openedNewBlock = this.messageDisplay.updateMessageReasoning(
+          messageId,
+          reasoningText,
+          isComplete,
+          segments
+        );
+        if (openedNewBlock) {
+          // The model went back to thinking after writing: seal the text run so
+          // the next tokens render below this new block, not above it.
+          this.streamingController.beginNewTextRun(messageId);
+        }
       },
       onToolExecutionStarted: (messageId, toolCall) => {
         this.workingIndicatorController.noteToolActivity(messageId);
@@ -635,7 +645,8 @@ export class ChatView extends ItemView {
       },
       (messageId: string, alternativeIndex: number) => {
         void this.branchViewCoordinator.handleBranchSwitchedByIndex(messageId, alternativeIndex);
-      }
+      },
+      this // Component for registerDomEvent (scroll tracking)
     );
 
     // Drives the "still working" gap ticker during the silent parts of a
@@ -990,6 +1001,8 @@ export class ChatView extends ItemView {
       // goes quiet for a tool round-trip).
       this.workingIndicatorController.noteText(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
+      // Keep the growing answer in view unless the reader has scrolled up
+      this.messageDisplay.followNewOutput();
     } else if (isComplete) {
       this.workingIndicatorController.end();
       this.streamingController.finalizeStreaming(messageId, content);

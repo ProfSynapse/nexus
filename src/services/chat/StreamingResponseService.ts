@@ -371,6 +371,9 @@ export class StreamingResponseService {
     msg.cost = turnState.cost;
     msg.usage = turnState.usage;
     msg.reasoning = turnState.reasoning.text || undefined;
+    msg.reasoningSegments = turnState.reasoning.segments.length > 0
+      ? turnState.reasoning.segments
+      : undefined;
     msg.provider = turnState.provider || provider;
     msg.model = turnState.model || model;
 

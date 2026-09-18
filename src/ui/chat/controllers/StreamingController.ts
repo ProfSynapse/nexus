@@ -15,6 +15,14 @@
  * State separation:
  * - Message state (draft/streaming/complete) → MessageManager + Storage
  * - UI animation state (dots, parser) → StreamingController (ephemeral)
+ *
+ * TEXT RUNS:
+ * A turn's visible text is not one blob. When the model thinks, writes, thinks
+ * again and writes again, the bubble renders a thinking block above each stretch
+ * of text it preceded. So `.message-content` holds an ordered mix of
+ * `.message-reasoning` blocks and `.message-turn-text` runs, and the parser is
+ * bound to the run currently being written — never to `.message-content` itself,
+ * which would wipe the thinking blocks on every parser init.
  */
 
 import { MarkdownRenderer } from '../utils/MarkdownRenderer';
@@ -29,6 +37,8 @@ export interface StreamingControllerEvents {
 export class StreamingController {
   private activeAnimations = new Map<string, number>(); // messageId -> intervalId
   private streamingStates = new Map<string, StreamingState>(); // messageId -> streaming-markdown state
+  private activeRuns = new Map<string, HTMLElement>(); // messageId -> the .message-turn-text being written
+  private runText = new Map<string, string>(); // messageId -> text written into that run so far
 
   constructor(
     private containerEl: HTMLElement,
@@ -41,35 +51,59 @@ export class StreamingController {
    * Show loading animation for AI response
    */
   showAILoadingState(messageId: string): void {
-    // Find the message element and add loading animation
-    const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
-    if (messageElement) {
-      const contentElement = messageElement.querySelector('.message-bubble .message-content');
-      if (contentElement) {
-        contentElement.empty();
-        const loadingSpan = contentElement.createSpan({ cls: 'ai-loading' });
-        loadingSpan.appendText('Thinking');
-        loadingSpan.createSpan({ cls: 'dots', text: '...' });
-        this.startLoadingAnimation(contentElement);
-      }
+    const contentElement = this.resolveContentElement(messageId);
+    if (!contentElement) {
+      return;
     }
+
+    contentElement.empty();
+    const loadingSpan = contentElement.createSpan({ cls: 'ai-loading' });
+    loadingSpan.appendText('Thinking');
+    loadingSpan.createSpan({ cls: 'dots', text: '...' });
+    this.startLoadingAnimation(contentElement);
   }
 
   /**
    * Start streaming for a message (initialize streaming-markdown parser)
    */
   startStreaming(messageId: string): void {
-    const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
-    const contentElement = messageElement?.querySelector('.message-bubble .message-content');
-
-    if (messageElement && contentElement) {
-      // Stop loading animation
-      this.stopLoadingAnimation(contentElement);
-
-      // Initialize streaming-markdown parser for this message
-      const streamingState = MarkdownRenderer.initializeStreamingParser(contentElement as HTMLElement);
-      this.streamingStates.set(messageId, streamingState);
+    const contentElement = this.resolveContentElement(messageId);
+    if (!contentElement) {
+      return;
     }
+
+    // Stop loading animation
+    this.stopLoadingAnimation(contentElement);
+
+    // Bind the parser to a text run, not to .message-content: initializing the
+    // parser empties its container, and .message-content also holds the turn's
+    // thinking blocks.
+    const run = this.openTextRun(contentElement);
+    const streamingState = MarkdownRenderer.initializeStreamingParser(run ?? contentElement);
+    this.streamingStates.set(messageId, streamingState);
+    this.runText.set(messageId, '');
+    if (run) {
+      this.activeRuns.set(messageId, run);
+    } else {
+      this.activeRuns.delete(messageId);
+    }
+  }
+
+  /**
+   * Seal the run being written so the next chunk starts a fresh one below the
+   * thinking block that just opened. Called when a new reasoning segment begins
+   * mid-turn; a no-op when nothing is streaming.
+   */
+  beginNewTextRun(messageId: string): void {
+    const streamingState = this.streamingStates.get(messageId);
+    if (!streamingState) {
+      return;
+    }
+
+    MarkdownRenderer.endStreamingParser(streamingState);
+    this.streamingStates.delete(messageId);
+    this.activeRuns.delete(messageId);
+    this.runText.delete(messageId);
   }
 
   /**
@@ -80,14 +114,17 @@ export class StreamingController {
 
     if (streamingState) {
       MarkdownRenderer.writeStreamingChunk(streamingState, chunk);
-    } else {
-      // Initialize streaming if we missed the start
-      this.startStreaming(messageId);
-      // Try again
-      const newStreamingState = this.streamingStates.get(messageId);
-      if (newStreamingState) {
-        MarkdownRenderer.writeStreamingChunk(newStreamingState, chunk);
-      }
+      this.runText.set(messageId, (this.runText.get(messageId) ?? '') + chunk);
+      return;
+    }
+
+    // Initialize streaming if we missed the start (first chunk of the turn, or
+    // the first chunk after a thinking block sealed the previous run)
+    this.startStreaming(messageId);
+    const newStreamingState = this.streamingStates.get(messageId);
+    if (newStreamingState) {
+      MarkdownRenderer.writeStreamingChunk(newStreamingState, chunk);
+      this.runText.set(messageId, (this.runText.get(messageId) ?? '') + chunk);
     }
   }
 
@@ -104,17 +141,24 @@ export class StreamingController {
     // ToolStatusBarController silently dropped every later turn's
     // present-tense tool status as a messageId mismatch.
     this.streamingStates.delete(messageId);
+    const activeRun = this.activeRuns.get(messageId);
+    // A turn split across thinking blocks finalizes only the run it was writing,
+    // so the earlier runs and the blocks between them survive.
+    const runContent = this.runText.get(messageId) ?? finalContent;
+    this.activeRuns.delete(messageId);
+    this.runText.delete(messageId);
 
     const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
 
     if (streamingState && messageElement) {
-      const contentElement = messageElement.querySelector('.message-bubble .message-content');
+      const container = activeRun
+        ?? messageElement.querySelector<HTMLElement>('.message-bubble .message-content');
 
-      if (contentElement) {
+      if (container) {
         MarkdownRenderer.finalizeStreamingContent(
           streamingState,
-          finalContent,
-          contentElement as HTMLElement,
+          runContent,
+          container,
           this.app,
           this.component
         ).catch(error => {
@@ -122,6 +166,60 @@ export class StreamingController {
         });
       }
     }
+  }
+
+  /**
+   * Resolve a message's `.message-content` container, or null when the bubble
+   * has left the DOM (conversation switch, reconcile mid-stream).
+   */
+  private resolveContentElement(messageId: string): HTMLElement | null {
+    const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
+    const contentElement = messageElement?.querySelector('.message-bubble .message-content');
+    return (contentElement as HTMLElement | null) ?? null;
+  }
+
+  /**
+   * Return the text run to write into: the trailing empty run when one is
+   * already waiting, otherwise a fresh run appended after everything the turn
+   * has rendered so far (thinking blocks included) but above the working ticker.
+   */
+  private openTextRun(contentElement: HTMLElement): HTMLElement | null {
+    if (typeof contentElement.createDiv !== 'function') {
+      // Defensive: harnesses and popout windows can hand back a bare element
+      return null;
+    }
+
+    const existing = this.findTrailingEmptyRun(contentElement);
+    if (existing) {
+      return existing;
+    }
+
+    const run = createDiv();
+    run.className = 'message-turn-text';
+
+    const ticker = contentElement.querySelector(':scope > .ai-loading-continuation');
+    if (ticker) {
+      contentElement.insertBefore(run, ticker);
+    } else {
+      contentElement.appendChild(run);
+    }
+
+    return run;
+  }
+
+  private findTrailingEmptyRun(contentElement: HTMLElement): HTMLElement | null {
+    const children = Array.from(contentElement.children ?? []);
+    for (let index = children.length - 1; index >= 0; index--) {
+      const child = children[index] as HTMLElement;
+      if (child.classList?.contains('ai-loading-continuation')) {
+        continue;
+      }
+      if (child.classList?.contains('message-turn-text') && !child.textContent?.trim()) {
+        return child;
+      }
+      return null;
+    }
+    return null;
   }
 
   /**
@@ -246,5 +344,7 @@ export class StreamingController {
     this.stopAllAnimations();
     // Clean up streaming states
     this.streamingStates.clear();
+    this.activeRuns.clear();
+    this.runText.clear();
   }
 }

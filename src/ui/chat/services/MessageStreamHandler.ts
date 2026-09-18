@@ -14,7 +14,11 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData, ToolCall as ConversationToolCall } from '../../../types/chat/ChatTypes';
+import {
+  ConversationData,
+  ReasoningSegment,
+  ToolCall as ConversationToolCall,
+} from '../../../types/chat/ChatTypes';
 import {
   createInitialChatTurnState,
   reduceChatTurn,
@@ -23,7 +27,12 @@ import {
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
   onToolCallsDetected: (messageId: string, toolCalls: ConversationToolCall[]) => void;
-  onReasoningUpdate?: (messageId: string, reasoningText: string, isComplete: boolean) => void;
+  onReasoningUpdate?: (
+    messageId: string,
+    reasoningText: string,
+    isComplete: boolean,
+    segments?: ReasoningSegment[]
+  ) => void;
 }
 
 export interface StreamOptions {
@@ -50,6 +59,8 @@ export interface StreamResult {
   streamedContent: string;
   toolCalls?: ConversationToolCall[];
   reasoning?: string;  // Accumulated reasoning text
+  /** That reasoning split into the runs the model emitted, anchored to content offsets */
+  reasoningSegments?: ReasoningSegment[];
   metadata?: Record<string, unknown>;
   usage?: {            // Token usage for context tracking
     promptTokens: number;
@@ -91,6 +102,7 @@ export class MessageStreamHandler {
     let turnState = createInitialChatTurnState();
 
     let reasoningAccumulator = '';
+    let reasoningSegments: ReasoningSegment[] = [];
     let sawTerminalEvent = false;
 
     // Stream the AI response
@@ -107,6 +119,7 @@ export class MessageStreamHandler {
 
       streamedContent = turnState.content;
       reasoningAccumulator = turnState.reasoning.text;
+      reasoningSegments = turnState.reasoning.segments;
       toolCalls = turnState.toolCalls.length > 0
         ? turnState.toolCalls
         : undefined;
@@ -144,13 +157,14 @@ export class MessageStreamHandler {
         this.events.onReasoningUpdate?.(
           aiMessageId,
           reasoningAccumulator,
-          turnState.reasoning.complete
+          turnState.reasoning.complete,
+          reasoningSegments
         );
       }
 
       // Mark reasoning as complete if signaled
       if (event.type === 'reasoning.completed') {
-        this.events.onReasoningUpdate?.(aiMessageId, reasoningAccumulator, true);
+        this.events.onReasoningUpdate?.(aiMessageId, reasoningAccumulator, true, reasoningSegments);
       }
 
       if (event.type === 'tool.snapshot' && event.ready && toolCalls) {
@@ -173,6 +187,7 @@ export class MessageStreamHandler {
             toolCalls,
             // Persist reasoning for re-render from storage
             reasoning: reasoningAccumulator || undefined,
+            reasoningSegments: reasoningSegments.length > 0 ? reasoningSegments : undefined,
             metadata: finalMetadata,
             provider: resolvedProvider,
             model: resolvedModel,
@@ -196,6 +211,7 @@ export class MessageStreamHandler {
             isLoading: false,
             toolCalls,
             reasoning: reasoningAccumulator || undefined,
+            reasoningSegments: reasoningSegments.length > 0 ? reasoningSegments : undefined,
             metadata: finalMetadata,
             provider: resolvedProvider,
             model: resolvedModel,
@@ -228,6 +244,9 @@ export class MessageStreamHandler {
         ? turnState.toolCalls
         : undefined,
       reasoning: turnState.reasoning.text || undefined,
+      reasoningSegments: turnState.reasoning.segments.length > 0
+        ? turnState.reasoning.segments
+        : undefined,
       metadata: Object.keys(turnState.metadata).length > 0
         ? turnState.metadata
         : undefined,

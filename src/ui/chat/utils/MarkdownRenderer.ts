@@ -79,6 +79,22 @@ export class MarkdownRenderer {
   }
 
   /**
+   * Close a streaming parser without touching the DOM it produced.
+   * Used when a turn interleaves thinking with text: the run that was being
+   * written is sealed so the next run can start below the new thinking block.
+   */
+  static endStreamingParser(streamingState: StreamingState): void {
+    if (!streamingState || !streamingState.parser) {
+      return;
+    }
+    try {
+      smd.parser_end(streamingState.parser);
+    } catch (error) {
+      console.error('[MarkdownRenderer] Error ending streaming parser:', error);
+    }
+  }
+
+  /**
    * Finalize streaming parser and optionally render with Obsidian
    */
   static async finalizeStreamingContent(

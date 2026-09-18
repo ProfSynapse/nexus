@@ -1092,10 +1092,29 @@ body.theme-light .message-content {
 
 /* Message content typography — 18px base, 1.52 line-height, 0.38rem
    paragraph gap. */
+/* Thinking blocks sit inline in the turn: each one above the stretch of text it
+   produced, rather than one growing block pinned to the top of the bubble. */
 .message-reasoning {
-    margin: 0 0 0.5rem 0;
+    margin: 0.5rem 0;
     border-left: 2px solid var(--background-modifier-border);
     padding-left: 0.5rem;
+}
+
+.message-reasoning:first-child {
+    margin-top: 0;
+}
+
+/* One stretch of the turn's visible text, between two thinking blocks. A run the
+   stream opened but never wrote to leaves an empty parser container behind, so
+   collapse that too rather than leaving a gap between blocks. */
+.message-turn-text:empty,
+.message-turn-text > .streaming-content:empty,
+.message-turn-text > .final-content:empty {
+    display: none;
+}
+
+.message-turn-text + .message-turn-text {
+    margin-top: 0.38rem;
 }
 
 .message-reasoning-summary {

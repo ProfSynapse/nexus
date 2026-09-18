@@ -60,7 +60,54 @@ describe('ChatTurnReducer', () => {
       complete: true,
       blockId: 'reason-1',
       encryptedContent: undefined,
+      segments: [{ text: 'Plan', contentOffset: 0, blockId: 'reason-1' }],
     });
+  });
+
+  it('opens a new reasoning segment once visible text has been written', () => {
+    const state = reduceAll([
+      { type: 'reasoning.delta', text: 'First ' },
+      { type: 'reasoning.delta', text: 'thought' },
+      { type: 'assistant.delta', text: 'Step one.' },
+      { type: 'reasoning.delta', text: 'Second thought' },
+      { type: 'assistant.delta', text: ' Step two.' },
+      { type: 'turn.completed' },
+    ]);
+
+    // Flat text stays the concatenation every existing consumer expects
+    expect(state.reasoning.text).toBe('First thoughtSecond thought');
+    // ...while the segments anchor each run to where the answer had got to
+    expect(state.reasoning.segments).toEqual([
+      { text: 'First thought', contentOffset: 0 },
+      { text: 'Second thought', contentOffset: 'Step one.'.length },
+    ]);
+  });
+
+  it('opens a new reasoning segment after a tool round-trip', () => {
+    const state = reduceAll([
+      { type: 'reasoning.delta', text: 'Need a tool' },
+      { type: 'tool.snapshot', calls: [toolCall()], ready: true },
+      { type: 'reasoning.delta', text: 'Got the result' },
+      { type: 'turn.completed' },
+    ]);
+
+    expect(state.reasoning.segments.map(segment => segment.text)).toEqual([
+      'Need a tool',
+      'Got the result',
+    ]);
+  });
+
+  it('starts a new reasoning segment when the provider switches thinking blocks', () => {
+    const state = reduceAll([
+      { type: 'reasoning.delta', text: 'A', blockId: 'block-1' },
+      { type: 'reasoning.delta', text: 'B', blockId: 'block-2' },
+      { type: 'turn.completed' },
+    ]);
+
+    expect(state.reasoning.segments).toEqual([
+      { text: 'A', contentOffset: 0, blockId: 'block-1' },
+      { text: 'B', contentOffset: 0, blockId: 'block-2' },
+    ]);
   });
 
   it('merges progressive tool snapshots by stable ID', () => {

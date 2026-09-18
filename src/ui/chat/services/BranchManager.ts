@@ -421,6 +421,22 @@ export class BranchManager {
   }
 
   /**
+   * Get the currently active message's reasoning segments
+   */
+  getActiveMessageReasoningSegments(
+    message: ConversationMessage
+  ): ConversationMessage['reasoningSegments'] {
+    const branch = this.getActiveBranch(message);
+    if (branch) {
+      if (branch.messages.length > 0) {
+        return branch.messages[branch.messages.length - 1].reasoningSegments;
+      }
+      return undefined;
+    }
+    return message.reasoningSegments;
+  }
+
+  /**
    * Get branch navigation info for a message
    */
   getBranchInfo(message: ConversationMessage): {
