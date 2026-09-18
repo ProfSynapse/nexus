@@ -82,3 +82,31 @@ rebuild therefore recomputes every vector at full provider API cost, which for a
 vault is thousands of calls and hours of wall clock. Treat a rebuild as a correctness
 fallback, not as a routine migration step, and tell the user what it costs before
 running one.
+
+## A save outlives its caller, and must not outlive the database
+
+Two rules a change to the cache save path has to preserve. Neither is visible in
+any single file, which is why they are here rather than in a comment.
+
+**1. Nothing may reach the blob store after `close()` returns.** "Nexus: Rebuild
+cache" is the reason. `StorageMaintenanceService.rebuildCache` runs
+`stopAutoSave()`, then `await close()`, then `blobStore.remove()`, then
+`initialize()` (`:118`, `:121`, `:124`, `:127`). A save that survives that sequence
+writes the removed blob straight back, and the rebuild appears to do nothing: the
+command reports success, the event store replays into a fresh database, and the old
+one is still on disk underneath it. `stopAutoSave()` exists for this and has exactly
+one external caller, that line. So a deferred or coalesced save must be cancellable,
+`close()` must await anything already running before its own final save, and a
+straggler arriving after `close()` must fail rather than write. Today that is the
+`followUpCancelled` latch plus the null handle check in `scheduleFollowUpSave`.
+
+**2. No `await` may precede the export.** `startSave()` captures `writeGeneration`
+and then calls `SQLitePersistenceService.saveDatabase`, which reaches
+`bridge.exportDatabase` with nothing awaited in front of it. That is what makes the
+captured generation mean "everything in these bytes": the export is synchronous, so
+no write can land between the capture and the snapshot. It is not the first statement
+in the method (console suppression comes first) and it does not need to be, but the
+moment anything is awaited ahead of it, a write can land in that gap, get counted as
+covered, and be dropped at `close()`. That is the lost-update window described in
+`failure-modes.md` under "`await db.save()` returned, so the rows are on disk", which
+this repo has already had once.

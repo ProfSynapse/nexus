@@ -2,6 +2,20 @@
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
+2026-09-18 | Second entry for the same session, added because the knowledge was
+already established and deferring it to "a future session that touches storage" would
+have lost it. Two rules govern the cache save path that are visible in no single file:
+that nothing may reach the blob store after `close()` returns (Rebuild Cache runs
+stopAutoSave, close, remove, reopen, so a surviving save writes the removed blob back
+and the rebuild silently does nothing), and that no `await` may precede the export
+(which is what makes the write generation capture sound). Both had to be reasoned out
+from source while implementing the single-flight save. One drafted claim was corrected
+against the tree first: `exportDatabase` is not the first statement of `saveDatabase`,
+console suppression is, so the invariant is the absence of an `await` before it, not
+its position. | Added the section "A save outlives its caller, and must not outlive
+the database" to `references/storage-model.md`. | `references/storage-model.md`,
+`refinement-log.md`.
+
 2026-09-18 | Adding a data-at-risk ceiling to the embedding save cadence required
 knowing whether a resolved `db.save()` is a durability point for the caller's own
 writes: if it were not, the success counter would have been measuring fiction and
