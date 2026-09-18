@@ -28,6 +28,31 @@ function measure(outer: HTMLElement, rowWidth: number, textWidth: number): void 
   (innerOf(outer) as unknown as { scrollWidth: number }).scrollWidth = textWidth;
 }
 
+/**
+ * Stand in for the ResizeObserver the line uses to track the row's width.
+ * jsdom has none, and ToolStatusLine guards on `typeof ResizeObserver`, so
+ * without this the resize path is simply inert.
+ */
+function stubResizeObserver() {
+  const callbacks: Array<() => void> = [];
+  const observed: unknown[] = [];
+  const disconnect = jest.fn();
+  class StubResizeObserver {
+    constructor(cb: () => void) { callbacks.push(cb); }
+    observe(target: unknown) { observed.push(target); }
+    unobserve() { /* unused */ }
+    disconnect() { disconnect(); }
+  }
+  const previous = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = StubResizeObserver;
+  return {
+    observed,
+    disconnect,
+    fire: () => callbacks.forEach(cb => cb()),
+    restore: () => { (globalThis as { ResizeObserver?: unknown }).ResizeObserver = previous; }
+  };
+}
+
 function makeLine() {
   const slot = createMockElement('div');
   const component = new Component();
@@ -35,7 +60,7 @@ function makeLine() {
   const createdSlots = () =>
     (slot.createDiv as jest.Mock).mock.results.map(r => r.value as HTMLElement);
   const createdTexts = () => createdSlots().map(innerOf);
-  return { slot, line, createdSlots, createdTexts };
+  return { slot, line, component, createdSlots, createdTexts };
 }
 
 describe('ToolStatusLine — word streaming', () => {
@@ -273,5 +298,128 @@ describe('ToolStatusLine — carousel', () => {
     expect(outer.setAttribute).toHaveBeenCalledWith('title', 'a goal far wider than the row');
 
     (window as unknown as { matchMedia: unknown }).matchMedia = undefined;
+  });
+});
+
+describe('ToolStatusLine — carousel follows the row width', () => {
+  const RESIZE_SETTLE_MS = 150;
+  let resize: ReturnType<typeof stubResizeObserver>;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    resize = stubResizeObserver();
+  });
+  afterEach(() => {
+    resize.restore();
+    jest.useRealTimers();
+  });
+
+  /** Play a line to a settled, looping state at the given geometry. */
+  function looping(rowWidth: number, textWidth: number) {
+    const line = makeLine();
+    line.line.update('a goal far wider than the row', 'present');
+    const [outer] = line.createdSlots();
+    measure(outer, rowWidth, textWidth);
+    jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
+    return { ...line, outer, text: innerOf(outer) };
+  }
+
+  it('observes the row the line is drawn into', () => {
+    const { slot } = makeLine();
+    expect(resize.observed).toEqual([slot]);
+  });
+
+  it('re-measures the lap against the new width when the pane narrows', () => {
+    const { outer, text } = looping(200, 500);
+    expect(text.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-shift', '-300px');
+    (text.style.setProperty as jest.Mock).mockClear();
+
+    measure(outer, 120, 500); // pane dragged narrower — 80px more to travel
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+
+    expect(text.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-shift', '-380px');
+    expect(text.style.setProperty).toHaveBeenCalledWith(
+      '--tool-status-marquee-duration',
+      '12063ms'
+    );
+  });
+
+  it('keeps a running lap where it is when the width does not actually change', () => {
+    const { text } = looping(200, 500);
+    (text.style.setProperty as jest.Mock).mockClear();
+
+    resize.fire(); // e.g. a height-only change
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+
+    expect(text.style.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('collapses several resize ticks into one measurement', () => {
+    const { outer, text } = looping(200, 500);
+    (text.style.setProperty as jest.Mock).mockClear();
+
+    measure(outer, 190, 500);
+    resize.fire();
+    measure(outer, 160, 500);
+    resize.fire();
+    measure(outer, 150, 500);
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+
+    // Only the settled width is written, not every frame of the drag.
+    const shifts = (text.style.setProperty as jest.Mock).mock.calls
+      .filter(([name]) => name === '--tool-status-marquee-shift')
+      .map(([, value]) => value);
+    expect(shifts).toEqual(['-350px']);
+  });
+
+  it('stops looping when the pane widens enough to fit the line', () => {
+    const { outer, text } = looping(200, 500);
+
+    measure(outer, 520, 500);
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+
+    expect(text.removeClass).toHaveBeenCalledWith('tool-status-marquee');
+    expect(text.style.removeProperty).toHaveBeenCalledWith('--tool-status-marquee-shift');
+  });
+
+  it('starts looping when a row that had no width gets one', () => {
+    const { line, createdSlots, createdTexts } = makeLine();
+    line.update('a goal far wider than the row', 'present');
+    const [outer] = createdSlots();
+    measure(outer, 0, 500); // status bar still collapsed — nothing to measure
+    jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
+    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+
+    measure(outer, 200, 500);
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+
+    expect(createdTexts()[0].addClass).toHaveBeenCalledWith('tool-status-marquee');
+    // The stream parked the row on the tail; the first lap rewinds it.
+    expect((outer as unknown as { scrollLeft: number }).scrollLeft).toBe(0);
+  });
+
+  it('ignores a resize that lands mid-reveal — the reveal measures at its end', () => {
+    const { line, createdSlots, createdTexts } = makeLine();
+    line.update('a goal far wider than the row', 'present');
+    const [outer] = createdSlots();
+    measure(outer, 200, 500);
+
+    jest.advanceTimersByTime(WORD_MS * 2);
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+
+    jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
+    expect(createdTexts()[0].addClass).toHaveBeenCalledWith('tool-status-marquee');
+  });
+
+  it('disconnects the observer when the owning component unloads', () => {
+    const { component } = makeLine();
+    component.unload();
+    expect(resize.disconnect).toHaveBeenCalled();
   });
 });
