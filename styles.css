@@ -8466,11 +8466,22 @@ body.is-mobile .nexus-task-board-shell {
   /* Single line, centered via line-height (matches .tool-status-slot height).
      No ellipsis: ToolStatusLine streams the text word-by-word and follows the
      newest word via scrollLeft when the line outgrows the row, so overflow
-     stays hidden but nothing is truncated. */
+     stays hidden but nothing is truncated. Once the reveal ends, a line that
+     does not fit carousels via the inner element's transform. */
   line-height: 1.46em;
   white-space: nowrap;
   overflow: hidden;
   transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+/* The text itself. Owns `transform` for the carousel, so the slot above is
+   free to keep using `transform` for its enter/exit slide. */
+.tool-status-text-inner {
+  display: inline-block;
+  /* Top-aligned, not baseline: an inline-block on the baseline can grow the
+     line box past the row's fixed height and push the text into the clip. */
+  vertical-align: top;
+  white-space: nowrap;
 }
 
 /* Slot-machine animation states */
@@ -8495,8 +8506,10 @@ body.is-mobile .nexus-task-board-shell {
   opacity: 0;
 }
 
-/* Shimmer animation for active/present status */
-.tool-status-text-present {
+/* Shimmer animation for active/present status. Painted on the inner element
+   so the gradient travels with the text when the carousel is running — a
+   background clipped to the slot would stay put while the words slid past. */
+.tool-status-text-present > .tool-status-text-inner {
   background: linear-gradient(
     90deg,
     var(--text-muted) 0%,
@@ -8507,8 +8520,30 @@ body.is-mobile .nexus-task-board-shell {
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: shimmer-sweep 2s linear infinite;
+}
+
+/* Carousel: hold at the head, travel left at a reading pace, hold at the
+   tail, snap back, repeat — until the next status entry replaces the line.
+   ToolStatusLine measures the overflow and sets the two custom properties;
+   the stops here must match its MARQUEE_TRAVEL_FRACTION (15% + 15% held).
+
+   Declared after the shimmer rule (equal specificity, later wins) and with
+   the same two-animation list in both tenses, so the present→past flip on a
+   looping line does not restart the shorthand and yank the text back to its
+   head mid-lap. Past/failed lines have no gradient behind them, so their
+   shimmer half animates nothing. */
+.tool-status-text-inner.tool-status-marquee {
+  animation:
+    shimmer-sweep 2s linear infinite,
+    tool-status-marquee var(--tool-status-marquee-duration, 6s) linear infinite;
+}
+
+@keyframes tool-status-marquee {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(var(--tool-status-marquee-shift, 0px)); }
 }
 
 @keyframes shimmer-sweep {
@@ -8555,11 +8590,18 @@ body.is-mobile .nexus-task-board-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-status-text-present {
+  .tool-status-text-present > .tool-status-text-inner {
     animation: none;
     -webkit-text-fill-color: initial;
     background: none;
     color: var(--text-normal);
+  }
+
+  /* No carousel for motion-sensitive readers — ToolStatusLine skips it too;
+     the slot's `title` attribute carries the full text instead. */
+  .tool-status-text-inner.tool-status-marquee {
+    animation: none;
+    transform: none;
   }
 
   .tool-status-text-present.entering,
