@@ -78,6 +78,17 @@ otherwise is not.
    false and no community plugin loads. Listing the plugin in
    `community-plugins.json` is not enough on its own.
 
+   **If the plugin folder did not exist before Obsidian launched, this silently
+   does nothing.** Obsidian reads `.obsidian/plugins/` once at vault load, so a
+   folder copied in afterwards is invisible: `app.plugins.manifests` lacks it, and
+   `enablePlugin('<id>')` resolves without an error and without loading anything,
+   which looks exactly like a load failure. `dev:errors` stays empty and gives no
+   hint. Either create the folder before step 4, or rescan first:
+
+   ```bash
+   ./obsidian-cli eval code="await app.plugins.loadManifests(); await app.plugins.enablePluginAndSave('nexus'); 'ok'"
+   ```
+
 6. **Confirm the plugin actually loaded**, which is a different question from
    whether Obsidian started:
 

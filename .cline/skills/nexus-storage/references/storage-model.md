@@ -71,3 +71,14 @@ every disagreement traces back to one of:
 - a path resolved differently than it was written (`paths-and-layout.md`).
 
 `failure-modes.md` maps symptoms back to these five.
+
+## "Rebuildable" does not mean "cheap"
+
+The SQLite cache is derived from the JSONL event store and a rebuild loses no user
+data. Embeddings are the exception: they are written straight into SQLite by
+`NoteEmbeddingService` and `ConversationEmbeddingService`, there is no embedding event
+type in `StorageEvents.ts`, and no applier in `src/database/sync/` handles one. A
+rebuild therefore recomputes every vector at full provider API cost, which for a large
+vault is thousands of calls and hours of wall clock. Treat a rebuild as a correctness
+fallback, not as a routine migration step, and tell the user what it costs before
+running one.

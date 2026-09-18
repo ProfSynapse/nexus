@@ -1,8 +1,62 @@
 # SQLite Cache Persistence: Removing the Whole-Database Snapshot from the Hot Path (Scoping Document)
 
-**Status:** Proposal
+**Status:** In progress. Phase 0 landed (`83a732a`), Phase 3 answered (`8d5d732`), Phase 5 decided as Option D.
 **Date:** 2026-09-18
 **Driver:** Reproducible `RangeError: Array buffer allocation failed` during background embedding indexing on a large vault. Every full index dies partway through, loses everything embedded since the last successful save, and recomputes the same notes (at the same API cost) on the next launch. The stack always lands in `sqlite3_js_db_export`, never in the embedding provider.
+
+---
+
+## Amendments
+
+This document was written before Phase 0 and Phase 3 ran. Both have now landed and
+both corrected it. The original text below is left intact so the reasoning stays
+readable; read these first.
+
+**A1. Phase 3 is answered. The choice is Option D.** See
+`docs/plans/sqlite-cache-persistence-spike-findings.md` (commit `8d5d732`) for the
+measurements. `installOpfsSAHPoolVfs()` rejects on the Obsidian desktop renderer
+main thread with `Missing required OPFS APIs`, because
+`FileSystemFileHandle.prototype.createSyncAccessHandle` is `undefined` there: the
+API is `[Exposed=DedicatedWorker]`. It resolves in 55 ms inside a dedicated Worker
+in the same renderer. **Option C is therefore rejected for storage purposes** and
+the rejection recorded at `docs/architecture/cloud-sync-cache-backend.md:140-149`
+stands as factually correct; only its rationale was incomplete, in weighing
+throughput rather than peak allocation. Option D measured at 152.4 MB brings the
+maximum single contiguous allocation from 152.4 MB down to 4 MB, a 38x reduction,
+at no wall-clock cost. Option E stays worth doing on its own merits but is a size
+reduction, not a structural fix, so it is complementary and lower priority.
+
+**A2. Section 7's premise was wrong, and the section title is wrong.** `node_modules`
+was present and installable all along, and `.skills/nexus-testing/protocols/headless-obsidian.md`
+stands up a real Obsidian headless in this class of container. Everything section 7
+lists as unanswerable was answerable here, and was answered in about twenty minutes of
+actual measurement. The lesson generalises: before recording a question as needing a
+human's machine, run the repo's own protocol for standing the thing up.
+
+**A3. The copy ledger in section 2 understates the cost.** The current export costs
+**two** full-size allocations, not one: `sqlite3_serialize` copies the image inside
+the WASM heap first, and `sqlite3_js_db_export` then copies that into JS. Measured
+peak WASM heap was 310.6 MB resident for a 152 MB database, and it never shrinks.
+
+**A4. Three implementation hazards for Phase 5, one of which this document did not
+have.** A fresh `:memory:` database returns `ptr = 0` from NOCOPY and must fall back
+to the existing export path; the size out-param is still populated, so the null is
+cheap to branch on. A view over WASM memory detaches only when the heap grows, which
+is narrower than section 2 assumed. And, the dangerous one: **the NOCOPY pointer
+itself moves when a `RESIZEABLE` database grows** (`676904` to `58144672` after a
+16 MB insert), leaving a cached pointer aimed at freed memory rather than throwing on
+a detached view. Re-take the pointer immediately before every use.
+
+**A5. `SQLITE_SERIALIZE_NOCOPY` is reachable and equals 1.** An earlier reading of
+this repo inferred it was unavailable because it does not appear as a string in the
+bundled `sqlite3.mjs`. That inference was wrong, and is falsifiable in one line:
+`SQLITE_DESERIALIZE_RESIZEABLE`, which the shipping code at `SQLiteWasmBridge.ts:92`
+already uses successfully, is equally absent from that file. Both live in an enum blob
+inside `sqlite3.wasm` and are attached to `capi` at init. Relatedly, `oo1.OpfsSAHPoolDb`
+does **not** exist on the module (`oo1` is exactly `{DB, Stmt, JsStorageDb}`); it is a
+property of the object the installer resolves with. The declared type at
+`SQLiteWasmBridge.ts:22-42` lists five `capi` entries where the runtime has 649, so
+absence from that type proves nothing either.
 
 ---
 
@@ -103,7 +157,11 @@ The size investigation should start at `notes` plus `note_properties`, not at `m
 
 `.skills/nexus-storage/references/failure-modes.md` covers corrupt caches, hydration races, rebuild semantics, cloud-sync conflict copies and the post-unload write burst. It has no entry for allocation failure during save, and `.skills/nexus-storage/references/storage-model.md` does not mention the export cost. A future reader hitting `Failed to embed <path>` has nothing in the skill that points at persistence. Adding that entry is a deliverable of this plan, not an afterthought (Phase 4).
 
-### 7. What we do not know yet, and cannot answer from this repo
+### 7. What we did not know when this was written (now answered, see A1 and A2)
+
+> **Superseded.** Every question in this section was answerable in this container and
+> has been answered. Kept for the reasoning; read `sqlite-cache-persistence-spike-findings.md`
+> for the results. The premise below, that `node_modules` was unavailable, was false.
 
 `node_modules` is not present in this working tree, so the bundled sqlite3 build could not be inspected directly. What the repo does tell us:
 

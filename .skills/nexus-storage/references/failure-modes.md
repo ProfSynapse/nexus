@@ -242,3 +242,47 @@ Fixing teardown is necessary but not sufficient: a write scheduled before the
 close still has to fail safely. Give the detached paths (`void this.flush()`,
 `void service.deleteNote(...)`) a `catch`, or the shutdown detail is reported as
 a plugin error.
+
+## "RangeError: Array buffer allocation failed", or "Failed to embed \<path\>" on a large vault
+
+Not an embedding failure and not out-of-memory. The cache is persisted by exporting
+the **entire** database out of the WASM heap and handing it to the blob store, which
+copies it again. `SQLiteWasmBridge.exportDatabase` calls `sqlite3_js_db_export`, which
+copies the image inside the WASM heap and then copies that into a contiguous JS
+`ArrayBuffer`; `SQLitePersistenceService.saveDatabase` passes it to
+`IndexedDBCacheBlobStore.write` (structured clone) on desktop or
+`vault.adapter.writeBinary` on mobile. Peak live bytes per save measured at 3x the
+database size, the WASM heap reached 310.6 MB resident for a 152 MB database, and it
+never shrinks. At a 150 MB cache with a save every ten notes, a full index performs
+hundreds of allocate-and-discard cycles and the JS heap fragments until no contiguous
+run that size remains. The allocator is refusing one contiguous request, which is why
+the first saves succeed and later ones fail.
+
+It is reported as an embed failure because the periodic `db.save()` sat inside the
+per-note `try` in `IndexingQueue`. `TraceIndexer` has the same shape and says so in a
+comment. **The stack is the tell**: `sqlite3_js_db_export` / `saveDatabase` /
+`saveToFile` means persistence, whatever the message says.
+
+Two aggravators worth checking before fixing anything:
+
+- Interleaved `Auto-save failed` lines mean the 30 s timer started a *second*
+  full-size export while the first was still awaiting its write. Two concurrent
+  exports measured at 5x database size against 3x for one.
+- A save failure used to be able to null the conversation backfill's resume
+  checkpoint, restarting it at zero on the next run. If a backfill keeps starting
+  over, look at the save path, not the backfill.
+
+Confirm with `getStatistics()`: `dbSizeBytes` is what the last save wrote, while
+`pageCount * pageSizeBytes` is the logical size inside the WASM heap that every save
+has to copy out. A large `freelistCount` means a `VACUUM` would shrink the blob. For a
+per-table breakdown call `getObjectPageUsage()`, which reads `dbstat` and is on-demand
+only because it walks every page.
+
+Fix at the persistence layer, never by catching the `RangeError` at the call site. The
+structural fix is `sqlite3_serialize` with `SQLITE_SERIALIZE_NOCOPY` plus a chunked
+blob format, which brings the contiguous requirement from the full database size down
+to one chunk. Note that the NOCOPY pointer moves when a `RESIZEABLE` database grows,
+so it must be re-taken immediately before every use. OPFS is not the answer here: the
+sahpool VFS needs a dedicated Worker because `createSyncAccessHandle` is
+`[Exposed=DedicatedWorker]`. See `docs/plans/sqlite-cache-persistence-plan.md` and
+`docs/plans/sqlite-cache-persistence-spike-findings.md`.

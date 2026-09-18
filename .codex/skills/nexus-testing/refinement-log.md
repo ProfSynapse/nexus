@@ -4,6 +4,20 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-09-18 | Ran `headless-obsidian.md` end to end against Obsidian 1.13.7 on
+2026-09-18 while measuring the SQLite save path. The protocol worked as written
+(xvfb-run present, obsidian.md still 403 and github.com reachable, the full GPU flag
+set still required, `"cli": true` written while not running still took effect), but
+step 5 has a silent failure: Obsidian reads `.obsidian/plugins/` once at vault load,
+so a plugin folder created after launch is invisible. `enablePlugin()` then resolves
+without error and without loading anything, `app.plugins.manifests` lacks the entry,
+and `dev:errors` stays empty, so it presents exactly like a plugin that failed to
+load. Also, when walking plugin internals with `eval`, a harness plugin parked on
+`window` is reachable via `plugin.app.workspace...` and via `secretStore.host.plugins`
+and gets mistaken for the plugin under test. | Added the `loadManifests()` +
+`enablePluginAndSave()` rescan to step 5 with the symptom described, so the next
+reader does not diagnose a working plugin as broken. | `protocols/headless-obsidian.md`,
+`refinement-log.md`.
 2026-09-18 | `references/lanes.md` told readers that adding a file to the coverage
 allowlist without a per-file `coverageThreshold` reds the run, and prescribed "add
 both or neither". The prescribed remedy does nothing: `npm run test:coverage` passes
