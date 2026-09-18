@@ -27,6 +27,7 @@
 import { IndexingQueue, IndexingProgress } from '../../src/services/embeddings/IndexingQueue';
 import type { EmbeddingService } from '../../src/services/embeddings/EmbeddingService';
 import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
+import { MAX_ITEMS_AT_RISK } from '../../src/services/embeddings/CacheSavePolicy';
 import type { App, TFile } from 'obsidian';
 
 /**
@@ -38,6 +39,13 @@ const SAVE_INTERVAL = 10;
 
 /** The size that motivated the plan, and the one the spike timed at ~378 ms a save. */
 const LARGE_CACHE_BYTES = 152 * 1024 * 1024;
+
+/**
+ * Items that may be at risk before a save is due whatever the clock says
+ * (CacheSavePolicy MAX_ITEMS_AT_RISK). Imported rather than repeated, so a
+ * change to the cap moves these tests with it instead of breaking them.
+ */
+const CEILING_NOTES = MAX_ITEMS_AT_RISK;
 
 function makeFiles(count: number): TFile[] {
   return Array.from({ length: count }, (_, i) => ({
@@ -281,4 +289,34 @@ describe('IndexingQueue save cadence', () => {
     // notes between snapshots, and twenty is nowhere near it.
     expect(harness.save).toHaveBeenCalledTimes(1);
   });
+
+  // The other side of that trade, measured in a real renderer after the fact:
+  // at 153 MB the time floor is about 38 s, longer than a 300 note run, so the
+  // size-aware cadence on its own let all 300 notes ride on the single final
+  // save. The ceiling is what checkpoints them, and it has to fire although
+  // neither floor is anywhere near met.
+  it('checkpoints at the data-at-risk ceiling even though the cache is large', async () => {
+    const harness = createHarness(CEILING_NOTES + SAVE_INTERVAL, LARGE_CACHE_BYTES);
+
+    await harness.queue.startFullIndex();
+
+    // One at the ceiling, one at the end. Without the ceiling this is 1.
+    expect(harness.save).toHaveBeenCalledTimes(2);
+  }, 30000);
+
+  // Wiring, and the thing most likely to be got wrong later: the success mark
+  // belongs on the path where save() returned, not in the `finally` beside the
+  // attempt mark. Put it in the `finally` and a failed save would count as
+  // having cleared the exposure, so the retry would not come until a whole
+  // ceiling later and this run would save once instead of twice.
+  it('retries at the flat floor after a failed save, because nothing was cleared', async () => {
+    const harness = createHarness(CEILING_NOTES + SAVE_INTERVAL, LARGE_CACHE_BYTES);
+    harness.save
+      .mockRejectedValueOnce(new RangeError('Array buffer allocation failed'))
+      .mockResolvedValue(undefined);
+
+    await harness.queue.startFullIndex();
+
+    expect(harness.save).toHaveBeenCalledTimes(3);
+  }, 30000);
 });

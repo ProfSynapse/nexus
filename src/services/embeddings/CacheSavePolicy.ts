@@ -56,6 +56,31 @@ const SAVE_COST_MS_PER_ITEM = 4;
 /** However large the database gets, do not let more than this many items ride on one save. */
 const MAX_ITEMS_BETWEEN_SAVES = 250;
 
+/**
+ * Items that may be at risk before a save is due whatever the clock says.
+ *
+ * This is a ceiling, not a floor, and it is the only rule here that overrides
+ * the time floor. The two floors below decide how cheap the run is; this one
+ * decides how much work a crash may cost, and when they disagree this one wins.
+ *
+ * Why fifty. The unit of loss is one embedding: an item that is in the
+ * in-memory database and in no snapshot has to be recomputed at full provider
+ * API cost after a crash, and the crash this whole plan exists for is
+ * reproducible. The unit of spend is one save, about 2.5 ms per megabyte
+ * (378 ms measured at 152.4 MB, spike findings section 5d). At the 153 MB that
+ * motivated the plan, fifty puts roughly six saves in a 300 note run, about
+ * 2.3 s of snapshot cost across the run, against 32 saves before the
+ * size-aware cadence and exactly one after it. So it buys back a bounded worst
+ * case for a few seconds per run and keeps most of the reduction.
+ *
+ * It is deliberately a flat count rather than a share of the database size.
+ * Fifty lost embeddings cost the same whether the cache is 4 MB or 1 GB, so
+ * the number that bounds them must not scale with the cache. At a small cache
+ * the item floor is already below this, so this rule never fires there; see
+ * the cadence tests.
+ */
+export const MAX_ITEMS_AT_RISK = 50;
+
 /** However large the database gets, do not wait longer than this between saves. */
 const MAX_MS_BETWEEN_SAVES = 5 * 60 * 1000;
 
@@ -85,6 +110,10 @@ export interface SaveCadenceDecision {
  * saving more often than the budget allows. An unknown or empty database
  * (`null`, or a fresh install before anything has been written) produces no
  * time floor at all, because a save that costs nothing does not need one.
+ *
+ * Floors only. The ceiling that bounds how much data may ride on one save is
+ * MAX_ITEMS_AT_RISK, and it lives in SaveCadence.shouldSave() because it is
+ * measured from the last save that succeeded, which a size cannot know.
  */
 export function computeSaveCadence(sizeBytes: number | null, minItems: number): SaveCadenceDecision {
   const estimatedSaveCostMs = estimateSaveCostMs(sizeBytes);
@@ -131,12 +160,22 @@ export interface SaveCadenceOptions {
  * One instance per indexing run. It re-reads the database size on every
  * decision rather than caching it, because the size is what the run is busy
  * growing, and reading it is a field access.
+ *
+ * Two item counters, and the difference between them is the point. One counts
+ * from the last save that was ATTEMPTED and paces the run: a save that failed
+ * cost the same hundreds of milliseconds as one that worked, so the next
+ * attempt has to be earned again. The other counts from the last save that
+ * SUCCEEDED and measures exposure: only a snapshot that actually landed makes
+ * an item safe, so a failed attempt does not reduce what a crash would cost.
+ * Pacing off the wrong one of those is what let 300 rows ride on a single save
+ * in the live measurement that motivated the ceiling.
  */
 export class SaveCadence {
   private readonly minItems: number;
   private readonly db: CacheSizeSource;
   private readonly now: () => number;
-  private itemsSinceSave = 0;
+  private itemsSinceAttempt = 0;
+  private itemsSinceSuccess = 0;
   private lastAttemptAt: number;
 
   constructor(options: SaveCadenceOptions) {
@@ -148,29 +187,73 @@ export class SaveCadence {
 
   /** One item finished. Call this only for items that actually changed the database. */
   recordItem(): void {
-    this.itemsSinceSave++;
+    this.itemsSinceAttempt++;
+    this.itemsSinceSuccess++;
   }
 
-  /** Whether enough items AND enough time have passed. */
+  /** How many items are in the database and in no snapshot: what a crash would cost. */
+  itemsAtRisk(): number {
+    return this.itemsSinceSuccess;
+  }
+
+  /**
+   * Whether a save is due.
+   *
+   * Two ways to be due, and they answer different questions.
+   *
+   * The floors are the cheap run: enough items AND enough time since the last
+   * attempt, which is the "whichever is later" of Option B in the plan.
+   *
+   * The ceiling is the bounded loss: once MAX_ITEMS_AT_RISK items sit in the
+   * database with no snapshot covering them, a save is due whatever the clock
+   * says. It has to override the time floor, because the time floor is where
+   * the exposure came from: at 153 MB it is about 38 s, longer than an entire
+   * short incremental run, so nothing periodic could fire inside one.
+   *
+   * The ceiling still respects the caller's flat floor. Without that, a failing
+   * save would be retried on the very next item forever, since a failure never
+   * clears the exposure that is asking for it, and each retry costs the full
+   * export. So the sequence after a failure is: retry every `minItems` items
+   * rather than every item, and rather than not until the time floor, which
+   * would leave the rest of the run uncovered.
+   */
   shouldSave(): boolean {
     const { items, intervalMs } = this.decide();
-    return this.itemsSinceSave >= items && this.now() - this.lastAttemptAt >= intervalMs;
+    if (this.itemsSinceSuccess >= MAX_ITEMS_AT_RISK && this.itemsSinceAttempt >= this.minItems) {
+      return true;
+    }
+    return this.itemsSinceAttempt >= items && this.now() - this.lastAttemptAt >= intervalMs;
   }
 
   /**
    * A save was attempted, successfully or not.
    *
-   * A failed attempt resets the cadence as a successful one does. The plan
-   * measures the interval from the last successful save, but a save that is
-   * failing is failing because the allocator refused a buffer the size of the
-   * database, and asking again on the very next item spends the same hundreds
-   * of milliseconds to be refused again. The items still count toward the next
-   * attempt either way, because the flag in SQLiteCacheManager, not this
-   * counter, is what remembers that the data is still unsaved.
+   * A failed attempt resets the pacing counters as a successful one does. The
+   * plan measures the interval from the last successful save, but a save that
+   * is failing is failing because the allocator refused a buffer the size of
+   * the database, and asking again on the very next item spends the same
+   * hundreds of milliseconds to be refused again. What a failed attempt does
+   * NOT do is reduce the exposure: `itemsSinceSuccess` is untouched here, so
+   * the ceiling keeps asking, at the flat floor rather than at the full
+   * cadence, until a save lands.
    */
   markSaveAttempt(): void {
-    this.itemsSinceSave = 0;
+    this.itemsSinceAttempt = 0;
     this.lastAttemptAt = this.now();
+  }
+
+  /**
+   * A save landed: everything written before it is now on disk.
+   *
+   * Call this only where the save is known to have succeeded, which means
+   * after an awaited `SQLiteCacheManager.save()` returned without throwing.
+   * That resolution is a real guarantee rather than a hopeful one: `saveToFile`
+   * joins an in-flight export only when the write generation has not moved
+   * since that export started, and schedules a follow-up otherwise, so a
+   * resolved save covers every write this caller had made when it asked.
+   */
+  markSaveSuccess(): void {
+    this.itemsSinceSuccess = 0;
   }
 
   /** The cadence in force right now. Exposed for tests and for log lines. */

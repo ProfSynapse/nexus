@@ -308,6 +308,10 @@ export class ConversationIndexer {
   private async persistCache(cadence: SaveCadence, stage: CacheSaveStage): Promise<void> {
     try {
       await this.db.save();
+      // Only here, and only on the path where save() returned without
+      // throwing. This is what clears the data-at-risk ceiling, and a
+      // save that threw has cleared nothing.
+      cadence.markSaveSuccess();
     } catch (error) {
       console.error(
         describeCacheSaveFailure('ConversationIndexer', stage, readCacheSizeBytes(this.db)),

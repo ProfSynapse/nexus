@@ -11,6 +11,7 @@
  */
 
 import {
+  MAX_ITEMS_AT_RISK,
   SaveCadence,
   computeSaveCadence,
   describeCacheSaveFailure,
@@ -109,9 +110,12 @@ describe('SaveCadence', () => {
     expect(cadence.shouldSave()).toBe(false);
   });
 
+  // Below the data-at-risk ceiling the time floor still paces the run. A 16 MB
+  // cache asks for ten items and four seconds, so ten items on their own are
+  // not enough.
   it('waits for the time floor even once the item floor has passed', () => {
-    const { cadence, items } = createCadence(152 * MB);
-    items(500);
+    const { cadence, items } = createCadence(16 * MB);
+    items(20);
     expect(cadence.shouldSave()).toBe(false);
   });
 
@@ -134,23 +138,221 @@ describe('SaveCadence', () => {
 
   // A save that fails costs the same hundreds of milliseconds as one that
   // succeeds, so asking again on the very next item spends that cost to be
-  // refused again. The unsaved data is not forgotten: the dirty flag in
-  // SQLiteCacheManager is what remembers it, not this counter.
-  it('backs off after a failed attempt exactly as after a successful one', () => {
+  // refused again. What a failed save does not do is make the data safe, so
+  // the back-off after one is the flat floor rather than the full cadence.
+  it('backs off after a failed attempt, but only by the flat floor', () => {
     const { cadence, advance, items } = createCadence(152 * MB);
     items(500);
     advance(10 * 60 * 1000);
     cadence.markSaveAttempt();
 
+    items(9);
+    expect(cadence.shouldSave()).toBe(false);
+    items(1);
+    expect(cadence.shouldSave()).toBe(true);
+  });
+
+  it('backs off for the whole cadence after an attempt that landed', () => {
+    const { cadence, advance, items } = createCadence(152 * MB);
     items(500);
+    advance(10 * 60 * 1000);
+    cadence.markSaveSuccess();
+    cadence.markSaveAttempt();
+
+    items(49);
     expect(cadence.shouldSave()).toBe(false);
     advance(10 * 60 * 1000);
-    expect(cadence.shouldSave()).toBe(true);
+    expect(cadence.shouldSave()).toBe(false);
   });
 
   it('falls back to the flat floor when the cache cannot say how big it is', () => {
     const { cadence, items } = createCadence(null);
     items(9);
+    expect(cadence.shouldSave()).toBe(false);
+    items(1);
+    expect(cadence.shouldSave()).toBe(true);
+  });
+});
+
+/**
+ * A run driven exactly the way the three indexers drive it: record an item,
+ * ask, and on a yes attempt a save, marking success only when it landed, then
+ * one final save at the end whatever happened.
+ *
+ * The exposure it reports is computed the way the live harness computes it
+ * (/tmp/nexus-verify/payload/harness.js, cadenceReport): the items before the
+ * first save that landed count, the items between consecutive landed saves
+ * count, and the items after the last landed save count. Those windows are
+ * what a crash costs, and they are the numbers the harness put at 300 for the
+ * Phase 2 cadence.
+ */
+function simulateRun(options: {
+  sizeBytes: number | null;
+  items: number;
+  msPerItem: number;
+  minItems?: number;
+  saveFails?: (attempt: number) => boolean;
+}) {
+  const minItems = options.minItems ?? 10;
+  let now = 1_000_000;
+  const cadence = new SaveCadence({
+    minItems,
+    db: { getLastSavedBytes: () => options.sizeBytes },
+    now: () => now
+  });
+
+  let processed = 0;
+  let attempts = 0;
+  const landedAt: number[] = [];
+
+  const persist = (): void => {
+    attempts++;
+    const failed = options.saveFails ? options.saveFails(attempts) : false;
+    if (!failed) {
+      cadence.markSaveSuccess();
+      landedAt.push(processed);
+    }
+    cadence.markSaveAttempt();
+  };
+
+  for (let i = 0; i < options.items; i++) {
+    now += options.msPerItem;
+    processed++;
+    cadence.recordItem();
+    if (cadence.shouldSave()) {
+      persist();
+    }
+  }
+  persist();
+
+  const windows: number[] = [];
+  let previous = 0;
+  for (const at of landedAt) {
+    windows.push(at - previous);
+    previous = at;
+  }
+  windows.push(processed - previous);
+
+  return {
+    attempts,
+    landed: landedAt.length,
+    maxItemsAtRisk: Math.max(...windows)
+  };
+}
+
+/**
+ * The data-at-risk ceiling.
+ *
+ * Every number here comes from the live measurement that motivated it: a
+ * headless Obsidian renderer indexed 300 synthetic notes against a 153.4 MB
+ * cache in 16.4 s, so about 55 ms an item, and the Phase 2 cadence let all 300
+ * of them ride on the single final save.
+ */
+describe('SaveCadence data-at-risk ceiling', () => {
+  const LIVE_SIZE = 153 * MB;
+  const LIVE_ITEMS = 300;
+  const LIVE_MS_PER_ITEM = 55;
+
+  // If the ceiling were removed, this run would take the floors, and the floors
+  // cannot fire inside it at all: the time floor at this size is longer than
+  // the whole run. That is the defect, stated as an assertion.
+  it('fires inside a run that is shorter than the time floor', () => {
+    const { intervalMs } = computeSaveCadence(LIVE_SIZE, 10);
+    expect(intervalMs).toBeGreaterThan(LIVE_ITEMS * LIVE_MS_PER_ITEM);
+
+    const run = simulateRun({
+      sizeBytes: LIVE_SIZE,
+      items: LIVE_ITEMS,
+      msPerItem: LIVE_MS_PER_ITEM
+    });
+
+    expect(run.landed).toBeGreaterThan(1);
+    expect(run.maxItemsAtRisk).toBe(MAX_ITEMS_AT_RISK);
+  });
+
+  // The cost side of the same run. Six or so saves, against 32 before the
+  // size-aware cadence and 1 after it.
+  it('keeps most of the reduction the size-aware cadence bought', () => {
+    const run = simulateRun({
+      sizeBytes: LIVE_SIZE,
+      items: LIVE_ITEMS,
+      msPerItem: LIVE_MS_PER_ITEM
+    });
+
+    expect(run.attempts).toBeLessThanOrEqual(8);
+    expect(run.attempts).toBeLessThan(Math.ceil(LIVE_ITEMS / MAX_ITEMS_AT_RISK) + 3);
+  });
+
+  // The harness's "one transient save failure" run. A failed save clears no
+  // exposure, so the next attempt comes at the flat floor rather than a whole
+  // ceiling later, and the worst window is a ceiling plus a floor.
+  it('does not let one transient failure double the exposure', () => {
+    const run = simulateRun({
+      sizeBytes: LIVE_SIZE,
+      items: LIVE_ITEMS,
+      msPerItem: LIVE_MS_PER_ITEM,
+      saveFails: attempt => attempt === 1
+    });
+
+    expect(run.maxItemsAtRisk).toBe(MAX_ITEMS_AT_RISK + 10);
+    expect(run.maxItemsAtRisk).toBeLessThan(2 * MAX_ITEMS_AT_RISK);
+  });
+
+  // The other half of that: a save that keeps failing must not be retried on
+  // every item, because each refusal costs the full export.
+  it('paces a save that keeps failing instead of asking on every item', () => {
+    const run = simulateRun({
+      sizeBytes: LIVE_SIZE,
+      items: LIVE_ITEMS,
+      msPerItem: LIVE_MS_PER_ITEM,
+      saveFails: () => true
+    });
+
+    expect(run.landed).toBe(0);
+    expect(run.attempts).toBeLessThanOrEqual(Math.ceil(LIVE_ITEMS / 10) + 2);
+    expect(run.attempts).toBeLessThan(LIVE_ITEMS / 5);
+  });
+
+  // The ceiling is a ceiling, not a new floor: where a save is cheap the item
+  // floor is already well below it and nothing here may change the cadence.
+  // Ten items between saves, and twenty across one transient failure, are the
+  // numbers the harness measured before any of this work started.
+  it('is inert at a cache size where the item floor is already below it', () => {
+    const small = { sizeBytes: 4 * MB, items: 300, msPerItem: 200 };
+    expect(computeSaveCadence(small.sizeBytes, 10).items).toBeLessThan(MAX_ITEMS_AT_RISK);
+
+    expect(simulateRun(small).maxItemsAtRisk).toBe(10);
+    expect(simulateRun({ ...small, saveFails: attempt => attempt === 1 }).maxItemsAtRisk).toBe(20);
+  });
+
+  // Exposure is cleared by a save that landed, and by nothing else. This is the
+  // distinction the whole ceiling rests on, asserted directly rather than
+  // through a run.
+  it('counts from the last save that landed, not the last one attempted', () => {
+    let now = 1_000_000;
+    const cadence = new SaveCadence({
+      minItems: 10,
+      db: { getLastSavedBytes: () => LIVE_SIZE },
+      now: () => now
+    });
+    const items = (count: number): void => {
+      for (let i = 0; i < count; i++) {
+        now += LIVE_MS_PER_ITEM;
+        cadence.recordItem();
+      }
+    };
+
+    items(MAX_ITEMS_AT_RISK);
+    expect(cadence.shouldSave()).toBe(true);
+
+    cadence.markSaveAttempt();
+    expect(cadence.itemsAtRisk()).toBe(MAX_ITEMS_AT_RISK);
+
+    cadence.markSaveSuccess();
+    cadence.markSaveAttempt();
+    expect(cadence.itemsAtRisk()).toBe(0);
+
+    items(MAX_ITEMS_AT_RISK - 1);
     expect(cadence.shouldSave()).toBe(false);
     items(1);
     expect(cadence.shouldSave()).toBe(true);
