@@ -2,6 +2,19 @@
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
+2026-09-18 | Adding a data-at-risk ceiling to the embedding save cadence required
+knowing whether a resolved `db.save()` is a durability point for the caller's own
+writes: if it were not, the success counter would have been measuring fiction and
+`markSaveSuccess()` would have needed a different signal. The skill was silent, so
+answering it meant reading `saveToFile`, `startSave`, `scheduleFollowUpSave`,
+`markDirty` and the write generation pair. The answer is yes, with two silent
+exceptions, one of which (a cancelled follow-up resolves without writing) was missed
+on the first reading and only found while drafting this entry. | Added the entry
+"`await db.save()` returned, so the rows are on disk" to `references/failure-modes.md`,
+covering the three branches, the cancelled-follow-up case and why `hasUnsavedChanges()`
+can stay true after a successful save. Two weaker candidates were rejected as stale
+counts or as facts that belong beside the tunable they describe. |
+`references/failure-modes.md`, `refinement-log.md`.
 2026-09-18 | A user hit `RangeError: Array buffer allocation failed` during
 background indexing on a large vault, reported by the plugin as
 `[IndexingQueue] Failed to embed <path>`. Nothing in this skill pointed at

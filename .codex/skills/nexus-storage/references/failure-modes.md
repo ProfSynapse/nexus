@@ -286,3 +286,41 @@ so it must be re-taken immediately before every use. OPFS is not the answer here
 sahpool VFS needs a dedicated Worker because `createSyncAccessHandle` is
 `[Exposed=DedicatedWorker]`. See `docs/plans/sqlite-cache-persistence-plan.md` and
 `docs/plans/sqlite-cache-persistence-spike-findings.md`.
+
+## "`await db.save()` returned, so the rows are on disk"
+
+Usually true, and the two ways it is not are both silent.
+
+`SQLiteCacheManager.save()` is `saveToFile()`, which branches three ways over a
+write counter (`markDirty()` bumps `writeGeneration` on every write). Nothing in
+flight: `startSave()` captures the generation **before** `saveDatabase` exports, so
+the snapshot covers every write that had landed when the caller asked. Something in
+flight and the generation has not moved: the caller joins it, because that export
+already holds what this caller wants persisted. Something in flight and the
+generation has moved: one follow-up is scheduled, shared by every caller that asks
+while the first runs, and it exports after that one settles. All three branches mean
+the same thing, so a resolved `save()` is a real durability point for the caller's
+own writes. That is what lets an indexer treat a returned `save()` as proof
+(`CacheSavePolicy.markSaveSuccess`), and it is why that call belongs on the path
+where `save()` returned rather than in a `finally` beside the attempt.
+
+**First exception: a cancelled follow-up resolves without writing anything.**
+`scheduleFollowUpSave` returns early when `stopAutoSave()` or `close()` cancelled it,
+or when the handle is already gone. That is protecting data, not cutting a corner:
+Rebuild Cache calls `stopAutoSave()`, then `close()`, then `blobStore.remove()`, and
+a follow-up landing after the remove would write the deleted database straight back.
+The price is that the promise cannot distinguish a save that wrote from one that
+stood down. Anything long-running that counts successful saves therefore has to stop
+on unload and on rebuild for its own reasons; it cannot learn from the save that it
+should.
+
+**Second exception: a resolved save does not mean the cache is clean.**
+`hasUnsavedChanges()` is still true when a write landed while the export was in
+flight, because `startSave` clears the flag only if `writeGeneration` has not moved
+since it captured it. Both facts hold at once and both are correct: the caller's rows
+are in the snapshot, newer rows are not. Do not clear the flag to make them agree. It
+is what stops rows that are in no snapshot anywhere from being dropped at `close()`,
+and that matters most for data the event store cannot replay. Workspace and
+conversation rows survive a lost snapshot because a rebuild replays them; embeddings
+do not, so for those the flag is the only thing standing between a mid-save write and
+a silent re-embed of the vault.
