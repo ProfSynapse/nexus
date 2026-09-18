@@ -65,6 +65,19 @@ Obsidian (the headless container) to turn a skip into a failure.
    running diagnostics or mutations against the fallback vault. Confine every
    write to one scratch folder in the verified vault and touch nothing else.
 
+   **On Linux 1.13.7, `vault=` is not validated at all, and there is no fallback
+   warning to catch it.** `obsidian-cli eval vault=nope-not-a-vault
+   code="1+1"` returned `=> 2`, evaluated against the single open vault: a
+   nonexistent vault name was silently accepted rather than rejected. Since the
+   CLI's own vault-info command cannot be trusted to expose this, the only safe
+   check is in-band: assert `app.vault.getName()` at the start of every session
+   and throw if it is not the vault you expect, before anything else runs.
+
+   That assertion has its own trap: the value `getName()` returns is the vault's
+   directory basename (`test-vault`), not the key Obsidian stores it under in
+   `obsidian.json` (`testvault0001` in `headless-obsidian.md` step 3). Asserting
+   against the wrong one of the two reads exactly like a targeting failure.
+
 2. **Build before you reload.** Reload only after a build that succeeded in the
    same run, or you will spend the loop diagnosing the previous bundle.
 
@@ -139,6 +152,25 @@ Obsidian (the headless container) to turn a skip into a failure.
      `eval` runs arbitrary JS against a live vault. Never point it at a vault
      whose contents matter, and confine writes to the scratch folder from
      step 1.
+
+     **`eval`'s stdout is not just the result.** The CLI interleaves captured
+     renderer console output with its own `=> ` line, so parse the *last* line
+     matching `^=> `, never stdout as a whole. A naive `${raw#=> }` strip broke
+     in practice on a stray `Heap resize call` warning that landed before the
+     real result.
+
+     **The CLI also reinstalls its own console hook on every `eval`
+     connection**, silently displacing any console wrapper an earlier `eval`
+     installed. A plain `console.error = wrapper` assignment can capture 1 line
+     out of roughly 50,000 once a later `eval` connects and reinstalls its own
+     hook underneath it, which looks exactly like "the plugin logged nothing"
+     and is a very expensive false diagnosis. What holds: redefine
+     `error`/`warn`/`log` as accessors whose getter always returns your
+     capturing wrapper and whose setter records the assigned value as the new
+     downstream, restoring the previous downstream when the wrapper itself is
+     the value being reassigned. This is the same save-and-restore shape
+     `SQLiteCacheManager.initialize` and `SQLitePersistenceService.saveDatabase`
+     already use around `console.warn`/`console.log`: same problem, same fix.
 
 6. **Observe. Assert on logs and DOM; screenshots are for humans.**
 
