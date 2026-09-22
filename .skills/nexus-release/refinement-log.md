@@ -70,3 +70,10 @@ script. The executor had to inspect the vault's plugin folders before trusting
 VERIFIED. | Reworded the step-8 paragraph: Obsidian keys on the manifest id, the
 in-vault checkout is built in place with nothing to deploy, one `ls` confirms
 it, and the deploy script is Windows-only. | `protocols/cut-release.md`.
+
+2026-09-22 | Cutting 5.19.0 (clean minor release). Every step ran as written:
+`npm version minor --no-git-tag-version` regenerated the schema catalogs, `npm ci`
++ build left `src/utils/` byte-identical, full Jest green, verify:obsidian said
+VERIFIED on the in-vault checkout with no deploy (the 2026-09-17 wording held),
+readiness check 0/0, and the run published all five assets with attestation. |
+No change. | —
