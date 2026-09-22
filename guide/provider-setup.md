@@ -62,7 +62,7 @@ By default, API keys live in the plugin's settings file (`data.json`), which syn
 3. In Nexus, open **Settings -> Providers -> LM Studio**
 4. Confirm the local endpoint and choose a model in chat
 
-Both local runtimes support **tool calling**, so a capable local model can drive agentic chats (Ollama also auto-discovers every model you have installed). For reasoning models, the model's thinking streams live into a collapsible **Thinking** block in chat and is available in the tool-inspection view.
+Both local runtimes support **tool calling**, so a capable local model can drive agentic chats (Ollama also auto-discovers every model you have installed). For reasoning models, the model's thinking streams live into collapsible **Thinking** blocks in chat, each placed above the text it led to, and is available in the tool-inspection view.
 
 ---
 

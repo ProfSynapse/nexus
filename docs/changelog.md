@@ -3,6 +3,36 @@
 ## September 2026
 
 
+**v5.19.0** — Thinking shows up where it happened, chat stops failing on models that reject temperature, Claude Opus 5.5 and GPT-6 Sol/Luna
+
+**Thinking sits beside the text it produced**
+- A turn that thought, wrote, then thought again used to pile every thought into one block at the top of the reply, pushing the answer further down with each token. Each stretch of thinking now gets its own collapsible block placed above the text it led to. Only the block still being written stays open, and a block you open or close stays that way ([#394](https://github.com/ProfSynapse/nexus/pull/394)).
+- The chat follows new output (text, thinking and tool calls) while you are at the bottom. Scroll up and it stops chasing; scroll back down and it resumes. Long answers no longer run off the bottom of the view.
+- Thinking is now saved and survives a cache rebuild. It used to be written only to the cache, so a rebuild dropped it. Conversations migrated from the legacy JSON format also kept losing their assistant thinking for good; that is fixed.
+- Switching conversations while a reply was streaming could make the rest of that reply vanish without an error. It now keeps streaming.
+- Subagent branches show thinking the same way the main chat does, and their tool results merge instead of overwriting each other.
+
+**Chat works again on models that reject sampling parameters**
+- Chat always sends a temperature, and many current models return an error when they get one. On OpenAI that was GPT-6 Astra, GPT-5.6 Sol/Terra/Luna (GPT-5.6 Sol is the OpenAI default), GPT-5.5, GPT-5.5 Pro, GPT-5.4 Pro and GPT-5.2 Pro. On Anthropic it was Opus 5.5, Opus 5, Opus 4.8, Opus 4.7, Fable 5, Fable 5.1 and Sonnet 5, even with thinking off. Each of these models is now marked as rejecting sampling parameters, and Nexus stops sending them ([#398](https://github.com/ProfSynapse/nexus/pull/398)).
+
+**Conversation history is sent turn by turn, and costs use real cache numbers**
+- Earlier turns used to be flattened into a transcript inside the system prompt. They now go to the provider as real turns, so tool calls, tool results and signed thinking carry across turns intact. The system prompt stays the same from turn to turn, which makes it cacheable, and tool follow-ups no longer send the history twice ([#396](https://github.com/ProfSynapse/nexus/pull/396)).
+- Costs now use the cache read and write tokens each provider reports, priced at each model's own cache rates. Before, discounts were guessed from the model name.
+
+**New and corrected models**
+- Claude Opus 5.5 is available through Anthropic, Claude Code and OpenRouter ([#397](https://github.com/ProfSynapse/nexus/pull/397)).
+- GPT-6 Sol and GPT-6 Luna are available through OpenAI, ChatGPT/Codex and OpenRouter ([#398](https://github.com/ProfSynapse/nexus/pull/398)).
+- Fable 5.1 cache reads were priced at 4× the real rate. OpenRouter Sonnet 5 was priced like Sonnet 4.6 ($3 / $15) when the listing is $2 / $10. Both are corrected.
+- GPT-5.3 Chat is gone from the OpenAI and OpenRouter lists because both providers have retired it. GPT-5.3 Codex stays.
+
+**Large vaults finish indexing**
+- On a large vault, background indexing could fail with `Array buffer allocation failed`, and the error blamed whichever note happened to be current. The actual failure was saving the search cache, which copies the whole database in memory. Saves no longer overlap, they run less often as the cache grows, and a failed save is reported as a save failure. A failed final save no longer throws away the run, and conversation indexing keeps its place instead of starting over. Very large caches can still fail to save now and then, but a failure no longer loses work ([#395](https://github.com/ProfSynapse/nexus/pull/395)).
+
+**Long tool status lines stay readable**
+- A tool status longer than the chat row used to show only its last few words. The full line now scrolls slowly in a loop until the next status replaces it, and adjusts when you resize the pane. With reduced motion on, the line stays still and the full text shows on hover ([#393](https://github.com/ProfSynapse/nexus/pull/393)).
+
+---
+
 **v5.18.7** — The vault remembers your session and workspace, the CLI picks the vault you are standing in, and new live voice models
 
 **Pass `--workspace` and `--session` once, not on every call**
