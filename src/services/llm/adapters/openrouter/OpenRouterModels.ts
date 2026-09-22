@@ -197,8 +197,10 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     apiName: 'anthropic/claude-sonnet-5',
     contextWindow: 1000000,
     maxTokens: 128000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
