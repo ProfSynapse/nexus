@@ -91,6 +91,7 @@ describe('LLMCostCalculator.calculateCost — four token classes', () => {
 describe('model specs carry cache rates', () => {
   // Models whose published cache-read rate departs from the 0.1× structure.
   const PUBLISHED_ANTHROPIC_CACHE_READ: Record<string, number> = {
+    'claude-fable-5-1': 0.25,
     'claude-opus-5-5': 0.2
   };
 

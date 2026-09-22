@@ -40,7 +40,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
-    cacheReadCostPerMillion: 1,
+    // Published cache-read rate is $0.25 (0.025x input), not the 0.1x structure.
+    cacheReadCostPerMillion: 0.25,
     cacheWriteCostPerMillion: 12.5,
     capabilities: {
       supportsJSON: true,
