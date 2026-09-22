@@ -12,12 +12,14 @@ import {
   LLMResponse,
   ModelInfo,
   ProviderCapabilities,
-  ModelPricing
+  ModelPricing,
+  TokenUsage
 } from '../types';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
 import { mapOpenAiCompatFinishReason, buildMessagesWithConversationHistory } from '../shared/OpenAICompatHelpers';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 /**
  * Requesty API response structure (OpenAI-compatible)
@@ -270,14 +272,10 @@ export class RequestyAdapter extends BaseAdapter {
     return message?.toolCalls || [];
   }
 
-  protected extractUsage(response: RequestyChatCompletionResponse): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
+  protected extractUsage(response: RequestyChatCompletionResponse): TokenUsage | undefined {
     const usage = response.usage;
     if (usage) {
-      return {
-        promptTokens: usage.prompt_tokens || 0,
-        completionTokens: usage.completion_tokens || 0,
-        totalTokens: usage.total_tokens || 0
-      };
+      return TokenUsageExtractor.normalize(usage);
     }
     return undefined;
   }

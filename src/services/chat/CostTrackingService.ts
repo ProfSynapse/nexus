@@ -13,31 +13,19 @@
  */
 
 import { CostCalculator } from '../llm/adapters/CostCalculator';
+import { TokenUsageExtractor } from '../llm/utils/TokenUsageExtractor';
+import type { TokenUsage } from '../llm/adapters/types';
 import type { ConversationData, ChatMessage } from '../../types/chat/ChatTypes';
 
-export interface UsageData {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
+export type UsageData = TokenUsage & {
   source?: string;
-}
+};
 
 export interface CostData {
   totalCost: number;
   currency: string;
 }
 
-/** Raw usage object from LLM response (various formats) */
-interface RawUsageObject {
-  promptTokens?: number;
-  prompt_tokens?: number;
-  inputTokens?: number;
-  completionTokens?: number;
-  completion_tokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  total_tokens?: number;
-}
 
 /** Conversation service interface for cost tracking */
 interface ConversationServiceLike {
@@ -54,16 +42,7 @@ export class CostTrackingService {
    * Calculate cost from usage data
    */
   calculateCost(provider: string, model: string, usage: UsageData): CostData | null {
-    const costBreakdown = CostCalculator.calculateCost(
-      provider,
-      model,
-      {
-        inputTokens: usage.promptTokens,
-        outputTokens: usage.completionTokens,
-        totalTokens: usage.totalTokens,
-        source: (usage.source as 'provider_api' | 'fallback_tokenizer') || 'provider_api'
-      }
-    );
+    const costBreakdown = CostCalculator.calculateCostFromUsage(provider, model, usage);
 
     if (!costBreakdown) {
       return null;
@@ -189,23 +168,12 @@ export class CostTrackingService {
   /**
    * Extract usage data from streaming chunk or final usage object
    */
-  extractUsage(usageObject: RawUsageObject | null | undefined): UsageData | null {
-    if (!usageObject) return null;
-
-    // Handle different usage formats
-    const promptTokens = usageObject.promptTokens || usageObject.prompt_tokens || usageObject.inputTokens || 0;
-    const completionTokens = usageObject.completionTokens || usageObject.completion_tokens || usageObject.outputTokens || 0;
-    const totalTokens = usageObject.totalTokens || usageObject.total_tokens || (promptTokens + completionTokens);
-
-    if (promptTokens === 0 && completionTokens === 0) {
+  extractUsage(usageObject: unknown): UsageData | null {
+    const usage = TokenUsageExtractor.normalize(usageObject);
+    if (!usage || (usage.promptTokens === 0 && usage.completionTokens === 0)) {
       return null;
     }
 
-    return {
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      source: 'provider_api'
-    };
+    return { ...usage, source: 'provider_api' };
   }
 }

@@ -181,8 +181,8 @@ describe('AnthropicAdapter', () => {
 
       const final = chunks[chunks.length - 1];
       expect(final.complete).toBe(true);
-      // Anthropic streaming usage has no total_tokens; totalTokens stays 0
-      expect(final.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 0 });
+      // Anthropic streaming usage has no total_tokens; the normalizer derives it
+      expect(final.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
       expect(final.toolCallsReady).toBe(true);
       // Current behavior: the synthetic id from input_json_delta overwrites
       // the real tool_use id supplied by content_block_start
@@ -194,6 +194,63 @@ describe('AnthropicAdapter', () => {
           anthropic_thinking_blocks: [{ type: 'thinking', thinking: 'hmm', signature: '' }]
         }
       ]);
+    });
+
+    it('asks for prompt caching on the system block and the last tool, and sends structured history verbatim', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse(
+          { type: 'message_start', message: { usage: { input_tokens: 3, output_tokens: 1 } } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+          { type: 'message_delta', usage: { output_tokens: 2 } },
+          { type: 'message_stop' }
+        ));
+      });
+
+      const history = [
+        { role: 'user', content: 'call the tool' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'search', input: { q: 'x' } }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '{"hits":1}' }] },
+        { role: 'user', content: 'what did it return?' }
+      ];
+
+      await collect(new AnthropicAdapter('ak-test').generateStreamAsync('what did it return?', {
+        systemPrompt: 'Be brief',
+        conversationHistory: history,
+        tools: [
+          { type: 'function', function: { name: 'search', description: 'Search', parameters: {} } },
+          { type: 'function', function: { name: 'read', description: 'Read', parameters: {} } }
+        ]
+      }));
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.system).toEqual([{ type: 'text', text: 'Be brief', cache_control: { type: 'ephemeral' } }]);
+      expect(body.tools[0].cache_control).toBeUndefined();
+      expect(body.tools[1].cache_control).toEqual({ type: 'ephemeral' });
+      // History is the messages array, content blocks intact — no transcript in `system`.
+      expect(body.messages).toEqual(history);
+    });
+
+    it('merges message_start and message_delta usage and grosses up cache read/write tokens', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'message_start', message: { usage: { input_tokens: 12, cache_read_input_tokens: 2000, cache_creation_input_tokens: 300, output_tokens: 1 } } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+        { type: 'message_delta', usage: { output_tokens: 40 } },
+        { type: 'message_stop' }
+      )));
+
+      const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('hi'));
+      const final = chunks[chunks.length - 1];
+
+      expect(final.usage).toEqual({
+        promptTokens: 2312,          // 12 fresh + 2000 read + 300 written: gross input like every other provider
+        completionTokens: 40,        // from message_delta, not the placeholder 1 in message_start
+        totalTokens: 2352,
+        cacheReadTokens: 2000,
+        cachedTokens: 2000,
+        cacheWriteTokens: 300
+      });
     });
 
     it('preserves signed and redacted thinking blocks on tool calls for exact replay', async () => {

@@ -75,14 +75,30 @@ export interface LLMResponse {
   webSearchResults?: SearchResult[];
 }
 
+/**
+ * Token usage as reported by the provider, in one shape for every provider.
+ *
+ * `promptTokens` is ALL input tokens including cache reads and writes.
+ * Anthropic reports `input_tokens` net of both; the adapter adds them back so
+ * context accounting and the four-class cost arithmetic agree across providers.
+ */
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  // Detailed breakdowns from OpenAI API
-  cachedTokens?: number; // Cached input tokens (75-90% discount)
-  reasoningTokens?: number; // Hidden reasoning tokens (o1/o3 models)
+  /** Input tokens served from the provider's prompt cache (discounted). */
+  cacheReadTokens?: number;
+  /** Input tokens written to the provider's prompt cache (Anthropic charges a premium). */
+  cacheWriteTokens?: number;
+  /** Alias of cacheReadTokens (kept for stored messages and older callers); prefer cacheReadTokens. */
+  cachedTokens?: number;
+  reasoningTokens?: number; // Hidden reasoning tokens
   audioTokens?: number; // Audio input/output tokens
+  /** Price the provider itself reported for this response (OpenRouter, Requesty). Wins over any local rate table. */
+  providerCost?: {
+    totalCost: number;
+    currency: string;
+  };
 }
 
 export interface CostDetails {
@@ -92,15 +108,34 @@ export interface CostDetails {
   currency: string;
   rateInputPerMillion: number;
   rateOutputPerMillion: number;
+  /** Cache-read share of inputCost. */
+  cacheRead?: {
+    tokens: number;
+    cost: number;
+    ratePerMillion: number;
+  };
+  /** Cache-write share of inputCost. */
+  cacheWrite?: {
+    tokens: number;
+    cost: number;
+    ratePerMillion: number;
+  };
+  /** Alias of cacheRead (tokens, cost) for older readers; prefer cacheRead. */
   cached?: {
     tokens: number;
     cost: number;
   };
+  /** True when totalCost came from the provider rather than the rate table. */
+  providerReported?: boolean;
 }
 
 export interface ModelPricing {
   rateInputPerMillion: number;
   rateOutputPerMillion: number;
+  /** Omitted = charged at the input rate (no discount is assumed, never guessed). */
+  rateCacheReadPerMillion?: number;
+  /** Omitted = charged at the input rate. */
+  rateCacheWritePerMillion?: number;
   currency: string;
 }
 

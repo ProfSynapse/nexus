@@ -12,23 +12,27 @@ import {
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
-  ToolCall
+  ToolCall,
+  TokenUsage
 } from '../types';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 import type { AnthropicThinkingBlock } from '../../../../types/llm/ProviderTypes';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 interface AnthropicMessage {
   role: string;
-  content: string;
+  content: string | AnthropicContentBlock[];
 }
 
 interface AnthropicUsage {
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
 
 interface AnthropicToolDefinition {
@@ -147,12 +151,21 @@ export class AnthropicAdapter extends BaseAdapter {
         stream: true
       };
 
-      // Add system message if provided (either from messages or from options)
+      // Add system message if provided (either from messages or from options).
+      // Sent as a block with a cache breakpoint: the system prompt is the stable
+      // prefix now that history travels as turns, so Anthropic can serve it
+      // from cache on every turn after the first. Below the model's minimum
+      // cacheable length the marker is ignored, which costs nothing.
       const systemMessage = messages.find(msg => msg.role === 'system');
-      if (systemMessage) {
-        requestParams.system = systemMessage.content;
-      } else if (options?.systemPrompt) {
-        requestParams.system = options.systemPrompt;
+      const systemText = systemMessage
+        ? this.contentToText(systemMessage.content)
+        : options?.systemPrompt;
+      if (systemText) {
+        requestParams.system = [{
+          type: 'text',
+          text: systemText,
+          cache_control: { type: 'ephemeral' }
+        }];
       }
 
       // Use adaptive thinking on Claude 4.6+ and manual budgets on 4.5.
@@ -181,6 +194,10 @@ export class AnthropicAdapter extends BaseAdapter {
       }
 
       if (tools.length > 0) {
+        // Tool definitions precede the system block in Anthropic's cache order;
+        // marking the last one caches the whole tool list as well.
+        const last = tools[tools.length - 1] as AnthropicToolDefinition & { cache_control?: { type: 'ephemeral' } };
+        last.cache_control = { type: 'ephemeral' };
         requestParams.tools = tools;
       }
 
@@ -206,10 +223,13 @@ export class AnthropicAdapter extends BaseAdapter {
           return null;
         },
         extractContent: (event: AnthropicStreamEvent) => {
+          // message_start carries the input classes (input, cache read, cache
+          // write); message_delta carries the final output count and may repeat
+          // the input classes. Merge so neither event drops the other's fields.
           if (event.type === 'message_start' && event.message?.usage) {
-            usage = event.message.usage;
+            usage = { ...usage, ...event.message.usage };
           } else if (event.type === 'message_delta' && event.usage) {
-            usage = event.usage;
+            usage = { ...usage, ...event.usage };
           } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
             thinkingBlockIndex = event.index ?? null;
           }
@@ -570,6 +590,12 @@ export class AnthropicAdapter extends BaseAdapter {
     return undefined;
   }
 
+  /** Prose of a system message that may already be a block array. */
+  private contentToText(content: string | AnthropicContentBlock[]): string {
+    if (typeof content === 'string') return content;
+    return content.map(block => block.text || '').filter(Boolean).join('\n');
+  }
+
   private mapStopReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
     if (!reason) return 'stop';
     
@@ -582,13 +608,10 @@ export class AnthropicAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: AnthropicResponse): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
+  protected extractUsage(response: AnthropicResponse): TokenUsage | undefined {
     if (response.usage) {
-      return {
-        promptTokens: response.usage.input_tokens || 0,
-        completionTokens: response.usage.output_tokens || 0,
-        totalTokens: (response.usage.input_tokens || 0) + (response.usage.output_tokens || 0)
-      };
+      // Grosses up input_tokens with cache reads/writes and carries the cache fields.
+      return TokenUsageExtractor.normalize(response.usage);
     }
     return undefined;
   }

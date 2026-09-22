@@ -13,40 +13,28 @@
 
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { ToolResult } from '../adapters/shared/ToolExecutionUtils';
-import { Tool, ToolCall as AdapterToolCall } from '../adapters/types';
+import { Tool } from '../adapters/types';
+import type { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import { shouldPassToolSchemasToProvider } from '../utils/ToolSchemaSupport';
 import { synthesizeToolCallId } from '../utils/toolCallId';
-import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import type { ToolExecutionOrigin } from '../../../types/tools/ToolOperationTypes';
+import { getMessageText, type ConversationMessage, type ToolCallUnion } from './ConversationMessage';
+import { toResponsesInputItems } from '../adapters/shared/OpenAIResponsesInput';
 
-// Union type for tool calls from different sources
-type ToolCallUnion = AdapterToolCall | ChatToolCall;
+// The message type lives in ./ConversationMessage; re-exported so existing
+// imports keep resolving.
+export { getMessageText };
+export type { ConversationMessage, ToolCallUnion };
 
-// Standardized message format for conversation history
-export interface ConversationMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  tool_calls?: ToolCallUnion[];
-  /** Required on `role: 'tool'` messages — must match an assistant's tool_calls[i].id */
-  tool_call_id?: string;
-  /**
-   * OpenRouter reasoning detail entries (opaque provider payload).
-   * Must be preserved on tool-continuation turns for Gemini-via-OpenRouter
-   * or the model loses its chain-of-thought between turns.
-   */
-  reasoning_details?: unknown[];
-  /**
-   * Google Gemini thought signature. Must be echoed back on continuation
-   * requests after a tool call; dropping it degrades reasoning silently.
-   */
-  thought_signature?: string;
-  /**
-   * Legacy OpenAI `function` role name field. Some older stored conversations
-   * and some OpenAI-compatible providers still attach this to tool/function
-   * messages; stripping it can break strict schema validation.
-   */
-  name?: string;
-}
+/**
+ * Providers that cannot take a messages array. Their adapters shell out to a
+ * CLI that accepts one prompt string plus a system prompt, so prior turns are
+ * rendered as a text transcript — the only place that fallback survives.
+ */
+export const TEXT_HISTORY_PROVIDERS: ReadonlySet<string> = new Set([
+  'anthropic-claude-code',
+  'google-gemini-cli'
+]);
 
 // Google-specific message format
 export interface GoogleMessage {
@@ -140,7 +128,7 @@ export class ProviderMessageBuilder {
    */
   static extractSystemPrompt(messages: ConversationMessage[], existingSystemPrompt?: string): string | undefined {
     const systemMessages = messages.filter(m => m.role === 'system');
-    const systemContent = systemMessages.map(m => m.content).filter(Boolean).join('\n\n');
+    const systemContent = systemMessages.map(m => getMessageText(m)).filter(Boolean).join('\n\n');
 
     if (existingSystemPrompt && systemContent) {
       return `${existingSystemPrompt}\n\n${systemContent}`;
@@ -159,7 +147,12 @@ export class ProviderMessageBuilder {
   }
 
   /**
-   * Build conversation history string from messages (for text-based providers)
+   * Build conversation history string from messages.
+   *
+   * Only for TEXT_HISTORY_PROVIDERS — the CLI transports take a prompt string
+   * and a system prompt and keep their own session state. Every API-backed
+   * provider gets structured turns via `conversationHistory` instead; a text
+   * transcript there loses tool arguments, thinking and cache hits.
    */
   buildConversationHistory(messages: ConversationMessage[]): string {
     if (messages.length <= 1) {
@@ -167,7 +160,7 @@ export class ProviderMessageBuilder {
     }
 
     return messages.slice(0, -1).map((msg: ConversationMessage) => {
-      if (msg.role === 'user') return `User: ${msg.content}`;
+      if (msg.role === 'user') return `User: ${getMessageText(msg)}`;
       if (msg.role === 'assistant') {
         if (msg.tool_calls && msg.tool_calls.length > 0) {
           return `Assistant: [Calling tools: ${msg.tool_calls.map((tc) => {
@@ -179,10 +172,10 @@ export class ProviderMessageBuilder {
             return tc.function?.name || 'unknown';
           }).join(', ')}]`;
         }
-        return `Assistant: ${msg.content}`;
+        return `Assistant: ${getMessageText(msg)}`;
       }
-      if (msg.role === 'tool') return `Tool Result: ${msg.content}`;
-      if (msg.role === 'system') return `System: ${msg.content}`;
+      if (msg.role === 'tool') return `Tool Result: ${getMessageText(msg)}`;
+      if (msg.role === 'system') return `System: ${getMessageText(msg)}`;
       return '';
     }).filter(Boolean).join('\n');
   }
@@ -244,53 +237,10 @@ export class ProviderMessageBuilder {
     } else if (provider === 'openai-codex') {
       // Codex uses stateless Responses API — no previous_response_id.
       // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
-      const inputItems: Array<Record<string, unknown>> = [];
-
       // Reconstruct prior conversation messages in order. Unlike stateful
       // OpenAI Responses, Codex requires every prior function_call to still have
       // its matching function_call_output in the replayed input array.
-      for (const msg of previousMessages) {
-        if (msg.role === 'system') continue; // system prompt goes in instructions
-
-        if (msg.role === 'tool') {
-          if (!msg.tool_call_id) {
-            continue;
-          }
-
-          inputItems.push({
-            type: 'function_call_output',
-            call_id: msg.tool_call_id,
-            output: msg.content || '{}'
-          });
-          continue;
-        }
-
-        // Convert assistant messages with tool_calls to function_call items
-        if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-          // Add any text content as a regular message first
-          if (msg.content) {
-            inputItems.push({ role: 'assistant', content: msg.content });
-          }
-          for (const tc of msg.tool_calls) {
-            const name = ('name' in tc && tc.name) ? tc.name : tc.function?.name || '';
-            const args = tc.function?.arguments || '{}';
-            inputItems.push({
-              type: 'function_call',
-              call_id: tc.id,
-              name,
-              arguments: args
-            });
-          }
-          continue;
-        }
-
-        inputItems.push({ role: msg.role, content: msg.content });
-      }
-
-      // Add current user prompt
-      if (userPrompt) {
-        inputItems.push({ role: 'user', content: userPrompt });
-      }
+      const inputItems: Array<Record<string, unknown>> = toResponsesInputItems(previousMessages, userPrompt);
 
       // Synthesize ids for any tool calls missing them. Codex/Responses API
       // strictly requires call_id on every function_call and function_call_output.
@@ -392,7 +342,11 @@ export class ProviderMessageBuilder {
 
   /**
    * Build initial generate options for a provider
-   * Automatically extracts system messages from the messages array and combines with options.systemPrompt
+   *
+   * Extracts system messages from the messages array and combines them with
+   * options.systemPrompt. Prior turns go to the adapter as structured
+   * `conversationHistory` in the shape the provider's context builder already
+   * produced; the system prompt carries instructions and context only.
    */
   buildInitialOptions(
     provider: string,
@@ -407,49 +361,22 @@ export class ProviderMessageBuilder {
 
     // Get only the latest user message as the actual prompt
     const latestUserMessage = nonSystemMessages[nonSystemMessages.length - 1];
-    const userPrompt = latestUserMessage?.role === 'user' ? latestUserMessage.content : '';
+    const userPrompt = latestUserMessage?.role === 'user' ? getMessageText(latestUserMessage) : '';
 
-    // Check if this is a Google model
-    const isGoogleModel = provider === 'google';
+    const shared: Omit<GenerateOptionsInternal, 'model' | 'systemPrompt'> = {
+      tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
+      onToolEvent: options?.onToolEvent,
+      onUsageAvailable: options?.onUsageAvailable,
+      enableThinking: options?.enableThinking,
+      thinkingEffort: options?.thinkingEffort
+    };
 
     let generateOptions: GenerateOptionsInternal;
 
-    if (isGoogleModel) {
-      // For Google, build proper conversation history in Google format
-      const googleConversationHistory: GoogleMessage[] = [];
-
-      for (const msg of nonSystemMessages) {
-        if (!msg.content || !msg.content.trim()) {
-          continue;
-        }
-
-        if (msg.role === 'user') {
-          googleConversationHistory.push({
-            role: 'user',
-            parts: [{ text: msg.content }]
-          });
-        } else if (msg.role === 'assistant') {
-          googleConversationHistory.push({
-            role: 'model',
-            parts: [{ text: msg.content }]
-          });
-        }
-      }
-
-      generateOptions = {
-        model,
-        systemPrompt: extractedSystemPrompt,
-        conversationHistory: googleConversationHistory,
-        tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
-        onToolEvent: options?.onToolEvent,
-        onUsageAvailable: options?.onUsageAvailable,
-        enableThinking: options?.enableThinking,
-        thinkingEffort: options?.thinkingEffort
-      };
-    } else {
-      // For other providers (OpenAI, Anthropic), use text-based system prompt
+    if (TEXT_HISTORY_PROVIDERS.has(provider)) {
+      // CLI transports: no message array on the wire. Prior turns ride along as
+      // a text transcript in the system prompt and the latest message is the prompt.
       const conversationHistory = this.buildConversationHistory(nonSystemMessages);
-
       const systemPrompt = [
         extractedSystemPrompt || '',
         conversationHistory ? '\n=== Conversation History ===\n' + conversationHistory : ''
@@ -458,15 +385,69 @@ export class ProviderMessageBuilder {
       generateOptions = {
         model,
         systemPrompt: systemPrompt || extractedSystemPrompt,
-        tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
-        onToolEvent: options?.onToolEvent,
-        onUsageAvailable: options?.onUsageAvailable,
-        enableThinking: options?.enableThinking,
-        thinkingEffort: options?.thinkingEffort
+        ...shared
+      };
+    } else if (provider === 'openai' || provider === 'openai-codex') {
+      // Responses API: the adapter sends `conversationHistory` verbatim as `input`,
+      // so the latest user message is included as the last item.
+      generateOptions = {
+        model,
+        systemPrompt: extractedSystemPrompt,
+        conversationHistory: toResponsesInputItems(nonSystemMessages),
+        ...shared
+      };
+    } else if (provider === 'google') {
+      // Google adapter uses `conversationHistory` verbatim as `contents`. The
+      // builder emits {role, parts}; anything still in {role, content} form
+      // (e.g. a user message appended after building) is converted here.
+      generateOptions = {
+        model,
+        systemPrompt: extractedSystemPrompt,
+        conversationHistory: nonSystemMessages
+          .map(msg => ProviderMessageBuilder.toGoogleMessage(msg))
+          .filter((msg): msg is GoogleMessage => msg !== null),
+        ...shared
+      };
+    } else {
+      // Anthropic and every chat-completions provider consume `conversationHistory`
+      // as their messages array. The last user message is already in it.
+      generateOptions = {
+        model,
+        systemPrompt: extractedSystemPrompt,
+        conversationHistory: nonSystemMessages.length > 0 ? nonSystemMessages : undefined,
+        ...shared
       };
     }
 
     return { generateOptions, userPrompt };
+  }
+
+  /**
+   * Coerce a message to Google's {role, parts} shape. Messages the Google
+   * context builder produced pass through; plain {role, content} messages are
+   * wrapped; tool-role messages without parts cannot be represented and are dropped.
+   */
+  private static toGoogleMessage(msg: ConversationMessage): GoogleMessage | null {
+    if (Array.isArray(msg.parts) && msg.parts.length > 0) {
+      // GoogleContextBuilder already emits Google roles ('model', and 'user'
+      // for function responses — Gemini flash models reject the legacy
+      // 'function' role); map the generic ones in case a caller appended a
+      // plain message with parts.
+      const rawRole = msg.role as string;
+      const role: GoogleMessage['role'] | 'system' =
+        rawRole === 'assistant' ? 'model'
+          : rawRole === 'tool' ? 'user'
+            : rawRole as GoogleMessage['role'] | 'system';
+      if (role === 'system') return null;
+      return { role, parts: msg.parts as GoogleMessagePart[] };
+    }
+
+    const text = getMessageText(msg);
+    if (!text.trim()) return null;
+
+    if (msg.role === 'user') return { role: 'user', parts: [{ text }] };
+    if (msg.role === 'assistant') return { role: 'model', parts: [{ text }] };
+    return null;
   }
 
   /**

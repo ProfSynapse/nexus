@@ -27,6 +27,13 @@ checked, and proven against the live endpoint.
      slug resolves.
    - A model id you cannot find in a provider-published listing is a model id you
      are about to invent. Stop and ask.
+   - The converse also holds: a model id you cannot find in *this repo's registry*
+     is not evidence it does not exist. The registry is a snapshot; the
+     provider's listing is current. Before telling the user a model is not
+     available, list it from the provider — the commands are in
+     `../references/provider-listings.md`. Google's listing also returns the
+     context window and max output; OpenRouter's returns pricing including the
+     cache-read rate, so both replace guesswork for two more fields.
 
 2. **Locate the registry and read a neighbouring entry.**
 

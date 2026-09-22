@@ -164,7 +164,9 @@ export class StreamingResponseService {
       // Only add user message if it's NOT already in the filtered conversation
       // (happens on first message when conversation is empty, or during retry)
       if (!filteredConversation || !filteredConversation.messages.some((m) => m.content === userMessage && m.role === 'user')) {
-        messages.push({ role: 'user', content: userMessage });
+        messages.push(provider === 'google'
+          ? { role: 'user', content: '', parts: [{ text: userMessage }] }
+          : { role: 'user', content: userMessage });
       }
 
       // Get tools from ToolCallService in OpenAI format
@@ -386,11 +388,13 @@ export class StreamingResponseService {
   /**
    * Build message history for LLM context using provider-specific formatting
    *
-   * This method uses ConversationContextBuilder to properly reconstruct
-   * conversation history with tool calls in the correct format for each provider.
-   *
-   * NOTE: For Google, we return simple {role, content} format because
-   * StreamingOrchestrator will convert to Google format ({role, parts})
+   * Returns exactly what the provider's context builder produced. Anthropic
+   * turns carry tool_use / tool_result / thinking as a content-block array,
+   * Google turns carry parts, OpenAI-style turns carry tool_calls and
+   * tool_call_id. Nothing here may project a message to {role, content: string}:
+   * that projection silently emptied every Anthropic tool turn and, together
+   * with ProviderMessageBuilder's old text transcript, is why history used to
+   * reach the model as prose in the system prompt instead of as turns.
    */
   private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): LLMConversationMessage[] {
     const currentProvider = provider || this.getCurrentProvider();
@@ -399,68 +403,11 @@ export class StreamingResponseService {
     // The compaction summary is injected via the system prompt (compaction frontier).
     const filteredConversation = this.applyCompactionBoundary(conversation);
 
-    // For Google, return simple format - StreamingOrchestrator handles Google conversion
-    if (currentProvider === 'google') {
-      const messages: LLMConversationMessage[] = [];
-
-      // Add system prompt if provided
-      if (systemPrompt) {
-        messages.push({ role: 'system', content: systemPrompt });
-      }
-
-      // Add conversation messages in simple format
-      for (const msg of filteredConversation.messages) {
-        if (msg.role === 'user' && msg.content && msg.content.trim()) {
-          messages.push({ role: 'user', content: msg.content });
-        } else if (msg.role === 'assistant' && msg.content && msg.content.trim()) {
-          messages.push({ role: 'assistant', content: msg.content });
-        }
-      }
-
-      return messages;
-    }
-
-    // For other providers, use ConversationContextBuilder.
-    // CRITICAL: We must preserve tool_calls (on assistant messages) and
-    // tool_call_id (on tool messages). Stripping them caused Azure-via-
-    // OpenRouter to reject continuations with "Missing required parameter:
-    // 'input[N].call_id'" because tool result messages arrived without
-    // the id linking them to the assistant's tool calls.
-    //
-    // Also preserve reasoning_details / thought_signature / name — latent
-    // risks for Gemini-via-OpenRouter (loses chain-of-thought between tool
-    // turns), Gemini direct (thought signature echo required), and legacy
-    // OpenAI function-role messages. See the canonical-message-pipeline plan.
     return ConversationContextBuilder.buildContextForProvider(
       filteredConversation,
       currentProvider,
       systemPrompt
-    ).map((message) => {
-      const m = message as {
-        role: 'user' | 'assistant' | 'system' | 'tool';
-        content?: unknown;
-        tool_calls?: unknown;
-        tool_call_id?: string;
-        reasoning_details?: unknown[];
-        thought_signature?: string;
-        name?: string;
-      };
-      const out: LLMConversationMessage = {
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : '',
-      };
-      if (Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls;
-      // Use `!== undefined` so an empty-string tool_call_id is preserved.
-      // Downstream synthesis sites (e.g. OpenAIContextBuilder, BaseAdapter)
-      // own the policy for what to do with an empty id; stripping here
-      // causes Azure-via-OpenRouter to reject the continuation with
-      // "Missing required parameter: 'input[N].call_id'".
-      if (m.tool_call_id !== undefined) out.tool_call_id = m.tool_call_id;
-      if (Array.isArray(m.reasoning_details)) out.reasoning_details = m.reasoning_details;
-      if (m.thought_signature) out.thought_signature = m.thought_signature;
-      if (m.name) out.name = m.name;
-      return out;
-    });
+    ) as LLMConversationMessage[];
   }
 
   /**

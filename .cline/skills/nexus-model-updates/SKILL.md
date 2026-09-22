@@ -55,7 +55,9 @@ python3 .claude/skills/nexus-model-updates/scripts/check_model_registry.py \
 - `references/` mechanism, read on demand: `registry-anatomy.md` (what a
   `ModelSpec` field means and how to fill it), `consumers.md` (who reads the
   registries and what silently breaks when metadata is wrong),
-  `smoke-harness.md` (the live provider smoke lane in detail).
+  `smoke-harness.md` (the live provider smoke lane in detail),
+  `provider-listings.md` (how to ask a provider what it serves right now —
+  run this before saying a model does not exist).
 - `scripts/check_model_registry.py` — the structural gate: required fields,
   provider/directory agreement, unreachable duplicate ids, defaults that point at
   nothing, adapter literals that drifted from the registry, and registries wired

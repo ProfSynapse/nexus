@@ -2,100 +2,92 @@
  * LLM Cost Calculator Utility
  * Location: src/services/llm/utils/LLMCostCalculator.ts
  *
- * Extracted from BaseAdapter.ts to follow Single Responsibility Principle.
- * Handles all cost calculation logic including caching discounts for different providers.
+ * The one place cost arithmetic lives. Four token classes, four rates:
  *
- * Usage:
- * - Used by BaseAdapter and all provider adapters
- * - Calculates input/output costs based on token usage and model pricing
- * - Applies provider-specific caching discounts (OpenAI, Anthropic, Google)
+ *   fresh input × input rate
+ *   + cache reads × cache-read rate   (falls back to the input rate: no discount, never a guess)
+ *   + cache writes × cache-write rate (falls back to the input rate)
+ *   + output × output rate
+ *
+ * A price the provider itself reported (`usage.providerCost`) wins over the
+ * arithmetic; the breakdown is then informational.
+ *
+ * Used by BaseAdapter (per-adapter pricing) and by CostCalculator on the chat
+ * path (registry pricing) — both hand in a ModelPricing built from the same
+ * ModelSpec fields.
  */
 
 import { TokenUsage, CostDetails, ModelPricing } from '../adapters/types';
+import type { ModelSpec } from '../adapters/modelTypes';
 
 export class LLMCostCalculator {
   /**
-   * Calculate cost based on token usage and model pricing
-   * Supports caching discounts for providers that offer them
+   * Build the pricing view of a ModelSpec, including cache rates when the
+   * spec declares them.
+   */
+  static pricingFromSpec(spec: Pick<ModelSpec, 'inputCostPerMillion' | 'outputCostPerMillion' | 'cacheReadCostPerMillion' | 'cacheWriteCostPerMillion'>): ModelPricing {
+    const pricing: ModelPricing = {
+      rateInputPerMillion: spec.inputCostPerMillion,
+      rateOutputPerMillion: spec.outputCostPerMillion,
+      currency: 'USD'
+    };
+    if (spec.cacheReadCostPerMillion !== undefined) {
+      pricing.rateCacheReadPerMillion = spec.cacheReadCostPerMillion;
+    }
+    if (spec.cacheWriteCostPerMillion !== undefined) {
+      pricing.rateCacheWritePerMillion = spec.cacheWriteCostPerMillion;
+    }
+    return pricing;
+  }
+
+  /**
+   * Calculate cost from token usage and model pricing.
    */
   static calculateCost(
     usage: TokenUsage,
-    model: string,
+    _model: string,
     modelPricing: ModelPricing | null
   ): CostDetails | null {
     if (!modelPricing) {
       return null;
     }
 
-    // Determine caching discount rate based on provider and model
-    const cachingDiscount = this.getCachingDiscount(model);
+    const cacheReadTokens = usage.cacheReadTokens ?? usage.cachedTokens ?? 0;
+    const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
+    const freshTokens = Math.max(0, usage.promptTokens - cacheReadTokens - cacheWriteTokens);
 
-    // Calculate input cost with caching discount
-    let inputCost = 0;
-    let cachedCost = 0;
+    const readRate = modelPricing.rateCacheReadPerMillion ?? modelPricing.rateInputPerMillion;
+    const writeRate = modelPricing.rateCacheWritePerMillion ?? modelPricing.rateInputPerMillion;
 
-    if (usage.cachedTokens && usage.cachedTokens > 0 && cachingDiscount < 1.0) {
-      // Split input tokens into cached and fresh
-      const freshTokens = usage.promptTokens - usage.cachedTokens;
-      const freshCost = (freshTokens / 1_000_000) * modelPricing.rateInputPerMillion;
-      cachedCost = (usage.cachedTokens / 1_000_000) * modelPricing.rateInputPerMillion * cachingDiscount;
-      inputCost = freshCost + cachedCost;
-
-    } else {
-      // No cached tokens, use standard pricing
-      inputCost = (usage.promptTokens / 1_000_000) * modelPricing.rateInputPerMillion;
-    }
-
+    const freshCost = (freshTokens / 1_000_000) * modelPricing.rateInputPerMillion;
+    const cacheReadCost = (cacheReadTokens / 1_000_000) * readRate;
+    const cacheWriteCost = (cacheWriteTokens / 1_000_000) * writeRate;
+    const inputCost = freshCost + cacheReadCost + cacheWriteCost;
     const outputCost = (usage.completionTokens / 1_000_000) * modelPricing.rateOutputPerMillion;
-    const totalCost = inputCost + outputCost;
 
     const costDetails: CostDetails = {
       inputCost,
       outputCost,
-      totalCost,
+      totalCost: inputCost + outputCost,
       currency: modelPricing.currency || 'USD',
       rateInputPerMillion: modelPricing.rateInputPerMillion,
       rateOutputPerMillion: modelPricing.rateOutputPerMillion
     };
 
-    // Add cached token details if applicable
-    if (usage.cachedTokens && usage.cachedTokens > 0) {
-      costDetails.cached = {
-        tokens: usage.cachedTokens,
-        cost: cachedCost
-      };
+    if (cacheReadTokens > 0) {
+      costDetails.cacheRead = { tokens: cacheReadTokens, cost: cacheReadCost, ratePerMillion: readRate };
+      costDetails.cached = { tokens: cacheReadTokens, cost: cacheReadCost };
+    }
+    if (cacheWriteTokens > 0) {
+      costDetails.cacheWrite = { tokens: cacheWriteTokens, cost: cacheWriteCost, ratePerMillion: writeRate };
+    }
+
+    if (usage.providerCost) {
+      costDetails.totalCost = usage.providerCost.totalCost;
+      costDetails.currency = usage.providerCost.currency || costDetails.currency;
+      costDetails.providerReported = true;
     }
 
     return costDetails;
-  }
-
-  /**
-   * Get caching discount multiplier for a model
-   * Returns the fraction of the original price (e.g., 0.1 = 90% off, 0.25 = 75% off)
-   */
-  static getCachingDiscount(model: string): number {
-    // OpenAI pricing as of Oct 2025:
-    // GPT-5 family: 90% off cached tokens (pay 10%)
-    if (model.startsWith('gpt-5')) {
-      return 0.1;
-    }
-
-    // GPT-5.2 family: 75% off cached tokens (pay 25%)
-    if (model.startsWith('gpt-5.2')) {
-      return 0.25;
-    }
-
-    // Anthropic Claude: 90% off cached tokens
-    if (model.startsWith('claude')) {
-      return 0.1;
-    }
-
-    // Google Gemini: 50% off cached tokens
-    if (model.startsWith('gemini')) {
-      return 0.5;
-    }
-
-    // Default: no caching discount
-    return 1.0;
   }
 }

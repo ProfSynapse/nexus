@@ -51,11 +51,26 @@ import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
 import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 import { createProviderStreamError } from './streamErrorFrames';
+import { TokenUsageExtractor } from '../utils/TokenUsageExtractor';
 
+/**
+ * Raw usage as it arrives in a stream event. Provider field names vary
+ * (OpenAI, Anthropic, Google, OpenRouter cost); TokenUsageExtractor.normalize
+ * is the only reader, so keep this loose.
+ */
 export interface SSEParsedUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number; audio_tokens?: number };
+  completion_tokens_details?: { reasoning_tokens?: number; audio_tokens?: number };
+  cost?: number;
+  is_byok?: boolean;
+  cost_details?: { upstream_inference_cost?: number };
 }
 
 interface SSEToolCallFunction {
@@ -99,6 +114,14 @@ export interface SSEStreamOptions {
    * `this.name`; falls back to `debugLabel` for direct callers of the processors.
    */
   providerName?: string;
+  /**
+   * The provider sends its usage frame AFTER the finish_reason frame (OpenRouter
+   * with `usage: { include: true }`). When set, a finish_reason does not
+   * complete the stream; `[DONE]` or end-of-stream does, so the completion
+   * chunk carries the usage (tokens, cache reads, provider cost) instead of
+   * leaving it to an out-of-band fetch.
+   */
+  usageArrivesAfterFinish?: boolean;
   // Tool call accumulation settings
   accumulateToolCalls?: boolean;
   toolCallThrottling?: {
@@ -147,11 +170,7 @@ export class SSEStreamProcessor {
 
       // Handle [DONE] event
       if (event.data === '[DONE]') {
-        const finalUsage = usage ? {
-          promptTokens: usage.prompt_tokens || 0,
-          completionTokens: usage.completion_tokens || 0,
-          totalTokens: usage.total_tokens || 0
-        } : undefined;
+        const finalUsage = usage ? TokenUsageExtractor.normalize(usage) : undefined;
 
         const finalToolCalls = options.accumulateToolCalls && toolCallsAccumulator.size > 0
           ? Array.from(toolCallsAccumulator.values())
@@ -297,17 +316,14 @@ export class SSEStreamProcessor {
 
         // Handle completion
         const finishReason = options.extractFinishReason(parsed);
-        if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
+        if (!options.usageArrivesAfterFinish
+          && (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls')) {
           // Include accumulated tool calls in completion event (same pattern as [DONE])
           const finalToolCalls = options.accumulateToolCalls && toolCallsAccumulator.size > 0
             ? Array.from(toolCallsAccumulator.values())
             : undefined;
 
-          const finalUsageFormatted = usage ? {
-            promptTokens: usage.prompt_tokens || 0,
-            completionTokens: usage.completion_tokens || 0,
-            totalTokens: usage.total_tokens || 0
-          } : undefined;
+          const finalUsageFormatted = usage ? TokenUsageExtractor.normalize(usage) : undefined;
 
           eventQueue.push({
             content: '',
@@ -371,14 +387,16 @@ export class SSEStreamProcessor {
       // If we completed without a completion event, yield one -- but never claim
       // success when the stream carried a fatal error frame.
       if (!streamError && (!isCompleted || (!eventQueue.length && !completionError))) {
+        const finalToolCalls = options.accumulateToolCalls && toolCallsAccumulator.size > 0
+          ? Array.from(toolCallsAccumulator.values())
+          : undefined;
         yield {
           content: '',
           complete: true,
-          usage: usage ? {
-            promptTokens: usage.prompt_tokens || 0,
-            completionTokens: usage.completion_tokens || 0,
-            totalTokens: usage.total_tokens || 0
-          } : undefined
+          usage: usage ? TokenUsageExtractor.normalize(usage) : undefined,
+          toolCalls: finalToolCalls,
+          toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+          metadata
         };
       }
 

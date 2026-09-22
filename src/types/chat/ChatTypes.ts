@@ -11,6 +11,16 @@ export interface MessageUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /** Input tokens served from the provider's prompt cache. */
+  cacheReadTokens?: number;
+  /** Input tokens written to the provider's prompt cache. */
+  cacheWriteTokens?: number;
+  /** Alias of cacheReadTokens; prefer cacheReadTokens. */
+  cachedTokens?: number;
+  reasoningTokens?: number;
+  audioTokens?: number;
+  /** Price the provider reported for this response, when it did. */
+  providerCost?: { totalCost: number; currency: string };
 }
 
 /** Cost data for a message */
@@ -101,6 +111,14 @@ export interface ToolCall {
   providerExecuted?: boolean;
   /** Exact Anthropic thinking state; never derive this from the visible reasoning summary. */
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /**
+   * Google Gemini thought signature captured with the functionCall. Gemini 3+
+   * rejects a replayed functionCall without it (HTTP 400), so it must survive
+   * storage and be echoed when the turn is rebuilt for a later request.
+   */
+  thought_signature?: string;
+  /** OpenRouter reasoning entries captured with the call (Gemini-via-OpenRouter needs them replayed). */
+  reasoning_details?: Array<Record<string, unknown>>;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
   sourceFormat?: ToolCallFormat;
 }

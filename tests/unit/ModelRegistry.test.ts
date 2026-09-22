@@ -162,17 +162,23 @@ describe('ModelRegistry Gemini 3.5 Flash models', () => {
 });
 
 describe('ModelRegistry latest Gemini Flash models', () => {
+  // Prices: ai.google.dev/gemini-api/docs/pricing (Sep 2026). 3.6/3.7/3.8 Flash
+  // are the intro rate through 2026-12-31; cache read is the "context caching"
+  // price. 3.5 Flash-Lite's cache rate is from OpenRouter's listing (Google's
+  // page lists none).
   it.each([
-    ['gemini-3.7-flash', 'Gemini 3.7 Flash', 0.75, 3.75],
-    ['gemini-3.6-flash', 'Gemini 3.6 Flash', 1.5, 7.5],
-    ['gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5]
-  ])('registers %s for Google', (id, name, input, output) => {
+    ['gemini-3.8-flash', 'Gemini 3.8 Flash', 0.75, 3.75, 0.075],
+    ['gemini-3.7-flash', 'Gemini 3.7 Flash', 0.75, 3.75, 0.075],
+    ['gemini-3.6-flash', 'Gemini 3.6 Flash', 0.75, 3.75, 0.075],
+    ['gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5, 0.03]
+  ])('registers %s for Google', (id, name, input, output, cacheRead) => {
     expect(ModelRegistry.findModel('google', id)).toEqual(expect.objectContaining({
       name,
       contextWindow: 1048576,
       maxTokens: 65536,
       inputCostPerMillion: input,
       outputCostPerMillion: output,
+      cacheReadCostPerMillion: cacheRead,
       capabilities: expect.objectContaining({
         supportsJSON: true,
         supportsImages: true,
@@ -184,16 +190,18 @@ describe('ModelRegistry latest Gemini Flash models', () => {
   });
 
   it.each([
-    ['google/gemini-3.7-flash', 'Gemini 3.7 Flash', 0.75, 3.75],
-    ['google/gemini-3.6-flash', 'Gemini 3.6 Flash', 1.5, 7.5],
-    ['google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5]
-  ])('registers %s for OpenRouter', (id, name, input, output) => {
+    ['google/gemini-3.8-flash', 'Gemini 3.8 Flash', 0.75, 3.75, 0.075],
+    ['google/gemini-3.7-flash', 'Gemini 3.7 Flash', 0.75, 3.75, 0.075],
+    ['google/gemini-3.6-flash', 'Gemini 3.6 Flash', 0.75, 3.75, 0.075],
+    ['google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5, 0.03]
+  ])('registers %s for OpenRouter', (id, name, input, output, cacheRead) => {
     expect(ModelRegistry.findModel('openrouter', id)).toEqual(expect.objectContaining({
       name,
       contextWindow: 1048576,
       maxTokens: 65536,
       inputCostPerMillion: input,
-      outputCostPerMillion: output
+      outputCostPerMillion: output,
+      cacheReadCostPerMillion: cacheRead
     }));
   });
 

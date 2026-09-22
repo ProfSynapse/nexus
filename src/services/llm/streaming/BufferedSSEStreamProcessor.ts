@@ -2,6 +2,7 @@ import { createParser, type ParseEvent } from 'eventsource-parser';
 import { StreamChunk, ToolCall } from '../adapters/types';
 import { SSEStreamOptions } from './SSEStreamProcessor';
 import { createProviderStreamError } from './streamErrorFrames';
+import { TokenUsageExtractor } from '../utils/TokenUsageExtractor';
 import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 interface BufferedUsage {
@@ -207,7 +208,8 @@ export class BufferedSSEStreamProcessor {
         }
 
         const finishReason = options.extractFinishReason(parsed);
-        if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
+        if (!options.usageArrivesAfterFinish
+          && (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls')) {
           const finalToolCalls = getFinalToolCalls(toolCallsAccumulator, options);
           eventQueue.push({
             content: '',
@@ -249,11 +251,7 @@ function formatUsage(usage: BufferedUsage | undefined): StreamChunk['usage'] {
     return undefined;
   }
 
-  return {
-    promptTokens: usage.prompt_tokens || usage.promptTokenCount || usage.promptTokens || usage.input_tokens || 0,
-    completionTokens: usage.completion_tokens || usage.candidatesTokenCount || usage.completionTokens || usage.output_tokens || 0,
-    totalTokens: usage.total_tokens || usage.totalTokenCount || usage.totalTokens || 0
-  };
+  return TokenUsageExtractor.normalize(usage);
 }
 
 function getFinalToolCalls(

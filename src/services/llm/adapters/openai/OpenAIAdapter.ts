@@ -31,6 +31,7 @@ import {
   extractResponsesApiStreamError
 } from '../../streaming/streamErrorFrames';
 import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 interface OpenAIResponsesTool {
   type: string;
@@ -50,6 +51,9 @@ interface OpenAIResponsesUsage {
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
+  /** Automatic prompt caching: cached prefix tokens (billed at the cache-read rate). */
+  input_tokens_details?: { cached_tokens?: number };
+  output_tokens_details?: { reasoning_tokens?: number };
 }
 
 interface OpenAIResponsesContentPart {
@@ -557,11 +561,7 @@ export class OpenAIAdapter extends BaseAdapter {
         case 'response.done':
         case 'response.completed': {
           if (event.response?.usage) {
-            usage = {
-              promptTokens: event.response.usage.input_tokens || 0,
-              completionTokens: event.response.usage.output_tokens || 0,
-              totalTokens: event.response.usage.total_tokens || 0
-            };
+            usage = TokenUsageExtractor.normalize(event.response.usage);
           }
           const metadata = currentResponseId ? { responseId: currentResponseId } : undefined;
           const toolCallsArray = Array.from(toolCallsMap.values());
@@ -662,11 +662,9 @@ export class OpenAIAdapter extends BaseAdapter {
       }
     }
 
-    const usage: TokenUsage | undefined = responseJson.usage ? {
-      promptTokens: responseJson.usage.input_tokens || 0,
-      completionTokens: responseJson.usage.output_tokens || 0,
-      totalTokens: responseJson.usage.total_tokens || 0
-    } : undefined;
+    const usage: TokenUsage | undefined = responseJson.usage
+      ? TokenUsageExtractor.normalize(responseJson.usage)
+      : undefined;
 
     return this.buildLLMResponse(
       text,

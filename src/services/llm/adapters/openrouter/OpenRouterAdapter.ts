@@ -138,12 +138,21 @@ interface OpenRouterResponse extends JsonObject {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    /** USD, present on the final stream chunk when `usage: { include: true }` was requested. 0 on BYOK. */
+    cost?: number;
+    /** True when billed to the user's own upstream key; the real price is then in cost_details. */
+    is_byok?: boolean;
+    cost_details?: { upstream_inference_cost?: number };
+    prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
   };
   data?: {
     native_tokens_prompt?: number;
     tokens_prompt?: number;
     native_tokens_completion?: number;
     tokens_completion?: number;
+    native_tokens_cached?: number;
+    native_tokens_reasoning?: number;
     total_cost?: number;
     currency?: string;
   };
@@ -198,7 +207,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       const requestBody = {
         model,
-        messages: this.buildMessages(prompt, options?.systemPrompt),
+        messages: this.applyPromptCaching(this.buildMessages(prompt, options?.systemPrompt), baseModel),
         temperature: options?.temperature,
         max_tokens: options?.maxTokens,
         top_p: options?.topP,
@@ -283,6 +292,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         }
       }
 
+      messages = this.applyPromptCaching(messages, baseModel);
+
       // Check if this model requires reasoning preservation (Gemini via OpenRouter)
       const needsReasoning = ReasoningPreserver.requiresReasoningPreservation(baseModel, 'openrouter');
       const hasTools = options?.tools && options.tools.length > 0;
@@ -329,6 +340,10 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'OpenRouter',
+        // `usage: { include: true }` puts the usage frame (tokens, cached_tokens,
+        // cost) after the finish_reason frame; complete on [DONE] so it is on the
+        // completion chunk rather than only on the async generation fetch.
+        usageArrivesAfterFinish: true,
 
         extractContent: (parsed) => {
           const response = parsed as OpenRouterResponse;
@@ -484,10 +499,12 @@ export class OpenRouterAdapter extends BaseAdapter {
           return null;
         },
 
-        extractUsage: (_parsed) => {
-          // OpenRouter doesn't include usage in streaming responses
-          // We'll fetch it asynchronously using the generation ID when completion is detected
-          return undefined;
+        extractUsage: (parsed) => {
+          // With `usage: { include: true }` OpenRouter appends a final chunk
+          // carrying usage (tokens, cached_tokens, cost). It arrives after the
+          // finish_reason chunk, so the authoritative numbers still come from
+          // the async generation fetch; this just captures it when it is early.
+          return (parsed as OpenRouterResponse).usage;
         },
 
         // Extract reasoning from reasoning_details array (OpenRouter unified format)
@@ -583,6 +600,30 @@ export class OpenRouterAdapter extends BaseAdapter {
   /**
    * Fetch usage data and notify via callback - runs asynchronously after streaming completes
    */
+  /**
+   * Anthropic models only cache a prompt prefix at an explicit breakpoint.
+   * OpenRouter forwards `cache_control` from a content-part array, so mark the
+   * system message as the breakpoint: upstream prefix order is tools → system
+   * → messages, so this one marker caches the tool catalog too. Other models
+   * (OpenAI, Gemini, DeepSeek, …) cache automatically and ignore the marker;
+   * it is only added for `anthropic/*` so no other upstream sees an
+   * unexpected content shape.
+   */
+  private applyPromptCaching<T extends Record<string, unknown>>(messages: T[], baseModel: string): T[] {
+    if (!baseModel.startsWith('anthropic/')) {
+      return messages;
+    }
+    return messages.map(message => {
+      if (message.role !== 'system' || typeof message.content !== 'string' || !message.content) {
+        return message;
+      }
+      return {
+        ...message,
+        content: [{ type: 'text', text: message.content, cache_control: { type: 'ephemeral' } }]
+      };
+    });
+  }
+
   private async fetchAndNotifyUsage(
     generationId: string,
     model: string,
@@ -599,21 +640,19 @@ export class OpenRouterAdapter extends BaseAdapter {
       completionTokens: stats.completionTokens,
       totalTokens: stats.totalTokens
     };
-
-    // Calculate cost - prefer provider total_cost when present, otherwise fall back to pricing calculation
-    let cost: CostDetails | undefined;
-    if (stats.totalCost !== undefined) {
-      const calculatedCost = await this.calculateCost(usage, model);
-      if (calculatedCost) {
-        cost = {
-          ...calculatedCost,
-          totalCost: stats.totalCost,
-          currency: stats.currency || calculatedCost.currency
-        };
-      }
-    } else {
-      cost = await this.calculateCost(usage, model) ?? undefined;
+    if (stats.cachedTokens) {
+      usage.cacheReadTokens = stats.cachedTokens;
+      usage.cachedTokens = stats.cachedTokens;
     }
+    if (stats.reasoningTokens) {
+      usage.reasoningTokens = stats.reasoningTokens;
+    }
+    // The provider's own price wins; LLMCostCalculator honours providerCost.
+    if (stats.totalCost !== undefined) {
+      usage.providerCost = { totalCost: stats.totalCost, currency: stats.currency || 'USD' };
+    }
+
+    const cost = await this.calculateCost(usage, model) ?? undefined;
 
     // Notify via callback
     onUsageAvailable(usage, cost);
@@ -627,6 +666,8 @@ export class OpenRouterAdapter extends BaseAdapter {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    cachedTokens?: number;
+    reasoningTokens?: number;
     totalCost?: number;
     currency?: string;
   } | null> {
@@ -672,6 +713,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         // OpenRouter returns: tokens_prompt, tokens_completion, native_tokens_prompt, native_tokens_completion
         const promptTokens = data.data.native_tokens_prompt || data.data.tokens_prompt || 0;
         const completionTokens = data.data.native_tokens_completion || data.data.tokens_completion || 0;
+        const cachedTokens = data.data.native_tokens_cached || undefined;
+        const reasoningTokens = data.data.native_tokens_reasoning || undefined;
         const totalCost = data.data.total_cost ?? undefined;
         const currency = 'USD';
 
@@ -680,6 +723,8 @@ export class OpenRouterAdapter extends BaseAdapter {
             promptTokens,
             completionTokens,
             totalTokens: promptTokens + completionTokens,
+            cachedTokens,
+            reasoningTokens,
             totalCost,
             currency
           };

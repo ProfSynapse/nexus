@@ -8,6 +8,7 @@
  * - Pricing shown here is for Standard tier; Batch API offers 50% off, Priority costs more
  *
  * Reference: https://openai.com/api/pricing/
+ * - cacheReadCostPerMillion = 0.1 × input for every entry below (the 90% discount above)
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -22,6 +23,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
+    cacheReadCostPerMillion: 1,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -39,6 +41,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
+    cacheReadCostPerMillion: 0.5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -55,6 +58,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 2.50,
     outputCostPerMillion: 15.00,
+    cacheReadCostPerMillion: 0.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -71,6 +75,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 6.00,
+    cacheReadCostPerMillion: 0.1,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -89,6 +94,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
+    cacheReadCostPerMillion: 0.5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -105,6 +111,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
+    cacheReadCostPerMillion: 3,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -123,6 +130,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 2.50,
     outputCostPerMillion: 15.00,
+    cacheReadCostPerMillion: 0.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -139,6 +147,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0.75,
     outputCostPerMillion: 4.50,
+    cacheReadCostPerMillion: 0.075,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -155,6 +164,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0.20,
     outputCostPerMillion: 1.25,
+    cacheReadCostPerMillion: 0.02,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -171,6 +181,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
+    cacheReadCostPerMillion: 3,
     capabilities: {
       supportsJSON: false,
       supportsImages: true,
@@ -189,6 +200,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 16384,
     inputCostPerMillion: 1.75,
     outputCostPerMillion: 14.00,
+    cacheReadCostPerMillion: 0.175,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -205,6 +217,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 16384,
     inputCostPerMillion: 1.75,
     outputCostPerMillion: 14.00,
+    cacheReadCostPerMillion: 0.175,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -223,6 +236,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 1.75,
     outputCostPerMillion: 14.00,
+    cacheReadCostPerMillion: 0.175,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -239,6 +253,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 21.00,
     outputCostPerMillion: 168.00,
+    cacheReadCostPerMillion: 2.1,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

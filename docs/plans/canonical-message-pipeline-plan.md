@@ -131,6 +131,16 @@ Latent fields (`reasoning_details`, `thought_signature`, `name`) are NOT preserv
 
 **Phase 4 — Optional later (1-2 days):** Do Option C — full canonical type. Makes future provider additions and field additions trivial. Worth doing when adding the next provider (e.g., bedrock direct, vertex AI direct).
 
+> **2026-09-18 update:** Phase 4 was scoped down rather than done. The
+> `{ role, content: string }` projection in `StreamingResponseService.buildLLMMessages`
+> — the last in-pipeline field-loss site, and the reason history was being flattened
+> into the system prompt for every non-Google provider — was removed, and the
+> builder output now travels unchanged as `ConversationMessage`
+> (`src/services/llm/core/ConversationMessage.ts`). That is a typed carrier, not the
+> canonical type Option C describes; the per-provider builders still produce
+> provider shapes directly. See
+> `docs/plans/turn-by-turn-history-and-provider-costing-plan.md`.
+
 ---
 
 ## Effort & risk summary

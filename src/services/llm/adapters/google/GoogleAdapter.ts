@@ -107,6 +107,8 @@ interface GoogleUsage {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
   totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
@@ -151,6 +153,8 @@ interface GoogleResponse {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     totalTokenCount?: number;
+    cachedContentTokenCount?: number;
+    thoughtsTokenCount?: number;
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
@@ -172,14 +176,7 @@ interface GoogleResponse {
       results?: unknown[];
     };
   }>;
-  usage?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
-    totalTokenCount?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
-  };
+  usage?: GoogleUsage;
 }
 
 export class GoogleAdapter extends BaseAdapter {
@@ -428,10 +425,14 @@ export class GoogleAdapter extends BaseAdapter {
             return undefined;
           }
 
+          // Hand the raw metadata to the normalizer: it knows Google's
+          // cachedContentTokenCount / thoughtsTokenCount field names.
           return {
             prompt_tokens: usage.promptTokenCount ?? usage.inputTokens,
             completion_tokens: usage.candidatesTokenCount ?? usage.outputTokens,
-            total_tokens: usage.totalTokenCount ?? usage.totalTokens
+            total_tokens: usage.totalTokenCount ?? usage.totalTokens,
+            prompt_tokens_details: usage.cachedContentTokenCount ? { cached_tokens: usage.cachedContentTokenCount } : undefined,
+            completion_tokens_details: usage.thoughtsTokenCount ? { reasoning_tokens: usage.thoughtsTokenCount } : undefined
           };
         },
         extractReasoning: (chunk) => {

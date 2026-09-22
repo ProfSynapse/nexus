@@ -38,7 +38,7 @@ export type ToolMessage =
       }>;
     }
   | {
-      role: 'function';
+      role: 'user';
       parts: Array<{
         functionResponse: {
           name?: string;
@@ -149,9 +149,10 @@ export class ToolExecutionUtils {
         ]
       }));
     } else if (provider === 'google') {
-      // Google Gemini format: role='function', parts array with functionResponse objects
+      // Google Gemini format: functionResponse parts in a 'user' turn (the
+      // legacy 'function' role is rejected by gemini-3.7-flash and 3.5-flash-lite)
       return toolResults.map(result => ({
-        role: 'function' as const,
+        role: 'user' as const,
         parts: [
           {
             functionResponse: {
