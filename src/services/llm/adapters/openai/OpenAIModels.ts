@@ -24,6 +24,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
     cacheReadCostPerMillion: 1,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -42,6 +43,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 2.00,
     outputCostPerMillion: 10.00,
     cacheReadCostPerMillion: 0.2,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -60,6 +62,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 0.10,
     outputCostPerMillion: 0.50,
     cacheReadCostPerMillion: 0.01,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -78,6 +81,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
     cacheReadCostPerMillion: 0.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -95,6 +99,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 2.50,
     outputCostPerMillion: 15.00,
     cacheReadCostPerMillion: 0.25,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -112,6 +117,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 6.00,
     cacheReadCostPerMillion: 0.1,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -131,6 +137,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
     cacheReadCostPerMillion: 0.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -148,6 +155,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
     cacheReadCostPerMillion: 3,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -218,6 +226,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
     cacheReadCostPerMillion: 3,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: false,
       supportsImages: true,
@@ -290,6 +299,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 21.00,
     outputCostPerMillion: 168.00,
     cacheReadCostPerMillion: 2.1,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

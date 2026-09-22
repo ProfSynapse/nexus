@@ -21,6 +21,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -37,6 +38,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -53,6 +55,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -69,6 +72,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -85,6 +89,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -101,6 +106,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -117,6 +123,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

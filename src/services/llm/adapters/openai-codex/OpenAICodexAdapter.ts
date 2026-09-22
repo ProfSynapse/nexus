@@ -22,7 +22,7 @@
  */
 
 import { BaseAdapter } from '../BaseAdapter';
-import { rejectsSamplingParams } from '../shared/OpenAISamplingParams';
+import { acceptsSamplingParams } from '../shared/SamplingParams';
 import {
   GenerateOptions,
   StreamChunk,
@@ -324,7 +324,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
       // (including tool continuation calls which pass conversationHistory)
       requestBody.instructions = options?.systemPrompt || '';
 
-      if (!rejectsSamplingParams(model) && options?.temperature !== undefined) {
+      if (acceptsSamplingParams(ModelRegistry.getProviderModels('openai-codex'), model) && options?.temperature !== undefined) {
         requestBody.temperature = options.temperature;
       }
       if (options?.maxTokens !== undefined) {

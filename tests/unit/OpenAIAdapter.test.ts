@@ -67,7 +67,7 @@ describe('OpenAIAdapter', () => {
       return jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] });
     });
     const adapter = new OpenAIAdapter('sk-test');
-    await adapter.generateUncached('hi', { model: 'gpt-5.6-sol', temperature: 0.7, topP: 0.9 });
+    await adapter.generateUncached('hi', { model: 'gpt-5.4', temperature: 0.7, topP: 0.9 });
     const body = JSON.parse(requests[0].body ?? '{}');
     expect(body.temperature).toBe(0.7);
     expect(body.top_p).toBe(0.9);
