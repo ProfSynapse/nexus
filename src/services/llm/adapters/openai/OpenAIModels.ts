@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated July 2026 — added the GPT-5.6 Sol, Terra, and Luna family
+ * Updated September 2026 — added GPT-6 Sol and GPT-6 Luna
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -24,6 +24,45 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
     cacheReadCostPerMillion: 1,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6-sol
+  {
+    provider: 'openai',
+    name: 'GPT-6 Sol',
+    apiName: 'gpt-6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.2,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6-luna
+  {
+    provider: 'openai',
+    name: 'GPT-6 Luna',
+    apiName: 'gpt-6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.10,
+    outputCostPerMillion: 0.50,
+    cacheReadCostPerMillion: 0.01,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -42,6 +81,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
     cacheReadCostPerMillion: 0.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -59,6 +99,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 2.50,
     outputCostPerMillion: 15.00,
     cacheReadCostPerMillion: 0.25,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -76,6 +117,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 6.00,
     cacheReadCostPerMillion: 0.1,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -95,6 +137,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 30.00,
     cacheReadCostPerMillion: 0.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -112,6 +155,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
     cacheReadCostPerMillion: 3,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -182,6 +226,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 30.00,
     outputCostPerMillion: 180.00,
     cacheReadCostPerMillion: 3,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: false,
       supportsImages: true,
@@ -192,23 +237,6 @@ export const OPENAI_MODELS: ModelSpec[] = [
   },
 
   // GPT-5.3 family
-  {
-    provider: 'openai',
-    name: 'GPT-5.3 Chat',
-    apiName: 'gpt-5.3-chat-latest',
-    contextWindow: 128000,
-    maxTokens: 16384,
-    inputCostPerMillion: 1.75,
-    outputCostPerMillion: 14.00,
-    cacheReadCostPerMillion: 0.175,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
   {
     provider: 'openai',
     name: 'GPT-5.3 Codex',
@@ -254,6 +282,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 21.00,
     outputCostPerMillion: 168.00,
     cacheReadCostPerMillion: 2.1,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

@@ -21,6 +21,41 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6 Sol',
+    apiName: 'gpt-6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6 Luna',
+    apiName: 'gpt-6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -37,6 +72,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -53,6 +89,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -69,6 +106,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -85,6 +123,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

@@ -43,6 +43,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     // Published cache-read rate is $0.25 (0.025x input), not the 0.1x structure.
     cacheReadCostPerMillion: 0.25,
     cacheWriteCostPerMillion: 12.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -63,6 +64,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 50.00,
     cacheReadCostPerMillion: 1,
     cacheWriteCostPerMillion: 12.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -84,6 +86,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     // Published cache-read rate is $0.20 (0.05x input), not the 0.1x structure.
     cacheReadCostPerMillion: 0.2,
     cacheWriteCostPerMillion: 5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -104,6 +107,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 25.00,
     cacheReadCostPerMillion: 0.5,
     cacheWriteCostPerMillion: 6.25,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -124,6 +128,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 25.00,
     cacheReadCostPerMillion: 0.5,
     cacheWriteCostPerMillion: 6.25,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -144,6 +149,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 25.00,
     cacheReadCostPerMillion: 0.5,
     cacheWriteCostPerMillion: 6.25,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -165,6 +171,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     cacheReadCostPerMillion: 0.5,
     cacheWriteCostPerMillion: 6.25,
     betaHeaders: ['context-1m-2025-08-07'],
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -227,6 +234,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 10.00,
     cacheReadCostPerMillion: 0.2,
     cacheWriteCostPerMillion: 2.5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

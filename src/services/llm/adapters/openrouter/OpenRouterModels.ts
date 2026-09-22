@@ -459,22 +459,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
-    name: 'GPT-5.3 Chat',
-    apiName: 'openai/gpt-5.3-chat-latest',
-    contextWindow: 128000,
-    maxTokens: 16384,
-    inputCostPerMillion: 1.75,
-    outputCostPerMillion: 14.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
     name: 'GPT-5.3 Codex',
     apiName: 'openai/gpt-5.3-codex',
     contextWindow: 128000,
@@ -690,6 +674,44 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://openrouter.ai/openai/gpt-6-luna
+  {
+    provider: 'openrouter',
+    name: 'GPT-6 Luna',
+    apiName: 'openai/gpt-6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.10,
+    outputCostPerMillion: 0.50,
+    cacheReadCostPerMillion: 0.01,
+    cacheWriteCostPerMillion: 0.125,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://openrouter.ai/openai/gpt-6-sol
+  {
+    provider: 'openrouter',
+    name: 'GPT-6 Sol',
+    apiName: 'openai/gpt-6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

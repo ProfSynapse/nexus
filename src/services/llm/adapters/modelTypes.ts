@@ -30,6 +30,13 @@ export interface ModelSpec {
     supportsStreaming: boolean;
     supportsThinking: boolean;
   };
+  /**
+   * Set to false for models that reject `temperature` and `top_p` with a 400.
+   * Omitted means the model accepts them. The OpenAI, OpenAI Codex, and
+   * Anthropic adapters drop both parameters when this is false; OpenRouter
+   * drops unsupported parameters itself, so its entries leave this unset.
+   */
+  supportsSamplingParams?: boolean;
   /** Optional beta headers required for this model (Anthropic only) */
   betaHeaders?: string[];
 }

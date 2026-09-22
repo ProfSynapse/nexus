@@ -21,6 +21,7 @@ import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 import type { AnthropicThinkingBlock } from '../../../../types/llm/ProviderTypes';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
+import { acceptsSamplingParams } from '../shared/SamplingParams';
 
 interface AnthropicMessage {
   role: string;
@@ -150,6 +151,7 @@ export class AnthropicAdapter extends BaseAdapter {
         temperature: options?.temperature,
         stream: true
       };
+      this.dropUnsupportedSampling(requestParams);
 
       // Add system message if provided (either from messages or from options).
       // Sent as a block with a cache breakpoint: the system prompt is the stable
@@ -368,6 +370,7 @@ export class AnthropicAdapter extends BaseAdapter {
       temperature: options?.temperature,
       stop_sequences: options?.stopSequences
     };
+    this.dropUnsupportedSampling(requestParams);
 
     // Add system message if provided
     const systemMessage = messages.find(msg => msg.role === 'system');
@@ -495,6 +498,13 @@ export class AnthropicAdapter extends BaseAdapter {
       existing.thinking += event.delta.thinking || '';
     } else if (event.delta?.type === 'signature_delta') {
       existing.signature += event.delta.signature || '';
+    }
+  }
+
+  /** Newer Claude models reject `temperature` even with thinking off. */
+  private dropUnsupportedSampling(requestParams: Record<string, unknown>): void {
+    if (!acceptsSamplingParams(ANTHROPIC_MODELS, this.normalizeModelId(String(requestParams.model)))) {
+      delete requestParams.temperature;
     }
   }
 

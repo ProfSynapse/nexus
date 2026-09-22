@@ -7,6 +7,7 @@
  */
 
 import { BaseAdapter } from '../BaseAdapter';
+import { acceptsSamplingParams } from '../shared/SamplingParams';
 import {
   GenerateOptions,
   StreamChunk,
@@ -248,9 +249,9 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         // Add optional parameters
-        if (model !== 'gpt-6-astra' && options?.temperature !== undefined) responseParams.temperature = options.temperature;
+        if (acceptsSamplingParams(OPENAI_MODELS, model) && options?.temperature !== undefined) responseParams.temperature = options.temperature;
         if (options?.maxTokens !== undefined) responseParams.max_output_tokens = options.maxTokens;
-        if (model !== 'gpt-6-astra' && options?.topP !== undefined) responseParams.top_p = options.topP;
+        if (acceptsSamplingParams(OPENAI_MODELS, model) && options?.topP !== undefined) responseParams.top_p = options.topP;
         if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
         if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
@@ -613,9 +614,9 @@ export class OpenAIAdapter extends BaseAdapter {
     }
 
     // Add optional parameters
-    if (model !== 'gpt-6-astra' && options?.temperature !== undefined) responseParams.temperature = options.temperature;
+    if (acceptsSamplingParams(OPENAI_MODELS, model) && options?.temperature !== undefined) responseParams.temperature = options.temperature;
     if (options?.maxTokens !== undefined) responseParams.max_output_tokens = options.maxTokens;
-    if (model !== 'gpt-6-astra' && options?.topP !== undefined) responseParams.top_p = options.topP;
+    if (acceptsSamplingParams(OPENAI_MODELS, model) && options?.topP !== undefined) responseParams.top_p = options.topP;
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 

@@ -69,12 +69,20 @@ checked, and proven against the live endpoint.
    wrong path with no error. The clearest case is the deep-research handler in
    the OpenAI adapter directory: read its id-matching predicate and decide
    whether your new id belongs in it. Treat that as the general question — grep
-   the provider's adapter for comparisons against model ids:
+   the provider's adapter, and `shared/`, for comparisons against model ids,
+   including exact-id equality and regex tests:
 
    ```bash
-   rg -n "model\.(includes|startsWith)|modelId\.(includes|startsWith)" \
-     src/services/llm/adapters/<provider>
+   grep -rnE "(model|modelId)\.(includes|startsWith)\(|(model|modelId) [!=]== '|\.test\((model|modelId|normalized)\)" \
+     src/services/llm/adapters/<provider> src/services/llm/adapters/shared
    ```
+
+   An exact-id guard (`model !== '<id>'`) written for one release is the case
+   most likely to bite a sibling: it matches nothing new, so the sibling gets
+   the behaviour the guard was written to prevent. When the behaviour is a
+   property of the model, move it into a `ModelSpec` field the adapter reads —
+   `supportsSamplingParams` is the worked example — so the next model needs
+   only its entry.
 
 6. **Update the subscription twin registry — or the API one, coming the other way.**
    Two vendors have *paired* registries that cover the same models through

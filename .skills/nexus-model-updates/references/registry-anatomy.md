@@ -59,6 +59,14 @@ error:
 when the model is selected. This is how a capability that requires a header,
 rather than a parameter, gets expressed.
 
+**`supportsSamplingParams`** (optional) — set `false` when the model rejects
+`temperature` / `top_p` with a 400. Omitted means it accepts them. Chat sends a
+temperature on every request (default 0.5), so a wrong value here makes every
+chat with the model fail while the default smoke run passes — find out by
+sending the parameter to the provider, not from its docs, which usually say
+nothing. The OpenAI, OpenAI Codex, and Anthropic adapters honour it; OpenRouter
+drops unsupported parameters itself, so gateway entries leave it unset.
+
 ## Variant pairs: two entries, one id
 A provider sometimes exposes the same model under one id with a header or suffix
 selecting a larger context window. The convention is two entries sharing an
@@ -110,6 +118,7 @@ Field-level questions the type does not answer:
 | Model id differs between direct and gateway access | Two entries, two registries, two `apiName` values |
 | Not sure whether tools are supported | Not a guess — go back to the provider's docs |
 | Model needs a beta header | `betaHeaders`, not a capability flag |
+| Model rejects `temperature` / `top_p` | `supportsSamplingParams: false`, never an id check in the adapter |
 | Two entries would share an id | Only where the adapter disambiguates; otherwise one entry |
 | Gateway sibling uses a dash (or dot) in its version | Not evidence — a gateway's separator varies per model; read this model's own listing |
 | Gateway catalog unreachable (egress-blocked, keyless lookup fails) | Ask the user for the gateway's model page; a screenshot of its id and price is a published listing |

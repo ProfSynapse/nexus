@@ -130,6 +130,45 @@ describe('AnthropicAdapter', () => {
       expect(body.max_tokens).toBe(4096);
     });
 
+    // Models flagged supportsSamplingParams: false reject temperature even with
+    // thinking off; chat always supplies one (default 0.5).
+    it.each([
+      ['claude-opus-5-5', false],
+      ['claude-opus-5', false],
+      ['claude-sonnet-5', false],
+      ['claude-haiku-4-5-20251001', true],
+      ['claude-sonnet-4-6', true]
+    ])('sends temperature for %s with thinking off only if the registry allows it (expected=%s)', async (model, expected) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, { model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' });
+      });
+
+      await new AnthropicAdapter('ak-test', model).generateUncached('hi', { temperature: 0.5 });
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body).not.toHaveProperty('thinking');
+      if (expected) expect(body.temperature).toBe(0.5);
+      else expect(body).not.toHaveProperty('temperature');
+    });
+
+    it('drops temperature on the streaming path for a model that rejects it', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse(
+          { type: 'message_start', message: { usage: { input_tokens: 1, output_tokens: 1 } } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+          { type: 'message_stop' }
+        ));
+      });
+
+      await collect(new AnthropicAdapter('ak-test', 'claude-fable-5-1').generateStreamAsync('hi', { temperature: 0.5 }));
+
+      expect(JSON.parse(requests[0].body ?? '{}')).not.toHaveProperty('temperature');
+    });
+
     it('keeps manual token-budget thinking for Claude 4.5', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {

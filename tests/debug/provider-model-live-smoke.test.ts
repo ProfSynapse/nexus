@@ -15,6 +15,10 @@
  *   OPENAI_SMOKE_MODEL=gpt-5.6-sol
  *   OPENROUTER_SMOKE_MODEL=openai/gpt-5.6-sol
  *   CODEX_SMOKE_MODEL=gpt-5.6-sol
+ *
+ * Every call sends a temperature, as the chat view always does (default 0.5),
+ * so a model that rejects sampling parameters fails here instead of in chat.
+ * MODEL_SMOKE_TEMPERATURE overrides the value; set it to "none" to omit it.
  */
 
 import * as fs from 'node:fs';
@@ -252,6 +256,11 @@ async function callModel(target: SmokeTarget): Promise<LLMResponse> {
     model: target.model,
     systemPrompt: 'Follow the user instruction exactly.',
   };
+
+  const temperature = getEnv('MODEL_SMOKE_TEMPERATURE') || '0.5';
+  if (temperature !== 'none') {
+    options.temperature = Number(temperature);
+  }
 
   // Codex currently rejects max_output_tokens on the OAuth endpoint.
   if (target.provider !== 'openai-codex') {
