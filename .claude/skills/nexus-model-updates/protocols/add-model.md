@@ -34,6 +34,10 @@ checked, and proven against the live endpoint.
      `../references/provider-listings.md`. Google's listing also returns the
      context window and max output; OpenRouter's returns pricing including the
      cache-read rate, so both replace guesswork for two more fields.
+   - The same holds for gateways when a vendor ships a model. Whether a gateway
+     registry here carries the new model's *predecessor* says nothing about
+     whether the gateway serves the new one. Run the OpenRouter listing for
+     every vendor release before deciding which registries get an entry.
 
 2. **Locate the registry and read a neighbouring entry.**
 
