@@ -86,6 +86,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     // Published cache-read rate is $0.20 (0.05x input), not the 0.1x structure.
     cacheReadCostPerMillion: 0.2,
     cacheWriteCostPerMillion: 5,
+    supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

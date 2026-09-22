@@ -239,23 +239,6 @@ export const OPENAI_MODELS: ModelSpec[] = [
   // GPT-5.3 family
   {
     provider: 'openai',
-    name: 'GPT-5.3 Chat',
-    apiName: 'gpt-5.3-chat-latest',
-    contextWindow: 128000,
-    maxTokens: 16384,
-    inputCostPerMillion: 1.75,
-    outputCostPerMillion: 14.00,
-    cacheReadCostPerMillion: 0.175,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openai',
     name: 'GPT-5.3 Codex',
     apiName: 'gpt-5.3-codex',
     contextWindow: 128000,

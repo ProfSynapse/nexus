@@ -459,22 +459,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
-    name: 'GPT-5.3 Chat',
-    apiName: 'openai/gpt-5.3-chat-latest',
-    contextWindow: 128000,
-    maxTokens: 16384,
-    inputCostPerMillion: 1.75,
-    outputCostPerMillion: 14.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'openrouter',
     name: 'GPT-5.3 Codex',
     apiName: 'openai/gpt-5.3-codex',
     contextWindow: 128000,
