@@ -89,9 +89,16 @@ describe('LLMCostCalculator.calculateCost — four token classes', () => {
 });
 
 describe('model specs carry cache rates', () => {
-  it('every Anthropic model: read 0.1× input, write 1.25× input', () => {
+  // Models whose published cache-read rate departs from the 0.1× structure.
+  const PUBLISHED_ANTHROPIC_CACHE_READ: Record<string, number> = {
+    'claude-fable-5-1': 0.25,
+    'claude-opus-5-5': 0.2
+  };
+
+  it('every Anthropic model: read 0.1× input (unless published otherwise), write 1.25× input', () => {
     for (const spec of ANTHROPIC_MODELS) {
-      expect(spec.cacheReadCostPerMillion).toBeCloseTo(spec.inputCostPerMillion * 0.1, 6);
+      const expectedRead = PUBLISHED_ANTHROPIC_CACHE_READ[spec.apiName] ?? spec.inputCostPerMillion * 0.1;
+      expect(spec.cacheReadCostPerMillion).toBeCloseTo(expectedRead, 6);
       expect(spec.cacheWriteCostPerMillion).toBeCloseTo(spec.inputCostPerMillion * 1.25, 6);
     }
   });

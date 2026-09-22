@@ -109,12 +109,32 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'Claude Opus 5.5',
+    apiName: 'anthropic/claude-opus-5.5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 4.00,
+    outputCostPerMillion: 20.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 5.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Claude Fable 5.1',
     apiName: 'anthropic/claude-fable-5.1',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
+    cacheReadCostPerMillion: 0.25,
+    cacheWriteCostPerMillion: 12.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -177,8 +197,10 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     apiName: 'anthropic/claude-sonnet-5',
     contextWindow: 1000000,
     maxTokens: 128000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
