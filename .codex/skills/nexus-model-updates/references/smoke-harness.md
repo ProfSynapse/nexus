@@ -21,6 +21,12 @@ RUN_MODEL_SMOKE=1 MODEL_SMOKE_PROVIDER=<provider> MODEL_SMOKE_MODEL=<id> \
   --runInBand --no-coverage --verbose
 ```
 
+Each call sends a temperature, as chat does, so a model that rejects sampling
+parameters fails here with `Unsupported parameter` / `is deprecated for this
+model`. That is a real finding, not an impostor: set
+`supportsSamplingParams: false` on the entry. `MODEL_SMOKE_TEMPERATURE=none`
+omits it when you need to isolate something else.
+
 With no provider filter it runs every provider it knows how to construct, each
 resolving its default from the central `DEFAULT_MODELS` map unless overridden.
 Per-provider model overrides exist as environment variables so a full sweep can

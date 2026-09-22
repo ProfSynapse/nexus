@@ -79,9 +79,10 @@ checked, and proven against the live endpoint.
 
    An exact-id guard (`model !== '<id>'`) written for one release is the case
    most likely to bite a sibling: it matches nothing new, so the sibling gets
-   the behaviour the guard was written to prevent. If the sibling needs the same
-   treatment, widen the guard to a family predicate rather than adding a second
-   id, and prove the behaviour against the live endpoint first.
+   the behaviour the guard was written to prevent. When the behaviour is a
+   property of the model, move it into a `ModelSpec` field the adapter reads —
+   `supportsSamplingParams` is the worked example — so the next model needs
+   only its entry.
 
 6. **Update the subscription twin registry — or the API one, coming the other way.**
    Two vendors have *paired* registries that cover the same models through
