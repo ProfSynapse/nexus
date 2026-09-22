@@ -698,6 +698,44 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // https://openrouter.ai/openai/gpt-6-luna
+  {
+    provider: 'openrouter',
+    name: 'GPT-6 Luna',
+    apiName: 'openai/gpt-6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.10,
+    outputCostPerMillion: 0.50,
+    cacheReadCostPerMillion: 0.01,
+    cacheWriteCostPerMillion: 0.125,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://openrouter.ai/openai/gpt-6-sol
+  {
+    provider: 'openrouter',
+    name: 'GPT-6 Sol',
+    apiName: 'openai/gpt-6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openrouter',
     name: 'Kimi K2.7 Code',

@@ -22,6 +22,7 @@
  */
 
 import { BaseAdapter } from '../BaseAdapter';
+import { rejectsSamplingParams } from '../shared/OpenAISamplingParams';
 import {
   GenerateOptions,
   StreamChunk,
@@ -323,7 +324,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
       // (including tool continuation calls which pass conversationHistory)
       requestBody.instructions = options?.systemPrompt || '';
 
-      if (model !== 'gpt-6-astra' && options?.temperature !== undefined) {
+      if (!rejectsSamplingParams(model) && options?.temperature !== undefined) {
         requestBody.temperature = options.temperature;
       }
       if (options?.maxTokens !== undefined) {

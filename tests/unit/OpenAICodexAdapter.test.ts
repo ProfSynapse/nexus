@@ -36,7 +36,7 @@ describe('OpenAICodexAdapter', () => {
     }));
   });
 
-  it('omits temperature for Astra on the subscription endpoint', async () => {
+  it.each(['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'])('omits temperature for %s on the subscription endpoint', async (model) => {
     const requests: RequestRecord[] = [];
     __setRequestUrlMock(async (request) => {
       requests.push(request);
@@ -46,7 +46,7 @@ describe('OpenAICodexAdapter', () => {
       };
     });
     const adapter = new OpenAICodexAdapter(createTokens());
-    for await (const chunk of adapter.generateStreamAsync('hi', { model: 'gpt-6-astra', temperature: 0.7 })) {
+    for await (const chunk of adapter.generateStreamAsync('hi', { model, temperature: 0.7 })) {
       void chunk;
     }
     expect(JSON.parse(requests[0].body ?? '{}')).not.toHaveProperty('temperature');

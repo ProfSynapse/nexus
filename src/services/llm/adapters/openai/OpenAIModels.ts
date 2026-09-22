@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated July 2026 — added the GPT-5.6 Sol, Terra, and Luna family
+ * Updated September 2026 — added GPT-6 Sol and GPT-6 Luna
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -24,6 +24,42 @@ export const OPENAI_MODELS: ModelSpec[] = [
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
     cacheReadCostPerMillion: 1,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6-sol
+  {
+    provider: 'openai',
+    name: 'GPT-6 Sol',
+    apiName: 'gpt-6-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.2,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6-luna
+  {
+    provider: 'openai',
+    name: 'GPT-6 Luna',
+    apiName: 'gpt-6-luna',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.10,
+    outputCostPerMillion: 0.50,
+    cacheReadCostPerMillion: 0.01,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

@@ -35,8 +35,12 @@ describe('OpenAIAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  // Astra rejects sampling parameters that normal chat settings supply.
-  it.each([false, true])('omits Astra sampling parameters (stream=%s)', async (stream) => {
+  // GPT-6 models reject sampling parameters that normal chat settings supply.
+  it.each([
+    ['gpt-6-astra', false], ['gpt-6-astra', true],
+    ['gpt-6-sol', false], ['gpt-6-sol', true],
+    ['gpt-6-luna', false], ['gpt-6-luna', true]
+  ])('omits %s sampling parameters (stream=%s)', async (model, stream) => {
     const requests: CapturedRequest[] = [];
     __setRequestUrlMock(async (request) => {
       requests.push(request);
@@ -45,15 +49,28 @@ describe('OpenAIAdapter', () => {
         : jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] });
     });
     const adapter = new OpenAIAdapter('sk-test');
-    const options = { model: 'gpt-6-astra', temperature: 0.7, topP: 0.9, enableThinking: true, thinkingEffort: 'low' as const };
+    const options = { model, temperature: 0.7, topP: 0.9, enableThinking: true, thinkingEffort: 'low' as const };
     if (stream) await collect(adapter.generateStreamAsync('hi', options));
     else await adapter.generateUncached('hi', options);
     const body = JSON.parse(requests[0].body ?? '{}');
     expect(requests[0].url).toContain('/responses');
-    expect(body.model).toBe('gpt-6-astra');
+    expect(body.model).toBe(model);
     expect(body).not.toHaveProperty('temperature');
     expect(body).not.toHaveProperty('top_p');
     expect(body.reasoning).toEqual({ effort: 'low', summary: 'auto' });
+  });
+
+  it('still sends sampling parameters to models that accept them', async () => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async (request) => {
+      requests.push(request);
+      return jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] });
+    });
+    const adapter = new OpenAIAdapter('sk-test');
+    await adapter.generateUncached('hi', { model: 'gpt-5.6-sol', temperature: 0.7, topP: 0.9 });
+    const body = JSON.parse(requests[0].body ?? '{}');
+    expect(body.temperature).toBe(0.7);
+    expect(body.top_p).toBe(0.9);
   });
 
   describe('non-streaming generate', () => {
