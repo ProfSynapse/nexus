@@ -2,10 +2,10 @@
  * Anthropic Model Specifications
  * Updated June 2026 — pruned the Claude 4.5 Opus/Sonnet generation (superseded by Opus 4.8 / Sonnet 4.6)
  *
- * Cache pricing (uniform across Claude models, see anthropic.com/pricing):
- *   cache read  = 0.1  × input
+ * Cache pricing (see anthropic.com/pricing):
+ *   cache read  = 0.1  × input, except where an entry notes a published rate
  *   cache write = 1.25 × input (5-minute TTL; the adapter requests ephemeral)
- * cacheRead/WriteCostPerMillion below are derived from that structure.
+ * cacheRead/WriteCostPerMillion below are derived from that structure unless noted.
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -62,6 +62,27 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     outputCostPerMillion: 50.00,
     cacheReadCostPerMillion: 1,
     cacheWriteCostPerMillion: 12.5,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // Claude Opus 5.5 (native 1M context; thinking cannot be disabled, forced tool_choice is rejected)
+  {
+    provider: 'anthropic',
+    name: 'Claude Opus 5.5',
+    apiName: 'claude-opus-5-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 4.00,
+    outputCostPerMillion: 20.00,
+    // Published cache-read rate is $0.20 (0.05x input), not the 0.1x structure.
+    cacheReadCostPerMillion: 0.2,
+    cacheWriteCostPerMillion: 5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
