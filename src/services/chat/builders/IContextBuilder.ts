@@ -23,7 +23,12 @@ export interface LLMToolCall {
   };
   /** Reasoning content from thinking models */
   reasoning?: string;
-  /** Thought signature for Google models */
+  /**
+   * Thought signature for Google models. The adapter's ToolCall and the stored
+   * ChatTypes.ToolCall carry it as `thought_signature`; `thoughtSignature` is
+   * the older spelling some callers still set. Builders must accept both.
+   */
+  thought_signature?: string;
   thoughtSignature?: string;
   /** Source format for custom models */
   sourceFormat?: 'bracket' | 'xml' | 'native';

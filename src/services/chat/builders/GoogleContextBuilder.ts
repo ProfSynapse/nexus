@@ -18,6 +18,12 @@ type GoogleReasoningToolCall = Parameters<typeof ReasoningPreserver.buildGoogleM
 export class GoogleContextBuilder implements IContextBuilder {
   readonly provider = 'google';
 
+  /**
+   * The adapter and the stored ChatTypes.ToolCall both carry the signature as
+   * `thought_signature`; older callers used `thoughtSignature`. Accept either —
+   * Gemini 3.x rejects a replayed functionCall part that has no signature
+   * (HTTP 400), so dropping it here breaks every tool continuation.
+   */
   private toReasoningToolCalls(
     toolCalls: Array<{
       id: string;
@@ -27,6 +33,7 @@ export class GoogleContextBuilder implements IContextBuilder {
       };
       name?: string;
       thoughtSignature?: string;
+      thought_signature?: string;
     }>
   ): GoogleReasoningToolCall[] {
     return toolCalls.map(tc => ({
@@ -37,7 +44,7 @@ export class GoogleContextBuilder implements IContextBuilder {
         name: tc.function.name,
         arguments: tc.function.arguments
       },
-      thought_signature: tc.thoughtSignature
+      thought_signature: tc.thought_signature ?? tc.thoughtSignature
     }));
   }
 
@@ -103,10 +110,12 @@ export class GoogleContextBuilder implements IContextBuilder {
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Build model message with thought signatures preserved
+          // The adapter stores the signature as `thought_signature`; older
+          // stored calls may carry the camelCase form. Either must be replayed.
           const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(
             this.toReasoningToolCalls(msg.toolCalls.map((tc: ToolCall) => ({
               ...tc,
-              function: { name: tc.name || '', arguments: JSON.stringify(tc.parameters || {}) }
+              function: { name: tc.name || '', arguments: JSON.stringify(tc.parameters || {}) },
             })))
           );
           messages.push(modelMessage as unknown as GoogleMessage);
@@ -121,7 +130,11 @@ export class GoogleContextBuilder implements IContextBuilder {
             }
           }));
 
-          messages.push({ role: 'function', parts: functionResponseParts });
+          // Function responses go in a `user` turn — the same shape
+          // buildToolContinuation sends in-turn. The legacy `function` role is
+          // tolerated by gemini-3.1-pro but rejected with HTTP 400 ("Role
+          // 'function' is not supported") by gemini-3.7-flash and 3.5-flash-lite.
+          messages.push({ role: 'user', parts: functionResponseParts });
 
           // If there's final content after tool execution, add it
           if (msg.content && msg.content.trim()) {

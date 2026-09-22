@@ -326,7 +326,8 @@ export abstract class BaseAdapter {
         }
 
         const finishReason = options.extractFinishReason(parsed);
-        if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
+        if (!options.usageArrivesAfterFinish
+          && (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls')) {
           const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
           eventQueue.push({
             content: '',
@@ -351,7 +352,17 @@ export abstract class BaseAdapter {
         // Don't emit a "successful" final chunk when the stream carried a fatal error —
         // the throw below is the real outcome.
         ? { content: '', complete: false }
-        : { content: '', complete: true, usage: this.formatStreamUsage(usage) }),
+        : (() => {
+          const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
+          return {
+            content: '',
+            complete: true,
+            usage: this.formatStreamUsage(usage),
+            toolCalls: finalToolCalls,
+            toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+            metadata
+          };
+        })()),
       buildErrorChunk: () => ({ content: '', complete: false })
     });
 
@@ -438,11 +449,7 @@ export abstract class BaseAdapter {
 
   private formatStreamUsage(usage: StreamUsageLike | undefined): StreamChunk['usage'] {
     if (!usage) return undefined;
-    return {
-      promptTokens: usage.prompt_tokens || usage.promptTokenCount || usage.promptTokens || usage.input_tokens || 0,
-      completionTokens: usage.completion_tokens || usage.completionTokenCount || usage.completionTokens || usage.output_tokens || 0,
-      totalTokens: usage.total_tokens || usage.totalTokenCount || usage.totalTokens || 0
-    };
+    return TokenUsageExtractor.normalize(usage);
   }
 
   /**
@@ -495,11 +502,7 @@ export abstract class BaseAdapter {
         ? Array.from(toolCallsAccumulator.values())
         : undefined;
 
-      const finalUsage = usage ? {
-        promptTokens: usage.prompt_tokens || usage.promptTokens || 0,
-        completionTokens: usage.completion_tokens || usage.completionTokens || 0,
-        totalTokens: usage.total_tokens || usage.totalTokens || 0
-      } : undefined;
+      const finalUsage = usage ? TokenUsageExtractor.normalize(usage) : undefined;
 
       yield {
         content: '',
@@ -843,13 +846,6 @@ export abstract class BaseAdapter {
     return LLMCostCalculator.calculateCost(usage, model, modelPricing);
   }
 
-  /**
-   * Get caching discount multiplier for a model
-   * Delegates to LLMCostCalculator
-   */
-  protected getCachingDiscount(model: string): number {
-    return LLMCostCalculator.getCachingDiscount(model);
-  }
 
   protected async buildLLMResponse(
     content: string,

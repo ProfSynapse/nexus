@@ -18,6 +18,10 @@ export interface ModelSpec {
   inputCostPerMillion: number;
   /** Output cost per million tokens in USD */
   outputCostPerMillion: number;
+  /** Cache-read (cache hit) input cost per million tokens in USD. Omit if the provider has no discount. */
+  cacheReadCostPerMillion?: number;
+  /** Cache-write (cache creation) input cost per million tokens in USD. Omit if the provider does not charge one. */
+  cacheWriteCostPerMillion?: number;
   /** Model capabilities */
   capabilities: {
     supportsJSON: boolean;

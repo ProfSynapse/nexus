@@ -10,6 +10,7 @@
 import { ModelSpec } from '../modelTypes';
 import { ModelInfo, ModelPricing } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import { LLMCostCalculator } from '../../utils/LLMCostCalculator';
 
 export type StaticModelInfo = ModelInfo & {
   costPer1kTokens: { input: number; output: number };
@@ -52,11 +53,7 @@ export function getStaticModelPricing(models: ModelSpec[], modelId: string): Mod
   const model = models.find(m => m.apiName === modelId);
   if (!model) return null;
 
-  return {
-    rateInputPerMillion: model.inputCostPerMillion,
-    rateOutputPerMillion: model.outputCostPerMillion,
-    currency: 'USD'
-  };
+  return LLMCostCalculator.pricingFromSpec(model);
 }
 
 /**
@@ -70,11 +67,7 @@ export function getRegistryModelPricing(provider: string, modelId: string): Mode
       return null;
     }
 
-    return {
-      rateInputPerMillion: model.inputCostPerMillion,
-      rateOutputPerMillion: model.outputCostPerMillion,
-      currency: 'USD'
-    };
+    return LLMCostCalculator.pricingFromSpec(model);
   } catch {
     return null;
   }

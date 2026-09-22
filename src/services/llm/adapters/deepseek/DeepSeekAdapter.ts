@@ -45,6 +45,7 @@ import {
   convertFunctionTools
 } from '../shared/OpenAICompatHelpers';
 import { getStaticModelPricing } from '../shared/StaticModelHelpers';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 interface DeepSeekChatCompletionUsage {
   prompt_tokens?: number;
@@ -330,12 +331,8 @@ export class DeepSeekAdapter extends BaseAdapter {
   protected extractUsage(response: DeepSeekChatCompletionResponse): TokenUsage | undefined {
     const usage = response?.usage;
     if (!usage) return undefined;
-    return {
-      promptTokens: usage.prompt_tokens || 0,
-      completionTokens: usage.completion_tokens || 0,
-      totalTokens: usage.total_tokens || 0,
-      ...(usage.prompt_cache_hit_tokens !== undefined && { cachedTokens: usage.prompt_cache_hit_tokens })
-    };
+    // prompt_cache_hit_tokens → cacheReadTokens via the shared normalizer
+    return TokenUsageExtractor.normalize(usage);
   }
 
   private buildMessagesForRequest(prompt: string, options?: GenerateOptions): DeepSeekChatCompletionMessageParam[] {

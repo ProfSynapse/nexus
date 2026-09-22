@@ -12,6 +12,8 @@
  */
 
 import { ModelRegistry } from './ModelRegistry';
+import { LLMCostCalculator } from '../utils/LLMCostCalculator';
+import type { TokenUsage, CostDetails } from './types';
 
 /**
  * OpenAI-style usage object (used by OpenAI, OpenRouter, Requesty)
@@ -92,6 +94,10 @@ export interface CostBreakdown {
   tokenUsage: DetailedTokenUsage;
   costPerInputToken: number;
   costPerOutputToken: number;
+  cacheRead?: CostDetails['cacheRead'];
+  cacheWrite?: CostDetails['cacheWrite'];
+  /** True when totalCost came from the provider rather than the rate table. */
+  providerReported?: boolean;
   timestamp: string;
 }
 
@@ -163,28 +169,68 @@ export class CostCalculator {
     model: string,
     tokenUsage: DetailedTokenUsage
   ): CostBreakdown | null {
+    const usage: TokenUsage = {
+      promptTokens: tokenUsage.inputTokens,
+      completionTokens: tokenUsage.outputTokens,
+      totalTokens: tokenUsage.totalTokens
+    };
+    if (tokenUsage.inputTokensDetails?.cachedTokens) {
+      usage.cacheReadTokens = tokenUsage.inputTokensDetails.cachedTokens;
+    }
+    if (tokenUsage.outputTokensDetails?.reasoningTokens) {
+      usage.reasoningTokens = tokenUsage.outputTokensDetails.reasoningTokens;
+    }
+    return this.calculateCostFromUsage(provider, model, usage, tokenUsage.source);
+  }
+
+  /**
+   * Calculate cost from an adapter-shaped TokenUsage. The arithmetic lives in
+   * LLMCostCalculator; this looks up the model's rates (cache rates included)
+   * in the registry and wraps the result with provider/model bookkeeping.
+   */
+  static calculateCostFromUsage(
+    provider: string,
+    model: string,
+    usage: TokenUsage,
+    source: DetailedTokenUsage['source'] = 'provider_api'
+  ): CostBreakdown | null {
     const modelSpec = ModelRegistry.findModel(provider, model);
     if (!modelSpec) {
       return null;
     }
 
-    const costPerInputToken = modelSpec.inputCostPerMillion / 1_000_000;
-    const costPerOutputToken = modelSpec.outputCostPerMillion / 1_000_000;
+    const details = LLMCostCalculator.calculateCost(usage, model, LLMCostCalculator.pricingFromSpec(modelSpec));
+    if (!details) {
+      return null;
+    }
 
-    const inputCost = tokenUsage.inputTokens * costPerInputToken;
-    const outputCost = tokenUsage.outputTokens * costPerOutputToken;
-    const totalCost = inputCost + outputCost;
+    const cacheReadTokens = usage.cacheReadTokens ?? usage.cachedTokens;
+    const tokenUsage: DetailedTokenUsage = {
+      inputTokens: usage.promptTokens,
+      outputTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+      source
+    };
+    if (cacheReadTokens) {
+      tokenUsage.inputTokensDetails = { cachedTokens: cacheReadTokens };
+    }
+    if (usage.reasoningTokens) {
+      tokenUsage.outputTokensDetails = { reasoningTokens: usage.reasoningTokens };
+    }
 
     return {
-      inputCost,
-      outputCost,
-      totalCost,
-      currency: 'USD',
+      inputCost: details.inputCost,
+      outputCost: details.outputCost,
+      totalCost: details.totalCost,
+      currency: details.currency,
       model,
       provider,
       tokenUsage,
-      costPerInputToken,
-      costPerOutputToken,
+      costPerInputToken: modelSpec.inputCostPerMillion / 1_000_000,
+      costPerOutputToken: modelSpec.outputCostPerMillion / 1_000_000,
+      cacheRead: details.cacheRead,
+      cacheWrite: details.cacheWrite,
+      providerReported: details.providerReported,
       timestamp: new Date().toISOString()
     };
   }

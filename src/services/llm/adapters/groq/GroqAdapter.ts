@@ -25,6 +25,7 @@ import {
   convertFunctionTools
 } from '../shared/OpenAICompatHelpers';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 /**
  * Extended Groq chunk type with x_groq metadata
@@ -300,6 +301,7 @@ export class GroqAdapter extends BaseAdapter {
     const usage = response?.usage;
     if (usage) {
       return {
+        ...TokenUsageExtractor.normalize(usage),
         promptTokens: usage.prompt_tokens || 0,
         completionTokens: usage.completion_tokens || 0,
         totalTokens: usage.total_tokens || 0,

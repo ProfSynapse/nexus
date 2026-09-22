@@ -101,22 +101,24 @@ export class OpenAIContextBuilder implements IContextBuilder {
             return `call_${msgIdSeed}_${idx}`;
           });
 
-          // Build proper OpenAI tool_calls format for continuations
-          const toolCallsFormatted: LLMToolCall[] = msg.toolCalls.map((tc: ToolCall, idx: number) => ({
-            id: normalizedIds[idx],
-            type: 'function' as const,
-            function: {
-              name: tc.function?.name || tc.name || '',
-              arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
-            }
-          }));
-
-          // Assistant message with tool_calls array (content can be empty or text)
-          messages.push({
-            role: 'assistant',
-            content: msg.content || '',
-            tool_calls: toolCallsFormatted
-          });
+          // Rebuild the assistant turn through the same helper the in-turn
+          // continuation uses, so stored reasoning_details / thought_signature
+          // are replayed. Now that tool history crosses user turns, a Gemini
+          // model behind OpenRouter rejects a replayed call without them.
+          const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
+            msg.toolCalls.map((tc: ToolCall, idx: number) => ({
+              id: normalizedIds[idx],
+              type: 'function' as const,
+              function: {
+                name: tc.function?.name || tc.name || '',
+                arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
+              },
+              reasoning_details: tc.reasoning_details,
+              thought_signature: tc.thought_signature
+            })),
+            msg.content || ''
+          ) as unknown as OpenAIMessage;
+          messages.push(assistantMessage);
 
           // Add tool result messages with matching tool_call_id (must equal
           // assistant's tool_calls[i].id — empty/mismatched ids cause API errors)

@@ -68,6 +68,8 @@ describe('DeepSeekAdapter', () => {
         promptTokens: 9,
         completionTokens: 4,
         totalTokens: 13,
+        // prompt_cache_hit_tokens → the canonical cacheReadTokens (cachedTokens is the alias)
+        cacheReadTokens: 6,
         cachedTokens: 6
       });
       expect(result.metadata?.reasoning).toBe('step by step');

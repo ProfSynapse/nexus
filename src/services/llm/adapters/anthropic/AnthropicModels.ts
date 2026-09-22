@@ -1,6 +1,11 @@
 /**
  * Anthropic Model Specifications
  * Updated June 2026 — pruned the Claude 4.5 Opus/Sonnet generation (superseded by Opus 4.8 / Sonnet 4.6)
+ *
+ * Cache pricing (uniform across Claude models, see anthropic.com/pricing):
+ *   cache read  = 0.1  × input
+ *   cache write = 1.25 × input (5-minute TTL; the adapter requests ephemeral)
+ * cacheRead/WriteCostPerMillion below are derived from that structure.
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -15,6 +20,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 5.00,
+    cacheReadCostPerMillion: 0.1,
+    cacheWriteCostPerMillion: 1.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -33,6 +40,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
+    cacheReadCostPerMillion: 1,
+    cacheWriteCostPerMillion: 12.5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -51,6 +60,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
     outputCostPerMillion: 50.00,
+    cacheReadCostPerMillion: 1,
+    cacheWriteCostPerMillion: 12.5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -69,6 +80,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -87,6 +100,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -105,6 +120,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -123,6 +140,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     betaHeaders: ['context-1m-2025-08-07'],
     capabilities: {
       supportsJSON: true,
@@ -142,6 +161,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -160,6 +181,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    cacheReadCostPerMillion: 0.5,
+    cacheWriteCostPerMillion: 6.25,
     betaHeaders: ['context-1m-2025-08-07'],
     capabilities: {
       supportsJSON: true,
@@ -180,6 +203,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     // Docs list Sonnet 5 below the 4.6-generation Sonnet price point.
     inputCostPerMillion: 2.00,
     outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.2,
+    cacheWriteCostPerMillion: 2.5,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -198,6 +223,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 3.00,
     outputCostPerMillion: 15.00,
+    cacheReadCostPerMillion: 0.3,
+    cacheWriteCostPerMillion: 3.75,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -216,6 +243,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 3.00,
     outputCostPerMillion: 15.00,
+    cacheReadCostPerMillion: 0.3,
+    cacheWriteCostPerMillion: 3.75,
     betaHeaders: ['context-1m-2025-08-07'],
     capabilities: {
       supportsJSON: true,

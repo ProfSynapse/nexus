@@ -100,11 +100,25 @@ describe('OpenRouterAdapter', () => {
   });
 
   describe('SSE streaming', () => {
-    it('yields content deltas and completes without usage (fetched async via generation id)', async () => {
+    it('completes on [DONE] so the usage frame that follows finish_reason lands on the completion chunk', async () => {
+      // Real OpenRouter frame order with `usage: { include: true }`: the
+      // finish_reason frame, THEN a usage-only frame (tokens, cached_tokens,
+      // cost), then [DONE]. Completing at finish_reason used to drop the usage
+      // frame and leave every OpenRouter turn with no tokens or cost until the
+      // out-of-band generation fetch — which the orchestrator path never wires.
       __setRequestUrlMock(async () => sseResponse(sse(
         { id: 'gen-1', choices: [{ delta: { content: 'Hel' } }] },
         { choices: [{ delta: { content: 'lo' } }] },
         { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 5300, completion_tokens: 7, total_tokens: 5307,
+            prompt_tokens_details: { cached_tokens: 5000 },
+            completion_tokens_details: { reasoning_tokens: 3 },
+            cost: 0.00123
+          }
+        },
         '[DONE]'
       )));
 
@@ -112,9 +126,32 @@ describe('OpenRouterAdapter', () => {
       const chunks = await collect(adapter.generateStreamAsync('hi'));
 
       expect(concatContent(chunks)).toBe('Hello');
+      expect(chunks.filter(c => c.complete)).toHaveLength(1);
       const final = chunks[chunks.length - 1];
       expect(final.complete).toBe(true);
-      expect(final.usage).toBeUndefined();
+      expect(final.usage).toMatchObject({
+        promptTokens: 5300,
+        completionTokens: 7,
+        totalTokens: 5307,
+        cacheReadTokens: 5000,
+        reasoningTokens: 3,
+        providerCost: { totalCost: 0.00123, currency: 'USD' },
+      });
+    });
+
+    it('still completes (with tool calls) when the stream ends without [DONE]', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'f', arguments: '{}' } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] }
+      )));
+
+      const adapter = new OpenRouterAdapter('or-test');
+      const chunks = await collect(adapter.generateStreamAsync('hi'));
+
+      const final = chunks[chunks.length - 1];
+      expect(final.complete).toBe(true);
+      expect(final.toolCallsReady).toBe(true);
+      expect(final.toolCalls?.[0]).toMatchObject({ id: 'call_1', function: { name: 'f' } });
     });
 
     it('accumulates incremental tool-call deltas into the final chunk', async () => {
@@ -198,6 +235,28 @@ describe('OpenRouterAdapter', () => {
         { role: 'system', content: 'SYS' },
         { role: 'user', content: 'earlier turn' }
       ]);
+    });
+
+    it('marks the system message as an Anthropic cache breakpoint for anthropic/* models only', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return sseResponse(sse({ choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]'));
+      });
+
+      const adapter = new OpenRouterAdapter('or-test');
+      await collect(adapter.generateStreamAsync('hi', { model: 'anthropic/claude-haiku-4-5', systemPrompt: 'SYS' }));
+      await collect(adapter.generateStreamAsync('hi', { model: 'openai/gpt-5.6-sol', systemPrompt: 'SYS' }));
+
+      const anthropicBody = JSON.parse(requests[0].body ?? '{}');
+      expect(anthropicBody.messages[0]).toEqual({
+        role: 'system',
+        content: [{ type: 'text', text: 'SYS', cache_control: { type: 'ephemeral' } }]
+      });
+      expect(anthropicBody.messages[1]).toEqual({ role: 'user', content: 'hi' });
+
+      const openaiBody = JSON.parse(requests[1].body ?? '{}');
+      expect(openaiBody.messages[0]).toEqual({ role: 'system', content: 'SYS' });
     });
 
     it('maps streaming HTTP errors through handleError to LLMProviderError', async () => {

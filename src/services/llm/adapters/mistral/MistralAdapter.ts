@@ -20,6 +20,7 @@ import {
   buildMessagesWithConversationHistory
 } from '../shared/OpenAICompatHelpers';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 
 interface MistralToolDefinition {
   type?: string;
@@ -289,11 +290,7 @@ export class MistralAdapter extends BaseAdapter {
   protected extractUsage(response: MistralChatResponse): TokenUsage | undefined {
     const usage = response.usage;
     if (usage) {
-      return {
-        promptTokens: usage.prompt_tokens || 0,
-        completionTokens: usage.completion_tokens || 0,
-        totalTokens: usage.total_tokens || 0
-      };
+      return TokenUsageExtractor.normalize(usage);
     }
     return undefined;
   }

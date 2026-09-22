@@ -302,6 +302,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 2.00,
     outputCostPerMillion: 12.00,
+    cacheReadCostPerMillion: 0.20,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -318,6 +319,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 1.50,
     outputCostPerMillion: 9.00,
+    cacheReadCostPerMillion: 0.15,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -334,6 +336,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 0.30,
     outputCostPerMillion: 2.50,
+    cacheReadCostPerMillion: 0.03,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -348,8 +351,30 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     apiName: 'google/gemini-3.6-flash',
     contextWindow: 1048576,
     maxTokens: 65536,
-    inputCostPerMillion: 1.50,
-    outputCostPerMillion: 7.50,
+    inputCostPerMillion: 0.75, // OpenRouter listing, Sep 2026 (intro rate through Dec 31, 2026)
+    outputCostPerMillion: 3.75,
+    cacheReadCostPerMillion: 0.075,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    // OpenRouter listing (api/v1/models, Sep 2026): $0.75/$3.75, cache read
+    // $0.075 — Google's introductory rate through Dec 31, 2026; doubles on
+    // Jan 1, 2027. The usage frame carries OpenRouter's own price anyway
+    // (`providerCost` wins over these rates), so promos show up in spend.
+    provider: 'openrouter',
+    name: 'Gemini 3.8 Flash',
+    apiName: 'google/gemini-3.8-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 3.75,
+    cacheReadCostPerMillion: 0.075,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
@@ -369,6 +394,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 65536,
     inputCostPerMillion: 0.75,
     outputCostPerMillion: 3.75,
+    cacheReadCostPerMillion: 0.075,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

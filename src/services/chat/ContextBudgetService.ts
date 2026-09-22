@@ -1,11 +1,13 @@
+import type { TokenUsage } from '../llm/adapters/types';
+import { TokenUsageExtractor } from '../llm/utils/TokenUsageExtractor';
 import { ConversationData } from '../../types/chat/ChatTypes';
 import { ContextCompactionService } from './ContextCompactionService';
 
-export interface NormalizedTokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
+/**
+ * Usage as persisted on a chat message: the adapter's TokenUsage carried whole,
+ * cache read/write counts and any provider-reported price included.
+ */
+export type NormalizedTokenUsage = TokenUsage;
 
 export interface ContextBudgetPolicy {
   maxTokens: number;
@@ -96,11 +98,26 @@ export class ContextBudgetService {
       return null;
     }
 
-    return {
+    const normalized: NormalizedTokenUsage = {
       promptTokens,
       completionTokens,
       totalTokens
     };
+
+    // Carry the optional classes through untouched — the adapter normalizer
+    // already put them in camelCase. Dropping them here is how cache reads used
+    // to vanish before cost was computed.
+    const extra = TokenUsageExtractor.normalize(tokenContainer);
+    if (extra?.cacheReadTokens) {
+      normalized.cacheReadTokens = extra.cacheReadTokens;
+      normalized.cachedTokens = extra.cacheReadTokens;
+    }
+    if (extra?.cacheWriteTokens) normalized.cacheWriteTokens = extra.cacheWriteTokens;
+    if (extra?.reasoningTokens) normalized.reasoningTokens = extra.reasoningTokens;
+    if (extra?.audioTokens) normalized.audioTokens = extra.audioTokens;
+    if (extra?.providerCost) normalized.providerCost = extra.providerCost;
+
+    return normalized;
   }
 
   static estimateTextTokens(text: string | null | undefined): number {
