@@ -210,6 +210,64 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    // OpenRouter's `~latest` alias for the DeepSeek Flash family. The tilde
+    // slug is the wire id — it is not a typo for `deepseek/deepseek-flash`.
+    // As of 2026-09-25 the listing resolves it to DeepSeek V4.1 Flash: 1M
+    // context, text+image input, tools + reasoning + structured outputs,
+    // $0.04/$0.49 per 1M with a $0.01 cache-read rate. Because the alias
+    // retargets when DeepSeek ships a newer Flash, every field here is a
+    // snapshot of the current target and needs re-checking on a release —
+    // prefer the concrete `deepseek/deepseek-v4.1-flash` id where
+    // reproducibility matters.
+    // maxTokens is capped at 64K rather than the API's 943K completion
+    // ceiling, matching the DeepSeek entries (downstream buildLLMResponse
+    // safety).
+    provider: 'openrouter',
+    name: 'DeepSeek Flash Latest',
+    apiName: '~deepseek/deepseek-flash-latest',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.04,
+    outputCostPerMillion: 0.49,
+    cacheReadCostPerMillion: 0.01,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    // OpenRouter's `~latest` alias for the DeepSeek Pro family, resolving to
+    // the DeepSeek V4 Pro 0813 entry below. The tilde slug is the wire id —
+    // it is not a typo for `deepseek/deepseek-pro`.
+    // As of 2026-09-25 the listing gives 1M context, text-only input, tools +
+    // reasoning + structured outputs, $0.2528/$1.9584 per 1M with a $0.08832
+    // cache-read rate. Like Flash Latest, the alias retargets when DeepSeek
+    // ships a newer Pro, so every field here is a snapshot of the current
+    // target and needs re-checking on a release — prefer the concrete
+    // `deepseek/deepseek-v4-pro-0813` id where reproducibility matters.
+    // maxTokens is capped at 64K rather than the API's 943K completion
+    // ceiling, matching the DeepSeek entries (downstream buildLLMResponse
+    // safety).
+    provider: 'openrouter',
+    name: 'DeepSeek Pro Latest',
+    apiName: '~deepseek/deepseek-pro-latest',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.2528,
+    outputCostPerMillion: 1.9584,
+    cacheReadCostPerMillion: 0.08832,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     // GA snapshot of DeepSeek V4 Pro (released 2026-08-13). On the direct
     // DeepSeek API the undated `deepseek-v4-pro` alias already resolves to this
     // same snapshot; OpenRouter serves the dated id separately from its own

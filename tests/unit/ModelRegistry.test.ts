@@ -295,6 +295,54 @@ describe('ModelRegistry DeepSeek V4 Pro 0813 model', () => {
   });
 });
 
+describe('ModelRegistry DeepSeek Flash Latest alias', () => {
+  it('registers the tilde latest alias with the metadata of its current target', () => {
+    expect(ModelRegistry.findModel('openrouter', '~deepseek/deepseek-flash-latest')).toEqual(expect.objectContaining({
+      name: 'DeepSeek Flash Latest',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: 0.04,
+      outputCostPerMillion: 0.49,
+      cacheReadCostPerMillion: 0.01,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it('does not register the tidied slug — the tilde is part of the wire id', () => {
+    expect(ModelRegistry.findModel('openrouter', 'deepseek/deepseek-flash-latest')).toBeUndefined();
+  });
+});
+
+describe('ModelRegistry DeepSeek Pro Latest alias', () => {
+  it('registers the tilde latest alias with the metadata of its current target', () => {
+    expect(ModelRegistry.findModel('openrouter', '~deepseek/deepseek-pro-latest')).toEqual(expect.objectContaining({
+      name: 'DeepSeek Pro Latest',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: 0.2528,
+      outputCostPerMillion: 1.9584,
+      cacheReadCostPerMillion: 0.08832,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: false,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it('does not register the tidied slug — the tilde is part of the wire id', () => {
+    expect(ModelRegistry.findModel('openrouter', 'deepseek/deepseek-pro-latest')).toBeUndefined();
+  });
+});
+
 describe('ModelRegistry Kimi K3 model', () => {
   it('registers Kimi K3 for OpenRouter with current pricing and capabilities', () => {
     expect(ModelRegistry.findModel('openrouter', 'moonshotai/kimi-k3')).toEqual(expect.objectContaining({
