@@ -204,6 +204,24 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   },
   {
     provider: 'requesty',
+    name: 'Claude Sonnet 5.5',
+    apiName: 'anthropic/claude-sonnet-5-5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
     name: 'Claude Sonnet 5',
     apiName: 'anthropic/claude-sonnet-5',
     contextWindow: 1000000,

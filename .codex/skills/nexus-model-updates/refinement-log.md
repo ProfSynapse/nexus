@@ -4,6 +4,8 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+- 2026-09-28 | Sonnet 5.5 was listed by Anthropic, OpenRouter, and Requesty. The first Claude Code probe failed on an expired login; after reauthentication it returned text. This credential failure is already covered by the existing twin-verification guidance. | No skill procedure change. | Files: none.
+
 - 2026-08-14 | Dogfooded the skill fixing the four defects its own validator
   found. Four gaps surfaced. (a) `change-default.md` assumed the job was always
   "move a provider default"; repairing one drifted declaration would have been
