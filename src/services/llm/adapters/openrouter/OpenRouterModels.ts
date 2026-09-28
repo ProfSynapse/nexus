@@ -210,6 +210,24 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 5.5',
+    apiName: 'anthropic/claude-sonnet-5.5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     // GA snapshot of DeepSeek V4 Pro (released 2026-08-13). On the direct
     // DeepSeek API the undated `deepseek-v4-pro` alias already resolves to this
     // same snapshot; OpenRouter serves the dated id separately from its own

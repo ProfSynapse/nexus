@@ -135,6 +135,7 @@ describe('AnthropicAdapter', () => {
     it.each([
       ['claude-opus-5-5', false],
       ['claude-opus-5', false],
+      ['claude-sonnet-5-5', false],
       ['claude-sonnet-5', false],
       ['claude-haiku-4-5-20251001', true],
       ['claude-sonnet-4-6', true]
