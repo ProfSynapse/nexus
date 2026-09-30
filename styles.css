@@ -7571,6 +7571,12 @@ body.is-mobile .nexus-branch-task {
     font-weight: bold;
 }
 
+.oauth-reconnect-hint {
+    margin: 0 0 var(--space-xs, 4px);
+    color: var(--text-error);
+    font-size: var(--font-ui-small);
+}
+
 .oauth-disconnect-btn {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);

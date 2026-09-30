@@ -12,6 +12,23 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_CODEX_MODELS: ModelSpec[] = [
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6.1 Sol',
+    apiName: 'gpt-6.1-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://developers.openai.com/api/docs/models/gpt-6-astra
   {
     provider: 'openai-codex',

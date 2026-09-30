@@ -8,12 +8,33 @@
  * - Pricing shown here is for Standard tier; Batch API offers 50% off, Priority costs more
  *
  * Reference: https://openai.com/api/pricing/
- * - cacheReadCostPerMillion = 0.1 × input for every entry below (the 90% discount above)
+ * - Most entries use a 0.1 × input cache-read rate; GPT-6.1 Sol uses 0.05 × input.
  */
 
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  // Standard short-context rates; prompts over 272K input tokens have higher rates.
+  {
+    provider: 'openai',
+    name: 'GPT-6.1 Sol',
+    apiName: 'gpt-6.1-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.10,
+    cacheWriteCostPerMillion: 2.50,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://developers.openai.com/api/docs/models/gpt-6-astra
   {
     provider: 'openai',

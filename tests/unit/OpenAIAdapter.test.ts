@@ -37,6 +37,7 @@ describe('OpenAIAdapter', () => {
 
   // GPT-6 models reject sampling parameters that normal chat settings supply.
   it.each([
+    ['gpt-6.1-sol', false], ['gpt-6.1-sol', true],
     ['gpt-6-astra', false], ['gpt-6-astra', true],
     ['gpt-6-sol', false], ['gpt-6-sol', true],
     ['gpt-6-luna', false], ['gpt-6-luna', true]

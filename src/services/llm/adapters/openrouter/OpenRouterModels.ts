@@ -740,6 +740,24 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'GPT-6.1 Sol',
+    apiName: 'openai/gpt-6.1-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.10,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Kimi K2.7 Code',
     apiName: 'moonshotai/kimi-k2.7-code',
     contextWindow: 262144,

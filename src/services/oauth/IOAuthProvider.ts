@@ -113,6 +113,8 @@ export interface IOAuthProvider {
 export interface OAuthState {
   /** Whether this provider is currently OAuth-connected */
   connected: boolean;
+  /** A rejected refresh token requires the user to connect again */
+  reconnectRequired?: boolean;
   /** The provider ID that was used for OAuth (e.g., 'openrouter') */
   providerId: string;
   /** Timestamp (Unix ms) when the OAuth connection was established */

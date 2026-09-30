@@ -23,6 +23,24 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   // OpenAI models via Requesty
   {
     provider: 'requesty',
+    name: 'GPT-6.1 Sol',
+    apiName: 'openai/gpt-6.1-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.10,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'requesty',
     name: 'GPT-5.5',
     apiName: 'openai/gpt-5.5',
     contextWindow: 1050000,
