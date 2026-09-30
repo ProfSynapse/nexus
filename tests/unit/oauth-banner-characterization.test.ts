@@ -135,6 +135,25 @@ describe('GenericProviderModal OAuth banner characterization', () => {
       expect(connectBtn).toBeDefined();
       expect(connectBtn?.textContent).toBe('Connect with ChatGPT');
     });
+
+    it('explains an expired connection and offers reconnection', () => {
+      const config = createMockProviderConfig(false);
+      config.config.oauth = {
+        connected: false,
+        reconnectRequired: true,
+        providerId: 'openai',
+        connectedAt: Date.now(),
+      };
+      const container: TrackingElement = createTrackingElement();
+      new GenericProviderModal(config, createMockDeps()).render(container);
+
+      const banner = container._children.find(c => c._cls === 'oauth-banner-container');
+      const connectDiv = banner?._children.find(c => c._cls === 'oauth-connect-standalone');
+      expect(connectDiv?._children.find(c => c._cls === 'oauth-reconnect-hint')?.textContent)
+        .toBe('ChatGPT connection expired. Reconnect to continue.');
+      expect(connectDiv?._children.find(c => c._cls === 'mod-cta oauth-connect-btn')?.textContent)
+        .toBe('Reconnect with ChatGPT');
+    });
   });
 
   describe('secondary OAuth banner', () => {

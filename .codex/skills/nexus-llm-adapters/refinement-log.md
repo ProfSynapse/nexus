@@ -1,5 +1,7 @@
 # Refinement log
 
+- 2026-09-30 | A rejected Codex refresh token raised an auth error while Settings still showed Connected because the adapter never updated persisted OAuth state. | Added the symptom, mechanism, and source entry points to the lookup. | Files: `references/symptoms.md`.
+
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->

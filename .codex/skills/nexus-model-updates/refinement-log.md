@@ -1,5 +1,7 @@
 # Refinement log
 
+- 2026-09-30 | GPT-6.1 Sol was verified on the API, Codex, OpenRouter, and Requesty. The Codex credential failure followed the existing twin-verification guidance. | No skill procedure change. | Files: none.
+
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
