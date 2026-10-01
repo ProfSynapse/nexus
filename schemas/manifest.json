@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "latest": "5.19.0",
+  "latest": "5.19.1",
   "versions": {
     "5.17.2": {
       "cli": "5.17.2/cli-tools.json",
@@ -41,6 +41,10 @@
     "5.19.0": {
       "cli": "5.19.0/cli-tools.json",
       "mcp": "5.19.0/mcp-tools.json"
+    },
+    "5.19.1": {
+      "cli": "5.19.1/cli-tools.json",
+      "mcp": "5.19.1/mcp-tools.json"
     }
   }
 }
