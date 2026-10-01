@@ -4,6 +4,17 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-10-01 | Cutting 5.19.1 for Sonnet 5.5, GPT-6.1 Sol, and the Codex
+reconnect state. The version lifecycle updated metadata and catalogs before the
+sandbox blocked its git staging step; retrying the exact target with
+`--allow-same-version` finished without another bump. Prior model/auth skill
+notes had been saved only in the Codex mirror, so they were preserved in
+`.skills/` before syncing. Build, all active Jest assertions, in-app verification,
+readiness, and the tag workflow passed; all five assets and attestation were
+verified. Jest retained an open handle after its passing summary and the finished
+runner was stopped. | Added the partial-bump retry instruction to step 5. |
+`protocols/cut-release.md`.
+
 2026-09-08 | Cutting 5.18.6 for GPT-6 Astra and GPT Image 2.5. Clean dependency
 install and build passed, the plugin was VERIFIED in the Code vault on
 Obsidian 1.13.7, and PR/main CI passed. The numeric tag workflow published all
