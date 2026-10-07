@@ -17,6 +17,9 @@ honest about what the plugin can render.
    and review the product scope before drawing. Once the need is established, a
    new view, panel, modal, settings tab, chat surface, board, or layout refactor
    gets a mockup; a tweak inside an existing layout does not.
+   For an integration that should behave like an existing provider, reuse its
+   defaults. Add a setup control only for a decision the user needs to make;
+   implementation uncertainty alone does not justify a capability toggle.
 2. Find the production surface you are changing before drawing anything. Locate
    the view or tab under `src/` and its rules in `styles.css` (search for the
    class prefix the surface uses). A redesign starts from what ships today, not

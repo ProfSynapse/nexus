@@ -89,9 +89,10 @@ export class StreamingOrchestrator {
     prompt: string,
     generateOptions: GenerateOptions,
     options: StreamingOptions | undefined,
-    state: { detectedToolCalls: ChatToolCall[] }
+    state: { detectedToolCalls: ChatToolCall[]; assistantText: string }
   ): AsyncGenerator<ChatRuntimeEvent, void, unknown> {
     for await (const chunk of adapter.generateStreamAsync(prompt, generateOptions)) {
+      state.assistantText += chunk.content;
       if (chunk.toolCalls && chunk.complete) {
         state.detectedToolCalls = chunk.toolCalls.map(toolCall => ({
           ...toolCall,
@@ -153,8 +154,9 @@ export class StreamingOrchestrator {
 
     // Execute initial provider response and detect tool calls. Provider response
     // completion is not turn completion: a tool continuation may follow.
-    const streamState: { detectedToolCalls: ChatToolCall[] } = {
+    const streamState: { detectedToolCalls: ChatToolCall[]; assistantText: string } = {
       detectedToolCalls: [],
+      assistantText: '',
     };
 
     // For Google, pass empty string as prompt since conversation is in conversationHistory
@@ -215,6 +217,7 @@ export class StreamingOrchestrator {
     }
 
     const detectedToolCalls = streamState.detectedToolCalls;
+    generateOptions.assistantResponseText = streamState.assistantText;
 
     // If no tool calls were requested, the provider response closes the turn.
     if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {

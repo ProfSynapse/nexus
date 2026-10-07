@@ -16,7 +16,6 @@ import {
   type BuiltinProviderDriverRegistration,
 } from '../providers/BuiltinProviderDrivers';
 import {
-  defaultProviderInstanceId,
   providerDriverKind,
   providerInstanceId,
   type ProviderDriver,
@@ -155,18 +154,19 @@ export class AdapterRegistry implements IAdapterRegistry {
     if (!providers) return;
 
     const onMobile = isMobile();
-    for (const registration of this.registrations) {
+    for (const [instanceId, config] of Object.entries(providers)) {
+      const registration = this.registrations.find(({ driver }) => driver.kind === (config.driverKind ?? instanceId));
+      if (!registration) continue;
       const { driver } = registration;
       if (onMobile && driver.compatibility === 'desktop-only') continue;
 
-      const config = providers[driver.kind];
       if (!registration.shouldInitialize(config, vault)) continue;
 
       try {
         await this.providerRegistry.createInstance({
           driverKind: driver.kind,
-          instanceId: defaultProviderInstanceId(driver.kind),
-          displayName: driver.displayName,
+          instanceId: providerInstanceId(instanceId),
+          displayName: config.openaiCompatible?.displayName || driver.displayName,
           config,
           vault,
           onSettingsDirty: () => this.onSettingsDirty?.(),

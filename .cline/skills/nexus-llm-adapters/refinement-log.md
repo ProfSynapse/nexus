@@ -1,5 +1,7 @@
 # Refinement log
 
+- 2026-10-07 | Direct requests to an installed Ollama model verified the proposed generic text/tool contract before adapter implementation. | No guidance change; local-providers already calls for direct endpoint verification first. | Files: refinement-log.md.
+
 - 2026-09-30 | A rejected Codex refresh token raised an auth error while Settings still showed Connected because the adapter never updated persisted OAuth state. | Added the symptom, mechanism, and source entry points to the lookup. | Files: `references/symptoms.md`.
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
@@ -83,3 +85,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-09-08 | A new reasoning model rejected normal sampling settings; request-body regression tests and live completion, streaming tool calls, and rejected-model checks exercised the documented workflow. Subscription live verification was blocked by stale credentials. | No procedure change.
 
 - 2026-09-08 | Live generation and multipart reference-image edits passed for both new image models. | No procedure change.
+
+- 2026-10-07 | Implemented a generic Chat Completions driver and exercised buffered generation, streaming, errors, cancellation, and tool-result continuation against Ollama plus the real Nexus loop in Obsidian. Existing verification protocol covered the failure classes found; no procedure change.

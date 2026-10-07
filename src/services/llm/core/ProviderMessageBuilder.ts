@@ -69,6 +69,14 @@ interface OpenAIContinuationItem {
 
 // Internal options type used during streaming orchestration
 export interface GenerateOptionsInternal {
+  /** Text emitted alongside the tool calls in the immediately preceding response. */
+  assistantResponseText?: string;
+  abortSignal?: AbortSignal;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
   model: string;
   systemPrompt?: string;
   conversationHistory?: GoogleMessage[] | ConversationMessage[] | OpenAIContinuationItem[];
@@ -81,6 +89,7 @@ export interface GenerateOptionsInternal {
 }
 
 export interface StreamingOptions {
+  abortSignal?: AbortSignal;
   provider?: string;
   model?: string;
   systemPrompt?: string;
@@ -192,6 +201,17 @@ export class ProviderMessageBuilder {
     generateOptions: GenerateOptionsInternal,
     options?: StreamingOptions
   ): GenerateOptionsInternal {
+    if (provider.startsWith('openai-compatible-')) {
+      // The endpoint owns no conversation state. Replay the actual prior request
+      // and append this response once, including prose accompanying its calls.
+      const history = (generateOptions.conversationHistory ?? []) as ConversationMessage[];
+      const conversationHistory = ConversationContextBuilder.appendToolExecution(
+        provider, toolCalls, toolResults, history
+      ) as ConversationMessage[];
+      const assistant = conversationHistory[conversationHistory.length - toolResults.length - 1];
+      if (assistant?.role === 'assistant') assistant.content = generateOptions.assistantResponseText ?? '';
+      return { ...generateOptions, conversationHistory, assistantResponseText: undefined };
+    }
     // Check if this is an Anthropic model (direct only)
     // Note: OpenRouter always uses OpenAI format, even for Anthropic models
     const isAnthropicModel = provider === 'anthropic';
@@ -364,6 +384,12 @@ export class ProviderMessageBuilder {
     const userPrompt = latestUserMessage?.role === 'user' ? getMessageText(latestUserMessage) : '';
 
     const shared: Omit<GenerateOptionsInternal, 'model' | 'systemPrompt'> = {
+      abortSignal: options?.abortSignal,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      topP: options?.topP,
+      frequencyPenalty: options?.frequencyPenalty,
+      presencePenalty: options?.presencePenalty,
       tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
       onToolEvent: options?.onToolEvent,
       onUsageAvailable: options?.onUsageAvailable,

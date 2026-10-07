@@ -149,6 +149,17 @@ Obsidian (the headless container) to turn a skip into a failure.
      obsidian eval vault=<name> code="app.plugins.plugins.nexus.getService('agentManager').then(x => JSON.stringify(x !== null))"
      ```
 
+     On macOS 1.14.4, a returned Promise can instead produce no CLI result.
+     Launch the async operation into a uniquely named `window` status object,
+     catch rejection into that object, return a synchronous acknowledgement,
+     and poll it with separate synchronous `eval` calls and a deadline. An
+     empty result is not success.
+
+     Settings can live in a separate native window. In that case `document`
+     and `dev:screenshot` target the main vault window even while the settings
+     UI is open. Inspect the setting tab's `containerEl` for DOM assertions or
+     use native app automation for the settings window.
+
      `eval` runs arbitrary JS against a live vault. Never point it at a vault
      whose contents matter, and confine writes to the scratch folder from
      step 1.

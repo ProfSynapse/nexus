@@ -55,6 +55,36 @@ function settingsWithSecrets(): MCPSettings {
 }
 
 describe('SettingsSecrets boundary (unit)', () => {
+  it('clears an endpoint key when switching to no authentication, without clearing another endpoint', () => {
+    const { api, map } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    const first = 'openai-compatible-first';
+    const second = 'openai-compatible-second';
+    settings.llmProviders!.providers[first] = { apiKey: 'first-key', enabled: true, driverKind: 'openai-compatible' };
+    settings.llmProviders!.providers[second] = { apiKey: 'second-key', enabled: true, driverKind: 'openai-compatible' };
+    stripSecretsForPersist(settings, store);
+    settings.llmProviders!.providers[first].apiKey = '';
+    const saved = stripSecretsForPersist(settings, store).settings;
+    hydrateSecrets(saved, store);
+    expect(saved.llmProviders!.providers[first].apiKey).toBe('');
+    expect(saved.llmProviders!.providers[second].apiKey).toBe('second-key');
+    expect(map.get(`nexus-llm-${first}-apikey`)).toBe('');
+  });
+
+  it('rejects a failed endpoint key clear instead of reporting a saved unauthenticated configuration', () => {
+    const { api } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    settings.llmProviders!.providers['openai-compatible-first'] = {
+      apiKey: 'old-key', enabled: true, driverKind: 'openai-compatible'
+    };
+    stripSecretsForPersist(settings, store);
+    settings.llmProviders!.providers['openai-compatible-first'].apiKey = '';
+    api.setSecret = () => { throw new Error('storage unavailable'); };
+    expect(() => stripSecretsForPersist(settings, store)).toThrow('Failed to clear the stored OpenAI-compatible API key');
+  });
+
   it('strips every secret field on persist and stores it in secretStorage', () => {
     const { api, map } = createMockSecretStorage();
     const store = new SecretStore({ secretStorage: api });

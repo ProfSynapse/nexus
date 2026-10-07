@@ -36,6 +36,7 @@ import {
  */
 interface SecretFieldRef {
   id: string;
+  clearWhenEmpty?: boolean;
   read(): string | undefined;
   write(value: string): void;
 }
@@ -67,6 +68,7 @@ function collectSecretFields(settings: MCPSettings): SecretFieldRef[] {
   for (const [providerId, config] of providerEntries(settings)) {
     refs.push({
       id: llmApiKeySecretId(providerId),
+      clearWhenEmpty: config.driverKind === 'openai-compatible',
       read: () => config.apiKey,
       write: (value) => { config.apiKey = value; }
     });
@@ -143,6 +145,11 @@ export function stripSecretsForPersist(
       continue;
     }
     if (value === '') {
+      // An endpoint can intentionally switch from bearer auth to no auth.
+      // Otherwise hydration would restore its previous stored credential.
+      if (field.clearWhenEmpty && store.get(field.id) && !store.clear(field.id)) {
+        throw new Error('Failed to clear the stored OpenAI-compatible API key');
+      }
       field.write('');
       continue;
     }

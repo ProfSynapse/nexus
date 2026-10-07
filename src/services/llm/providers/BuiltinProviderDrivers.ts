@@ -20,6 +20,7 @@ interface DriverDefinition<TAdapter extends BaseAdapter> {
   compatibility: ProviderCompatibility;
   shouldInitialize(config: LLMProviderConfig | undefined, vault?: Vault): boolean;
   createAdapter(input: {
+    instanceId: string;
     config: LLMProviderConfig;
     vault?: Vault;
     onSettingsDirty?: () => void;
@@ -113,6 +114,16 @@ function enabledWithVault(config: LLMProviderConfig | undefined, vault?: Vault):
 
 export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistration[] {
   return [
+    defineDriver({
+      kind: 'openai-compatible',
+      displayName: 'OpenAI compatible',
+      compatibility: 'all',
+      shouldInitialize: (config) => config?.enabled === true && config.driverKind === 'openai-compatible',
+      createAdapter: async ({ config, instanceId }) => {
+        const { OpenAICompatibleAdapter } = await import('../adapters/openai-compatible/OpenAICompatibleAdapter');
+        return new OpenAICompatibleAdapter(config, instanceId);
+      },
+    }),
     defineDriver({
       kind: 'openrouter',
       displayName: 'OpenRouter',

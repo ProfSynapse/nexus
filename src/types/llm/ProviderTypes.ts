@@ -41,6 +41,14 @@ export interface ModelConfig {
  * LLM provider configuration
  */
 export interface LLMProviderConfig {
+  /** Implementation family for a named endpoint; omitted for legacy providers. */
+  driverKind?: 'openai-compatible';
+  openaiCompatible?: {
+    schemaVersion: 1;
+    displayName: string;
+    baseUrl: string;
+    models: Record<string, { source: 'discovered' | 'manual' }>;
+  };
   apiKey: string;
   userDescription?: string;
   enabled: boolean;
