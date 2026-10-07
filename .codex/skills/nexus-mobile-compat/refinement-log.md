@@ -85,3 +85,4 @@ import graph from `src/main.ts` and failed on a reachable Node built-in. | whole
 skill.
 
 - 2026-10-07 | Generic provider startup graph passed the mobile import checker; transport reuses Obsidian requestUrl for buffered mobile responses, with unit coverage for abort/late-result suppression. No physical-phone test was available. | No procedure change.
+- 2026-10-03: No change. Core migration introduced no production Node imports; the reachability check remained clean.

@@ -68,6 +68,7 @@ jest.mock('../../src/components/UnifiedTabs', () => ({
         return pane;
       }),
       destroy: jest.fn(),
+      activateTab: jest.fn(),
       getActiveTab: jest.fn().mockReturnValue(options.defaultTab || 'defaults')
     };
   })
@@ -81,8 +82,8 @@ jest.mock('../../src/settings/tabs/WorkspacesTab', () => ({
   WorkspacesTab: mockWorkspacesTab
 }));
 
-jest.mock('../../src/settings/tabs/PromptsTab', () => ({
-  PromptsTab: mockPromptsTab
+jest.mock('../../src/settings/tabs/InstructionsTab', () => ({
+  InstructionsTab: mockPromptsTab
 }));
 
 jest.mock('../../src/settings/tabs/ProvidersTab', () => ({

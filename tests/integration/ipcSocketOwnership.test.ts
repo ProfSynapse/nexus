@@ -33,6 +33,7 @@ const createdPaths: string[] = [];
  */
 const openManagers: IPCTransportManager[] = [];
 const openServers: net.Server[] = [];
+const openSockets: net.Socket[] = [];
 
 function uniqueSocketPath(): string {
   // Unix socket paths are capped near 104 bytes on macOS, so keep it short.
@@ -59,11 +60,17 @@ function createConfiguration(ipcPath: string, basePath: string | null = null): S
   } as unknown as ServerConfiguration;
 }
 
-function createTransportManager(ipcPath: string, basePath: string | null = null): IPCTransportManager {
+function createTransportManager(ipcPath: string, basePath: string | null = null, retainClient = false): IPCTransportManager {
   createdPaths.push(noteFor(ipcPath));
   const manager = new IPCTransportManager(
     createConfiguration(ipcPath, basePath),
-    {} as unknown as StdioTransportManager
+    (retainClient ? {
+      createSocketTransport: (socket: net.Socket) => {
+        openSockets.push(socket);
+        return { close: async () => { socket.destroy(); } };
+      },
+      connectSocketTransport: async () => undefined
+    } : {}) as unknown as StdioTransportManager
   );
   openManagers.push(manager);
   return manager;
@@ -124,6 +131,7 @@ function canConnect(socketPath: string): Promise<boolean> {
 
 describeOnPosix('IPC socket ownership across a reload', () => {
   afterEach(async () => {
+    for (const socket of openSockets.splice(0)) socket.destroy();
     for (const manager of openManagers.splice(0)) {
       manager.closeListener();
       await manager.stopTransport().catch(() => undefined);
@@ -164,6 +172,80 @@ describeOnPosix('IPC socket ownership across a reload', () => {
     await expect(canConnect(ipcPath)).resolves.toBe(true);
 
     await successor.stopTransport();
+  });
+
+  it('keeps the replacement reachable with an accepted predecessor client retained across reload', async () => {
+    const ipcPath = uniqueSocketPath();
+    const predecessor = createTransportManager(ipcPath, '/vaults/Test', true);
+    await predecessor.startTransport();
+    const client = net.connect(ipcPath);
+    openSockets.push(client);
+    await new Promise<void>((resolve, reject) => { client.once('connect', resolve); client.once('error', reject); });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(client.destroyed).toBe(false);
+    predecessor.closeListener();
+    const successor = createTransportManager(ipcPath, '/vaults/Test', true);
+    await successor.startTransport();
+    const successorIdentity = identityOf(ipcPath);
+    expect(client.destroyed).toBe(false);
+    await predecessor.stopTransport();
+    expect(identityOf(ipcPath)).toEqual(successorIdentity);
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
+  });
+
+  it('cancels a pending predecessor cleanup before it can unlink or bind over its successor', async () => {
+    const ipcPath = uniqueSocketPath();
+    const predecessor = createTransportManager(ipcPath, '/old', true);
+    let release!: (live: boolean) => void;
+    const probe = new Promise<boolean>(resolve => { release = resolve; });
+    const access = predecessor as unknown as { isSocketLive(path: string): Promise<boolean> };
+    const stalled = jest.spyOn(access, 'isSocketLive').mockReturnValueOnce(probe);
+    const pending = predecessor.startTransport().then(() => 'started', error => (error as Error).message);
+    predecessor.closeListener();
+    const successor = createTransportManager(ipcPath, '/new', true);
+    await successor.startTransport();
+    const identity = identityOf(ipcPath);
+    release(false);
+    expect(await pending).toContain('cancelled');
+    expect(predecessor.isTransportRunning()).toBe(false);
+    expect(identityOf(ipcPath)).toEqual(identity);
+    expect(JSON.parse(fs.readFileSync(noteFor(ipcPath), 'utf8')).basePath).toBe('/new');
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
+    stalled.mockRestore();
+  });
+
+  it('does not publish a cancelled listener when its listening callback arrives after replacement', async () => {
+    const ipcPath = uniqueSocketPath();
+    const predecessor = createTransportManager(ipcPath, '/old', true);
+    const access = predecessor as unknown as { listenSecure(server: net.Server, path: string, ready?: () => void): void };
+    const original = access.listenSecure.bind(predecessor);
+    let ready: (() => void) | undefined;
+    const delayed = jest.spyOn(access, 'listenSecure').mockImplementation((server, target, callback) => {
+      ready = callback;
+      original(server, target);
+    });
+    const pending = predecessor.startTransport().then(() => 'started', error => (error as Error).message);
+    while (!ready) await new Promise<void>(resolve => setImmediate(resolve));
+    expect(predecessor.getServer()).not.toBeNull();
+    predecessor.closeListener();
+    const successor = createTransportManager(ipcPath, '/new', true);
+    await successor.startTransport();
+    ready();
+    expect(await pending).toContain('cancelled');
+    expect(predecessor.isTransportRunning()).toBe(false);
+    expect(JSON.parse(fs.readFileSync(noteFor(ipcPath), 'utf8')).basePath).toBe('/new');
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
+    delayed.mockRestore();
+  });
+
+  it('coalesces overlapping starts until the listener is ready', async () => {
+    const ipcPath = uniqueSocketPath();
+    const manager = createTransportManager(ipcPath);
+    const first = manager.startTransport();
+    const second = manager.startTransport();
+    expect(second).toBe(first);
+    expect(await second).toBe(await first);
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
   });
 
   it('does not unlink a socket file that was replaced underneath it', async () => {
@@ -305,6 +387,7 @@ describeOnPosix('IPC socket ownership across a reload', () => {
  */
 describeOnPosix('IPC vault note beside the socket', () => {
   afterEach(async () => {
+    for (const socket of openSockets.splice(0)) socket.destroy();
     for (const manager of openManagers.splice(0)) {
       manager.closeListener();
       await manager.stopTransport().catch(() => undefined);
@@ -367,6 +450,30 @@ describeOnPosix('IPC vault note beside the socket', () => {
     expect(fs.statSync(notePath).mode & 0o777).toBe(0o600);
 
     await manager.stopTransport();
+  });
+
+  it('rechecks note ownership after a probe while the replacement publishes its note', async () => {
+    const ipcPath = uniqueSocketPath();
+    const predecessor = createTransportManager(ipcPath, '/old', true);
+    await predecessor.startTransport();
+    predecessor.closeListener();
+    let release!: (live: boolean) => void;
+    let probed!: () => void;
+    const entered = new Promise<void>(resolve => { probed = resolve; });
+    const probe = new Promise<boolean>(resolve => { release = resolve; });
+    const access = predecessor as unknown as { isSocketLive(path: string): Promise<boolean> };
+    const delayed = jest.spyOn(access, 'isSocketLive').mockImplementationOnce(() => { probed(); return probe; });
+    const stopping = predecessor.stopTransport();
+    await entered;
+    const successor = createTransportManager(ipcPath, '/new', true);
+    await successor.startTransport();
+    const identity = identityOf(noteFor(ipcPath));
+    release(false);
+    await stopping;
+    expect(identityOf(noteFor(ipcPath))).toEqual(identity);
+    expect(JSON.parse(fs.readFileSync(noteFor(ipcPath), 'utf8')).basePath).toBe('/new');
+    await expect(canConnect(ipcPath)).resolves.toBe(true);
+    delayed.mockRestore();
   });
 
   it('leaves the successor’s note alone when the predecessor tears down late', async () => {

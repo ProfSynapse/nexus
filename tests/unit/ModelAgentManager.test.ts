@@ -375,7 +375,10 @@ describe('ModelAgentManager', () => {
 
     expect(manager.getSelectedWorkspaceId()).toBe('workspace_3');
     expect(manager.getLoadedWorkspaceData()).toEqual(workspaceData);
-    expect(access.workspaceContextService.loadSelectedWorkspace).toHaveBeenCalledWith('workspace_3', 'session_workspace');
+    expect(access.workspaceContextService.loadSelectedWorkspace).toHaveBeenCalledWith('workspace_3', 'session_workspace', undefined, { maxTokens: expect.any(Number) }, expect.any(Function));
+    const budget = access.workspaceContextService.loadSelectedWorkspace.mock.calls[0][3].maxTokens;
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThan(128000 - 2048);
     expect(access.promptContextAssembler.buildSystemPrompt).toHaveBeenCalledWith(expect.objectContaining({
       selectedWorkspaceId: 'workspace_3',
       loadedWorkspaceData: workspaceData
@@ -383,6 +386,25 @@ describe('ModelAgentManager', () => {
     expect(events.onSystemPromptChanged).toHaveBeenCalledWith('workspace prompt');
   });
 
+  it('rejects a pending workspace selection when the conversation changes before validation', async () => {
+    const conversationService = { getConversation: jest.fn(async (id: string) => ({ metadata: { chatSettings: { sessionId: `${id}-session` } } })) };
+    const manager = new ModelAgentManager({}, createEvents(), conversationService);
+    const access = asManager(manager); manager.setCurrentConversationId('conv-old');
+    let release!: () => void; let entered!: () => void;
+    const delayed = new Promise<void>(resolve => { release = resolve; }); const started = new Promise<void>(resolve => { entered = resolve; });
+    const commits = jest.fn();
+    access.workspaceContextService = {
+      restoreWorkspace: jest.fn(), createEmptyState: jest.fn(),
+      loadSelectedWorkspace: jest.fn(async (_workspace, _session, _workflow, _budget, validate) => {
+        entered(); await delayed;
+        const result = await validate(null, { success: true, workspaceContext: { workspaceId: 'ws-old' }, data: { context: { name: 'Old' } } });
+        if (!result.ok) throw new Error(result.error.message);
+        commits(); return { selectedWorkspaceId: 'ws-old', workspaceContext: null, loadedWorkspaceData: {} };
+      }),
+    } as unknown as ModelAgentManagerWithSelectedModel['workspaceContextService'];
+    const pending = manager.setWorkspaceContext('ws-old'); await started; manager.setCurrentConversationId('conv-new'); release();
+    await expect(pending).rejects.toThrow('Conversation changed'); expect(commits).not.toHaveBeenCalled(); expect(manager.getSelectedWorkspaceId()).toBeNull();
+  });
   it('builds message options from the current model, prompt, workspace, session, and thinking state', async () => {
     const selectedModel = createModel('anthropic-claude-code', 'claude-sonnet-4-6');
     const conversationService = {

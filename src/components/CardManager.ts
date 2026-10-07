@@ -3,7 +3,7 @@
  * Generic card management system for agents, providers, and other card-based UIs
  */
 
-import { ButtonComponent } from 'obsidian';
+import { ButtonComponent, Component } from 'obsidian';
 import { Card, CardAction, CardConfig } from './Card';
 
 export interface CardItem {
@@ -33,6 +33,8 @@ export interface CardManagerConfig<T extends CardItem> {
     onDelete?: (item: T) => void;
     showToggle?: boolean;
     showAddButton?: boolean;
+  component?: Component;
+  renderMetadata?: (container: HTMLElement, item: T) => void;
 }
 
 export class CardManager<T extends CardItem> {
@@ -114,10 +116,11 @@ export class CardManager<T extends CardItem> {
             },
             onEdit: showEdit ? () => this.config.onEdit(item) : undefined,
             onDelete: onDelete ? () => onDelete(item) : undefined,
-            additionalActions: item.additionalActions
+            additionalActions: item.additionalActions,
+      renderMetadata: this.config.renderMetadata ? container => this.config.renderMetadata?.(container, item) : undefined
         };
 
-        const card = new Card(this.cardsContainer, cardConfig);
+        const card = new Card(this.cardsContainer, cardConfig, this.config.component);
         if (item.cssClass) {
             card.getElement().addClass(item.cssClass);
         }

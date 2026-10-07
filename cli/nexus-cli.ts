@@ -183,6 +183,17 @@ CONTEXT (flags on \`use\`; \`tools\` accepts them too. \`playbook\` reads only
   --json                  print the raw JSON result
   --dry-run               print the reconstructed request; do not connect or execute
 
+WORKSPACE WORKFLOWS
+  Workspace discovery lists workflows you can preload. Choose one explicitly:
+    nexus use --memory "preparing this workspace" --goal "load its selected setup" -- memory load-workspace "<workspace>" --workflow "<name-or-id>"
+  The optional --workflow tool flag loads instructions, skill resource locations,
+  and full schemas for their required tools. Loading does not execute the workflow.
+  A workspace-only load clears the workflow selection; there is no default workflow.
+  Use \`memory run\` to execute. Preloaded full schemas satisfy discovery for those
+  tools; discover additional signatures with \`nexus tools\` as needed.
+  Skills are core tools. Settings -> Nexus -> Instructions manages prompts and
+  skill packages; provider import and sync-back preferences are separate.
+
 CONTENT INPUT (CLI-only flags after the \`--\` delimiter; work for ANY tool flag)
   --<flag>-stdin          read that flag's value from standard input, e.g.
                           --content-stdin, --conversation-context-stdin
@@ -252,11 +263,11 @@ GOTCHAS
     run from inside a vault's folder (cwd selects it) or pass --vault <name>.
 
 TOOL CATALOG
-  Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest.
+  Core agents (always on): content, storage, search, canvas, task, memory, prompt, ingest, skills.
   Vault-gated: base — reads and writes \`.base\` files (Obsidian Bases) and runs them.
   Present only when Bases is enabled in that vault, so confirm with \`nexus tools\`
   before offering it; enabling it takes a plugin reload.
-  Apps (opt-in, per vault): composer, data, elevenlabs, skills, web — appear only when
+  Apps (opt-in, per vault): composer, data, elevenlabs, web — appear only when
   enabled. The live, authoritative catalog for THIS vault is always: nexus tools
 
 PLAYBOOKS  (nexus playbook <name>)

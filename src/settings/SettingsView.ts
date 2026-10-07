@@ -23,7 +23,8 @@ import type { AppManager } from '../services/apps/AppManager';
 // Tab implementations
 import { DefaultsTab } from './tabs/DefaultsTab';
 import { WorkspacesTab } from './tabs/WorkspacesTab';
-import { PromptsTab } from './tabs/PromptsTab';
+import { InstructionsTab } from './tabs/InstructionsTab';
+import type { InstructionLibraryService } from '../services/instructions/InstructionLibraryService';
 import { ProvidersTab } from './tabs/ProvidersTab';
 import { AppsTab } from './tabs/AppsTab';
 import { DataTab } from './tabs/DataTab';
@@ -60,7 +61,7 @@ export class SettingsView extends PluginSettingTab {
     // Tab instances
     private defaultsTab: DefaultsTab | undefined;
     private workspacesTab: WorkspacesTab | undefined;
-    private promptsTab: PromptsTab | undefined;
+    private instructionsTab: InstructionsTab | undefined;
     private providersTab: ProvidersTab | undefined;
     private appsTab: AppsTab | undefined;
     private dataTab: DataTab | undefined;
@@ -136,7 +137,7 @@ export class SettingsView extends PluginSettingTab {
         // Cleanup tab instances
         this.defaultsTab?.destroy();
         this.workspacesTab?.destroy();
-        this.promptsTab?.destroy();
+        this.instructionsTab?.destroy();
         this.providersTab?.destroy();
         this.appsTab?.destroy();
         this.dataTab?.destroy();
@@ -208,7 +209,7 @@ export class SettingsView extends PluginSettingTab {
         const tabConfigs: UnifiedTabConfig[] = [
             { key: 'defaults', label: 'Defaults' },
             { key: 'workspaces', label: 'Workspaces' },
-            { key: 'prompts', label: 'Prompts' },
+            { key: 'instructions', label: 'Instructions' },
             { key: 'providers', label: 'Providers' },
             { key: 'apps', label: 'Apps' },
             { key: 'data', label: 'Data' },
@@ -229,6 +230,7 @@ export class SettingsView extends PluginSettingTab {
             this.unsubscribeRouter();
         }
         this.unsubscribeRouter = this.router.onNavigate((state) => {
+            this.tabs?.activateTab(state.tab, false);
             this.renderTabContent(state);
         });
 
@@ -335,8 +337,9 @@ export class SettingsView extends PluginSettingTab {
             case 'workspaces':
                 this.renderWorkspacesTab(pane, state, services);
                 break;
+            case 'instructions':
             case 'prompts':
-                this.renderPromptsTab(pane, state, services);
+                this.renderInstructionsTab(pane);
                 break;
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
@@ -444,27 +447,20 @@ export class SettingsView extends PluginSettingTab {
         );
     }
 
-    /**
-     * Render Prompts tab content
-     */
-    private renderPromptsTab(
-        container: HTMLElement,
-        state: RouterState,
-        services: { customPromptStorage?: CustomPromptStorageService }
-    ): void {
-        // Destroy previous tab instance if exists
-        this.promptsTab?.destroy();
-
-        // Create new PromptsTab
-        this.promptsTab = new PromptsTab(
-            container,
-            this.router,
-            {
-                customPromptStorage: services.customPromptStorage,
-                component: this.plugin,
-                app: this.app
+    /** The existing Prompts tab becomes the unified Instructions library. */
+    private renderInstructionsTab(container: HTMLElement): void {
+        if (this.instructionsTab) {
+            this.instructionsTab.show(container);
+            return;
+        }
+        this.instructionsTab = new InstructionsTab(container, this.router, {
+            app: this.app,
+            settings: this.settingsManager,
+            getLibrary: async () => {
+                if (!this.serviceManager) throw new Error('Instruction services are initializing. Try again shortly.');
+                return this.serviceManager.getService<InstructionLibraryService>('instructionLibraryService');
             }
-        );
+        });
     }
 
     /**

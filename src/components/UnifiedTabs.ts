@@ -92,7 +92,7 @@ export class UnifiedTabs {
   /**
    * Switch to a specific tab using exact Memory Manager logic
    */
-  private switchToTab(tabKey: string): void {
+  private switchToTab(tabKey: string, notify = true): void {
     this.activeTabKey = tabKey;
     
     // Remove active class from all tabs and contents (exact Memory Manager pattern)
@@ -104,7 +104,7 @@ export class UnifiedTabs {
     this.contents[tabKey]?.addClass('active');
     
     // Call callback if provided
-    this.onTabChange?.(tabKey);
+    if (notify) this.onTabChange?.(tabKey);
   }
 
   /**
@@ -138,9 +138,9 @@ export class UnifiedTabs {
   /**
    * Programmatically switch to a tab
    */
-  activateTab(tabKey: string): void {
+  activateTab(tabKey: string, notify = true): void {
     if (this.contents[tabKey]) {
-      this.switchToTab(tabKey);
+      this.switchToTab(tabKey, notify);
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-01T10:47:06.084Z",
+  "generatedAt": "2026-10-03T14:29:48.880Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1315,7 +1315,7 @@
       "tool": "loadWorkspace",
       "description": "Load a workspace by ID and restore context and state",
       "command": "memory load-workspace",
-      "usage": "memory load-workspace <workspace> [--limit <limit>] [--recursive]",
+      "usage": "memory load-workspace <workspace> [--workflow <workflow>] [--limit <limit>] [--recursive]",
       "arguments": [
         {
           "name": "workspace",
@@ -1324,6 +1324,14 @@
           "required": true,
           "positional": true,
           "description": "[REQUIRED] Workspace name or ID to load (REQUIRED). Use a name you have actually seen — from the workspace list in getTools, from search-workspaces/list-workspaces, or from the create-workspace you just made. Do NOT infer a name from how the user phrased the request; \"load my research workspace\" does not mean a workspace named \"Research\" exists. If you do not have a confirmed name, run \"memory search-workspaces --query <fragment> --load\" first: it auto-loads on a single match and lists candidates otherwise. A near-miss here is recovered (single close match auto-loads, otherwise candidates are returned) — but recovery costs a round trip that discovery would have saved. (string)"
+        },
+        {
+          "name": "workflow",
+          "flag": "--workflow",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional exact workflow name or ID to preload instructions and required tool schemas. Loading never runs it. Omit to load the workspace and clear the active workflow; there is no default workflow. (string)"
         },
         {
           "name": "limit",
@@ -1343,7 +1351,7 @@
         }
       ],
       "examples": [
-        "memory load-workspace \"workspace-value\" --limit 1"
+        "memory load-workspace \"workspace-value\" --workflow \"workflow-value\" --limit 1"
       ]
     },
     {
@@ -2426,8 +2434,24 @@
       "tool": "createSkill",
       "description": "Create a new skill from name/description/body. Validated before writing. Defaults to the vault-native \"nexus\" provider when no source is given.",
       "command": "skills create-skill",
-      "usage": "skills create-skill <name> <description> <body> [--source <source>]",
+      "usage": "skills create-skill [--frontmatter <frontmatter>] [--tool-selectors <toolSelectors>] <name> <description> <body> [--source <source>]",
       "arguments": [
+        {
+          "name": "frontmatter",
+          "flag": "--frontmatter",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional frontmatter metadata; existing keys are preserved on update. (object)"
+        },
+        {
+          "name": "toolSelectors",
+          "flag": "--tool-selectors",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Required Nexus tool selectors. An explicit empty array clears dependencies. (Array of a string)"
+        },
         {
           "name": "name",
           "flag": "--name",
@@ -2462,7 +2486,7 @@
         }
       ],
       "examples": [
-        "skills create-skill \"name-value\" \"description-value\" \"body-value\" --source \"source-value\""
+        "skills create-skill --frontmatter '{\"key\":\"value\"}' --tool-selectors \"value-1,value-2\" \"name-value\" \"description-value\" \"body-value\" --source \"source-value\""
       ]
     },
     {
@@ -2578,8 +2602,32 @@
       "tool": "updateSkill",
       "description": "Update an existing skill's description and/or body, optionally renaming it. Validated before writing; archives the prior version and syncs back to the origin if provider-sourced.",
       "command": "skills update-skill",
-      "usage": "skills update-skill <name> [--source <source>] [--description <description>] [--body <body>] [--rename <rename>]",
+      "usage": "skills update-skill [--repair-references-from <repairReferencesFrom>] [--frontmatter <frontmatter>] [--tool-selectors <toolSelectors>] <name> [--source <source>] [--description <description>] [--body <body>] [--rename <rename>]",
       "arguments": [
+        {
+          "name": "repairReferencesFrom",
+          "flag": "--repair-references-from",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Explicit prior qualified identity returned by a partial rename failure. Target the returned new name/source and pass this field to retry updating workflow attachments. (object)"
+        },
+        {
+          "name": "frontmatter",
+          "flag": "--frontmatter",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional frontmatter metadata; existing keys are preserved on update. (object)"
+        },
+        {
+          "name": "toolSelectors",
+          "flag": "--tool-selectors",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Required Nexus tool selectors. An explicit empty array clears dependencies. (Array of a string)"
+        },
         {
           "name": "name",
           "flag": "--name",
@@ -2622,7 +2670,7 @@
         }
       ],
       "examples": [
-        "skills update-skill \"name-value\" --source \"source-value\" --description \"description-value\" --body \"body-value\" --rename \"rename-value\""
+        "skills update-skill --repair-references-from '{\"key\":\"value\"}' --frontmatter '{\"key\":\"value\"}' --tool-selectors \"value-1,value-2\" \"name-value\" --source \"source-value\" --description \"description-value\" --body \"body-value\" --rename \"rename-value\""
       ]
     },
     {

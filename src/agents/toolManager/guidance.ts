@@ -35,3 +35,7 @@ export const CLI_VALUES_RULE =
 /** A copy-pasteable values example (shown as the raw JSON payload). */
 export const CLI_VALUES_EXAMPLE =
   '{"tool": "content write --path snippet.md --content @body", "values": {"body": "const re = /\\\\d+/;"}}';
+
+/** Loaded workflow/skill schemas satisfy discovery for their exact signatures. */
+export const CLI_PRELOADED_TOOLS_RULE =
+  'Full tool schemas returned by a successful workspace workflow or skill load are current discovery metadata for those tools. Use those signatures without fetching the same schemas again; discover any additional tools with getTools. Loading prepares instructions and tools only; memory run starts workflow execution.';

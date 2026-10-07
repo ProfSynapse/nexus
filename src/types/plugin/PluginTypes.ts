@@ -7,6 +7,7 @@ import { CustomPromptsSettings } from '../mcp/CustomPromptTypes';
 import { LLMProviderSettings } from '../llm/ProviderTypes';
 import { AppsSettings } from '../apps/AppTypes';
 import type { PluginScopedStorageState } from '../../database/migration/PluginScopedStorageCoordinator';
+import type { CoreSkillsSettings, InstructionLibrarySettings } from '../../services/instructions/types';
 
 // Forward declarations for service types to avoid circular imports
 // Actual types are imported where needed
@@ -87,6 +88,8 @@ export interface MCPSettings {
   customPrompts?: CustomPromptsSettings;
   llmProviders?: LLMProviderSettings;
   apps?: AppsSettings;
+  instructionLibrary?: InstructionLibrarySettings;
+  skills?: CoreSkillsSettings;
   // When true, API keys / credentials are stored in Obsidian's device-local
   // secretStorage and stripped from the synced data.json. Off by default so
   // keys keep syncing across devices unless the user opts in.

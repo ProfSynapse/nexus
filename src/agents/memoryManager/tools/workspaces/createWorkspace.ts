@@ -1,3 +1,4 @@
+import { normalizeWorkflowAttachments, WORKFLOW_ATTACHMENT_SCHEMA } from '../../../../services/workflows/workflowAttachments';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 /**
  * Location: /src/agents/memoryManager/modes/workspaces/CreateWorkspaceMode.ts
@@ -57,6 +58,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
     
     async execute(params: CreateWorkspaceParameters): Promise<CreateWorkspaceResult> {
         try {
+            if (params.workflows !== undefined) params.workflows = normalizeWorkflowAttachments(params.workflows);
             // Get workspace service
             const serviceResult = await this.serviceIntegration.getWorkspaceService();
             if (!serviceResult.success || !serviceResult.service) {
@@ -257,6 +259,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                                 type: 'string',
                                 description: 'Optional cached prompt name for display.'
                             },
+                            ...WORKFLOW_ATTACHMENT_SCHEMA,
                             schedule: {
                                 type: 'object',
                                 description: 'Optional workflow schedule.',

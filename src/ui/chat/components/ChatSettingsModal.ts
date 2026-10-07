@@ -5,10 +5,10 @@
  * Saves to conversation metadata (this session only).
  */
 
-import { App, Modal, ButtonComponent, Plugin } from 'obsidian';
+import { App, Modal, ButtonComponent, Plugin, Notice } from 'obsidian';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { ModelAgentManager } from '../services/ModelAgentManager';
-import { ChatSettingsRenderer, ChatSettings } from '../../../components/shared/ChatSettingsRenderer';
+import { ChatSettingsRenderer, ChatSettings, ChatSettingsOptions } from '../../../components/shared/ChatSettingsRenderer';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { Settings } from '../../../settings';
 
@@ -78,7 +78,9 @@ export class ChatSettingsModal extends Modal {
     const prompts = await this.loadPrompts();
 
     // Get current settings from ModelAgentManager
+    const workflowId = await this.modelAgentManager.getSelectedWorkflowId();
     const initialSettings = this.getCurrentSettings();
+    initialSettings.workflowId = workflowId;
 
     // Create renderer
     const rendererContainer = contentEl.createDiv('chat-settings-renderer');
@@ -87,6 +89,7 @@ export class ChatSettingsModal extends Modal {
       app: this.app,
       llmProviderSettings,
       initialSettings,
+      showWorkflowSelection: true,
       options: { workspaces, prompts },
       callbacks: {
         onSettingsChange: (settings) => {
@@ -98,10 +101,10 @@ export class ChatSettingsModal extends Modal {
     this.renderer.render();
   }
 
-  private async loadWorkspaces(): Promise<Array<{ id: string; name: string }>> {
+  private async loadWorkspaces(): Promise<ChatSettingsOptions['workspaces']> {
     try {
-      const workspaces = await this.workspaceService.listWorkspaces();
-      return workspaces.map(w => ({ id: w.id, name: w.name }));
+      const workspaces = await this.workspaceService.listWorkspaceDiscovery();
+      return workspaces.map(w => ({ id: w.id, name: w.name, context: w.context }));
     } catch {
       return [];
     }
@@ -186,10 +189,11 @@ export class ChatSettingsModal extends Modal {
       }
 
       // Update workspace
+      const currentWorkflow = await this.modelAgentManager.getSelectedWorkflowId();
       if (settings.workspaceId) {
-        await this.modelAgentManager.setWorkspaceContext(settings.workspaceId);
+        if (settings.workspaceId !== this.modelAgentManager.getSelectedWorkspaceId() || (settings.workflowId ?? null) !== currentWorkflow) await this.modelAgentManager.setWorkspaceContext(settings.workspaceId, settings.workflowId || undefined);
       } else {
-        await this.modelAgentManager.clearWorkspaceContext();
+        if (this.modelAgentManager.getSelectedWorkspaceId() || currentWorkflow) await this.modelAgentManager.clearWorkspaceContext();
       }
 
       // Update thinking
@@ -243,6 +247,7 @@ export class ChatSettingsModal extends Modal {
       this.close();
     } catch (error) {
       console.error('[ChatSettingsModal] Error saving settings:', error);
+      new Notice(error instanceof Error ? error.message : 'Chat settings could not be saved');
     }
   }
 

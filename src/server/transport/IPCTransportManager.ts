@@ -70,6 +70,9 @@ const LIVENESS_PROBE_TIMEOUT_MS = 250;
 export class IPCTransportManager {
     private ipcServer: NetServer | null = null;
     private isRunning = false;
+    private generation = 0;
+    private startInFlight: Promise<NetServer> | null = null;
+    private cancelStart: (() => void) | null = null;
     /** Per-connection MCPSDKServer instances for multi-client support. */
     private activeConnections: Set<MCPSDKServer> = new Set();
     /** Track current transport for proactive cleanup */
@@ -88,36 +91,51 @@ export class IPCTransportManager {
     /**
      * Start the IPC transport server
      */
-    async startTransport(): Promise<NetServer> {
-        if (this.ipcServer) {
-            return this.ipcServer;
-        }
+    startTransport(): Promise<NetServer> {
+        if (this.startInFlight) return this.startInFlight;
+        if (this.ipcServer && this.isRunning) return Promise.resolve(this.ipcServer);
+        const generation = ++this.generation;
+        const operation = this.createTransport(generation);
+        this.startInFlight = operation;
+        const clear = () => { if (this.startInFlight === operation) this.startInFlight = null; };
+        void operation.then(clear, clear);
+        return operation;
+    }
 
+    private async createTransport(generation: number): Promise<NetServer> {
         const isWindows = this.configuration.isWindows();
         const ipcPath = this.configuration.getIPCPath();
-
-        if (!isWindows) {
-            await this.cleanupSocket();
-        }
+        if (!isWindows) await this.cleanupSocket(generation);
+        this.assertCurrentStart(generation);
 
         return new Promise((resolve, reject) => {
             try {
                 const net = desktopRequire<typeof import('net')>('net');
                 const server = net.createServer((socket) => {
+                    if (generation !== this.generation) { socket.destroy(); return; }
                     this.handleSocketConnection(socket).catch(error => {
                         logger.systemError(error as Error, 'IPC Socket Handling');
-                        const netSocket = socket;
-                        if (!netSocket.destroyed) netSocket.destroy();
+                        if (!socket.destroyed) socket.destroy();
                     });
                 });
-
-                this.setupServerErrorHandling(server, ipcPath, isWindows, reject);
-                this.startListening(server, ipcPath, isWindows, resolve, reject);
+                // Track the pending listener too: unload can happen before its callback.
+                this.ipcServer = server;
+                const fail = (error: Error) => {
+                    if (generation === this.generation) { this.cancelStart = null; this.closeListener(); }
+                    reject(error);
+                };
+                this.cancelStart = () => reject(new Error('IPC startup was cancelled'));
+                this.setupServerErrorHandling(server, ipcPath, isWindows, fail, generation);
+                this.startListening(server, ipcPath, isWindows, resolve, fail, generation);
             } catch (error) {
-                logger.systemError(error as Error, 'IPC Server Creation');
+                if (generation === this.generation) { this.cancelStart = null; this.closeListener(); }
                 reject(error instanceof Error ? error : new Error(String(error)));
             }
         });
+    }
+
+    private assertCurrentStart(generation: number): void {
+        if (generation !== this.generation) throw new Error('IPC startup was cancelled');
     }
 
     /**
@@ -155,6 +173,7 @@ export class IPCTransportManager {
             }
 
             const server = serverFactory();
+            const generation = this.generation;
             const transport = new StdioServerTransport(socket, socket);
 
             const netSocket = socket;
@@ -171,13 +190,19 @@ export class IPCTransportManager {
             netSocket.on('close', onSocketGone);
             netSocket.on('end', onSocketGone);
 
+            this.activeConnections.add(server);
             server.connect(transport)
                 .then(() => {
-                    this.activeConnections.add(server);
+                    if (closed || generation !== this.generation) {
+                        onSocketGone();
+                        if (!netSocket.destroyed) netSocket.destroy();
+                        return;
+                    }
                     logger.systemLog(`IPC socket connected successfully (${this.activeConnections.size} active)`);
                 })
                 .catch(error => {
                     logger.systemError(error as Error, 'IPC Socket Connection');
+                    onSocketGone();
                     if (!netSocket.destroyed) netSocket.destroy();
                 });
         } catch (error) {
@@ -192,6 +217,7 @@ export class IPCTransportManager {
      * so that Protocol._transport is cleared when a client disconnects.
      */
     private async handleSingleClientConnection(socket: Socket): Promise<void> {
+        const generation = this.generation;
         const netSocket = socket;
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
@@ -200,7 +226,7 @@ export class IPCTransportManager {
                 if (closed) return;
                 closed = true;
                 logger.systemLog('IPC socket disconnected — releasing transport');
-                this.currentTransport = null;
+                if (this.currentTransport === transport) this.currentTransport = null;
                 transport.close().catch((err: Error) => {
                     logger.systemError(err, 'IPC Transport Close on Disconnect');
                 });
@@ -223,6 +249,11 @@ export class IPCTransportManager {
             }
 
             await this.stdioTransportManager.connectSocketTransport(transport);
+            if (closed || generation !== this.generation) {
+                await transport.close();
+                if (!netSocket.destroyed) netSocket.destroy();
+                return;
+            }
             this.currentTransport = transport;
             logger.systemLog('IPC socket connected successfully');
         } catch (error) {
@@ -238,13 +269,17 @@ export class IPCTransportManager {
         server: NetServer,
         ipcPath: string,
         isWindows: boolean,
-        reject: (error: Error) => void
+        reject: (error: Error) => void,
+        generation: number
     ): void {
+        let retried = false;
         server.on('error', (error) => {
+            if (generation !== this.generation) return;
             logger.systemError(error, 'IPC Server');
             
-            if (!isWindows && (error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-                this.handleAddressInUse(server, ipcPath, reject);
+            if (!isWindows && !retried && (error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+                retried = true;
+                this.handleAddressInUse(server, ipcPath, reject, generation);
             } else {
                 reject(error);
             }
@@ -257,11 +292,13 @@ export class IPCTransportManager {
     private handleAddressInUse(
         server: NetServer,
         ipcPath: string,
-        reject: (error: Error) => void
+        reject: (error: Error) => void,
+        generation: number
     ): void {
-        this.cleanupSocket()
+        this.cleanupSocket(generation)
             .then(() => {
                 try {
+                    this.assertCurrentStart(generation);
                     // Retry after clearing a stale socket — same owner-only creation.
                     this.listenSecure(server, ipcPath);
                 } catch (listenError) {
@@ -283,9 +320,12 @@ export class IPCTransportManager {
         ipcPath: string,
         isWindows: boolean,
         resolve: (server: NetServer) => void,
-        reject: (error: Error) => void
+        reject: (error: Error) => void,
+        generation: number
     ): void {
         this.listenSecure(server, ipcPath, () => {
+            if (generation !== this.generation) { reject(new Error('IPC startup was cancelled')); return; }
+            this.cancelStart = null;
             this.handleListeningStarted(server, ipcPath, isWindows, resolve, reject);
         });
     }
@@ -430,12 +470,14 @@ export class IPCTransportManager {
      * still.
      */
     async stopTransport(): Promise<void> {
-        const hasWork = this.ipcServer !== null
+        const hasWork = this.startInFlight !== null
+            || this.ipcServer !== null
             || this.ownedSocket !== null
             || this.ownedNote !== null
             || this.currentTransport !== null
             || this.activeConnections.size > 0;
         if (!hasWork) {
+            this.closeListener();
             return;
         }
 
@@ -466,6 +508,11 @@ export class IPCTransportManager {
      * Idempotent.
      */
     closeListener(): void {
+        this.generation++;
+        const cancel = this.cancelStart;
+        this.cancelStart = null;
+        this.startInFlight = null;
+        cancel?.();
         const server = this.ipcServer;
         if (!server) {
             return;
@@ -565,12 +612,12 @@ export class IPCTransportManager {
         }
 
         try {
-            // A successor could still rebind between the probe above and this
-            // unlink. There is no unlink-by-inode on POSIX, so the window
-            // cannot be closed entirely — only reduced from tens of seconds to
-            // a single turn, which is what the checks above buy.
-            const fs = desktopRequire<typeof import('fs')>('fs').promises;
-            await fs.unlink(owned.path);
+            // Recheck after the asynchronous probe. The check and unlink share
+            // one turn, so an in-process successor cannot replace the path
+            // between them. POSIX still offers no cross-process unlink-by-inode.
+            const latest = this.readSocketIdentity(owned.path);
+            if (!latest || !this.isSameSocketFile(latest, owned)) return;
+            desktopRequire<typeof import('fs')>('fs').unlinkSync(owned.path);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
                 logger.systemError(error as Error, 'Socket Cleanup');
@@ -614,8 +661,9 @@ export class IPCTransportManager {
         }
 
         try {
-            const fs = desktopRequire<typeof import('fs')>('fs').promises;
-            await fs.unlink(owned.path);
+            const latest = this.readSocketIdentity(owned.path);
+            if (!latest || !this.isSameSocketFile(latest, owned)) return;
+            desktopRequire<typeof import('fs')>('fs').unlinkSync(owned.path);
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
                 logger.systemError(error as Error, 'Vault Note Cleanup');
@@ -666,19 +714,25 @@ export class IPCTransportManager {
      * but we say so first. Two vaults sharing a name would land here, and the
      * silence is what made #337 cost a day.
      */
-    private async cleanupSocket(): Promise<void> {
+    private async cleanupSocket(generation: number): Promise<void> {
         if (this.configuration.isWindows()) {
             return;
         }
 
         const ipcPath = this.configuration.getIPCPath();
-        if (await this.isSocketLive(ipcPath)) {
+        const before = this.readSocketIdentity(ipcPath);
+        const live = await this.isSocketLive(ipcPath);
+        this.assertCurrentStart(generation);
+        const latest = this.readSocketIdentity(ipcPath);
+        if (latest && (!before || !this.isSameSocketFile(latest, before))) {
+            throw new Error('IPC socket changed during startup; retry with the current plugin instance');
+        }
+        if (live) {
             logger.systemLog(`Taking over a live IPC socket at ${ipcPath} — another instance will lose its transport`);
         }
 
         try {
-            const fs = desktopRequire<typeof import('fs')>('fs').promises;
-            await fs.unlink(ipcPath);
+            desktopRequire<typeof import('fs')>('fs').unlinkSync(ipcPath);
         } catch (error) {
             // Ignore if file doesn't exist
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {

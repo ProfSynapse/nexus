@@ -11,12 +11,15 @@
  * Follows Single Responsibility Principle - only handles prompt composition.
  */
 
+import type { CliToolSchema } from '../../../agents/toolManager/types';
+import type { PreparedWorkflow, PreparedInstruction } from '../../../services/instructions/types';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
 import { toKebabCase } from '../../../agents/toolManager/services/ToolCliNormalizer';
 import {
+  CLI_PRELOADED_TOOLS_RULE,
   CLI_BATCHING_RULE,
   CLI_MULTILINE_RULE,
   CLI_MULTILINE_EXAMPLE,
@@ -40,6 +43,7 @@ export interface WorkspaceSummary {
   name: string;
   description?: string;
   rootFolder: string;
+  workflows?: import('../../../services/workspace/WorkspaceSummaryService').WorkflowSummary[];
 }
 
 /**
@@ -102,6 +106,9 @@ export interface SystemPromptOptions {
   contextNotes?: string[];
   messageEnhancement?: MessageEnhancement | null;
   customPrompt?: string | null;
+  preparedWorkflow?: PreparedWorkflow | null;
+  activeSkills?: PreparedInstruction[];
+  preloadedTools?: CliToolSchema[];
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
@@ -202,7 +209,7 @@ export class SystemPromptBuilder {
     }
 
     // 7. Custom prompt (if prompt selected)
-    const customPromptSection = this.buildSelectedPromptSection(options.customPrompt);
+    const customPromptSection = this.buildSelectedPromptSection(options.preparedWorkflow?.prompt?.instructions ?? options.customPrompt ?? this.workspacePrompt(options.loadedWorkspaceData));
     if (customPromptSection) {
       sections.push(customPromptSection);
     }
@@ -215,6 +222,17 @@ export class SystemPromptBuilder {
     if (workspaceSection) {
       sections.push(workspaceSection);
     }
+
+    if (options.preparedWorkflow) {
+      const context = { id: options.preparedWorkflow.id, name: options.preparedWorkflow.name, when: options.preparedWorkflow.when, steps: options.preparedWorkflow.steps, revision: options.preparedWorkflow.revision };
+      sections.push(`<loaded_workflow>\nThis workflow was explicitly loaded. Its steps are guidance for the current task; loading has not executed them.\n${this.escapeXmlContent(JSON.stringify(context, null, 2))}\n</loaded_workflow>`);
+    }
+    const skills = new Map<string, PreparedInstruction>();
+    for (const skill of [...(options.preparedWorkflow?.skills ?? []), ...(options.activeSkills ?? [])]) skills.set(JSON.stringify(skill.reference), skill);
+    if (skills.size) sections.push(`<loaded_skills>\n${this.escapeXmlContent(JSON.stringify([...skills.values()], null, 2))}\n</loaded_skills>`);
+    const tools = new Map<string, CliToolSchema>();
+    for (const tool of [...(options.preparedWorkflow?.preloadedTools ?? []), ...(options.preloadedTools ?? [])]) tools.set(`${tool.agent}/${tool.tool}`, tool);
+    if (tools.size) sections.push(`<preloaded_tools>\n${this.escapeXmlContent(JSON.stringify([...tools.values()], null, 2))}\n</preloaded_tools>`);
 
     return sections.length > 0 ? sections.join('\n') : null;
   }
@@ -262,7 +280,7 @@ Exact useTools payload shape:
 }
 
 CLI string rules:
-- ${CLI_BATCHING_RULE}
+- ${CLI_PRELOADED_TOOLS_RULE}\n- ${CLI_BATCHING_RULE}
 - ${CLI_MULTILINE_RULE}
 - Example: ${CLI_MULTILINE_EXAMPLE}
 - ${CLI_VALUES_RULE}
@@ -496,7 +514,7 @@ Start with the entrypoint and load deeper guide files selectively.
             const workspaceName = workspaceData.context?.name || workspaceRef.name;
             prompt += `<workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
 
-            prompt += this.escapeXmlContent(JSON.stringify(workspaceData, null, 2));
+            prompt += this.escapeXmlContent(JSON.stringify(this.briefingForPrompt(workspaceData), null, 2));
 
             prompt += `\n</workspace>\n\n`;
           } else {
@@ -507,7 +525,7 @@ Start with the entrypoint and load deeper guide files selectively.
               name: workspaceData.name,
               description: workspaceData.description,
               rootFolder: workspaceData.rootFolder,
-              context: workspaceData.context
+              context: this.briefingForPrompt(workspaceData).context
             }, null, 2));
 
             prompt += `\n</workspace>\n\n`;
@@ -552,7 +570,7 @@ Start with the entrypoint and load deeper guide files selectively.
 
       let prompt = `<selected_workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceId)}">\n`;
       prompt += 'This workspace is currently selected. Use it as the primary context.\n\n';
-      prompt += this.escapeXmlContent(JSON.stringify(loadedWorkspaceData, null, 2));
+      prompt += this.escapeXmlContent(JSON.stringify(this.briefingForPrompt(loadedWorkspaceData), null, 2));
       prompt += '\n</selected_workspace>';
 
       return prompt;
@@ -563,7 +581,33 @@ Start with the entrypoint and load deeper guide files selectively.
       return null;
     }
 
-    return `<selected_workspace>\n${this.escapeXmlContent(JSON.stringify(workspaceContext, null, 2))}\n</selected_workspace>`;
+    return `<selected_workspace>\n${this.escapeXmlContent(JSON.stringify(this.briefingForPrompt({ context: { ...workspaceContext } }).context, null, 2))}\n</selected_workspace>`;
+  }
+
+  private workspacePrompt(data?: LoadedWorkspaceData | null): string | null {
+    const prompt = data?.prompt;
+    return prompt && typeof prompt === 'object' && 'systemPrompt' in prompt && typeof prompt.systemPrompt === 'string' ? prompt.systemPrompt : null;
+  }
+
+  /** Definitions are discovery metadata; only explicit preparation supplies bodies. */
+  private briefingForPrompt(data: LoadedWorkspaceData): LoadedWorkspaceData {
+    const brief = { ...data };
+    delete brief.workflowDefinitions;
+    delete brief.loadedWorkflow;
+    delete brief.preloadedTools;
+    delete brief.workflowActivation;
+    delete brief.workflows;
+    delete brief.prompt;
+    if (brief.context) {
+      brief.context = { ...brief.context };
+      delete brief.context.workflows;
+    }
+    if (brief.workspaceContext && typeof brief.workspaceContext === 'object') {
+      const context = { ...brief.workspaceContext };
+      delete (context as Record<string, unknown>).workflows;
+      brief.workspaceContext = context;
+    }
+    return brief;
   }
 
   /**

@@ -81,6 +81,7 @@ export interface ChatSettings {
   transcriptionProvider?: string;
   transcriptionModel?: string;
   workspaceId: string | null;
+  workflowId?: string | null;
   promptId: string | null;
   contextNotes: string[];
 }
@@ -98,6 +99,7 @@ export interface ChatSettingsOptions {
     id: string;
     name: string;
     context?: {
+      workflows?: Array<{ id: string; name: string; when?: string }>;
       dedicatedAgent?: {
         agentId: string;
         agentName: string;
@@ -123,6 +125,7 @@ export interface ChatSettingsRendererConfig {
   initialSettings: ChatSettings;
   options: ChatSettingsOptions;
   callbacks: ChatSettingsCallbacks;
+  showWorkflowSelection?: boolean;
   showVoiceSection?: boolean;
   showTranscriptionSection?: boolean;
   renderAfterImageSection?: (parent: HTMLElement) => void;
@@ -1161,9 +1164,23 @@ export class ChatSettingsRenderer {
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
           this.notifyChange();
-          void this.syncWorkspacePrompt(value);
+          if (this.config.showWorkflowSelection) { this.settings.workflowId = null; this.render(); }
+          else void this.syncWorkspacePrompt(value);
         });
       });
+
+    if (this.config.showWorkflowSelection) {
+      new Setting(content)
+        .setName('Workflow')
+        .setDesc('Preload instructions and tools for this chat. Steps run only when you ask.')
+        .addDropdown(dropdown => {
+          dropdown.addOption('', 'None');
+          const workspace = this.config.options.workspaces.find(item => item.id === this.settings.workspaceId);
+          for (const workflow of workspace?.context?.workflows ?? []) dropdown.addOption(workflow.id, workflow.name);
+          dropdown.setValue(this.settings.workflowId || '');
+          dropdown.onChange(value => { this.settings.workflowId = value || null; this.notifyChange(); });
+        });
+    }
 
     // Prompt
     new Setting(content)

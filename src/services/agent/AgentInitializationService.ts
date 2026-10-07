@@ -101,6 +101,14 @@ export class AgentInitializationService {
     private customPromptStorage?: CustomPromptStorageService
   ) {}
 
+  async initializeSkills(): Promise<void> {
+    if (!this.serviceManager) throw new Error('Core skill service is unavailable');
+    const { SkillsAgent } = await import('../../agents/skills/SkillsAgent');
+    const skillService = await this.serviceManager.getService<import('../skills/SkillService').SkillService>('skillService');
+    const sessions = await this.serviceManager.getService<import('../SessionContextManager').SessionContextManager>('sessionContextManager');
+    this.agentManager.registerAgent(new SkillsAgent(skillService, sessions));
+  }
+
   /**
    * Initialize ContentManager agent
    */
@@ -470,6 +478,17 @@ export class AgentInitializationService {
     );
 
     this.agentManager.registerAgent(toolManagerAgent);
+    const workspaceService = this.serviceManager?.getServiceIfReady<WorkspaceService>('workspaceService');
+    if (workspaceService) {
+      const ref = workspaceService.onWorkspaceChange(() => toolManagerAgent.invalidateWorkspaceDiscovery());
+      this.plugin.register(() => workspaceService.offWorkspaceChange(ref));
+    }
+    const { SkillsAgent } = await import('../../agents/skills/SkillsAgent');
+    const skills = this.agentManager.getAgent('skills');
+    if (skills instanceof SkillsAgent && this.serviceManager) {
+      const catalog = await this.serviceManager.getService<import('../instructions/types').ToolCatalogPort>('toolCatalogService');
+      skills.setToolCatalog(catalog);
+    }
     logger.systemLog(`ToolManager agent initialized successfully with ${agentRegistry.size} agents`);
   }
 
@@ -536,7 +555,7 @@ export class AgentInitializationService {
    * service is correct rather than risky. The timeout exists only so a wedged
    * storage layer degrades getTools to "no names" instead of hanging it.
    */
-  private async listWorkspaceSummariesLive(): Promise<{ name: string; description?: string }[]> {
+  private async listWorkspaceSummariesLive(): Promise<import('../workspace/WorkspaceSummaryService').WorkspaceDiscoverySummary[]> {
     try {
       const workspaceService = await withTimeout(
         this.resolveWorkspaceService(),
@@ -544,8 +563,7 @@ export class AgentInitializationService {
         null
       );
       if (!workspaceService) {
-        logger.systemWarn('Live workspace lookup: WorkspaceService unavailable');
-        return [];
+        throw new Error('Workspaces are unavailable while the workspace service initializes. Retry discovery.');
       }
 
       // Only report a list we can claim is COMPLETE. For a few seconds after
@@ -555,23 +573,23 @@ export class AgentInitializationService {
       // partial answer is worse than none: it is the same confident falsehood
       // that made agents invent names, just with different wording.
       if (!(await this.waitForQueryReady())) {
-        return [];
+        throw new Error('Workspaces are still initializing or rebuilding. Retry discovery when storage is ready.');
       }
 
       const workspaces = await withTimeout(
-        workspaceService.listWorkspaces(),
+        workspaceService.listWorkspaceDiscovery(),
         LIVE_WORKSPACE_LOOKUP_TIMEOUT_MS,
         null
       );
       if (!workspaces) {
-        logger.systemWarn('Live workspace lookup: listWorkspaces() timed out');
-        return [];
+        throw new Error('Workspace discovery timed out. Retry discovery.');
       }
 
-      return this.toWorkspaceSummaries(workspaces);
+      const { WorkspaceSummaryService } = await import('../workspace/WorkspaceSummaryService');
+      return new WorkspaceSummaryService().summarizeMany(workspaces.filter(workspace => !workspace.isArchived));
     } catch (error) {
       logger.systemWarn(`Live workspace lookup failed: ${getErrorMessage(error)}`);
-      return [];
+      throw error;
     }
   }
 

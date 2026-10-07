@@ -164,7 +164,7 @@ export class AgentExecutionManager {
      */
     private updateSessionContext(params: Record<string, unknown>, result: unknown): void {
         const sessionId = getSessionIdFromParams(params);
-        if (!this.sessionContextManager || !sessionId || !isCommonResult(result) || !result.workspaceContext) {
+        if (!this.sessionContextManager || !sessionId || !isCommonResult(result) || !result.success || !result.workspaceContext) {
             return;
         }
 

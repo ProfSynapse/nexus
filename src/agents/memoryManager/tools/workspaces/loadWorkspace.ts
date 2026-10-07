@@ -37,6 +37,9 @@ import { resolveWorkspaceIdentifier } from '../../services/WorkspaceMatcher';
 import type { WorkspaceTaskSummary } from '../../../taskManager/types';
 import type { WorkspaceMetadata } from '../../../../types/storage/StorageTypes';
 import type { WorkspaceService } from '../../../../services/WorkspaceService';
+import { WorkspaceLoadService } from '../../../../services/workspace/WorkspaceLoadService';
+import { WorkspaceSummaryService } from '../../../../services/workspace/WorkspaceSummaryService';
+import { WORKFLOW_ATTACHMENT_SCHEMA } from '../../../../services/workflows/workflowAttachments';
 
 /** Workspace names listed back to the caller when nothing matched at all. */
 const MAX_LISTED_WORKSPACES = 25;
@@ -90,6 +93,28 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
    * @returns Promise resolving to the result
    */
   async execute(params: LoadWorkspaceParameters): Promise<LoadWorkspaceResult> {
+    if (typeof this.agent.getWorkflowServicesAsync === 'function') {
+      try {
+        const services = await this.agent.getWorkflowServicesAsync();
+        if (!services) return this.createErrorResult('Workspace workflow services are still initializing. Retry after startup finishes.', params);
+        const result = await new WorkspaceLoadService(input => this.read(input), services.preparation, services.activation).load(params);
+        if (result.success && result.workspaceContext?.workspaceId) {
+          try { await (await this.agent.getWorkspaceServiceAsync())?.updateLastAccessed(result.workspaceContext.workspaceId); } catch { /* Recency is best effort after activation. */ }
+        }
+        return result;
+      } catch (error) { return this.createErrorResult(error instanceof Error ? error.message : String(error), params); }
+    }
+    // Direct legacy integrations without activation services can read only.
+    if (params.workflow !== undefined) return this.createErrorResult('Workflow preparation is unavailable in this runtime.', params);
+    const result = await this.read(params);
+    if (result.success && result.workspaceContext?.workspaceId) {
+      try { await (await this.agent.getWorkspaceServiceAsync())?.updateLastAccessed(result.workspaceContext.workspaceId); } catch { /* Best-effort legacy recency. */ }
+    }
+    return result;
+  }
+
+  /** Passive briefing for internal native refresh; never executes public activation. */
+  async read(params: LoadWorkspaceParameters): Promise<LoadWorkspaceResult> {
     const startTime = Date.now();
 
     try {
@@ -111,7 +136,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
         return {
           success: true,
-          data: systemWorkspace.data,
+          data: { ...systemWorkspace.data, availableWorkflows: [], loadedWorkflow: null, preloadedTools: [] },
           workspaceContext: systemWorkspace.workspaceContext,
           pagination: {
             sessions: {
@@ -165,13 +190,6 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       }
 
       const projectWorkspace = workspace as ProjectWorkspace;
-
-      // Update last accessed timestamp (use actual workspace ID, not the identifier)
-      try {
-        await workspaceService.updateLastAccessed(projectWorkspace.id);
-      } catch {
-        // Continue - this is not critical
-      }
 
       // Get memory service for data operations
       const memoryService = this.agent.getMemoryService();
@@ -250,6 +268,9 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           context,
           workflows,
           workflowDefinitions,
+          availableWorkflows: new WorkspaceSummaryService().summarize(projectWorkspace, true).workflows,
+          loadedWorkflow: null,
+          preloadedTools: [],
           workspaceStructure,
           recentFiles,
           keyFiles,
@@ -482,6 +503,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           type: 'string',
           description: 'Workspace name or ID to load (REQUIRED). Use a name you have actually seen — from the workspace list in getTools, from search-workspaces/list-workspaces, or from the create-workspace you just made. Do NOT infer a name from how the user phrased the request; "load my research workspace" does not mean a workspace named "Research" exists. If you do not have a confirmed name, run "memory search-workspaces --query <fragment> --load" first: it auto-loads on a single match and lists candidates otherwise. A near-miss here is recovered (single close match auto-loads, otherwise candidates are returned) — but recovery costs a round trip that discovery would have saved.'
         },
+        workflow: { type: 'string', description: 'Optional exact workflow name or ID to preload instructions and required tool schemas. Loading never runs it. Omit to load the workspace and clear the active workflow; there is no default workflow.' },
         limit: {
           type: 'number',
           description: 'Optional limit for sessions, states, and recentActivity returned (default: 5)',
@@ -553,6 +575,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
                   steps: { type: 'string' },
                   promptId: { type: 'string' },
                   promptName: { type: 'string' },
+                  ...WORKFLOW_ATTACHMENT_SCHEMA,
                   schedule: {
                     type: 'object',
                     properties: {
@@ -570,6 +593,10 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
                 required: ['id', 'name', 'when', 'steps']
               }
             },
+            availableWorkflows: { type: 'array', items: { type: 'object' }, description: 'All available workflow choices and exact preload commands for this workspace.' },
+            loadedWorkflow: { type: ['object', 'null'], description: 'Selected prepared instructions, or null when no workflow was requested. Loading never executes these instructions.' },
+            preloadedTools: { type: 'array', items: { type: 'object' }, description: 'Full tool schemas prepared for the selected workflow, equivalent to specific discovery.' },
+            workflowActivation: { type: 'object', description: 'Explicit selected/superseded workflow references and managed skill attribution after successful activation.' },
             workspaceStructure: {
               type: 'array',
               items: { type: 'string' },

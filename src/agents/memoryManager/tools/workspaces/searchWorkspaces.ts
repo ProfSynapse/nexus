@@ -24,6 +24,8 @@ import {
   SearchWorkspacesMatch
 } from '../../../../database/types/workspace/ParameterTypes';
 import { matchWorkspaces } from '../../services/WorkspaceMatcher';
+import { WorkspaceSummaryService } from '../../../../services/workspace/WorkspaceSummaryService';
+import type { ProjectWorkspace } from '../../../../database/types/workspace/WorkspaceTypes';
 
 const DEFAULT_LIMIT = 10;
 
@@ -60,7 +62,9 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
 
       let workspaces;
       try {
-        workspaces = await workspaceService.listWorkspaces();
+        workspaces = typeof workspaceService.listWorkspaceDiscovery === 'function'
+          ? (await workspaceService.listWorkspaceDiscovery()).map(workspace => ({ ...workspace, sessionCount: 0, traceCount: 0 }))
+          : await workspaceService.listWorkspaces();
       } catch (queryError) {
         return this.buildErrorResult(
           `Failed to query workspaces: ${queryError instanceof Error ? queryError.message : String(queryError)}`,
@@ -77,6 +81,7 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
 
       const limit = typeof params.limit === 'number' && params.limit > 0 ? params.limit : DEFAULT_LIMIT;
       const matches: SearchWorkspacesMatch[] = allMatches.slice(0, limit).map(match => ({
+        ...new WorkspaceSummaryService().summarize(match.workspace as ProjectWorkspace),
         id: match.workspace.id,
         name: match.workspace.name,
         description: match.workspace.description,
@@ -93,7 +98,9 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
           const loaded = await this.agent.executeTool('loadWorkspace', {
             workspace: target.id,
             context: params.context,
-            workspaceContext: params.workspaceContext
+            workspaceContext: params.workspaceContext,
+            sessionId: (params as SearchWorkspacesParameters & { sessionId?: string }).sessionId ?? params.context?.sessionId,
+            workspaceId: (params as SearchWorkspacesParameters & { workspaceId?: string }).workspaceId ?? params.context?.workspaceId
           });
 
           if (loaded && loaded.success) {
@@ -258,6 +265,8 @@ export class SearchWorkspacesTool extends BaseTool<SearchWorkspacesParameters, S
                     description: 'Fields that matched the query',
                     items: { type: 'string' }
                   }
+                  , workflows: { type: 'array', items: { type: 'object' }, description: 'Workflow choices and exact preload commands.' },
+                  workflowCount: { type: 'number' }, workflowsTruncated: { type: 'boolean' }
                 },
                 required: ['id', 'name', 'rootFolder', 'score']
               }

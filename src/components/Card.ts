@@ -20,6 +20,8 @@ export interface CardConfig {
   onEdit?: () => void;
   onDelete?: () => void;
   additionalActions?: CardAction[];
+  /** Optional metadata below the description, rendered by the owning surface. */
+  renderMetadata?: (container: HTMLElement) => void;
 }
 
 export class Card {
@@ -115,6 +117,7 @@ export class Card {
       descEl.setText(this.config.description);
     }
     
+    this.config.renderMetadata?.(cardEl);
     return cardEl;
   }
 

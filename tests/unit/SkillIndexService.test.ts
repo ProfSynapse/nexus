@@ -7,9 +7,9 @@
  * jest.fn() per the repository test convention — no real DB.
  */
 
-import { SkillIndexService } from '../../src/agents/apps/skills/services/SkillIndexService';
+import { SkillIndexService } from '../../src/services/skills/SkillIndexService';
 import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
-import type { ParsedSkillFolder, SkillRecord } from '../../src/agents/apps/skills/types';
+import type { ParsedSkillFolder, SkillRecord } from '../../src/services/skills/types';
 
 type MockSqlite = {
   queryOne: jest.Mock;
@@ -74,6 +74,7 @@ describe('SkillIndexService', () => {
       const [sql] = mock.run.mock.calls[0];
       expect(sql).toContain('INSERT INTO skills');
       expect(sql).toContain('ON CONFLICT(provider, name) DO UPDATE SET');
+      expect(sql).toContain('origin_path=COALESCE(excluded.origin_path,skills.origin_path)');
       // Owned state must NOT appear in the SET clause.
       const setClause = sql.slice(sql.indexOf('DO UPDATE SET'));
       expect(setClause).not.toContain('is_archived');
@@ -238,6 +239,7 @@ describe('SkillIndexService', () => {
       const [sql, params] = mock.run.mock.calls[0];
       expect(sql).toContain('INSERT INTO skills');
       expect(sql).toContain('ON CONFLICT(provider, name) DO UPDATE SET');
+      expect(sql).toContain('origin_path=COALESCE(excluded.origin_path,skills.origin_path)');
       const setClause = sql.slice(sql.indexOf('DO UPDATE SET'));
       expect(setClause).not.toContain('is_archived');
       expect(setClause).not.toContain('last_loaded_at');

@@ -92,6 +92,15 @@ export interface LoadWorkspaceResult extends CommonResult {
     };
     workflows: string[];
     workflowDefinitions?: WorkspaceWorkflowDefinition[];
+    availableWorkflows?: import('../../../services/workspace/WorkspaceSummaryService').WorkflowSummary[];
+    loadedWorkflow?: Omit<import('../../../services/instructions/types').PreparedWorkflow, 'preloadedTools'> | null;
+    preloadedTools?: import('../../../agents/toolManager/types').CliToolSchema[];
+    workflowActivation?: {
+      workspaceId: string;
+      selection: import('../../../services/instructions/types').WorkflowSelection | null;
+      previousSelection: import('../../../services/instructions/types').WorkflowSelection | null;
+      activeSkills: string[];
+    };
     workspaceStructure: string[];
     recentFiles: Array<{
       path: string;
@@ -244,6 +253,7 @@ export interface LoadStateResult extends CommonResult {
 // Legacy parameter types for backward compatibility
 export interface LoadWorkspaceParameters extends CommonParameters {
   workspace: string;
+  workflow?: string;
   limit?: number; // Optional limit for sessions, states, and recentActivity (default: 3)
   recursive?: boolean; // Show full recursive structure (true) or top-level folders only (false, default)
 }
@@ -321,6 +331,9 @@ export interface ListWorkspacesResult extends CommonResult {
       rootFolder: string;
       lastAccessed: number;
       childCount: number;
+      workflows?: import('../../../services/workspace/WorkspaceSummaryService').WorkflowSummary[];
+      workflowCount?: number;
+      workflowsTruncated?: boolean;
     }>;
   };
 }
@@ -335,6 +348,9 @@ export interface SearchWorkspacesMatch {
   score: number;
   /** Fields that contributed to the score. */
   matchedOn: string[];
+  workflows?: import('../../../services/workspace/WorkspaceSummaryService').WorkflowSummary[];
+  workflowCount?: number;
+  workflowsTruncated?: boolean;
 }
 
 export interface SearchWorkspacesResult extends CommonResult {

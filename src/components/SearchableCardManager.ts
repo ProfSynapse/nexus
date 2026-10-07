@@ -13,6 +13,8 @@ export interface CardSearchConfig<T extends CardItem> {
     filterFn?: (item: T, query: string) => boolean;
     /** Hide search when total items below this threshold. Default: 5 */
     minItemsForSearch?: number;
+    initialQuery?: string;
+    onQueryChange?: (query: string) => void;
 }
 
 export interface CardGroup<T extends CardItem> {
@@ -69,6 +71,7 @@ export class SearchableCardManager<T extends CardItem> {
 
     constructor(config: SearchableCardManagerConfig<T>) {
         this.config = config;
+        this.query = config.search?.initialQuery ?? '';
         this.contentEl = config.containerEl;
         this.build();
     }
@@ -94,10 +97,12 @@ export class SearchableCardManager<T extends CardItem> {
         const searchContainer = this.contentEl.createDiv('searchable-card-manager-search');
         this.searchInput = new TextComponent(searchContainer);
         this.searchInput.setPlaceholder(this.config.search.placeholder);
+        this.searchInput.setValue(this.query);
         this.searchInput.inputEl.setAttribute('aria-label', this.config.search.placeholder);
         this.searchInput.inputEl.addClass('searchable-card-manager-input');
         this.searchInput.onChange(value => {
             this.query = value;
+            this.config.search?.onQueryChange?.(value);
             this.applyFilter();
         });
     }

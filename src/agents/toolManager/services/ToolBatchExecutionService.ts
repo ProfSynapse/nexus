@@ -477,7 +477,13 @@ export class ToolBatchExecutionService {
       }
 
       if (toolResult.success && agentName === LOAD_WORKSPACE_AGENT && toolSlug === LOAD_WORKSPACE_TOOL) {
-        await this.bindSessionToLoadedWorkspace(context, toolResult);
+        const data = toolResult.data as Record<string, unknown> | undefined;
+        const activation = data?.workflowActivation;
+        // Core activation already persisted selection and binding atomically.
+        // Older direct integrations still use the successful-load fallback.
+        if (!activation || typeof activation !== 'object' || typeof (activation as Record<string, unknown>).workspaceId !== 'string') {
+          await this.bindSessionToLoadedWorkspace(context, toolResult);
+        }
       }
 
       if (toolResult.success) {
@@ -595,6 +601,13 @@ export class ToolBatchExecutionService {
       workspaceId: params.workspaceId || context.workspaceId,
       ...(shouldInjectSessionId ? { sessionId: params.sessionId || context.sessionId } : {})
     };
+
+    // Workspace activation belongs to the executing session, even when a
+    // caller supplies bookkeeping fields in the command arguments.
+    if (agentName === 'memoryManager' && (toolSlug === 'loadWorkspace' || toolSlug === 'searchWorkspaces')) {
+      defaulted.sessionId = context.sessionId;
+      defaulted.workspaceId = context.workspaceId;
+    }
 
     if (agentName === 'promptManager' && toolSlug === 'generateImage') {
       return {

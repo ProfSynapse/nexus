@@ -1,3 +1,4 @@
+import { normalizeWorkflowAttachments, WORKFLOW_ATTACHMENT_SCHEMA } from '../../../../services/workflows/workflowAttachments';
 /**
  * Location: /src/agents/memoryManager/modes/workspaces/UpdateWorkspaceMode.ts
  * Purpose: Update existing workspace properties and context
@@ -75,6 +76,7 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
 
     async execute(params: UpdateWorkspaceParameters): Promise<UpdateWorkspaceResult> {
         try {
+            if (params.workflows !== undefined) params.workflows = normalizeWorkflowAttachments(params.workflows);
             // Get workspace service
             const serviceResult = await this.serviceIntegration.getWorkspaceService();
             if (!serviceResult.success || !serviceResult.service) {
@@ -239,6 +241,7 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                             steps: { type: 'string' },
                             promptId: { type: 'string', description: 'Optional custom prompt ID bound to this workflow.' },
                             promptName: { type: 'string', description: 'Optional cached prompt name for display.' },
+                            ...WORKFLOW_ATTACHMENT_SCHEMA,
                             schedule: {
                                 type: 'object',
                                 description: 'Optional workflow schedule.',

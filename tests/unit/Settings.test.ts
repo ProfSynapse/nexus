@@ -3,6 +3,12 @@ import { DEFAULT_STORAGE_SETTINGS } from '../../src/types';
 import { Settings } from '../../src/settings';
 
 describe('Settings', () => {
+  it('normalizes malformed instruction metadata without retaining unchecked nested fields', async () => {
+    const plugin = { loadData: jest.fn(async () => ({ instructionLibrary: { version: 1, items: { bad: { categories: ['x'] }, '["skill","nexus","review"]': { categories: [' ', 'Research', 'Research', 1], archived: true } } } })), saveData: jest.fn() } as unknown as Plugin;
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+    expect(settings.settings.instructionLibrary).toEqual({ version: 1, items: { '["skill","nexus","review"]': { categories: ['Research'], archived: true } } });
+  });
   it('starts with storage defaults in the runtime settings object', () => {
     const plugin = {
       loadData: jest.fn(async () => null),

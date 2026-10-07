@@ -8,6 +8,8 @@ Apps are optional tool domains that extend Nexus with third-party integrations a
 
 Configure apps in **Settings -> Nexus -> Apps**. Install an app, enter your API key when required, hit **Validate**, then toggle it on. Built-in apps do not download extra npm packages when enabled.
 
+Skills are part of core Nexus and are available without installing or enabling an app. Manage prompts and skills together in **Settings -> Nexus -> Instructions**, with filters for type, category, and source. Prompts remain single saved texts; skills are folders containing `SKILL.md` and optional resources. Provider import and sync-back preferences remain separate from core skill availability.
+
 ---
 
 ## Available Apps
@@ -16,7 +18,6 @@ Configure apps in **Settings -> Nexus -> Apps**. Install an app, enter your API 
 
 | App | Tools | What It Does |
 |-----|-------|--------------|
-| **Skills** | listSkills, loadSkill, createSkill, updateSkill, archiveSkill, syncSkills | Author, index, and load reusable agent **Skills** (per the Skills Protocol) straight from your vault. Discover available skills, load one with its bundled files into context, and create/update/archive them over time. A background watcher keeps the index in sync as you edit skill files. Skills are **vault-local** — Nexus never reaches into OS-home provider folders. Works on desktop and mobile. |
 | **Data Analysis** *(experimental, desktop only)* | runPython, listCapabilities | Run Python (pandas) against your vault's CSV and Excel data in a sandboxed Pyodide worker. Workbooks project into editable CSVs and **write back automatically** — formulas, charts, images, and pivots are preserved byte-for-byte. No setup beyond enabling the app; the Python engine loads on first use. Requires desktop; not available on mobile. |
 | **ElevenLabs** | listVoices, soundEffects, generateMusic | AI audio generation: browse voices, create sound effects, and generate music. Audio files save directly to your vault. Text-to-speech is not a tool on this app — enabling it makes ElevenLabs voices available to the built-in read-aloud and to `prompt generate-audio` through the Voice defaults. |
 | **Nexus Ingester** *(experimental)* | run, capabilities | Convert PDF, DOCX, PPTX, and audio files in your vault to sibling Markdown notes. Two modes: **Manual** - right-click any supported file and choose "Convert to Markdown". **Auto** - enable "Auto-convert new files" in Settings -> Defaults -> Ingestion and any supported file added to the vault is converted automatically. PDF extraction uses text mode or OCR. OCR supports **Mistral OCR** (native, or via OpenRouter) — which returns full-fidelity text and extracts embedded images into a per-note folder, linked inline — as well as vision-model OCR. The PDF worker is loaded only when PDF ingestion runs. Audio transcription supports OpenAI (Whisper, GPT-4o Transcribe), Groq (Whisper), and Google Gemini multimodal audio. XLSX ingestion is not included in the core release. |

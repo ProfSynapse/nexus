@@ -2,6 +2,7 @@ import { Plugin } from 'obsidian';
 import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
 import { SecretStore } from './services/secrets/SecretStore';
+import { normalizeInstructionLibrarySettings } from './services/instructions/InstructionMetadataService';
 import {
     clearStoredSecrets,
     hydrateSecrets,
@@ -25,7 +26,7 @@ export class Settings {
     constructor(plugin: Plugin) {
         this.plugin = plugin;
         this.secretStore = new SecretStore(plugin.app ?? {});
-        this.settings = DEFAULT_SETTINGS;
+        this.settings = { ...DEFAULT_SETTINGS, instructionLibrary: normalizeInstructionLibrarySettings(undefined) };
     }
 
     /**
@@ -67,6 +68,7 @@ export class Settings {
 
             const { llmProviders, storage, ...otherSettings } = sanitizedLoadedData;
             Object.assign(this.settings, otherSettings);
+            this.settings.instructionLibrary = normalizeInstructionLibrarySettings(otherSettings.instructionLibrary);
 
             // Ensure memory settings exist
             this.settings.memory = DEFAULT_SETTINGS.memory;

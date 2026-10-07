@@ -9,7 +9,7 @@
  */
 
 import type { DataAdapter } from 'obsidian';
-import { SkillWriteService } from '@/agents/apps/skills/services/SkillWriteService';
+import { SkillWriteService } from '@/services/skills/SkillWriteService';
 
 /**
  * Minimal in-memory DataAdapter. Tracks files (path → content) and folders.

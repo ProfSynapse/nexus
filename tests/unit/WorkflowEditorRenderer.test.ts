@@ -164,6 +164,7 @@ function makeSpiedComponent(): Component {
 
 function renderEditor(workflow: Workflow, isNew = false): {
   component: Component;
+  renderer: WorkflowEditorRenderer;
   onSave: jest.Mock;
   onCancel: jest.Mock;
   onRunNow: jest.Mock;
@@ -176,7 +177,7 @@ function renderEditor(workflow: Workflow, isNew = false): {
   const renderer = new WorkflowEditorRenderer([], onSave, onCancel, onRunNow, component);
   const container = createMockEl('root');
   renderer.render(container as unknown as HTMLElement, workflow, isNew);
-  return { component, onSave, onCancel, onRunNow, container };
+  return { component, renderer, onSave, onCancel, onRunNow, container };
 }
 
 function sectionByTitle(title: string): RecordedSection {
@@ -377,5 +378,21 @@ describe('WorkflowEditorRenderer (PR4 BoxedSection port)', () => {
       wf.name = 'Mutated';
       expect(renderer.getWorkflow().name).toBe('Original');
     });
+  });
+});
+
+describe('workflow attachments survive editing', () => {
+  it('clones skill references and tool arrays so draft edits do not mutate the saved workflow', () => {
+    const original = makeWorkflow({ skills: [{ provider: 'codex', name: 'source-check' }], tools: ['content read'] });
+    const { renderer } = renderEditor(original);
+    const draft = renderer.getWorkflow();
+    draft.skills![0].name = 'changed'; draft.tools!.push('task list');
+    expect(original.skills).toEqual([{ provider: 'codex', name: 'source-check' }]);
+    expect(renderer.getWorkflow().tools).toEqual(['content read']);
+  });
+  it('retains missing prompt/skill/tool bindings and unknown extension fields on save', () => {
+    const original = { ...makeWorkflow({ promptId: 'missing-id', promptName: 'Archived prompt', skills: [{ provider: 'missing-provider', name: 'missing-skill' }], tools: ['unknown-agent missing-tool'] }), futureField: { keep: true } };
+    const { renderer } = renderEditor(original);
+    expect(renderer['validateAndBuildWorkflow']()).toMatchObject({ promptId: 'missing-id', promptName: 'Archived prompt', skills: original.skills, tools: original.tools, futureField: { keep: true } });
   });
 });

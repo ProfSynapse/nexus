@@ -353,6 +353,97 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
     // Custom prompt storage service for AgentManager
     {
+        name: 'instructionMetadataService',
+        dependencies: [],
+        create: defineService(async (context) => {
+            const { InstructionMetadataService } = await import('../../services/instructions/InstructionMetadataService');
+            return new InstructionMetadataService({
+                getSettings: () => context.settings.settings.instructionLibrary,
+                setSettings: value => { context.settings.settings.instructionLibrary = value; },
+                saveSettings: () => context.settings.saveSettings()
+            });
+        })
+    },
+    {
+        name: 'sessionWorkflowService',
+        dependencies: ['sessionContextManager', 'workspaceService', 'workflowPreparationService', 'skillService'],
+        create: defineService(async (context) => {
+            const { SessionWorkflowService } = await import('../../services/workflows/SessionWorkflowService');
+            const sessions = await context.serviceManager.getService<SessionContextManager>('sessionContextManager');
+            const workspaces = await context.serviceManager.getService<WorkspaceService>('workspaceService');
+            const prepare = await context.serviceManager.getService<import('../../services/workflows/WorkflowPreparationService').WorkflowPreparationService>('workflowPreparationService');
+            const skills = await context.serviceManager.getService<import('../../services/skills/SkillService').SkillService>('skillService');
+            return new SessionWorkflowService({
+                sessions,
+                getWorkspace: id => workspaces.getWorkspace(id),
+                prepare: (workspace, id) => prepare.prepare(workspace, id),
+                recordLoaded: references => skills.recordLoaded(references)
+            });
+        })
+    },
+    {
+        name: 'toolCatalogService',
+        dependencies: ['agentManager'],
+        create: defineService(async (context) => {
+            const { ToolCatalogService } = await import('../../agents/toolManager/services/ToolCatalogService');
+            const agents = await context.serviceManager.getService<AgentManager>('agentManager');
+            return new ToolCatalogService(() => new Map(agents.getAgents().map(agent => [agent.name, agent])));
+        })
+    },
+    {
+        name: 'workflowPreparationService',
+        dependencies: ['instructionLibraryService', 'toolCatalogService'],
+        create: defineService(async (context) => {
+            const { WorkflowPreparationService } = await import('../../services/workflows/WorkflowPreparationService');
+            const instructions = await context.serviceManager.getService<import('../../services/instructions/types').InstructionPreparationPort>('instructionLibraryService');
+            const catalog = await context.serviceManager.getService<import('../../services/instructions/types').ToolCatalogPort>('toolCatalogService');
+            return new WorkflowPreparationService(instructions, catalog);
+        })
+    },
+    {
+        name: 'skillService',
+        dependencies: ['instructionMetadataService'],
+        create: defineService(async (context) => {
+            const { SkillService } = await import('../../services/skills/SkillService');
+            const { migrateCoreSkillsSettings } = await import('../../services/skills/migrateCoreSkillsSettings');
+            const metadata = await context.serviceManager.getService<import('../../services/instructions/InstructionMetadataService').InstructionMetadataService>('instructionMetadataService');
+            const migration = await migrateCoreSkillsSettings({
+                get: () => context.settings.settings,
+                apply: (skills, apps) => { context.settings.settings.skills = skills; context.settings.settings.apps = apps; },
+                save: () => context.settings.saveSettings()
+            });
+            const service = new SkillService({
+                vault: context.app.vault,
+                getSettings: () => ({
+                    storage: context.settings.settings.storage,
+                    // A failed migration cannot authorize provider writes.
+                    skills: migration.ok ? context.settings.settings.skills : { version: 1, automaticImport: false, syncBackOnEdit: false }
+                }),
+                getStorageAdapter: () => context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter'),
+                availability: metadata,
+                onChanged: () => metadata.invalidate(),
+                onRenamed: async (from, to) => {
+                    const { updateWorkflowSkillReferences } = await import('../../services/workflows/updateWorkflowSkillReferences');
+                    const workspaces = await context.serviceManager.getService<WorkspaceService>('workspaceService');
+                    return updateWorkflowSkillReferences(workspaces, from, to);
+                }
+            });
+            service.startAfterLayoutReady(context.app);
+            return service;
+        })
+    },
+    {
+        name: 'instructionLibraryService',
+        dependencies: ['customPromptStorageService', 'skillService', 'instructionMetadataService'],
+        create: defineService(async (context) => {
+            const { InstructionLibraryService } = await import('../../services/instructions/InstructionLibraryService');
+            const prompts = await context.serviceManager.getService<CustomPromptStorageService>('customPromptStorageService');
+            const skills = await context.serviceManager.getService<import('../../services/instructions/types').InstructionSkillMutationPort>('skillService');
+            const metadata = await context.serviceManager.getService<import('../../services/instructions/InstructionMetadataService').InstructionMetadataService>('instructionMetadataService');
+            return new InstructionLibraryService(prompts, skills, metadata, skills);
+        })
+    },
+    {
         name: 'customPromptStorageService',
         dependencies: [],
         create: defineService(async (context) => {
@@ -394,6 +485,20 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 });
 
                 // Start initialization in background (non-blocking)
+                let pausedSkills: import('../../services/skills/SkillService').SkillService | undefined;
+                adapter.setBeforeCacheRebuild(async () => {
+                    pausedSkills = await context.serviceManager.getService<import('../../services/skills/SkillService').SkillService>('skillService');
+                    const preserved = await pausedSkills.pauseForRebuild();
+                    if (!preserved.ok) throw new Error(preserved.error.message);
+                });
+                adapter.setAfterCacheRebuild(async () => {
+                    const skills = pausedSkills;
+                    pausedSkills = undefined;
+                    if (skills) {
+                        const resumed = await skills.resumeAfterRebuild();
+                        if (!resumed.ok) throw new Error(`Skills index could not resume after rebuild: ${resumed.error.message}`);
+                    }
+                });
                 // ChatView will show loading indicator until ready
                 void adapter.initialize(false);
                 return adapter;
@@ -539,19 +644,23 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
     {
         name: 'workflowRunService',
-        dependencies: ['chatService', 'workspaceService', 'customPromptStorageService'],
+        dependencies: ['chatService', 'workspaceService', 'customPromptStorageService', 'workflowPreparationService', 'sessionWorkflowService'],
         create: defineService(async (context) => {
             const { WorkflowRunService } = await import('../../services/workflows/WorkflowRunService');
             const chatService = await context.serviceManager.getService<ChatService>('chatService');
             const workspaceService = await context.serviceManager.getService<WorkspaceService>('workspaceService');
             const customPromptStorage = await context.serviceManager.getService<CustomPromptStorageService>('customPromptStorageService');
+            const workflowPreparation = await context.serviceManager.getService<import('../../services/workflows/WorkflowPreparationService').WorkflowPreparationService>('workflowPreparationService');
+            const sessionWorkflows = await context.serviceManager.getService<import('../../services/instructions/types').SessionWorkflowPort>('sessionWorkflowService');
 
             return new WorkflowRunService({
                 app: context.app,
                 plugin: context.plugin,
                 chatService,
                 workspaceService,
-                customPromptStorage
+                customPromptStorage,
+                workflowPreparation,
+                sessionWorkflows
             });
         })
     },

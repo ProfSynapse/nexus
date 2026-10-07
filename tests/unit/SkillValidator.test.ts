@@ -1,4 +1,4 @@
-import { SkillValidator } from '../../src/agents/apps/skills/services/SkillValidator';
+import { SkillValidator } from '../../src/services/skills/SkillValidator';
 
 describe('SkillValidator', () => {
   let validator: SkillValidator;

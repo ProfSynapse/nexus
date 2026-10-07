@@ -6,7 +6,8 @@ import { SystemPromptBuilder } from '../../ui/chat/services/SystemPromptBuilder'
 import type { ChatService } from '../chat/ChatService';
 import type { WorkspaceService } from '../WorkspaceService';
 import type { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
-import type { CustomPrompt } from '../../types';
+import type { PreparedWorkflow, SessionWorkflowPort } from '../instructions/types';
+import type { WorkflowPreparationService } from './WorkflowPreparationService';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import {
   buildWorkflowKickoffMessage,
@@ -21,11 +22,14 @@ export interface WorkflowRunServiceDeps {
   chatService: ChatService;
   workspaceService: WorkspaceService;
   customPromptStorage?: CustomPromptStorageService | null;
+  workflowPreparation: WorkflowPreparationService;
+  sessionWorkflows: SessionWorkflowPort;
 }
 
 interface WorkflowModelOption {
   providerId?: string;
   modelId?: string;
+  contextWindow: number;
 }
 
 export class WorkflowRunService {
@@ -63,16 +67,23 @@ export class WorkflowRunService {
     const runTrigger = request.runTrigger ?? 'manual';
     const runKey = request.runKey ?? `${request.workspaceId}:${workflow.id}:${scheduledFor}`;
     const sessionId = generateSessionId();
-    const prompt = this.resolvePrompt(workflow.promptId);
     const model = await this.resolveDefaultModel();
+    if (!model) throw new Error('Select an available model before running a workflow');
+    const basePrompt = await this.buildSystemPrompt({ sessionId, workspaceId: request.workspaceId, customPrompt: null, loadedWorkspaceData, providerId: model.providerId });
+    const prepared = await this.deps.workflowPreparation.prepare(workspace, workflow.id, { maxTokens: Math.max(0, model.contextWindow - 2048 - Math.ceil((basePrompt?.length ?? 0) / 4)) });
+    if (!prepared.ok) throw new Error(prepared.error.message);
     const systemPrompt = await this.buildSystemPrompt({
       sessionId,
       workspaceId: request.workspaceId,
-      customPrompt: prompt?.prompt ?? null,
+      customPrompt: null,
+      preparedWorkflow: prepared.value,
       loadedWorkspaceData,
       providerId: model?.providerId
     });
     const kickoffMessage = buildWorkflowKickoffMessage(workflow, runTrigger, scheduledFor);
+    if (Math.ceil(((systemPrompt?.length ?? 0) + kickoffMessage.length) / 4) > model.contextWindow - 2048) throw new Error('Workflow instructions and kickoff exceed this model context budget. Choose a larger model or reduce the workflow.');
+    const activated = await this.deps.sessionWorkflows.commit(sessionId, request.workspaceId, prepared.value, this.deps.sessionWorkflows.begin(sessionId, request.workspaceId));
+    if (!activated.ok) throw new Error(activated.error.message);
 
     const result = await this.deps.chatService.createConversation(
       buildWorkflowRunTitle(workspace.name, workflow.name, scheduledFor),
@@ -83,7 +94,8 @@ export class WorkflowRunService {
         systemPrompt: systemPrompt || undefined,
         workspaceId: request.workspaceId,
         sessionId,
-        promptId: workflow.promptId,
+        // Run provenance does not overwrite the independently chosen chat prompt.
+        promptId: undefined,
         workflowId: workflow.id,
         workflowName: workflow.name,
         runTrigger,
@@ -138,13 +150,6 @@ export class WorkflowRunService {
     };
   }
 
-  private resolvePrompt(promptId?: string): CustomPrompt | undefined {
-    if (!promptId || !this.deps.customPromptStorage) {
-      return undefined;
-    }
-    return this.deps.customPromptStorage.getPromptByNameOrId(promptId);
-  }
-
   private async resolveDefaultModel(): Promise<WorkflowModelOption | null> {
     const availableModels = await ModelSelectionUtility.getAvailableModels(this.deps.app);
     if (availableModels.length === 0) {
@@ -159,11 +164,13 @@ export class WorkflowRunService {
     customPrompt: string | null;
     loadedWorkspaceData: Record<string, unknown>;
     providerId?: string;
+    preparedWorkflow?: PreparedWorkflow;
   }): Promise<string | null> {
     return this.systemPromptBuilder.build({
       sessionId: params.sessionId,
       workspaceId: params.workspaceId,
       customPrompt: params.customPrompt,
+      preparedWorkflow: params.preparedWorkflow,
       loadedWorkspaceData: params.loadedWorkspaceData,
       skipToolsSection: params.providerId === 'webllm'
     });

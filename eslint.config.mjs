@@ -378,7 +378,7 @@ export default defineConfig([
             "src/agents/apps/dataAnalysis/services/PyodideEnsurer.ts",
             "src/agents/apps/dataAnalysis/spreadsheet/WorkbookMirrorService.ts",
             "src/agents/apps/dataAnalysis/DataAnalysisAgent.ts",
-            "src/agents/apps/skills/services/SkillWriteService.ts", // confined via its own skillPaths resolver
+            "src/services/skills/SkillWriteService.ts", // confined via its own skillPaths resolver
 
             // ── Segment 3: TECH DEBT — untrusted-boundary tools that already
             //    call resolveVaultPath()/tryResolveVaultPath() before writing

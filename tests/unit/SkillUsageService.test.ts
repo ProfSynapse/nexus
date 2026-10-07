@@ -8,7 +8,7 @@
  * SQLite is mocked with jest.fn() — no real DB.
  */
 
-import { SkillUsageService } from '../../src/agents/apps/skills/services/SkillUsageService';
+import { SkillUsageService } from '../../src/services/skills/SkillUsageService';
 import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
 
 type MockSqlite = {

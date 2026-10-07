@@ -68,9 +68,7 @@ export function buildWorkflowKickoffMessage(
 ): string {
   return [
     `Run workflow: ${workflow.name}`,
-    `When: ${workflow.when}`,
-    'Steps:',
-    workflow.steps,
+    'Execute the steps in the explicitly prepared loaded_workflow context, using its bound instructions and preloaded tools.',
     `Trigger: ${runTrigger}`,
     `Scheduled for: ${formatRunTimestamp(scheduledFor)}`
   ].join('\n\n');

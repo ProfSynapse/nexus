@@ -10,8 +10,6 @@ import { CardItem } from '../../components/CardManager';
 import { SearchableCardManager, CardGroup } from '../../components/SearchableCardManager';
 import { AppConfigModal, AppSettingsSection, AppCustomSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
-import { SkillsSectionRenderer } from '../../components/skills/SkillsSectionRenderer';
-import type { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
 import type { BaseAppAgent } from '../../agents/apps/BaseAppAgent';
 
 /**
@@ -185,28 +183,8 @@ export class AppsTab {
     }).open();
   }
 
-  /**
-   * Build custom (app-owned) settings sections. The Skills app hosts its full
-   * management UI (list / create / edit / archive / delete / sync) here via the
-   * SkillsSectionRenderer. Uses manifest.id to identify the app (avoids
-   * instanceof issues with bundlers).
-   */
-  private buildCustomSections(
-    _appId: string,
-    agent: BaseAppAgent
-  ): AppCustomSection[] {
-    if (agent.manifest.id === 'skills') {
-      return [{
-        title: 'Skills',
-        render: (el) => {
-          const renderer = new SkillsSectionRenderer(this.services.app, el, agent as SkillsAgent);
-          void renderer.render();
-          // Return a disposer so AppConfigModal.onClose unloads the renderer's
-          // Component (unregisters its DOM events) — no leak across modal opens.
-          return () => renderer.destroy();
-        }
-      }];
-    }
+  /** Apps can supply custom sections; core instruction management lives in Instructions. */
+  private buildCustomSections(_appId: string, _agent: BaseAppAgent): AppCustomSection[] {
     return [];
   }
 

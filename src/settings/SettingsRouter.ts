@@ -3,7 +3,7 @@
  * Handles tab switching and list/detail view navigation
  */
 
-export type SettingsTab = 'defaults' | 'workspaces' | 'prompts' | 'providers' | 'apps' | 'data';
+export type SettingsTab = 'defaults' | 'workspaces' | 'instructions' | 'prompts' | 'providers' | 'apps' | 'data';
 export type SettingsView = 'list' | 'detail';
 
 export interface RouterState {
@@ -15,6 +15,7 @@ export interface RouterState {
 export class SettingsRouter {
     private state: RouterState = { tab: 'defaults', view: 'list' };
     private listeners: Set<(state: RouterState) => void> = new Set();
+    private navigationGuard?: (next: RouterState) => boolean;
 
     /**
      * Get current router state
@@ -27,31 +28,39 @@ export class SettingsRouter {
      * Switch to a different tab (resets to list view)
      */
     setTab(tab: SettingsTab): void {
-        this.state = { tab, view: 'list', detailId: undefined };
-        this.notify();
+        this.navigate({ tab: tab === 'prompts' ? 'instructions' : tab, view: 'list', detailId: undefined });
     }
 
     /**
      * Navigate to detail view for a specific item
      */
     showDetail(id: string): void {
-        this.state = {
+        this.navigate({
             ...this.state,
             view: 'detail',
             detailId: id
-        };
-        this.notify();
+        });
     }
 
     /**
      * Go back to list view (from detail view)
      */
     back(): void {
-        this.state = {
+        this.navigate({
             ...this.state,
             view: 'list',
             detailId: undefined
-        };
+        });
+    }
+
+    /** An owning editor may prevent navigation while it has unsaved changes. */
+    setNavigationGuard(guard: (next: RouterState) => boolean): () => void {
+        this.navigationGuard = guard;
+        return () => { if (this.navigationGuard === guard) this.navigationGuard = undefined; };
+    }
+
+    private navigate(next: RouterState): void {
+        if (!this.navigationGuard || this.navigationGuard(next)) this.state = next;
         this.notify();
     }
 
@@ -84,5 +93,6 @@ export class SettingsRouter {
      */
     destroy(): void {
         this.listeners.clear();
+        this.navigationGuard = undefined;
     }
 }

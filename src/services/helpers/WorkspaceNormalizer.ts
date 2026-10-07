@@ -6,7 +6,8 @@
 import { IndividualWorkspace } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import type { WorkflowSchedule, WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
-import { v4 as uuidv4 } from '../../utils/uuid';
+import { fnv1aHex } from '../skills/skillHash';
+import { normalizeWorkflowAttachments } from '../workflows/workflowAttachments';
 
 /**
  * Migrate legacy array-based workflow steps to string format
@@ -36,7 +37,7 @@ export function normalizeWorkspaceContext(context: HybridTypes.WorkspaceContext)
   }
 
   let changed = false;
-  const workflows = context.workflows.map((workflow) => {
+  const workflows = context.workflows.map((workflow, index) => {
     let nextWorkflow = workflow as WorkspaceWorkflow & { steps: string | string[] };
 
     if (Array.isArray(nextWorkflow.steps)) {
@@ -45,7 +46,9 @@ export function normalizeWorkspaceContext(context: HybridTypes.WorkspaceContext)
     }
 
     if (!nextWorkflow.id) {
-      nextWorkflow = { ...nextWorkflow, id: uuidv4() };
+      // Stable on passive reads until the next explicit edit persists the ID.
+      // The index distinguishes duplicate definitions within a workspace.
+      nextWorkflow = { ...nextWorkflow, id: `workflow_${index}_${fnv1aHex(JSON.stringify([nextWorkflow.name, nextWorkflow.when]))}` };
       changed = true;
     }
 
@@ -55,6 +58,13 @@ export function normalizeWorkspaceContext(context: HybridTypes.WorkspaceContext)
       changed = true;
     }
 
+    // Validate only new attachment fields; keep malformed legacy definitions
+    // readable so explicit preparation can report the affected workflow.
+    try {
+      const normalized = normalizeWorkflowAttachments([nextWorkflow])[0];
+      if (JSON.stringify(normalized) !== JSON.stringify(nextWorkflow)) changed = true;
+      nextWorkflow = normalized;
+    } catch { /* Preserve invalid data for the editor and preparation error. */ }
     return nextWorkflow;
   });
 

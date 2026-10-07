@@ -1,17 +1,17 @@
 # Workspace Memory
 
-All Nexus data lives inside the plugin directory:
+Synced Nexus data lives under the storage root configured in settings:
 
 ```
-.obsidian/plugins/<plugin-folder>/
+<storage-root>/
 ├── data/
-│   ├── conversations/*.jsonl   # Chat history (syncs across devices)
-│   ├── workspaces/*.jsonl      # Workspace events
-│   └── tasks/tasks_*.jsonl     # Task/project events per workspace
-└── cache.db                    # SQLite cache (auto-rebuilt, not synced)
+│   ├── conversations/<id>/shard-*.jsonl
+│   ├── workspaces/<id>/shard-*.jsonl
+│   └── tasks/<workspace-id>/shard-*.jsonl
+└── skills/<provider>/<name>/SKILL.md
 ```
 
-JSONL files are the source of truth (sync-friendly). SQLite is a local performance cache that rebuilds automatically. Because the `data/` folder lives inside the plugin directory, Obsidian Sync includes it automatically.
+JSONL files are the source of truth. SQLite is a local, rebuildable performance cache. Skill folders hold their instructions and resources; category overrides and skill archive preferences are saved with plugin settings and survive cache rebuilds. Copying a skill folder alone does not copy those preferences.
 
 ---
 
@@ -34,11 +34,32 @@ When a workspace loads, its **recent activity** is grouped by session and carrie
 Use workflows when you want reusable, workspace-scoped operating procedures instead of one-off prompts.
 
 Each workflow can:
+
 - Describe **when** it should be used
 - Store **steps** in plain language
-- Bind an optional **saved prompt or agent**
+- Bind an optional **saved prompt**
+- Attach skills by their **provider and folder name**
+- Preload tools by an **agent or agent/tool selector**
 - Run immediately with **Run now**
 - Run automatically on a **recurring schedule**
+
+### Preloading a workflow
+
+Workspace lists and discovery show their available workflows. Load one explicitly with:
+
+```text
+memory load-workspace "Research" --workflow "Review evidence"
+```
+
+This prepares the selected workflow's prompt, steps, skill instructions, resource locations, and full required tool schemas. It does not execute the instructions, tools, or an LLM run. A missing, archived, or unavailable dependency fails preparation without changing the current selection.
+
+There is no default workflow. Loading a workspace without `--workflow` clears the active workflow setup; ordinary internal refreshes preserve it. `memory run`, **Run now**, and schedules execute workflows using the same preparation logic.
+
+### Instruction library
+
+**Settings -> Nexus -> Instructions** combines the browsing and editing surface for prompts and skills. Filter by type, category, or source. Prompts retain their saved IDs and single text body. Skills retain their folder packages, with `SKILL.md` and any supporting files. Core skill tools remain available without an Apps install/enable switch; provider import and sync-back remain explicit preferences.
+
+A skill may declare required tool selectors under `metadata.nexus.tools` in its frontmatter. Selectors such as `content read` describe capabilities to preload; arguments and executable commands are rejected. Supporting files are listed for selective reading rather than loaded wholesale.
 
 ### Supported Schedules
 

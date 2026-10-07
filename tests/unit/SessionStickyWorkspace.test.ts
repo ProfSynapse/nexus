@@ -129,6 +129,15 @@ describe('resolution order: explicit → bound → unbound', () => {
 // ---------------------------------------------------------------------------
 
 describe('bind point 1: explicit useTools workspaceId', () => {
+  it('keeps a centrally committed load over an envelope even when it equals the prior binding', async () => {
+    const { manager } = makeManager();
+    manager.bindHandleWorkspace('nexus-cli', 'ws-blog-id');
+    const { strategy } = makeStrategy(manager, () => makeToolManagerAgent(() => ({
+      success: true, agent: 'memoryManager', tool: 'loadWorkspace', workflowActivation: { workspaceId: 'ws-blog-id' }
+    })));
+    await strategy.handle(useToolsRequest({ workspaceId: 'Research' }));
+    expect(manager.resolveHandleWorkspace('nexus-cli')).toBe('ws-blog-id');
+  });
   it('binds the handle when the workspace was explicit and the result did not fail', async () => {
     const { manager } = makeManager();
     const { strategy } = makeStrategy(manager);

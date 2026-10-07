@@ -74,7 +74,7 @@ describe('SettingsRouter', () => {
     });
 
     it('should accept all valid tab values', () => {
-      const tabs: SettingsTab[] = ['defaults', 'workspaces', 'prompts', 'providers', 'apps', 'data'];
+      const tabs: SettingsTab[] = ['defaults', 'workspaces', 'instructions', 'providers', 'apps', 'data'];
       for (const tab of tabs) {
         router.setTab(tab);
         expect(router.getState().tab).toBe(tab);
@@ -366,5 +366,32 @@ describe('SettingsRouter', () => {
 
       expect(listener).toHaveBeenCalledTimes(4);
     });
+  });
+});
+
+describe('Instructions navigation', () => {
+  it('redirects legacy prompt navigation while retaining its detail ID', () => {
+    const router = new SettingsRouter();
+    router.setTab('prompts');
+    router.showDetail('legacy-prompt-id');
+    expect(router.getState()).toEqual({ tab: 'instructions', view: 'detail', detailId: 'legacy-prompt-id' });
+  });
+  it('retains the active draft when a navigation guard blocks a tab change', () => {
+    const router = new SettingsRouter();
+    router.setTab('instructions'); router.showDetail('draft');
+    const changed = jest.fn(); router.onNavigate(changed);
+    const clear = router.setNavigationGuard(() => false);
+    router.setTab('workspaces');
+    expect(router.getState()).toEqual({ tab: 'instructions', view: 'detail', detailId: 'draft' });
+    expect(changed).toHaveBeenLastCalledWith(router.getState());
+    clear(); router.setTab('workspaces');
+    expect(router.getState().tab).toBe('workspaces');
+  });
+  it('does not let disposal of an old editor remove a newer guard', () => {
+    const router = new SettingsRouter();
+    const clear = router.setNavigationGuard(() => true);
+    router.setNavigationGuard(() => false);
+    clear(); router.setTab('instructions');
+    expect(router.getState().tab).toBe('defaults');
   });
 });

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus — Instructions and workflow preloading</title>
+  <link rel="stylesheet" href="instruction-library-workflow-preloading.css">
+  <script src="instruction-library-workflow-preloading.js" defer></script>
+</head>
+<body class="theme-dark">
+  <header class="mock-toolbar">
+    <div><strong>Instructions + workflow preloading · v1</strong><p>Interactive design preview. Sample data only; saves, sync, resource opening, loads, and runs are simulated.</p></div>
+    <div class="mock-controls">
+      <label>Surface <select id="mock-surface"><option value="library">Instruction library</option><option value="workflow">Workflow editor</option><option value="picker">Workspace picker</option></select></label>
+      <label>State <select id="mock-state"><option value="ready">Ready</option><option value="empty">Empty</option><option value="loading">Loading</option><option value="error">Error</option><option value="broken">Broken reference</option></select></label>
+      <label>Theme <select id="mock-theme"><option value="dark">Dark</option><option value="light">Light</option></select></label>
+      <label>Width <select id="mock-width"><option value="desktop">Desktop</option><option value="phone">Phone · 390px</option></select></label>
+    </div>
+  </header>
+  <main class="mock-device nexus-settings" id="mock-device">
+    <header class="nexus-settings-header"><h2>Nexus</h2><p class="nexus-settings-desc">AI-powered tools for your vault.</p><div class="nexus-settings-version-row"><span class="nexus-settings-version">Settings</span><button id="mock-get-started">Get started ▸</button></div></header>
+    <nav class="memory-settings-tabs nexus-settings-tabs" aria-label="Nexus settings" id="settings-tabs"></nav>
+    <div class="memory-tab-content" id="surface"></div>
+  </main>
+  <div class="mock-toast" id="mock-toast" role="status" aria-live="polite" hidden></div>
+  <dialog id="new-instruction" class="modal-content"><h2>New instruction</h2><p class="setting-item-description">Choose the kind of instruction you want to create.</p><div class="nexus-instruction-type-options"><button id="new-prompt"><strong>Prompt</strong><span>A single block of instruction text.</span></button><button id="new-skill"><strong>Skill</strong><span>A folder with SKILL.md and optional resources.</span></button></div><div class="nexus-form-actions"><button id="cancel-new">Cancel</button></div></dialog>
+</body>
+</html>

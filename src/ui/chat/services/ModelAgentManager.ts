@@ -3,6 +3,7 @@
  * Refactored to use extracted utilities following SOLID principles
  */
 
+import { generateSessionId } from '../../../utils/sessionUtils';
 import { ModelOption, PromptOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
@@ -63,6 +64,8 @@ export class ModelAgentManager {
   private loadedWorkspaceData: Record<string, unknown> | null = null; // Full comprehensive workspace data from LoadWorkspaceTool
   private contextNotesManager: ContextNotesManager;
   private currentConversationId: string | null = null;
+  private pendingSessionId = generateSessionId();
+  private workspaceLoadGeneration = 0;
   private messageEnhancement: MessageEnhancement | null = null;
   private systemPromptBuilder: SystemPromptBuilder;
   private workspaceIntegration: WorkspaceIntegrationService;
@@ -118,6 +121,8 @@ export class ModelAgentManager {
     this.promptContextAssembler = new ModelAgentPromptContextAssembler({
       systemPromptBuilder: this.systemPromptBuilder,
       getSessionId: async () => await this.getCurrentSessionId(),
+      restoreWorkflow: sessionId => this.workspaceIntegration.restoreWorkflow(sessionId),
+      prepareIndividualSkills: (sessionId, workflow) => this.workspaceIntegration.prepareIndividualSkills(sessionId, workflow),
       getToolCatalog: () => {
         try {
           const plugin = getNexusPlugin(this.app) as { getServiceIfReady?<T>(name: string): T | null } | null;
@@ -149,6 +154,8 @@ export class ModelAgentManager {
    * Set the current conversation ID used for session lookups and persistence.
    */
   setCurrentConversationId(conversationId: string | null): void {
+    if (this.currentConversationId !== conversationId) this.workspaceLoadGeneration++;
+    if (this.currentConversationId && this.currentConversationId !== conversationId) this.pendingSessionId = generateSessionId();
     this.currentConversationId = conversationId;
   }
 
@@ -478,9 +485,23 @@ export class ModelAgentManager {
    * When a workspace is selected in chat settings, load the same rich data
    * as the #workspace suggester (file structure, sessions, states, etc.)
    */
-  async setWorkspaceContext(workspaceId: string): Promise<void> {
+  async setWorkspaceContext(workspaceId: string, workflow?: string): Promise<void> {
+    if (workflow && !this.selectedModel) throw new Error('Choose a model before loading a workflow');
+    const generation = ++this.workspaceLoadGeneration;
     const sessionId = await this.getCurrentSessionId();
-    const workspaceState = await this.workspaceContextService.loadSelectedWorkspace(workspaceId, sessionId);
+    const baseline = await this.systemPromptBuilder.build({ sessionId, customPrompt: this.currentSystemPrompt, contextNotes: this.contextNotesManager.getNotes(), skipToolsSection: this.selectedModel?.providerId === 'webllm' });
+    if (generation !== this.workspaceLoadGeneration) throw new Error('Workspace selection was superseded');
+    const used = this.compactionState.getContextTokenTracker()?.getStatus().usedTokens ?? 0;
+    const workspaceState = await this.workspaceContextService.loadSelectedWorkspace(workspaceId, sessionId, workflow, { maxTokens: Math.max(0, (this.selectedModel?.contextWindow ?? 128000) - used - 2048 - Math.ceil((baseline?.length ?? 0) / 4)) }, async (bundle, briefing) => {
+      try {
+        if (generation !== this.workspaceLoadGeneration || await this.getCurrentSessionId() !== sessionId) return { ok: false, error: { code: 'superseded', message: 'Conversation changed before workspace selection could be activated' } };
+        await this.promptContextAssembler.buildSystemPrompt({ ...this.getPromptContextSnapshot(), selectedWorkspaceId: briefing.workspaceContext?.workspaceId ?? workspaceId,
+          workspaceContext: null, loadedWorkspaceData: { id: briefing.workspaceContext?.workspaceId ?? workspaceId, ...briefing.data } }, bundle);
+        if (generation !== this.workspaceLoadGeneration || await this.getCurrentSessionId() !== sessionId) return { ok: false, error: { code: 'superseded', message: 'Conversation changed while workspace instructions were preparing' } };
+        return { ok: true, value: undefined };
+      } catch (error) { return { ok: false, error: { code: 'invalid', message: error instanceof Error ? error.message : String(error) } }; }
+    });
+    if (generation !== this.workspaceLoadGeneration) return;
     this.selectedWorkspaceId = workspaceState.selectedWorkspaceId;
     this.loadedWorkspaceData = workspaceState.loadedWorkspaceData;
     this.workspaceContext = workspaceState.workspaceContext;
@@ -491,7 +512,14 @@ export class ModelAgentManager {
   /**
    * Clear workspace context
    */
+  async getSelectedWorkflowId(): Promise<string | null> {
+    await this.refreshWorkspaceBinding();
+    return this.workspaceIntegration.getSelectedWorkflowId((await this.getCurrentSessionId()));
+  }
+
   async clearWorkspaceContext(): Promise<void> {
+    this.workspaceLoadGeneration++;
+    await this.workspaceIntegration.clearWorkflowSelection((await this.getCurrentSessionId()));
     const emptyWorkspaceState = this.workspaceContextService.createEmptyState();
     this.selectedWorkspaceId = emptyWorkspaceState.selectedWorkspaceId;
     this.workspaceContext = emptyWorkspaceState.workspaceContext;
@@ -889,6 +917,7 @@ export class ModelAgentManager {
    * Get message options for current selection (includes workspace context)
    */
   async getMessageOptions(): Promise<ModelAgentMessageOptions> {
+    await this.refreshWorkspaceBinding();
     return await this.promptContextAssembler.buildMessageOptions(this.getPromptContextSnapshot());
   }
 
@@ -933,15 +962,15 @@ export class ModelAgentManager {
   /**
    * Get current session ID from conversation
    */
-  private async getCurrentSessionId(): Promise<string | undefined> {
+  private async getCurrentSessionId(): Promise<string> {
     if (!this.currentConversationId) {
-      return undefined;
+      return this.pendingSessionId;
     }
 
     try {
-      return await this.conversationSettingsStore.getSessionId(this.currentConversationId);
+      return await this.conversationSettingsStore.getSessionId(this.currentConversationId) ?? this.pendingSessionId;
     } catch {
-      return undefined;
+      return this.pendingSessionId;
     }
   }
 
@@ -951,6 +980,7 @@ export class ModelAgentManager {
       modelId: this.selectedModel?.modelId,
       promptId: this.selectedPrompt?.id ?? null,
       workspaceId: this.selectedWorkspaceId,
+      sessionId: this.pendingSessionId,
       contextNotes: this.contextNotesManager.getNotes(),
       thinking: this.thinkingSettings,
       temperature: this.temperature,
@@ -989,6 +1019,17 @@ export class ModelAgentManager {
       compactionFrontier: this.compactionState.getCompactionFrontier(),
       latestCompactionRecord: this.compactionState.getLatestCompactionRecord()
     };
+  }
+
+  private async refreshWorkspaceBinding(): Promise<void> {
+    const sessionId = await this.getCurrentSessionId();
+    const boundWorkspace = sessionId ? await this.workspaceIntegration.getBoundWorkspace(sessionId) : undefined;
+    if (boundWorkspace && boundWorkspace !== this.selectedWorkspaceId) {
+      if (boundWorkspace === 'default') {
+        const empty = this.workspaceContextService.createEmptyState();
+        this.selectedWorkspaceId = empty.selectedWorkspaceId; this.loadedWorkspaceData = empty.loadedWorkspaceData; this.workspaceContext = empty.workspaceContext;
+      } else await this.restoreWorkspace(boundWorkspace, sessionId);
+    }
   }
 
   private async refreshSystemPrompt(): Promise<void> {

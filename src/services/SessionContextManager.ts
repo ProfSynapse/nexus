@@ -1,3 +1,4 @@
+import type { WorkflowSelection, ServiceResult } from './instructions/types';
 import { CommonResult } from '../types';
 import type { SessionData } from './session/SessionService';
 import type {
@@ -87,6 +88,9 @@ export class SessionContextManager {
   // setWorkspaceContext({workspaceId}) call at ToolCallTraceService:88 cannot
   // clobber it. Used for trace attribution only (§9) — it does NOT scope or
   // route tools, unlike workspaceId.
+  private workflowSelections = new Map<string, WorkflowSelection | null>();
+  private workflowSkills = new Map<string, string[]>();
+  private workflowCommitQueue: Promise<void> = Promise.resolve();
   private sessionActiveSkillsMap: Map<string, string[]> = new Map();
 
   // Map of model-facing session handles to internal unique session IDs.
@@ -228,6 +232,12 @@ export class SessionContextManager {
         this.handleWorkspace.set(handle, workspaceId);
       }
     }
+    for (const [id, selection] of Object.entries(doc.workflowSelections ?? {})) {
+      if (!this.workflowSelections.has(id)) this.workflowSelections.set(id, selection);
+    }
+    for (const [id, skills] of Object.entries(doc.workflowSkills ?? {})) {
+      if (!this.workflowSkills.has(id) && this.workflowSelections.get(id)) this.workflowSkills.set(id, skills);
+    }
     if (this.cliCurrentSession === null && doc.cliCurrentSession) {
       this.cliCurrentSession = doc.cliCurrentSession;
     }
@@ -241,7 +251,8 @@ export class SessionContextManager {
     return {
       handles,
       handleWorkspace: Object.fromEntries(this.handleWorkspace.entries()),
-      cliCurrentSession: this.cliCurrentSession
+      cliCurrentSession: this.cliCurrentSession,
+      ...(this.workflowSelections.size ? { version: 1 as const, workflowSelections: Object.fromEntries(this.workflowSelections), workflowSkills: Object.fromEntries(this.workflowSkills) } : {})
     };
   }
 
@@ -346,6 +357,84 @@ export class SessionContextManager {
     if (inFlight) {
       await inFlight;
     }
+  }
+
+  getIndividuallyLoadedSkills(sessionId: string): string[] {
+    return [...(this.sessionActiveSkillsMap.get(sessionId) ?? [])];
+  }
+
+  setWorkflowManagedSkills(sessionId: string, skills: string[]): void {
+    if (this.workflowSelections.get(sessionId)) this.workflowSkills.set(sessionId, [...new Set(skills)]);
+  }
+
+  getWorkflowSelection(sessionId: string): WorkflowSelection | null {
+    const selected = this.workflowSelections.get(sessionId);
+    return selected ? { ...selected } : null;
+  }
+
+  /** Persist selection and deliberate bindings together before exposing either. */
+  commitWorkspaceWorkflow(sessionId: string, workspaceId: string, selection: WorkflowSelection | null,
+    skills: string[], isCurrent: () => boolean): Promise<ServiceResult<void>> {
+    const commit = async (): Promise<ServiceResult<void>> => {
+      await this.ensureBindingsRestored();
+      if (this.bindingsWrite) await this.bindingsWrite;
+      const store = this.bindingsStore;
+      if (!store) return { ok: false, error: { code: 'persistence', message: 'Session bindings storage is unavailable' } };
+      if (!isCurrent()) return { ok: false, error: { code: 'superseded', message: 'A newer workspace load superseded this one' } };
+      const before = this.snapshotBindings();
+      const candidate: PersistedSessionBindings = {
+        ...before, version: 1,
+        handles: { ...before.handles }, handleWorkspace: { ...before.handleWorkspace, [sessionId]: workspaceId },
+        workflowSelections: { ...before.workflowSelections, [sessionId]: selection },
+        workflowSkills: { ...before.workflowSkills, [sessionId]: selection ? [...new Set(skills)] : [] },
+      };
+      for (const [key, entry] of Object.entries(before.handles)) {
+        if (entry.id !== sessionId) continue;
+        const prefix = `${entry.workspaceId}::`;
+        const handle = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+        candidate.handleWorkspace[handle] = workspaceId;
+        // Preserve an independently created destination partition. Empty target
+        // aliases retain the current UUID after discovery in the global partition.
+        const target = this.handleKey(workspaceId, handle);
+        if (candidate.handles[target] && candidate.handles[target].id !== sessionId) {
+          return { ok: false, error: { code: 'ambiguous', message: 'This handle already has a separate session in the target workspace; explicitly choose that workspace then load its workflow, or use a new session handle.' } };
+        }
+        if (!candidate.handles[target]) candidate.handles[target] = { ...entry, workspaceId };
+      }
+      let outcome: ServiceResult<void> = { ok: true, value: undefined };
+      const write = (async () => {
+        try {
+          await store.save(candidate);
+          if (!isCurrent() || this.bindingsStore !== store) {
+            await store.save(this.bindingsStore === store ? this.snapshotBindings() : before);
+            outcome = { ok: false, error: { code: 'superseded', message: 'Workspace load was superseded before activation' } };
+            return;
+          }
+          this.workflowSelections.set(sessionId, selection);
+          this.workflowSkills.set(sessionId, selection ? [...new Set(skills)] : []);
+          this.sessionContextMap.set(sessionId, { workspaceId, activeWorkspace: true });
+          for (const [key, entry] of Object.entries(candidate.handles)) if (!this.sessionHandleMap.has(key)) this.sessionHandleMap.set(key, entry);
+          for (const [handle, target] of Object.entries(candidate.handleWorkspace)) {
+            if (target === workspaceId && (handle === sessionId || Object.values(candidate.handles).some(entry => entry.id === sessionId && entry.displaySessionId === handle)
+              || Object.keys(before.handles).some(key => key.endsWith(`::${handle}`) && before.handles[key].id === sessionId))) this.handleWorkspace.set(handle, target);
+          }
+        } catch (error) {
+          outcome = { ok: false, error: { code: 'persistence', message: error instanceof Error ? error.message : String(error) } };
+        } finally {
+          while (this.bindingsDirty && this.bindingsStore === store) {
+            this.bindingsDirty = false;
+            await this.saveBindings(store, this.snapshotBindings());
+          }
+        }
+      })();
+      this.bindingsWrite = write;
+      await write;
+      if (this.bindingsWrite === write) this.bindingsWrite = null;
+      return outcome;
+    };
+    const result = this.workflowCommitQueue.then(commit, commit);
+    this.workflowCommitQueue = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   /**
@@ -557,6 +646,8 @@ export class SessionContextManager {
     }
     this.sessionContextMap.delete(sessionId);
     this.sessionActiveSkillsMap.delete(sessionId);
+    removed = this.workflowSelections.delete(sessionId) || removed;
+    this.workflowSkills.delete(sessionId);
     this.instructedSessions.delete(sessionId);
     // handleWorkspace is left alone on purpose: the workspace choice belongs
     // to the handle, not the deleted session. The handle's next call creates a
@@ -628,7 +719,7 @@ export class SessionContextManager {
    * @returns The active skill ids, or an empty array if none
    */
   getActiveSkills(sessionId: string): string[] {
-    return this.sessionActiveSkillsMap.get(sessionId) ?? [];
+    return [...new Set([...(this.sessionActiveSkillsMap.get(sessionId) ?? []), ...(this.workflowSkills.get(sessionId) ?? [])])];
   }
 
   /**
@@ -664,7 +755,7 @@ export class SessionContextManager {
    * @param result The result containing workspace context
    */
   updateFromResult(sessionId: string, result: CommonResult): void {
-    if (!result.workspaceContext || !result.workspaceContext.workspaceId) {
+    if (result.success === false || !result.workspaceContext || !result.workspaceContext.workspaceId) {
       return;
     }
     
@@ -725,6 +816,8 @@ export class SessionContextManager {
   clearAll(): void {
     this.sessionContextMap.clear();
     this.sessionActiveSkillsMap.clear();
+    this.workflowSelections.clear();
+    this.workflowSkills.clear();
     this.sessionHandleMap.clear();
     this.unverifiedHandleKeys.clear();
     this.handleWorkspace.clear();

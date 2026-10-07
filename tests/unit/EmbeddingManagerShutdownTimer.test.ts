@@ -50,6 +50,7 @@ jest.mock('../../src/services/embeddings/IndexingQueue', () => ({
     startTraceIndex,
     startConversationIndex,
     destroy: queueDestroy,
+    cancel: jest.fn(),
     isIndexing: jest.fn().mockReturnValue(false)
   }))
 }));
@@ -81,9 +82,9 @@ function createManager() {
 describe('EmbeddingManager deferred background indexing', () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    startFullIndex.mockClear();
-    startTraceIndex.mockClear();
-    startConversationIndex.mockClear();
+    startFullIndex.mockReset().mockResolvedValue(undefined);
+    startTraceIndex.mockReset().mockResolvedValue(undefined);
+    startConversationIndex.mockReset().mockResolvedValue(undefined);
     queueDestroy.mockClear();
   });
 
@@ -116,5 +117,36 @@ describe('EmbeddingManager deferred background indexing', () => {
     // the call that proves the timer fired. Asserting on the note phase would
     // only prove the whole chain had drained.
     expect(startConversationIndex).toHaveBeenCalled();
+  });
+  it('drains the canceled phase final save before returning and skips subsequent phases', async () => {
+    let finish!: () => void;
+    const finalSave = jest.fn();
+    startConversationIndex.mockImplementationOnce(async () => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      finalSave();
+    });
+    const manager = createManager(); manager.initialize();
+    jest.advanceTimersByTime(3_000);
+    await Promise.resolve();
+    let closed = false;
+    const shutdown = manager.shutdown().then(() => { closed = true; });
+    await Promise.resolve(); expect(closed).toBe(false);
+    expect(queueDestroy).toHaveBeenCalled(); expect(finalSave).not.toHaveBeenCalled();
+    finish(); await shutdown;
+    expect(finalSave).toHaveBeenCalledTimes(1); expect(closed).toBe(true);
+    expect(startTraceIndex).not.toHaveBeenCalled(); expect(startFullIndex).not.toHaveBeenCalled();
+    manager.initialize(); jest.advanceTimersByTime(3_000); await Promise.resolve();
+    expect(startConversationIndex).toHaveBeenCalledTimes(1);
+  });
+  it('waits for the old background chain before starting cache-rebuild indexing again', async () => {
+    let finish!: () => void;
+    startConversationIndex.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const manager = createManager(); manager.initialize();
+    jest.advanceTimersByTime(3_000); await Promise.resolve();
+    const rebuilt = manager.reindexAfterCacheRebuild();
+    await Promise.resolve(); expect(startConversationIndex).toHaveBeenCalledTimes(1);
+    finish(); await rebuilt;
+    expect(startConversationIndex).toHaveBeenCalledTimes(2);
+    await manager.shutdown();
   });
 });

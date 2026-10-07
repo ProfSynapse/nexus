@@ -25,6 +25,7 @@ import {
   CLI_MULTILINE_EXAMPLE,
   CLI_VALUES_RULE,
   CLI_VALUES_EXAMPLE,
+  CLI_PRELOADED_TOOLS_RULE,
 } from '../../src/agents/toolManager/guidance';
 import { UseToolTool } from '../../src/agents/toolManager/tools/useTools';
 import type { ToolBatchExecutionService } from '../../src/agents/toolManager/services/ToolBatchExecutionService';
@@ -37,6 +38,7 @@ const CANONICAL: Record<string, string> = {
   CLI_MULTILINE_EXAMPLE,
   CLI_VALUES_RULE,
   CLI_VALUES_EXAMPLE,
+  CLI_PRELOADED_TOOLS_RULE,
 };
 
 function expectAllRules(surfaceName: string, text: string): void {

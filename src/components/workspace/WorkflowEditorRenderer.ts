@@ -8,6 +8,7 @@ import type {
 import type { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { BoxedSection } from '../../settings/components/BoxedSection';
+import { WorkflowAttachmentsRenderer, type WorkflowAttachmentServices } from './WorkflowAttachmentsRenderer';
 
 export type Workflow = WorkspaceWorkflow;
 
@@ -38,16 +39,19 @@ const CATCH_UP_LABELS: Record<WorkflowCatchUpPolicy, string> = {
 
 export class WorkflowEditorRenderer {
   private workflow: Workflow = { id: '', name: '', when: '', steps: '' };
+  private attachments?: WorkflowAttachmentsRenderer;
 
   constructor(
     private availablePrompts: CustomPrompt[],
     private onSave: SaveOrRunHandler,
     private onCancel: () => void,
     private onRunNow: SaveOrRunHandler,
-    private component: Component
+    private component: Component,
+    private attachmentServices?: WorkflowAttachmentServices
   ) {}
 
   render(container: HTMLElement, workflow: Workflow, isNew: boolean, options?: { showBackButton?: boolean }): void {
+    this.attachments?.destroy();
     container.empty();
     this.workflow = this.cloneWorkflow(workflow);
 
@@ -95,6 +99,11 @@ export class WorkflowEditorRenderer {
       }
     }, this.component);
 
+    if (this.attachmentServices) {
+      const attachments = form.createDiv();
+      this.attachments = new WorkflowAttachmentsRenderer(this.workflow, this.attachmentServices, this.component);
+      this.attachments.render(attachments);
+    } else {
     // Prompt section — optional saved-prompt binding.
     new BoxedSection(form, {
       title: 'Prompt',
@@ -118,6 +127,8 @@ export class WorkflowEditorRenderer {
           });
       }
     }, this.component);
+
+    }
 
     // Steps section — workflow-specific extra context.
     new BoxedSection(form, {
@@ -196,6 +207,8 @@ export class WorkflowEditorRenderer {
       .setButtonText('Cancel')
       .onClick(() => this.onCancel());
   }
+
+  destroy(): void { this.attachments?.destroy(); }
 
   getWorkflow(): Workflow {
     return this.cloneWorkflow(this.workflow);
@@ -324,12 +337,13 @@ export class WorkflowEditorRenderer {
       : undefined;
 
     return {
+      ...this.cloneWorkflow(this.workflow),
       id: this.workflow.id || uuidv4(),
       name,
       when,
       steps,
-      promptId: prompt?.id,
-      promptName: prompt?.name,
+      promptId: prompt?.id ?? this.workflow.promptId,
+      promptName: prompt?.name ?? this.workflow.promptName,
       schedule: this.workflow.schedule?.enabled ? this.cloneSchedule(this.workflow.schedule) : undefined
     };
   }
@@ -337,6 +351,8 @@ export class WorkflowEditorRenderer {
   private cloneWorkflow(workflow: Workflow): Workflow {
     return {
       ...workflow,
+      ...(workflow.skills ? { skills: workflow.skills.map(reference => ({ ...reference })) } : {}),
+      ...(workflow.tools ? { tools: [...workflow.tools] } : {}),
       schedule: workflow.schedule ? this.cloneSchedule(workflow.schedule) : undefined
     };
   }

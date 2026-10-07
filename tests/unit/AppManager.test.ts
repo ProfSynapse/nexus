@@ -2,6 +2,18 @@ import { App } from 'obsidian';
 import { AppManager } from '../../src/services/apps/AppManager';
 
 describe('AppManager', () => {
+  it('never loads or unregisters core skills from retained legacy app settings', () => {
+    const register = jest.fn();
+    const unregister = jest.fn();
+    const manager = new AppManager({ apps: { skills: { enabled: true, credentials: {}, installedAt: '2026-01-01', installedVersion: '1.0.0' } } }, register, unregister, new App());
+    manager.loadInstalledApps();
+    expect(register).not.toHaveBeenCalled();
+    expect(manager.getAvailableApps().some(app => app.id === 'skills')).toBe(false);
+    expect(manager.getApp('skills')).toBeUndefined();
+    manager.setAppEnabled('skills', false);
+    manager.uninstallApp('skills');
+    expect(unregister).not.toHaveBeenCalled();
+  });
   function createManager() {
     const onRegister = jest.fn();
     const onUnregister = jest.fn();

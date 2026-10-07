@@ -72,6 +72,9 @@ export interface GetToolsResult extends CommonResult {
     // discovery call so the model picks a real workspace instead of inventing one
     // from the user's phrasing.
     workspaces?: string[];
+    workspaceDetails?: import('../../services/workspace/WorkspaceSummaryService').WorkspaceDiscoverySummary[];
+    workspaceStatus?: 'ready' | 'unavailable';
+    workspacesTruncated?: boolean;
     workspacesNote?: string;
     // Present when `tools` are compact (broad discovery) — tells the model how to get
     // full arguments for a specific tool before calling it.

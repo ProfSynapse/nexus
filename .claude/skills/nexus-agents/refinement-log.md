@@ -38,3 +38,5 @@ resolved, and several claims restating general engineering knowledge. | Rebuilt
 as a router plus protocols, references and two scripts; re-verified every
 retained claim against the tree and added the catalog-backed command checker. |
 whole skill.
+
+- 2026-10-03: No change. Registration, discovery and execution checks covered core skills; the protocol integration lesson is recorded in nexus-testing to avoid duplicate guidance.

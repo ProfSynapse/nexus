@@ -186,6 +186,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager()),
         this.safeInitialize('taskManager', () => this.initializationService.initializeTaskManager()),
         this.safeInitialize('ingestManager', () => this.initializationService.initializeIngestManager()),
+        this.safeInitialize('skills', () => this.initializationService.initializeSkills()),
       ]);
 
       // Wire cross-agent dependencies (after Phase 2, both agents are available)
