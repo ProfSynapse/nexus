@@ -8,6 +8,9 @@ import { getErrorMessage } from '../../utils/errorUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
 import type { WorkspaceTaskSummary } from '../taskManager/types';
+import type { SessionWorkflowPort } from '../../services/instructions/types';
+import type { WorkflowPreparationService } from '../../services/workflows/WorkflowPreparationService';
+import type { LoadWorkspaceParameters, LoadWorkspaceResult } from '../../database/types/workspace/ParameterTypes';
 
 // Import consolidated tools
 import { CreateStateTool } from './tools/states/createState';
@@ -60,6 +63,7 @@ export class MemoryManagerAgent extends BaseAgent {
    * TaskService reference for loadWorkspace integration (optional, set during plugin init)
    */
   private taskService: TaskServiceLike | null = null;
+  private workflowServices: { preparation: WorkflowPreparationService; activation: SessionWorkflowPort } | null = null;
   
   /**
    * App instance
@@ -236,6 +240,25 @@ export class MemoryManagerAgent extends BaseAgent {
    */
   getWorkspaceServiceAsync(): Promise<WorkspaceService | null> {
     return Promise.resolve(this.workspaceService);
+  }
+
+  setWorkflowServices(preparation: WorkflowPreparationService, activation: SessionWorkflowPort): void {
+    this.workflowServices = { preparation, activation };
+  }
+
+  async getWorkflowServicesAsync(): Promise<{ preparation: WorkflowPreparationService; activation: SessionWorkflowPort } | null> {
+    if (this.workflowServices) return this.workflowServices;
+    const [preparation, activation] = await Promise.all([
+      this.plugin.getService<WorkflowPreparationService>('workflowPreparationService'),
+      this.plugin.getService<SessionWorkflowPort>('sessionWorkflowService')
+    ]);
+    if (!preparation || !activation) return null;
+    this.workflowServices = { preparation, activation };
+    return this.workflowServices;
+  }
+
+  readWorkspaceBriefing(params: LoadWorkspaceParameters): Promise<LoadWorkspaceResult> {
+    return new LoadWorkspaceTool(this).read(params);
   }
   
   /**

@@ -532,20 +532,41 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       expect(stopOrder).toBeLessThan(clearOrder);
       expect(clearOrder).toBeLessThan(closeOrder);
     });
+    it('waits for already-started initialization before closing its cache and rejects restart', async () => {
+      const adapter = await makeHarness(false);
+      let finish!: () => void;
+      await adapter.initLifecycle.run(() => new Promise<void>(resolve => { finish = resolve; }));
+      await Promise.resolve();
+      const closing = adapter.close();
+      expect(adapter.sqliteCache.close).not.toHaveBeenCalled(); expect(adapter.isReady()).toBe(false);
+      await expect(adapter.initialize()).rejects.toThrow('Storage adapter is closing');
+      finish(); await closing;
+      expect(adapter.sqliteCache.close).toHaveBeenCalledTimes(1); expect(adapter.isReady()).toBe(false);
+    });
 
-    it('runs teardown again on double-close without throwing', async () => {
-      // pins current behavior; see report — close() is NOT idempotent-guarded:
-      // a second call re-clears the query cache and re-closes the SQLite
-      // cache (the watcher branch is a no-op because the handle was cleared).
+    it('shares a single close across container cleanup and explicit lifecycle teardown', async () => {
       const adapter = await makeHarness();
       const watcher = adapter.jsonlVaultWatcher as { stop: jest.Mock };
 
-      await adapter.close();
+      const close = adapter.close();
+      const cleanup = adapter.cleanup();
+      expect(cleanup).toBe(close);
+      await close;
       await expect(adapter.close()).resolves.toBeUndefined();
 
       expect(watcher.stop).toHaveBeenCalledTimes(1);
-      expect(adapter.queryCache.clear).toHaveBeenCalledTimes(2);
-      expect(adapter.sqliteCache.close).toHaveBeenCalledTimes(2);
+      expect(adapter.queryCache.clear).toHaveBeenCalledTimes(1);
+      expect(adapter.sqliteCache.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes a partially opened cache when initialization fails', async () => {
+      const adapter = await makeHarness(false);
+      await adapter.initLifecycle.run(async () => { throw new Error('Hydration failed'); }, { blocking: false });
+      await adapter.close();
+      expect(adapter.sqliteCache.close).toHaveBeenCalledTimes(1);
+      await expect(adapter.waitForReady()).resolves.toBe(false);
+      await expect(adapter.waitForQueryReady()).resolves.toBe(false);
+      await expect((adapter as unknown as { ensureInitialized(): Promise<void> }).ensureInitialized()).rejects.toThrow('Storage adapter is closing');
     });
 
     it('rethrows when closing the SQLite cache fails', async () => {

@@ -9,7 +9,8 @@ import {
   CLI_MULTILINE_RULE,
   CLI_MULTILINE_EXAMPLE,
   CLI_VALUES_RULE,
-  CLI_VALUES_EXAMPLE
+  CLI_VALUES_EXAMPLE,
+  CLI_PRELOADED_TOOLS_RULE
 } from '../guidance';
 
 export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
@@ -29,10 +30,11 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
     this.slug = 'useTools';
     this.name = 'Use Tools';
     this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. The workspace is remembered per session: a fresh session passes "workspaceId" once ("default" or an exact name from getTools) or loads one with "memory load-workspace"; every later call in that session inherits it, so omit "workspaceId" unless you are deliberately switching. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. '
+      + CLI_PRELOADED_TOOLS_RULE + ' '
       + CLI_BATCHING_RULE + ' '
       + CLI_MULTILINE_RULE + ' '
       + CLI_VALUES_RULE + ' Example: ' + CLI_VALUES_EXAMPLE
-      + '. When you already know several files you want to read, batch them as comma-separated "content read" commands in ONE call with strategy "parallel" — do not issue a separate useTools call per file. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
+      + '. When you already know several files you want to read, batch them as comma-separated "content read" commands in ONE call with strategy "parallel" — do not issue a separate useTools call per file. Inspect exact command signatures through getTools or a successful preload before calling this tool.';
     this.version = '1.0.0';
   }
 
@@ -84,7 +86,8 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         tool: {
           type: 'string',
           description: 'CLI-style tool command string. '
-            + CLI_BATCHING_RULE + ' '
+            + CLI_PRELOADED_TOOLS_RULE + ' '
+      + CLI_BATCHING_RULE + ' '
             + CLI_MULTILINE_RULE + ' Example: ' + CLI_MULTILINE_EXAMPLE
             + '. Batching example: "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md". Reading multiple known files? Batch them here as one comma-separated list (e.g. "content read --path a.md, content read --path b.md, content read --path c.md") instead of separate calls.'
         },

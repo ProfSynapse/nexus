@@ -56,6 +56,7 @@ export class MCPConnector {
     private sessionContextManager: SessionContextManager | null = null;
     private customPromptStorage?: CustomPromptStorageService;
     private serviceManager?: ServiceManager;
+    private unloading = false;
 
     constructor(
         private app: App,
@@ -180,6 +181,7 @@ export class MCPConnector {
      * Initialize all agents - delegates to AgentRegistrationService
      */
     public async initializeAgents(): Promise<void> {
+        if (this.unloading) return;
         try {
             // Share ONE agent stack with the native chat UI instead of building a
             // second one here. The DI container already exposes a canonical
@@ -193,6 +195,7 @@ export class MCPConnector {
             if (this.serviceManager) {
                 try {
                     const shared = await this.serviceManager.getService<AgentRegistrationService>('agentRegistrationService');
+                    if (this.unloading) return;
                     if (shared) {
                         this.agentRegistry = shared;
                     }
@@ -203,11 +206,13 @@ export class MCPConnector {
 
             // Initialize connection manager first
             await this.connectionManager.initialize();
+            if (this.unloading) return;
 
             const server = this.connectionManager.getServer();
 
             // Initialize all agents through the registration service
             await this.agentRegistry.initializeAllAgents();
+            if (this.unloading) return;
 
             // Register agents with server through the registration service
             this.agentRegistry.registerAgentsWithServer((agent: IAgent) => {
@@ -266,9 +271,11 @@ export class MCPConnector {
      * Start the MCP server - delegates to MCPConnectionManager
      */
     async start(): Promise<void> {
+        if (this.unloading) return;
         try {
             // Initialize agents and connection manager first
             await this.initializeAgents();
+            if (this.unloading) return;
 
             // Then start the server
             await this.connectionManager.start();
@@ -311,6 +318,7 @@ export class MCPConnector {
      * replacement plugin instance binds it. See #337.
      */
     releaseIpcSocket(): void {
+        this.unloading = true;
         try {
             this.connectionManager.getServer()?.releaseIpcSocket();
         } catch (error) {

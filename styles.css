@@ -9679,3 +9679,62 @@ body.is-mobile .nexus-task-board-shell {
     overflow: hidden;
     pointer-events: none;
 }
+
+/* Instructions library uses the existing settings/card/boxed-section primitives. */
+.nexus-instruction-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-m);
+    margin: var(--space-l) 0;
+}
+.nexus-instruction-filters .setting-item {
+    flex: 1 1 180px;
+    border: none;
+    padding: var(--space-xs) 0;
+}
+.nexus-instruction-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-s);
+    align-items: center;
+    margin-top: var(--space-m);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.nexus-instruction-badge {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: var(--space-xxs) var(--space-s);
+    background: var(--background-secondary);
+    font-size: var(--font-ui-smaller);
+}
+.nexus-instruction-error {
+    padding: var(--space-m);
+    margin-top: var(--space-m);
+    color: var(--text-error);
+    background: var(--background-modifier-error);
+    border-radius: var(--radius-s);
+    overflow-wrap: anywhere;
+}
+.nexus-instruction-error-hidden { display: none; }
+.nexus-instruction-resource,
+.nexus-workflow-attachment {
+    display: flex;
+    gap: var(--space-m);
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-s) 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.nexus-instruction-resource code { overflow-wrap: anywhere; }
+.nexus-instruction-source-summary { margin-top: var(--space-xl); }
+.nexus-workflow-tool-preview {
+    margin-top: var(--space-l);
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    overflow-wrap: anywhere;
+}
+body.is-mobile .nexus-instruction-filters .setting-item { flex-basis: 100%; }
+body.is-mobile .nexus-instruction-resource button,
+body.is-mobile .nexus-workflow-attachment button { min-height: 44px; }

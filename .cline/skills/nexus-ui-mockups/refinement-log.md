@@ -39,3 +39,5 @@ never been checked against the tree. | Rebuilt as a router plus
 `theme_tokens.py`). Fidelity to the real Obsidian/Nexus surface and the
 after-shipping life of a mockup were the two largest missing topics. | every file
 in this skill.
+
+- 2026-10-03: No change. User removed explanatory helper copy and required existing UI primitives; existing fidelity/handoff guidance already requires reuse, and the accepted contract records that correction.

@@ -64,6 +64,8 @@ export class EmbeddingManager {
    * is in by then — including an unloaded one, whose database handle is closed.
    */
   private backgroundIndexingTimer: number | null = null;
+  private backgroundIndexingWork: Promise<void> | null = null;
+  private shuttingDown = false;
 
   constructor(
     app: App,
@@ -86,7 +88,7 @@ export class EmbeddingManager {
    * Should be called after a delay from plugin startup (e.g., 3 seconds)
    */
   initialize(): void {
-    if (!this.isEnabled || this.isInitialized) {
+    if (this.shuttingDown || !this.isEnabled || this.isInitialized) {
       return;
     }
 
@@ -139,6 +141,7 @@ export class EmbeddingManager {
    * Called during plugin unload
    */
   async shutdown(): Promise<void> {
+    this.shuttingDown = true;
     // Cleared before the isEnabled bail-out on purpose: this timer is the one
     // thing that can still fire after shutdown() returns, so it is cancelled
     // unconditionally rather than behind a flag that may have changed.
@@ -172,7 +175,11 @@ export class EmbeddingManager {
         this.statusBar.destroy();
       }
 
-      // Dispose of embedding engine (revokes blob URL, removes iframe)
+      // Cancellation stops new rows; the running indexer still persists its
+      // final progress. Finish that work before the lifecycle closes SQLite.
+      await this.backgroundIndexingWork;
+
+      // Keep the engine available until its canceled indexing call settles.
       if (this.engine) {
         await this.engine.dispose();
       }
@@ -181,6 +188,10 @@ export class EmbeddingManager {
 
     } catch (error) {
       console.error('[EmbeddingManager] Shutdown failed:', error);
+    } finally {
+      // Even a failing watcher or engine cleanup must not leave the accepted
+      // background phase writing after the lifecycle closes its cache.
+      await this.backgroundIndexingWork;
     }
   }
 
@@ -199,13 +210,16 @@ export class EmbeddingManager {
    * flag, which is what makes the restart below legal.
    */
   async reindexAfterCacheRebuild(): Promise<void> {
-    if (!this.isEnabled || !this.queue) {
+    if (this.shuttingDown || !this.isEnabled || !this.queue) {
       return;
     }
 
     try {
       this.queue.cancel();
       await this.waitForQueueIdle();
+      // isIndexing can become false before the canceled phase's final save.
+      // Finish the old chain before requesting a fresh, coalesced run.
+      await this.backgroundIndexingWork;
       await this.runBackgroundIndexing();
     } catch (error) {
       console.error('[EmbeddingManager] Re-index after cache rebuild failed:', error);
@@ -349,7 +363,20 @@ export class EmbeddingManager {
     }
   }
 
-  private async runBackgroundIndexing(): Promise<void> {
+  private runBackgroundIndexing(): Promise<void> {
+    if (this.shuttingDown || !this.queue) {
+      return Promise.resolve();
+    }
+    if (this.backgroundIndexingWork) return this.backgroundIndexingWork;
+    const work = this.runIndexingPhases();
+    this.backgroundIndexingWork = work;
+    void work.finally(() => {
+      if (this.backgroundIndexingWork === work) this.backgroundIndexingWork = null;
+    });
+    return work;
+  }
+
+  private async runIndexingPhases(): Promise<void> {
     if (!this.queue) {
       return;
     }
@@ -370,9 +397,11 @@ export class EmbeddingManager {
 
       // Phase 1: Backfill existing conversations (idempotent, resumable)
       await this.queue.startConversationIndex();
+      if (this.shuttingDown) return;
 
       // Phase 2: Backfill existing traces (from migration)
       await this.queue.startTraceIndex();
+      if (this.shuttingDown) return;
 
       // Phase 3: Index all notes - longest by far, so it goes last
       await this.queue.startFullIndex();

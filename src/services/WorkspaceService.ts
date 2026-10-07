@@ -13,9 +13,10 @@ import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
 import type { VaultOperations } from '../core/VaultOperations';
 import type { MCPSettings } from '../types/plugin/PluginTypes';
-import { StorageAdapterOrGetter, resolveAdapter, resolveWritableAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, resolveReadableAdapter, resolveWritableAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
 import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
 import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
+import type { ProjectWorkspace } from '../database/types/workspace/WorkspaceTypes';
 import { WorkspaceSessionService } from './workspace/WorkspaceSessionService';
 import { WorkspaceStateService } from './workspace/WorkspaceStateService';
 import { withTimeout } from '../utils/withTimeout';
@@ -246,6 +247,43 @@ export class WorkspaceService {
         return workspaces;
       }
     );
+  }
+
+  /** Discovery keeps context definitions, without fetching sessions, traces or file bodies. */
+  async listWorkspaceDiscovery(options?: {
+    sortBy?: 'name' | 'created' | 'lastAccessed'; sortOrder?: 'asc' | 'desc'; limit?: number;
+  }): Promise<ProjectWorkspace[]> {
+    const raw = typeof this.storageAdapterOrGetter === 'function' ? this.storageAdapterOrGetter() : this.storageAdapterOrGetter;
+    if (raw && !resolveReadableAdapter(raw)) {
+      if (raw.isReady() && typeof raw.waitForQueryReady === 'function') await withTimeout(raw.waitForQueryReady(), QUERY_READY_WAIT_MS, false);
+      if (!resolveReadableAdapter(raw)) throw new Error('Workspace discovery is still initializing or rebuilding. Retry when storage is query-ready.');
+    }
+    return withReadableBackend(this.storageAdapterOrGetter, async adapter => {
+      const workspaces: ProjectWorkspace[] = [];
+      const pageSize = options?.limit && options.limit > 0 ? Math.min(100, options.limit) : 100;
+      for (let page = 0; ; page++) {
+        const result = await adapter.getWorkspaces({ page, pageSize,
+          sortBy: options?.sortBy ?? 'lastAccessed', sortOrder: options?.sortOrder ?? 'desc' });
+        workspaces.push(...result.items.map(workspace => ({ ...workspace,
+          context: workspace.context ? normalizeWorkspaceContext(workspace.context).context : undefined })));
+        if (!result.hasNextPage || (options?.limit !== undefined && workspaces.length >= options.limit)) break;
+        if (result.items.length === 0) throw new Error('Workspace discovery pagination did not advance. Retry after storage finishes rebuilding.');
+      }
+      return options?.limit !== undefined ? workspaces.slice(0, options.limit) : workspaces;
+    }, async () => {
+      const rows = await this.getWorkspaces(options);
+      const workspaces: ProjectWorkspace[] = [];
+      for (const row of rows) {
+        const full = await this.fileSystem.readWorkspace(row.id);
+        if (!full) { workspaces.push(row); continue; }
+        // Legacy files contain sessions, but the returned projection does not.
+        const workspace: ProjectWorkspace = { id: full.id, name: full.name, description: full.description, rootFolder: full.rootFolder,
+          created: full.created, lastAccessed: full.lastAccessed, isActive: full.isActive, isArchived: full.isArchived, context: full.context };
+        workspaces.push({ ...workspace,
+          context: workspace.context ? normalizeWorkspaceContext(workspace.context).context : undefined });
+      }
+      return workspaces;
+    });
   }
 
   /**

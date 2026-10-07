@@ -125,3 +125,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
   Sharpened the entry with the three additional conditions and named
   `rebuildCache()` plus a per-table count in the running app as the check.
   | references/failure-modes.md.
+
+- 2026-10-03: No change. Durable settings authority and the real SQLite rebuild test followed the existing persistence/rebuild protocol.

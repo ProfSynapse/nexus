@@ -1,4 +1,5 @@
 import type { DataAdapter } from 'obsidian';
+import type { WorkflowSelection } from '../instructions/types';
 import { logger } from '../../utils/logger';
 
 /**
@@ -34,6 +35,9 @@ export interface PersistedSessionBindings {
   handles: Record<string, PersistedSessionHandle>;
   handleWorkspace: Record<string, string>;
   cliCurrentSession: string | null;
+  version?: 1;
+  workflowSelections?: Record<string, WorkflowSelection | null>;
+  workflowSkills?: Record<string, string[]>;
 }
 
 /**
@@ -96,7 +100,22 @@ export function parsePersistedSessionBindings(raw: unknown): PersistedSessionBin
     ? raw.cliCurrentSession.trim()
     : null;
 
-  return { handles, handleWorkspace, cliCurrentSession };
+  const workflowSelections: Record<string, WorkflowSelection | null> = {};
+  if (isRecord(raw.workflowSelections)) for (const [id, selection] of Object.entries(raw.workflowSelections)) {
+    if (selection === null) workflowSelections[id] = null;
+    else if (isRecord(selection) && typeof selection.workspaceId === 'string' && selection.workspaceId.trim()
+      && typeof selection.workflowId === 'string' && selection.workflowId.trim() && typeof selection.revision === 'string') {
+      workflowSelections[id] = { workspaceId: selection.workspaceId, workflowId: selection.workflowId, revision: selection.revision };
+    }
+  }
+  const workflowSkills: Record<string, string[]> = {};
+  if (isRecord(raw.workflowSkills)) for (const [id, skills] of Object.entries(raw.workflowSkills)) {
+    if (workflowSelections[id] && Array.isArray(skills)) workflowSkills[id] = [...new Set(skills.filter((skill): skill is string => typeof skill === 'string' && !!skill))];
+  }
+  return { handles, handleWorkspace, cliCurrentSession,
+    ...(raw.version === 1 ? { version: 1 } : {}),
+    ...(raw.workflowSelections !== undefined ? { workflowSelections } : {}),
+    ...(raw.workflowSkills !== undefined ? { workflowSkills } : {}) };
 }
 
 /**
@@ -143,6 +162,7 @@ export class VaultSessionBindingsStore implements SessionBindingsStore {
       logger.systemWarn(
         `[SessionBindingsStore] Could not write ${this.path}: ${error instanceof Error ? error.message : String(error)}`
       );
+      throw error;
     }
   }
 }

@@ -24,6 +24,8 @@ export interface WorkspaceWorkflow {
   steps: string;
   promptId?: string;
   promptName?: string;
+  skills?: Array<{ provider: string; name: string }>;
+  tools?: string[];
   schedule?: WorkflowSchedule;
 }
 

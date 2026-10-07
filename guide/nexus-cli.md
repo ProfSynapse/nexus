@@ -105,6 +105,24 @@ with a structured-form example instead of executing a truncated request.
 Use `--dry-run` before the delimiter to print the reconstructed request without
 opening a vault connection or executing a tool.
 
+### Preload a workspace workflow
+
+Discovery includes each workspace's available workflows and exact loading commands. Inspect them with `nexus tools memory load-workspace`, `memory list-workspaces`, or `memory search-workspaces`. Select a workflow explicitly after the `--` delimiter:
+
+```sh
+nexus use --session evidence-review \
+  --memory "starting a review" --goal "prepare the review instructions" \
+  -- memory load-workspace "Research" --workflow "Review evidence"
+```
+
+Use a workspace and workflow name or ID returned by discovery. The optional `--workflow` flag prepares that workflow's prompt, steps, skill entry points, resource locations, and required tool schemas. It does not start a workflow run. Full preloaded schemas satisfy discovery for those tools; discover any additional signatures normally.
+
+There is no default workflow. A plain `memory load-workspace "Research"` deliberately clears the session's active workflow setup. Later calls inherit the chosen workspace and keep the same session; passive internal refreshes preserve the active selection. Missing or archived dependencies fail preparation and leave the previous selection intact.
+
+To execute a workflow, use `memory run --workflow-name "Review evidence"` in the selected workspace, or use **Run now** or a schedule. Loading and execution are separate actions.
+
+Skills are core tools: discover their signatures with `nexus tools skills`. **Settings -> Nexus -> Instructions** manages both saved prompts and packaged skills, with filters for type, category, and source. Skill loading also returns schemas for declared tool dependencies without executing those tools.
+
 ### Multiline content
 
 On Windows, a `.cmd` wrapper cannot reliably forward a multiline argument

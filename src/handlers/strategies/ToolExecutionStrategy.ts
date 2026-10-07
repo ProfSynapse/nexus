@@ -541,6 +541,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         if (!result || result.success === false) {
             return;
         }
+        if (this.hasCommittedWorkspaceLoad(result)) return;
         try {
             if (this.boundDuringCall(intent.handle, intent.priorBound)) {
                 return;
@@ -553,6 +554,30 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         } catch (error) {
             logger.systemWarn(`Workspace bind failed for session "${intent.handle}": ${getErrorMessage(error)}`);
         }
+    }
+
+    private hasCommittedWorkspaceLoad(value: unknown): boolean {
+        if (!value || typeof value !== 'object') return false;
+        const result = value as Record<string, unknown>;
+        if (result.success !== true) return false;
+        const data = result.data && typeof result.data === 'object' ? result.data as Record<string, unknown> : undefined;
+        if (result.agent === 'memoryManager' && result.tool === 'loadWorkspace') {
+            const activation = result.workflowActivation ?? data?.workflowActivation;
+            return !!activation && typeof activation === 'object'
+                && typeof (activation as Record<string, unknown>).workspaceId === 'string';
+        }
+        if (result.agent === 'memoryManager' && result.tool === 'searchWorkspaces') {
+            const loaded = result.workspace ?? data?.workspace;
+            if (loaded && typeof loaded === 'object') {
+                const workspace = loaded as Record<string, unknown>;
+                const payload = workspace.data && typeof workspace.data === 'object'
+                    ? workspace.data as Record<string, unknown> : undefined;
+                const activation = payload?.workflowActivation;
+                if (workspace.success === true && activation && typeof activation === 'object'
+                    && typeof (activation as Record<string, unknown>).workspaceId === 'string') return true;
+            }
+        }
+        return Array.isArray(data?.results) && data.results.some(item => this.hasCommittedWorkspaceLoad(item));
     }
 
     /**

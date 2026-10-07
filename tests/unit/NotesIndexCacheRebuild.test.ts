@@ -65,6 +65,17 @@ function makeMaintenance(rebuildSucceeds: boolean) {
 }
 
 describe('StorageMaintenanceService cache-rebuilt signal', () => {
+  it('persists legacy preferences before touching the cache, and a failed save prevents destruction', async () => {
+    const { service, calls } = makeMaintenance(true);
+    const save = jest.fn(async () => { throw new Error('Settings unavailable'); });
+    service.setBeforeCacheRebuild(save);
+    await expect(service.rebuildCache()).rejects.toThrow('Settings unavailable');
+    expect(calls).toEqual([]);
+    service.setBeforeCacheRebuild(async () => { calls.push('preferencesSaved'); });
+    await service.rebuildCache();
+    expect(calls[0]).toBe('preferencesSaved');
+    expect(calls).toContain('close');
+  });
   it('recreates the database from scratch, then announces it', async () => {
     const { service, calls } = makeMaintenance(true);
     const seen: string[] = [];

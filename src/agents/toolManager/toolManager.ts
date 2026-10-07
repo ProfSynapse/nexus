@@ -23,7 +23,7 @@ import {
  * without needing to call discovery tools first.
  */
 export interface SchemaData {
-  workspaces: { name: string; description?: string }[];
+  workspaces: WorkspaceDiscoveryEntry[];
   customAgents: { name: string; description?: string }[];
   vaultRoot: string[];
 }
@@ -36,7 +36,15 @@ export interface SchemaData {
  * discovery has nothing to pick from and invents a name instead, so getTools
  * resolves the list live at call time rather than trusting the snapshot.
  */
-export type WorkspaceNameProvider = () => Promise<{ name: string; description?: string }[]>;
+export interface WorkspaceDiscoveryEntry {
+  name: string;
+  description?: string;
+  id?: string;
+  workflows?: import('../../services/workspace/WorkspaceSummaryService').WorkflowSummary[];
+  workflowCount?: number;
+  workflowsTruncated?: boolean;
+}
+export type WorkspaceNameProvider = () => Promise<WorkspaceDiscoveryEntry[]>;
 
 /**
  * Configuration for ToolManager agent
@@ -136,5 +144,9 @@ export class ToolManagerAgent extends BaseAgent {
 
   refreshSchemaData(schemaData: SchemaData): void {
     this.getToolsTool.refreshDescription(schemaData);
+  }
+
+  invalidateWorkspaceDiscovery(): void {
+    this.getToolsTool.invalidateWorkspaceCache();
   }
 }

@@ -83,6 +83,11 @@ export class StorageMaintenanceService {
    * would race over close/remove/initialize/save on `sqliteCache`).
    */
   private rebuildInFlight: Promise<void> | null = null;
+  private beforeCacheRebuild?: () => Promise<void>;
+  private afterCacheRebuild?: () => Promise<void>;
+
+  setBeforeCacheRebuild(callback: () => Promise<void>): void { this.beforeCacheRebuild = callback; }
+  setAfterCacheRebuild(callback: () => Promise<void>): void { this.afterCacheRebuild = callback; }
 
   /**
    * Typed event bus for adapter consumers. Emits two events:
@@ -113,6 +118,10 @@ export class StorageMaintenanceService {
         if (!this.deps.getInitLifecycle().isInitialized()) {
           throw new Error('Storage adapter is not initialized; cannot rebuild cache');
         }
+
+        // Preserve owned preferences still held by a legacy derived table.
+        // A failed settings save stops the rebuild before the cache is touched.
+        await this.beforeCacheRebuild?.();
 
         options.onProgress?.('Stopping auto-save', 0, 1);
         this.deps.getSqliteCache().stopAutoSave();
@@ -153,7 +162,8 @@ export class StorageMaintenanceService {
       } finally {
         // Clear on both success and failure so a follow-up rebuild can
         // re-run; the original error (if any) still rejects this promise.
-        this.rebuildInFlight = null;
+        try { await this.afterCacheRebuild?.(); }
+        finally { this.rebuildInFlight = null; }
       }
     })();
 

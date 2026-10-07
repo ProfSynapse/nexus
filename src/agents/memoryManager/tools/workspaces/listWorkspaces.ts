@@ -13,6 +13,8 @@ import { BaseTool } from '../../../baseTool';
 import type { MemoryManagerAgent } from '../../memoryManager';
 import { verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { WorkspaceSummaryService } from '../../../../services/workspace/WorkspaceSummaryService';
+import type { ProjectWorkspace } from '../../../../database/types/workspace/WorkspaceTypes';
 import { 
   ListWorkspacesParameters, 
   ListWorkspacesResult
@@ -68,7 +70,9 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
 
       let workspaces;
       try {
-        workspaces = await workspaceService.getWorkspaces(queryParams);
+        workspaces = typeof workspaceService.listWorkspaceDiscovery === 'function'
+          ? await workspaceService.listWorkspaceDiscovery(queryParams)
+          : await workspaceService.getWorkspaces(queryParams);
       } catch (queryError) {
         return {
           success: false,
@@ -85,7 +89,9 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
       }
 
       // Preserve the result contract while tolerating partially populated workspace rows.
-      const leanWorkspaces = filteredWorkspaces.map((ws: { id?: string; name?: string; description?: string; rootFolder?: string; created?: number; lastAccessed?: number; childCount?: number; isActive?: boolean }) => ({
+      const summaries = new WorkspaceSummaryService();
+      const leanWorkspaces = filteredWorkspaces.map((ws: ProjectWorkspace & { childCount?: number }) => ({
+        ...summaries.summarize(ws),
         id: ws.id || 'unknown',
         name: ws.name || 'Untitled Workspace',
         description: ws.description,
@@ -161,9 +167,8 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
           description: 'Error message if operation failed'
         },
         data: {
-          type: 'array',
-          description: 'Array of workspaces with name and description',
-          items: {
+          type: 'object',
+          properties: { workspaces: { type: 'array', items: {
             type: 'object',
             properties: {
               name: {
@@ -174,9 +179,11 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
                 type: 'string',
                 description: 'Workspace description'
               }
+              , workflows: { type: 'array', items: { type: 'object' }, description: 'Workflow choices and exact preload commands.' },
+              workflowCount: { type: 'number' }, workflowsTruncated: { type: 'boolean' }
             },
             required: ['name', 'description']
-          }
+          } } }
         }
       },
       required: ['success']

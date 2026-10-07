@@ -243,6 +243,13 @@ describe('normalizeWorkflowSchedule', () => {
 // ============================================================================
 
 describe('normalizeWorkspaceContext', () => {
+  it('keeps missing legacy workflow IDs stable across passive reads and distinguishes duplicate definitions', () => {
+    const context = { workflows: [{ name: 'Review', when: 'Requested', steps: 'Inspect' }, { name: 'Review', when: 'Requested', steps: 'Inspect' }] };
+    const first = normalizeWorkspaceContext(context as never).context.workflows!;
+    const second = normalizeWorkspaceContext(context as never).context.workflows!;
+    expect(first.map(item => item.id)).toEqual(second.map(item => item.id));
+    expect(first[0].id).not.toBe(first[1].id);
+  });
   it('returns unchanged context when no workflows', () => {
     const context: WorkspaceContext = { purpose: 'test' };
     const result = normalizeWorkspaceContext(context);

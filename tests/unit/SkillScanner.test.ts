@@ -1,5 +1,5 @@
 import type { DataAdapter } from 'obsidian';
-import { SkillScanner } from '@/agents/apps/skills/services/SkillScanner';
+import { SkillScanner } from '@/services/skills/SkillScanner';
 
 /**
  * Minimal in-memory DataAdapter fake. Backed by:

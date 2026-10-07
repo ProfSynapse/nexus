@@ -15,7 +15,7 @@ import {
   assertInside,
   isSafePathSegment,
   SkillPathError,
-} from '@/agents/apps/skills/services/skillPaths';
+} from '@/services/skills/skillPaths';
 
 describe('skillPaths', () => {
   describe('resolveVaultPath', () => {

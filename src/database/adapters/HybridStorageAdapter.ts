@@ -252,6 +252,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * window when an init step throws unexpectedly (issue #209).
    */
   async initialize(blocking = false): Promise<void> {
+    if (this.closing) throw new Error('Storage adapter is closing');
     await this.initLifecycle.run(() => this.performInitialization(), { blocking });
   }
 
@@ -332,7 +333,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // Watch the plugin data folder for JSONL changes landed by Obsidian
       // Sync (or external tools). When something changes, reconcile SQLite
       // and emit `external-sync` so open views can refresh.
-      this.startJsonlVaultWatcher();
+      if (!this.closing) this.startJsonlVaultWatcher();
     } catch (error) {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       throw error;
@@ -582,7 +583,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * Check if the adapter is ready for use
    */
   isReady(): boolean {
-    return this.initLifecycle.isReady();
+    return !this.closing && this.initLifecycle.isReady();
   }
 
   isQueryReady(): boolean {
@@ -593,18 +594,21 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * Wait for initialization to complete.
    * @returns true if initialization succeeded, false if it failed
    */
-  waitForReady(): Promise<boolean> {
-    return this.initLifecycle.waitForReady();
+  async waitForReady(): Promise<boolean> {
+    if (this.closing) return false;
+    const ready = await this.initLifecycle.waitForReady();
+    return !this.closing && ready;
   }
 
   waitForQueryReady(maxWaitMs = this.getStartupRebuildIdleTimeoutMs()): Promise<boolean> {
+    if (this.closing) return Promise.resolve(false);
     if (this.isQueryReady()) return Promise.resolve(true);
     if (this.initLifecycle.isInitialized() && this.initLifecycle.getError()) {
       return Promise.resolve(false);
     }
     if (this.initLifecycle.hasStarted() && !this.initLifecycle.isInitialized()) {
       return this.initLifecycle.waitForReady().then((ready) => {
-        if (!ready) return false;
+        if (!ready || this.closing) return false;
         if (this.isQueryReady()) return true;
         return this.hydration.waitForReady({
           maxWaitMs,
@@ -683,10 +687,24 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.toolOperationRepo;
   }
 
-  async close(): Promise<void> {
-    if (!this.initLifecycle.isInitialized()) {
-      return;
-    }
+  private closing = false;
+  private closePromise?: Promise<void>;
+
+  cleanup(): Promise<void> { return this.close(); }
+
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  private async performClose(): Promise<void> {
+    if (!this.initLifecycle.hasStarted()) return;
+
+    // initialize(false) returns before SQLite is open. Closing must wait for
+    // that existing work, otherwise it can start autosave after this unload.
+    await this.initLifecycle.waitForReady();
 
     try {
       if (this.syncInterval) {
@@ -711,6 +729,13 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   async rebuildCache(options: { onProgress?: (label: string, done: number, total: number) => void } = {}): Promise<void> {
     return this.maintenance.rebuildCache(options);
+  }
+
+  setBeforeCacheRebuild(callback: () => Promise<void>): void {
+    this.maintenance.setBeforeCacheRebuild(callback);
+  }
+  setAfterCacheRebuild(callback: () => Promise<void>): void {
+    this.maintenance.setAfterCacheRebuild(callback);
   }
 
   // ============================================================================
@@ -1083,6 +1108,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * If initialization is in progress, waits for it to complete.
    */
   private async ensureInitialized(): Promise<void> {
+    if (this.closing) throw new Error('Storage adapter is closing');
     if (this.initLifecycle.isReady()) {
       return;
     }
@@ -1090,6 +1116,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
       throw new Error('HybridStorageAdapter not initialized. Call initialize() first.');
     }
     const ok = await this.initLifecycle.waitForReady();
+    if (this.closing) throw new Error('Storage adapter is closing');
     if (!ok) {
       throw this.initLifecycle.getError() ?? new Error('HybridStorageAdapter initialization failed.');
     }

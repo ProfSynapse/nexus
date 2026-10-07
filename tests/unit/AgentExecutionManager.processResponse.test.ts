@@ -60,6 +60,15 @@ function makeRegistry(agent: IAgent): AgentRegistry {
 }
 
 describe('AgentExecutionManager.executeAgentTool — sessionIdCorrection semantic', () => {
+  it('does not update a session from a failed result containing workspace context', async () => {
+    const agent = makeAgent('runStub', () => ({ success: false, error: 'Invalid workflow', workspaceContext: { workspaceId: 'target' } }));
+    const manager = new SessionContextManager();
+    manager.validateSessionId = jest.fn().mockResolvedValue({ id: 'session', created: false });
+    manager.applyWorkspaceContext = jest.fn((_id, params) => params);
+    manager.updateFromResult = jest.fn();
+    await new AgentExecutionManager(makeRegistry(agent), manager).executeAgentTool('stubAgent', 'runStub', { sessionId: 'session' });
+    expect(manager.updateFromResult).not.toHaveBeenCalled();
+  });
   it('sets correctedId to the original human-readable handle and surfaces the keep-using-handle message', async () => {
     const agent = makeAgent('runStub', () => ({
       success: true,

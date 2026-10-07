@@ -286,6 +286,33 @@ describe('IPCTransportManager', () => {
       expect(socket.destroy).toHaveBeenCalled();
     });
 
+    it('does not re-add a client that disconnects before its MCP connection settles', async () => {
+      let connected!: () => void;
+      const server = createMockPerConnectionServer();
+      server.connect.mockReturnValue(new Promise<void>(resolve => { connected = resolve; }));
+      const manager = new IPCTransportManager(mockConfig, mockStdioManager, () => server);
+      const socket = createMockSocket();
+      manager.handleSocketConnection(socket);
+      socket.emit('close');
+      connected(); await flushPromises();
+      expect(manager.activeConnections.size).toBe(0);
+      expect(server.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('tracks pending MCP connections so shutdown closes them before they settle', async () => {
+      let connected!: () => void;
+      const server = createMockPerConnectionServer();
+      server.connect.mockReturnValue(new Promise<void>(resolve => { connected = resolve; }));
+      const manager = new IPCTransportManager(mockConfig, mockStdioManager, () => server);
+      const socket = createMockSocket();
+      manager.handleSocketConnection(socket);
+      await manager.stopTransport();
+      expect(server.close).toHaveBeenCalled();
+      connected(); await flushPromises();
+      expect(manager.activeConnections.size).toBe(0);
+      expect(socket.destroy).toHaveBeenCalled();
+    });
+
     it('should not add connection to active set when connect fails', async () => {
       const failingServer = createMockPerConnectionServer();
       failingServer.connect.mockRejectedValue(new Error('connect failed'));
@@ -419,6 +446,18 @@ describe('IPCTransportManager', () => {
       // currentTransport should be cleaned up
       expect(manager.currentTransport).toBeNull();
     });
+  });
+
+  it('does not publish a single-client handshake that completes after shutdown', async () => {
+    let connected!: () => void;
+    mockStdioManager.connectSocketTransport.mockReturnValue(new Promise<void>(resolve => { connected = resolve; }));
+    const manager = new IPCTransportManager(mockConfig, mockStdioManager);
+    const socket = createMockSocket();
+    const pending = manager.handleSingleClientConnection(socket);
+    await manager.stopTransport();
+    connected(); await pending;
+    expect(manager.currentTransport).toBeNull();
+    expect(socket.destroy).toHaveBeenCalled();
   });
 
   describe('single-client proactive cleanup (PR #48)', () => {

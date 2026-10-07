@@ -362,7 +362,9 @@ function instantiateAgents() {
   const { ElevenLabsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'elevenlabs', 'ElevenLabsAgent'));
   const { ComposerAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'composer', 'ComposerAgent'));
   const { WebToolsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'webTools', 'WebToolsAgent'));
-  const { SkillsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'skills', 'SkillsAgent'));
+  const { SkillsAgent } = require(path.join(projectRoot, 'src', 'agents', 'skills', 'SkillsAgent'));
+  const { SkillService } = require(path.join(projectRoot, 'src', 'services', 'skills', 'SkillService'));
+  const { InstructionMetadataService } = require(path.join(projectRoot, 'src', 'services', 'instructions', 'InstructionMetadataService'));
   const { DataAnalysisAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'dataAnalysis', 'DataAnalysisAgent'));
 
   const { app, plugin } = createRuntime();
@@ -423,7 +425,16 @@ function instantiateAgents() {
     new ElevenLabsAgent(),
     new ComposerAgent(),
     new WebToolsAgent(),
-    new SkillsAgent(),
+    new SkillsAgent(new SkillService({
+      vault: app.vault,
+      getSettings: () => settings.settings,
+      getStorageAdapter: async () => null,
+      availability: new InstructionMetadataService({
+        getSettings: () => undefined,
+        setSettings: () => undefined,
+        saveSettings: async () => undefined
+      })
+    })),
     // Desktop-only in the plugin (AppManager gates it behind isDesktop), but its
     // tools are part of the advertised catalog, so it is always exported here.
     new DataAnalysisAgent()

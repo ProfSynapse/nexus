@@ -6,6 +6,9 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData, WorkspaceNameProvider } from '../toolManager';
 import { GetToolsParams, GetToolsResult } from '../types';
 import { ToolCliNormalizer } from '../services/ToolCliNormalizer';
+import { ToolCatalogService } from '../services/ToolCatalogService';
+import type { WorkspaceDiscoverySummary } from '../../../services/workspace/WorkspaceSummaryService';
+import { CLI_PRELOADED_TOOLS_RULE } from '../guidance';
 
 const INTERNAL_ONLY_TOOLS = new Set<string>([]);
 
@@ -28,7 +31,8 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   private cliNormalizer: ToolCliNormalizer;
   private schemaData: SchemaData;
   private workspaceProvider?: WorkspaceNameProvider;
-  private workspaceCache: { names: string[]; fetchedAt: number } | null = null;
+  private workspaceCache: { details: WorkspaceDiscoverySummary[]; fetchedAt: number } | null = null;
+  private readonly catalog: ToolCatalogService;
 
   getExecutionPolicy(): Readonly<ToolExecutionPolicy> {
     return CONSERVATIVE_TOOL_EXECUTION_POLICY;
@@ -43,6 +47,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     this.name = 'Get Tools';
     this.version = '1.0.0';
     this.agentRegistry = agentRegistry;
+    this.catalog = new ToolCatalogService(() => this.agentRegistry);
     this.cliNormalizer = new ToolCliNormalizer(agentRegistry);
     this.schemaData = schemaData;
     this.workspaceProvider = workspaceProvider;
@@ -52,13 +57,14 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   refreshDescription(schemaData?: SchemaData): void {
     if (schemaData) {
       this.schemaData = schemaData;
+      this.workspaceCache = null;
     }
     this.description = this.buildDescription(this.schemaData);
   }
 
   private buildDescription(schemaData: SchemaData): string {
     const lines = [
-      'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
+      'Before useTools, obtain the current tool signature through getTools or a successful workflow/skill preload. Discover any tools whose schemas are not already loaded.',
       'This returns CLI-oriented command metadata for the tools you need next.',
       'Send sessionId, memory, goal, and constraints at the top level.',
       'The workspace is remembered per session: the first useTools call of a fresh session passes "workspaceId" once ("default" or an exact name from the workspaces list this call returns) or runs "memory load-workspace"; later calls inherit it. Omit "workspaceId" unless you are deliberately switching. getTools itself never needs it.',
@@ -66,6 +72,8 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       'Do not send a nested "context" object or legacy "request" array.',
       '',
       'Workflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands',
+      'WorkspaceDetails lists the workflows you can preload with memory load-workspace --workflow. There is no default workflow. Loading prepares instructions and tool schemas without running a workflow; memory run executes it.',
+      CLI_PRELOADED_TOOLS_RULE,
       'Known-good example: {"sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available storage tools.","tool":"storage move, content read"}',
       'Example selectors: tool="--help", tool="storage", tool="storage move", tool="storage move, content read"',
       '',
@@ -99,7 +107,14 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     // a confident falsehood on every vault that had others. That is what sent
     // agents off inventing a name from the user's phrasing.
     if (schemaData.workspaces.length > 0) {
-      lines.push(`Existing workspaces (exact names — never invent one): [default,${schemaData.workspaces.map(w => w.name).join(',')}]`);
+      lines.push(`Existing workspaces (exact names — never invent one): [default,${schemaData.workspaces.slice(0, MAX_LISTED_WORKSPACES).map(w => w.name).join(',')}]`);
+      const withWorkflows = schemaData.workspaces.slice(0, MAX_LISTED_WORKSPACES).filter(workspace => workspace.workflows?.length);
+      if (withWorkflows.length) {
+        lines.push('Preloadable workflows by workspace (load with memory load-workspace --workflow; see workspaceDetails for exact commands):');
+        for (const workspace of withWorkflows) {
+          lines.push(`${JSON.stringify(workspace.name)}: ${(workspace.workflows ?? []).slice(0, 8).map(workflow => `${JSON.stringify(workflow.name)} (id ${JSON.stringify(workflow.id)})`).join(', ')}${workspace.workflowsTruncated ? ' (more in workspace load)' : ''}`);
+        }
+      }
     } else {
       lines.push('Existing workspaces: not listed here. The getTools RESULT carries the live list — read "workspaces" there and pass one of those exact names. Never infer a workspace name from the user\'s wording.');
     }
@@ -120,91 +135,41 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
    * fails — a stale list still beats no list, since an empty one is what makes
    * agents guess names.
    */
-  private async getWorkspaceNames(): Promise<string[]> {
-    const snapshot = this.schemaData.workspaces.map(workspace => workspace.name);
-
-    if (!this.workspaceProvider) {
-      return snapshot;
-    }
-
+  private async getWorkspaceDetails(): Promise<{ details: WorkspaceDiscoverySummary[]; status: 'ready' | 'unavailable'; message?: string }> {
+    const project = (workspace: Awaited<ReturnType<WorkspaceNameProvider>>[number]): WorkspaceDiscoverySummary => ({
+      id: workspace.id ?? workspace.name, name: workspace.name, description: workspace.description,
+      workflows: workspace.workflows ?? [], workflowCount: workspace.workflowCount ?? workspace.workflows?.length ?? 0,
+      workflowsTruncated: workspace.workflowsTruncated ?? false
+    });
+    const snapshot = this.schemaData.workspaces.map(project);
+    if (!this.workspaceProvider) return { details: snapshot, status: 'ready' };
     const now = Date.now();
-    if (this.workspaceCache && now - this.workspaceCache.fetchedAt < WORKSPACE_CACHE_TTL_MS) {
-      return this.workspaceCache.names;
-    }
-
+    if (this.workspaceCache && now - this.workspaceCache.fetchedAt < WORKSPACE_CACHE_TTL_MS) return { details: this.workspaceCache.details, status: 'ready' };
     try {
       const workspaces = await this.workspaceProvider();
-      const names = workspaces.map(workspace => workspace.name).filter(Boolean);
-      this.workspaceCache = { names, fetchedAt: now };
-
-      // Heal the boot snapshot. The description is what MCP clients read from
-      // tools/list, and it cannot be re-fetched on demand — so the first live
-      // lookup writes the real names back into it. Every later tools/list (a
-      // fresh CLI invocation, a reconnecting client) then sees the truth
-      // instead of the empty boot-time list.
-      if (names.length > 0 && !this.sameNames(snapshot, names)) {
-        this.schemaData = {
-          ...this.schemaData,
-          workspaces: workspaces.map(workspace => ({
-            name: workspace.name,
-            description: workspace.description
-          }))
-        };
+      const details = workspaces.filter(workspace => !!workspace.name).map(project);
+      this.workspaceCache = { details, fetchedAt: now };
+      // Definitions and references matter even when the workspace name is unchanged.
+      if (JSON.stringify(snapshot) !== JSON.stringify(details)) {
+        this.schemaData = { ...this.schemaData, workspaces: details };
         this.description = this.buildDescription(this.schemaData);
       }
-
-      return names;
-    } catch {
-      return snapshot;
+      return { details, status: 'ready' };
+    } catch (error) {
+      return { details: snapshot, status: 'unavailable', message: getErrorMessage(error) };
     }
   }
 
-  private sameNames(a: string[], b: string[]): boolean {
-    return a.length === b.length && a.every((name, index) => name === b[index]);
-  }
+  invalidateWorkspaceCache(): void { this.workspaceCache = null; }
 
   async execute(params: GetToolsParams): Promise<GetToolsResult> {
     try {
-      const requests = this.cliNormalizer.normalizeDiscoveryRequests(params);
-      const resultSchemas = [];
-      const notFound: string[] = [];
-      // A broad/agent-level selector (`--help` or just an agent name) lists tools COMPACTLY
-      // — command + description only — so discovery never re-dumps every tool's full args
-      // and examples (that catalog was ~25k tokens and persisted in chat history). The model
-      // drills into a specific "agent tool" to get the full signature before calling it.
-      let returnedCompact = false;
-
-      for (const item of requests) {
-        const agent = this.agentRegistry.get(item.agent);
-        if (!agent) {
-          notFound.push(`Agent "${item.agent}" not found`);
-          continue;
-        }
-
-        if (!item.tools || item.tools.length === 0) {
-          const allTools = agent.getTools().filter(tool => !INTERNAL_ONLY_TOOLS.has(tool.slug));
-          for (const tool of allTools) {
-            resultSchemas.push(this.cliNormalizer.buildCliSchema(item.agent, tool, { compact: true }));
-          }
-          returnedCompact = true;
-          continue;
-        }
-
-        for (const toolSlug of item.tools) {
-          if (INTERNAL_ONLY_TOOLS.has(toolSlug)) {
-            notFound.push(`Tool "${toolSlug}" not found in agent "${item.agent}"`);
-            continue;
-          }
-
-          const tool = agent.getTool(toolSlug);
-          if (!tool) {
-            notFound.push(`Tool "${toolSlug}" not found in agent "${item.agent}"`);
-            continue;
-          }
-
-          resultSchemas.push(this.cliNormalizer.buildCliSchema(item.agent, tool));
-        }
-      }
+      // Preserve the public payload contract, including rejection of removed shapes.
+      this.cliNormalizer.normalizeDiscoveryRequests(params);
+      const schemas = this.catalog.resolveDiscovery(params.tool ?? '--help');
+      if (!schemas.ok) return { success: false, error: schemas.error.message };
+      const resultSchemas = schemas.value;
+      const returnedCompact = resultSchemas.some(schema => !schema.arguments);
 
       // The live workspace list rides along on every discovery call. Workspace
       // names are the one argument agents habitually invent (they read one out
@@ -212,17 +177,22 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       // commit to one — so the real names have to be in front of them here,
       // not just in a description built at boot when the list may still have
       // been empty.
-      const workspaceNames = await this.getWorkspaceNames();
+      const discovery = await this.getWorkspaceDetails();
+      const workspaceNames = discovery.details.map(workspace => workspace.name);
       const listedWorkspaces = ['default', ...workspaceNames.slice(0, MAX_LISTED_WORKSPACES)];
       const workspacesTruncated = workspaceNames.length > MAX_LISTED_WORKSPACES;
 
       return {
         success: true,
-        ...(notFound.length > 0 ? { error: `Some items not found: ${notFound.join(', ')}` } : {}),
         data: {
           tools: resultSchemas,
           workspaces: listedWorkspaces,
-          workspacesNote: workspacesTruncated
+          workspaceDetails: discovery.details.slice(0, MAX_LISTED_WORKSPACES),
+          workspaceStatus: discovery.status,
+          workspacesTruncated,
+          workspacesNote: discovery.status !== 'ready'
+            ? `Workspace discovery is unavailable (${discovery.message}). This cached list may be incomplete. Retry discovery; do not infer that a workspace or workflow is missing.`
+            : workspacesTruncated
             ? `These are the only workspaces that exist (first ${MAX_LISTED_WORKSPACES} of ${workspaceNames.length}; use "memory search-workspaces" for the rest). Pass one of these exact names — do not infer a workspace name from the user's wording.`
             : 'These are the only workspaces that exist. Pass one of these exact names — do not infer a workspace name from the user\'s wording.',
           ...(returnedCompact
@@ -323,6 +293,9 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
               items: { type: 'string' },
               description: 'Every workspace that currently exists. These are the only valid values for a workspace name or workspaceId — pass one verbatim, never a name inferred from the user\'s wording.'
             },
+            workspaceDetails: { type: 'array', items: { type: 'object' }, description: 'Workspace IDs and nested bounded workflow choices with exact preload commands.' },
+            workspaceStatus: { type: 'string', enum: ['ready', 'unavailable'] },
+            workspacesTruncated: { type: 'boolean' },
             workspacesNote: { type: 'string' },
             note: { type: 'string' }
           }

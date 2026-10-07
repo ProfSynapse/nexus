@@ -65,6 +65,7 @@ export interface PluginLifecycleConfig {
 export class PluginLifecycleManager {
     private config: PluginLifecycleConfig;
     private isInitialized = false;
+    private shuttingDown = false;
     private startTime: number = Date.now();
     private serviceRegistrar: ServiceRegistrar;
     private commandManager: MaintenanceCommandManager;
@@ -163,6 +164,7 @@ export class PluginLifecycleManager {
      * Initialize plugin - called from onload()
      */
     async initialize(): Promise<void> {
+        if (this.shuttingDown) return;
         try {
             // PHASE 1: Foundation - Service container and settings already created by main.ts
 
@@ -171,7 +173,9 @@ export class PluginLifecycleManager {
 
             // PHASE 3: Register ChatView EARLY so Obsidian can restore it during layout restoration
             await this.chatUIManager.registerViewEarly();
+            if (this.shuttingDown) return;
             await this.taskBoardUIManager.registerViewEarly();
+            if (this.shuttingDown) return;
 
             // PHASE 4: Start background initialization via window.setTimeout(0)
             const bgInitTimer = window.setTimeout(() => {
@@ -192,9 +196,13 @@ export class PluginLifecycleManager {
      */
     private async startBackgroundInitialization(): Promise<void> {
         try {
+            if (this.shuttingDown) return;
             await this.config.settings.loadSettings();
+            if (this.shuttingDown) return;
             await this.serviceRegistrar.initializeDataDirectories();
+            if (this.shuttingDown) return;
             await this.serviceRegistrar.initializeBusinessServices();
+            if (this.shuttingDown) return;
             this.serviceRegistrar.preInitializeUICriticalServices();
             this.backgroundProcessor.validateSearchFunctionality();
 
@@ -207,6 +215,7 @@ export class PluginLifecycleManager {
                     // MCP connector start failed - non-fatal
                 }
             }
+            if (this.shuttingDown) return;
 
             // Initialize ChatService AFTER agents are registered (so tools are available)
             try {
@@ -214,9 +223,12 @@ export class PluginLifecycleManager {
             } catch (error) {
                 console.error('[PluginLifecycleManager] ChatService init failed:', error);
             }
+            if (this.shuttingDown) return;
 
             await this.chatUIManager.registerChatUI();
+            if (this.shuttingDown) return;
             await this.taskBoardUIManager.registerTaskBoardUI();
+            if (this.shuttingDown) return;
 
             // Initialize settings tab AFTER business services are ready
             // This prevents race condition where settings tab tries to access agents before services are initialized
@@ -230,6 +242,7 @@ export class PluginLifecycleManager {
                     void (async () => {
                         try {
                             const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
+                            if (this.shuttingDown) return;
                             if (adapter) {
                                 await this.initializeEmbeddingsWhenReady(adapter);
                             } else {
@@ -331,7 +344,9 @@ export class PluginLifecycleManager {
      */
     private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
         try {
+            if (this.shuttingDown) return;
             const ready = await storageAdapter.waitForQueryReady();
+            if (this.shuttingDown) return;
             if (!ready) {
                 console.warn('[PluginLifecycleManager] Storage adapter failed to initialize; skipping embeddings');
                 return;
@@ -368,6 +383,7 @@ export class PluginLifecycleManager {
             const embeddingService = this.embeddingManager.getService();
             if (embeddingService) {
                 const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
+                if (this.shuttingDown) return;
                 if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
                     chatTraceService.setEmbeddingService(embeddingService);
                 }
@@ -381,6 +397,8 @@ export class PluginLifecycleManager {
      * Shutdown and cleanup
      */
     async shutdown(): Promise<void> {
+        this.shuttingDown = true;
+        this.isInitialized = false;
         try {
             // Cancel any pending timers that haven't fired yet
             for (const timer of this.pendingTimers) {
@@ -390,6 +408,12 @@ export class PluginLifecycleManager {
 
             // Clean up ServiceRegistrar's pending timers
             this.serviceRegistrar.shutdown();
+
+            // Skills resolve storage lazily rather than declaring a container
+            // dependency. Drain explicitly so teardown order cannot close the
+            // adapter before an accepted scan has observed cancellation.
+            const skills = this.config.serviceManager?.getServiceIfReady<{ cleanup(): Promise<void> }>('skillService');
+            if (skills) await skills.cleanup();
 
             // Shutdown embedding system first (before database closes)
             if (this.embeddingManager) {
@@ -420,15 +444,9 @@ export class PluginLifecycleManager {
                 }
             }
 
-            // Close HybridStorageAdapter to properly shut down SQLite
+            // Capture the adapter before clearing the container. Consumers
+            // must cancel and drain their cache work while SQLite is open.
             const storageAdapter = this.config.serviceManager?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
-            if (storageAdapter && typeof storageAdapter.close === 'function') {
-                try {
-                    await storageAdapter.close();
-                } catch (error) {
-                    void error;
-                }
-            }
 
             // Cleanup settings tab accordions
             this.settingsTabManager.cleanup();
@@ -436,6 +454,14 @@ export class PluginLifecycleManager {
             // Cleanup service manager (handles all service cleanup)
             if (this.config.serviceManager) {
                 await this.config.serviceManager.stop();
+            }
+
+            if (storageAdapter && typeof storageAdapter.close === 'function') {
+                try {
+                    await storageAdapter.close();
+                } catch (error) {
+                    void error;
+                }
             }
 
             // Stop the MCP connector

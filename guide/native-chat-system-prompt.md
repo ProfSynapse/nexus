@@ -34,7 +34,7 @@ If present, these dynamic sections may also be added:
 
 The default prompt no longer injects vault structure, all available workspaces, or all available prompts on every turn. It does inject a compact
 `agent  tool1 tool2 …` name catalog so the model knows what exists — names only,
-never full parameter schemas. Those still come from `getTools` on demand.
+never full parameter schemas. Those come from `getTools` on demand or an explicitly loaded workflow or skill.
 
 ## Core Prompt
 
@@ -183,3 +183,5 @@ The tests verify:
 - selected workspace data is included
 - dynamic insertions are XML-escaped
 - suggester-driven blocks are XML-escaped
+
+Full tool schemas returned by a successful workspace workflow or skill load are current discovery metadata for those tools. Use those signatures without fetching the same schemas again; discover any additional tools with getTools. Loading prepares instructions and tools only; memory run starts workflow execution.

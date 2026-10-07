@@ -14,13 +14,14 @@ import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type NexusPlugin from '../../../main';
 import type { WorkspaceService } from '../../../services/WorkspaceService';
 import type { SessionContextManager } from '../../../services/SessionContextManager';
+import { WorkspaceSummaryService } from '../../../services/workspace/WorkspaceSummaryService';
+import type { SkillService } from '../../../services/skills/SkillService';
+import type { CliToolSchema } from '../../../agents/toolManager/types';
+import { MemoryManagerAgent } from '../../../agents/memoryManager/memoryManager';
+import { WorkspaceLoadService, type WorkspaceLoadValidation } from '../../../services/workspace/WorkspaceLoadService';
+import type { WorkflowPreparationService, WorkflowPreparationBudget } from '../../../services/workflows/WorkflowPreparationService';
+import type { SessionWorkflowPort, PreparedWorkflow, PreparedInstruction, ServiceResult, ToolCatalogPort } from '../../../services/instructions/types';
 import type { AgentManager } from '../../../services/AgentManager';
-
-type LoadWorkspaceToolResult = {
-  success?: boolean;
-  data?: Record<string, unknown>;
-  workspaceContext?: unknown;
-};
 
 /**
  * Service for workspace integration with chat
@@ -28,84 +29,90 @@ type LoadWorkspaceToolResult = {
 export class WorkspaceIntegrationService {
   constructor(private app: App) {}
 
-  /**
-   * Load workspace by ID with full context (like loadWorkspace tool)
-   * This executes the LoadWorkspaceTool to get comprehensive data including file structure
-   */
+  /** A passive briefing read never selects a workflow or updates session bindings. */
   async loadWorkspace(workspaceId: string): Promise<Record<string, unknown> | null> {
-    try {
-      const plugin = getNexusPlugin<NexusPlugin>(this.app);
-      if (!plugin) {
-        return null;
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const agents = await plugin?.getService<AgentManager>('agentManager');
+    const memory = agents?.getAgent('memoryManager');
+    if (!(memory instanceof MemoryManagerAgent)) return null;
+    const result = await memory.readWorkspaceBriefing({ workspace: workspaceId, limit: 3, context: { workspaceId, sessionId: '', memory: 'Reading workspace context', goal: 'Refresh workspace briefing without changing selection' } });
+    return result.success ? { id: result.workspaceContext?.workspaceId ?? workspaceId, ...result.data, workspaceContext: result.workspaceContext } : null;
+  }
+
+  async activateWorkspace(workspaceId: string, sessionId: string, workflow?: string, budget?: WorkflowPreparationBudget, validate?: WorkspaceLoadValidation): Promise<Record<string, unknown>> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin) throw new Error('Nexus is unavailable');
+    const [agents, preparation, activation] = await Promise.all([
+      plugin.getService<AgentManager>('agentManager'),
+      plugin.getService<WorkflowPreparationService>('workflowPreparationService'),
+      plugin.getService<SessionWorkflowPort>('sessionWorkflowService'),
+    ]);
+    const memory = agents?.getAgent('memoryManager');
+    if (!(memory instanceof MemoryManagerAgent) || !preparation || !activation) throw new Error('Workspace services are initializing');
+    const adjustedBudget = { ...budget };
+    const loader = new WorkspaceLoadService(async params => {
+      const result = await memory.readWorkspaceBriefing(params);
+      if (result.success && adjustedBudget.maxTokens !== undefined) {
+        const briefing = { ...result.data };
+        delete briefing.workflowDefinitions; delete briefing.loadedWorkflow; delete briefing.preloadedTools; delete briefing.prompt;
+        const remaining = Math.max(0, adjustedBudget.maxTokens - Math.ceil(JSON.stringify(briefing).length / 4));
+        adjustedBudget.maxTokens = remaining;
       }
+      return result;
+    }, preparation, activation, validate);
+    const result = await loader.load({ workspace: workspaceId, ...(workflow ? { workflow } : {}), limit: 3,
+      context: { workspaceId, sessionId, memory: 'Selecting chat workspace instructions', goal: 'Prepare the selected workspace and optional workflow' } }, adjustedBudget);
+    if (!result.success) throw new Error(result.error || 'Workspace could not be loaded');
+    return { id: result.workspaceContext?.workspaceId ?? workspaceId, ...result.data, workspaceContext: result.workspaceContext };
+  }
 
-      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
-      const resolvedWorkspace = workspaceService
-        ? await workspaceService.getWorkspaceByNameOrId(workspaceId)
-        : null;
+  async restoreWorkflow(sessionId: string): Promise<ServiceResult<PreparedWorkflow | null>> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const activation = await plugin?.getService<SessionWorkflowPort>('sessionWorkflowService');
+    if (!plugin) return { ok: true, value: null };
+    return activation ? activation.restore(sessionId) : { ok: false, error: { code: 'initializing', message: 'Workflow services are initializing' } };
+  }
 
-      if (!resolvedWorkspace) {
-        return null;
-      }
+  async prepareIndividualSkills(sessionId: string, workflow: PreparedWorkflow | null): Promise<{ skills: PreparedInstruction[]; tools: CliToolSchema[] }> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const sessions = await plugin?.getService<SessionContextManager>('sessionContextManager');
+    const managed = new Set(workflow?.skills.map(skill => skill.reference.type === 'skill' ? `${skill.reference.provider}/${skill.reference.name}` : '') ?? []);
+    const ids = (sessions?.getIndividuallyLoadedSkills(sessionId) ?? []).filter(id => !managed.has(id));
+    if (!ids.length) return { skills: [], tools: [] };
+    const [skillsService, catalog] = await Promise.all([
+      plugin?.getService<SkillService>('skillService'), plugin?.getService<ToolCatalogPort>('toolCatalogService'),
+    ]);
+    if (!skillsService || !catalog) throw new Error('Loaded skill services are initializing');
+    const references = ids.map(id => { const slash = id.indexOf('/'); return { provider: id.slice(0, slash), name: id.slice(slash + 1) }; });
+    const prepared = await skillsService.prepareMany(references);
+    if (!prepared.ok) throw new Error(prepared.error.message);
+    const tools = catalog.resolve([...new Set(prepared.value.flatMap(skill => skill.toolSelectors))]);
+    if (!tools.ok) throw new Error(tools.error.message);
+    return { skills: prepared.value, tools: tools.value };
+  }
 
-      const resolvedWorkspaceId = resolvedWorkspace.id;
+  async getBoundWorkspace(sessionId: string): Promise<string | undefined> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const sessions = await plugin?.getService<SessionContextManager>('sessionContextManager');
+    await sessions?.ensureBindingsRestored();
+    return sessions?.resolveHandleWorkspace(sessionId);
+  }
 
-      // Try to get the agentManager and memoryManager agent
-      const agentManager = await plugin.getService<AgentManager>('agentManager');
+  async getSelectedWorkflowId(sessionId: string): Promise<string | null> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const [sessions, activation] = await Promise.all([
+      plugin?.getService<SessionContextManager>('sessionContextManager'), plugin?.getService<SessionWorkflowPort>('sessionWorkflowService'),
+    ]);
+    await sessions?.ensureBindingsRestored();
+    return activation?.getSelection(sessionId)?.workflowId ?? null;
+  }
 
-      if (agentManager) {
-        try {
-          const memoryManager = agentManager.getAgent('memoryManager');
-
-          if (memoryManager) {
-            // Execute loadWorkspace tool to get comprehensive workspace data
-            const result = await memoryManager.executeTool('loadWorkspace', {
-              id: resolvedWorkspaceId,
-              limit: 3 // Get recent sessions, states, and activity
-            }) as LoadWorkspaceToolResult;
-
-            if (result.success && result.data) {
-              // Return the comprehensive workspace data from the tool
-              return {
-                id: resolvedWorkspaceId,
-                ...result.data,
-                // Keep the workspace context from the result
-                workspaceContext: result.workspaceContext
-              };
-            }
-          }
-        } catch (agentError) {
-          // If agent execution fails, fall through to basic workspace loading
-          console.error('[WorkspaceIntegrationService] Agent execution failed:', agentError);
-        }
-      }
-
-      // Fallback: just load basic workspace data if LoadWorkspaceTool fails
-      if (workspaceService) {
-        const workspace = await workspaceService.getWorkspace(resolvedWorkspaceId);
-        // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
-        return workspace as unknown as Record<string, unknown>;
-      }
-
-      return null;
-    } catch (error) {
-      console.error(`Error loading workspace ${workspaceId}:`, error);
-
-      // Fallback: try basic workspace loading
-      try {
-        const plugin = getNexusPlugin<NexusPlugin>(this.app);
-        const workspaceService = await plugin?.getService<WorkspaceService>('workspaceService');
-        if (workspaceService) {
-          const workspace = await workspaceService.getWorkspaceByNameOrId(workspaceId);
-          // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
-          return workspace as unknown as Record<string, unknown>;
-        }
-      } catch (fallbackError) {
-        console.error(`Fallback workspace loading also failed:`, fallbackError);
-      }
-
-      return null;
-    }
+  async clearWorkflowSelection(sessionId: string): Promise<void> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const activation = await plugin?.getService<SessionWorkflowPort>('sessionWorkflowService');
+    if (!activation) throw new Error('Workflow selection service is initializing');
+    const result = await activation.commit(sessionId, 'default', null, activation.begin(sessionId, 'default'));
+    if (!result.ok) throw new Error(result.error.message);
   }
 
   /**
@@ -208,13 +215,14 @@ export class WorkspaceIntegrationService {
       }
 
       // Use listWorkspaces for lightweight index-based listing
-      const workspaces = await workspaceService.listWorkspaces();
+      const workspaces = await workspaceService.listWorkspaceDiscovery();
 
       return workspaces.map((ws) => ({
         id: ws.id,
         name: ws.name,
         description: ws.description || undefined,
-        rootFolder: ws.rootFolder || '/'
+        rootFolder: ws.rootFolder || '/',
+        workflows: new WorkspaceSummaryService().summarize(ws).workflows
       }));
     } catch (error) {
       console.error('[WorkspaceIntegrationService] Failed to list workspaces:', error);

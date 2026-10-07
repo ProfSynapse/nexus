@@ -15,7 +15,6 @@ import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
 import { WebToolsAgent } from '../../agents/apps/webTools/WebToolsAgent';
 import { DataAnalysisAgent } from '../../agents/apps/dataAnalysis/DataAnalysisAgent';
 import { isDesktop } from '../../utils/platform';
-import { SkillsAgent } from '../../agents/apps/skills/SkillsAgent';
 import type { AppRuntimeContext } from '../../agents/apps/AppRuntimeContext';
 import { App } from 'obsidian';
 
@@ -47,7 +46,8 @@ export class AppManager {
    */
   loadInstalledApps(): void {
     for (const [appId, config] of Object.entries(this.appConfigs)) {
-      if (!config.enabled) continue;
+      // Legacy skills configuration is retained only for durable core migration.
+      if (appId === 'skills' || !config.enabled) continue;
 
       try {
         const agent = this.createConfiguredAgent(appId, config);
@@ -236,7 +236,6 @@ export class AppManager {
     registry.set('elevenlabs', () => new ElevenLabsAgent());
     registry.set('composer', () => new ComposerAgent());
     registry.set('web-tools', () => new WebToolsAgent());
-    registry.set('skills', () => new SkillsAgent());
 
     // Desktop-only apps (heavy/Node-dependent runtimes — not registered on mobile)
     if (isDesktop()) {

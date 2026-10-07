@@ -34,3 +34,5 @@ their tools appear in no export.
 **Files.** SKILL.md, protocols/, references/, scripts/, this log.
 
 - 2026-09-08 | Image model additions appeared in the regenerated CLI enum and the release bundle checks passed. | No procedure change.
+
+- 2026-10-03: No change. Release regeneration, exporter coverage and alias/catalog validation followed the existing protocol.

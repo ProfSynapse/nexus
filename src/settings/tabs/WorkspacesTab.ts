@@ -25,6 +25,8 @@ import { CustomPromptStorageService } from '../../agents/promptManager/services/
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
+import type { InstructionLibraryService } from '../../services/instructions/InstructionLibraryService';
+import type { ToolCatalogService } from '../../agents/toolManager/services/ToolCatalogService';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { ExternalSyncEvent, HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
@@ -662,6 +664,7 @@ export class WorkspacesTab {
             ? { id: '', name: '', when: '', steps: '' }
             : workflows[this.currentWorkflowIndex];
 
+        this.workflowRenderer?.destroy();
         this.workflowRenderer = new WorkflowEditorRenderer(
             this.getAvailableAgents(),
             (savedWorkflow) => { void this.saveWorkflow(savedWorkflow); },
@@ -670,7 +673,11 @@ export class WorkspacesTab {
                 this.render();
             },
             async (workflowToRun) => { await this.runWorkflowFromEditor(workflowToRun); },
-            this.services.component
+            this.services.component,
+            this.services.serviceManager ? {
+                getLibrary: () => this.services.serviceManager!.getService<InstructionLibraryService>('instructionLibraryService'),
+                getCatalog: () => this.services.serviceManager!.getService<ToolCatalogService>('toolCatalogService')
+            } : undefined
         );
 
         this.workflowRenderer.render(contentContainer, workflow, isNew, { showBackButton: false });
@@ -797,7 +804,7 @@ export class WorkspacesTab {
             id: workflow.id || uuidv4(),
             promptName: workflow.promptId
                 ? this.getAvailableAgents().find(prompt => prompt.id === workflow.promptId)?.name || workflow.promptName
-                : undefined
+                : workflow.promptName
         };
 
         const existingIndex = this.currentWorkspace.context.workflows.findIndex(item => item.id === normalizedWorkflow.id);
@@ -889,6 +896,7 @@ export class WorkspacesTab {
     }
 
     destroy(): void {
+        this.workflowRenderer?.destroy();
         if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
         this.detailRenderer.destroyForm();
     }
