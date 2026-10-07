@@ -11,6 +11,7 @@ import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 export type SupportedProvider = 'openai' | 'openai-codex' | 'openrouter' | 'anthropic' | 'anthropic-claude-code' | 'google' | 'google-gemini-cli' | 'github-copilot' | 'deepseek' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
 
 export interface GenerateOptions {
+  abortSignal?: AbortSignal;
   model?: string;
   temperature?: number;
   maxTokens?: number;
@@ -156,7 +157,7 @@ export interface ModelInfo {
     imageGeneration?: number;
     currency: string;
     lastUpdated: string; // ISO date string
-  };
+  } | null;
 }
 
 export interface Tool {

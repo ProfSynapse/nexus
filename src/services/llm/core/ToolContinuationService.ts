@@ -174,8 +174,10 @@ export class ToolContinuationService {
       // Step 3: Start NEW stream with continuation (pingpong)
       yield { type: 'assistant.delta', text: '\n\n' };
       let responseCompleted = false;
+      let assistantResponseText = '';
 
       for await (const chunk of adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions)) {
+        assistantResponseText += chunk.content;
         for (const event of mapProviderStreamChunk(chunk)) {
           yield event;
         }
@@ -204,7 +206,7 @@ export class ToolContinuationService {
             chatToolCalls,
             updatedPreviousMessages,
             userPrompt,
-            generateOptions,
+            { ...continuationOptions, assistantResponseText },
             options,
             completeToolCallsWithResults,
             1
@@ -373,8 +375,10 @@ export class ToolContinuationService {
     yield { type: 'assistant.delta', text: '\n\n' };
     let recursiveToolCallsDetected: ChatToolCall[] = [];
     let responseCompleted = false;
+    let assistantResponseText = '';
 
     for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
+      assistantResponseText += recursiveChunk.content;
       for (const event of mapProviderStreamChunk(recursiveChunk)) {
         yield event;
       }
@@ -409,7 +413,7 @@ export class ToolContinuationService {
         recursiveToolCallsDetected,
         updatedPreviousMessages,
         userPrompt,
-        generateOptions,
+        { ...recursiveContinuationOptions, assistantResponseText },
         options,
         completeToolCallsWithResults,
         operationSequence + 1

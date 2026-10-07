@@ -83,3 +83,5 @@ to check it (issue #221). | Split into protocols/references and added the
 original Python reachability checker (since deleted), which walked the static
 import graph from `src/main.ts` and failed on a reachable Node built-in. | whole
 skill.
+
+- 2026-10-07 | Generic provider startup graph passed the mobile import checker; transport reuses Obsidian requestUrl for buffered mobile responses, with unit coverage for abort/late-result suppression. No physical-phone test was available. | No procedure change.

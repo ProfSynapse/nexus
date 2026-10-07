@@ -21,6 +21,7 @@ export interface ProviderHttpRequest {
   headers?: Record<string, string>;
   body?: string | ArrayBuffer;
   timeoutMs?: number;
+  signal?: AbortSignal;
   retries?: number;
   retryDelayMs?: number;
   retryOnStatuses?: number[];
@@ -98,6 +99,7 @@ export class ProviderHttpClient {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
+      if (config.signal?.aborted) throw new Error('Request aborted');
       try {
         const response = await this.requestOnce<TJson>(config);
 
@@ -117,6 +119,7 @@ export class ProviderHttpClient {
         );
       } catch (error) {
         lastError = error;
+        if (config.signal?.aborted) throw error;
         if (attempt === retries) {
           break;
         }
@@ -245,16 +248,18 @@ export class ProviderHttpClient {
         reject(err instanceof Error ? err : new Error(String(err)));
       });
 
-      // Abort support
+      // Abort support; remove the listener when the transport closes.
       if (config.signal) {
         if (config.signal.aborted) {
           req.destroy(new Error('Request aborted'));
           reject(new Error('Request aborted'));
           return;
         }
-        config.signal.addEventListener('abort', () => {
+        const abort = () => {
           req.destroy(new Error('Request aborted'));
-        }, { once: true });
+        };
+        config.signal.addEventListener('abort', abort, { once: true });
+        req.once('close', () => config.signal?.removeEventListener('abort', abort));
       }
 
       // Write body and send
@@ -272,13 +277,13 @@ export class ProviderHttpClient {
   private static async requestStreamBufferedFallback(
     config: ProviderStreamRequest
   ): Promise<NodeJS.ReadableStream> {
-    const response = await requestUrl({
+    const response = await this.requestWithTimeout({
       url: config.url,
       method: config.method ?? 'POST',
       headers: config.headers,
       body: config.body,
       throw: false,
-    });
+    }, config.timeoutMs ?? 120_000, config.signal);
 
     const status = response.status;
     if (status < 200 || status >= 300) {
@@ -331,7 +336,7 @@ export class ProviderHttpClient {
       headers: config.headers,
       body: config.body,
       throw: false,
-    }, config.timeoutMs ?? 30_000);
+    }, config.timeoutMs ?? 30_000, config.signal);
 
     return {
       ok: response.status >= 200 && response.status < 300,
@@ -351,20 +356,33 @@ export class ProviderHttpClient {
       body?: string | ArrayBuffer;
       throw: boolean;
     },
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<Awaited<ReturnType<typeof requestUrl>>> {
-      return new Promise((resolve, reject) => {
+    if (signal?.aborted) return Promise.reject(new Error('Request aborted'));
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        signal?.removeEventListener('abort', abort);
+      };
+      const abort = () => {
+        cleanup();
+        reject(new Error('Request aborted'));
+      };
       const timeoutId = window.setTimeout(() => {
+        cleanup();
         reject(new Error(`Request timeout after ${timeoutMs}ms`));
       }, timeoutMs);
-
+      signal?.addEventListener('abort', abort, { once: true });
+      // requestUrl cannot physically cancel server work. Reject local waiting and
+      // consume any late resolution/rejection without reviving the stopped turn.
       requestUrl(request)
         .then((response) => {
-          window.clearTimeout(timeoutId);
+          cleanup();
           resolve(response);
         })
         .catch((error) => {
-          window.clearTimeout(timeoutId);
+          cleanup();
           reject(error instanceof Error ? error : new Error(String(error)));
         });
     });

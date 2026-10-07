@@ -16,6 +16,11 @@ const mockOpenAIAdapter = jest.fn().mockImplementation(() => ({
   dispose: mockOpenAIDispose,
 }));
 const mockOllamaAdapter = jest.fn().mockImplementation(() => ({ name: 'ollama' }));
+const mockCompatibleDispose = jest.fn(async () => undefined);
+const mockCompatibleAdapter = jest.fn().mockImplementation((_config, id: string) => ({
+  name: id,
+  dispose: mockCompatibleDispose,
+}));
 const mockWebLLMDispose = jest.fn(async () => undefined);
 const mockWebLLMAdapter = jest.fn().mockImplementation(() => ({
   name: 'webllm',
@@ -32,6 +37,9 @@ jest.mock('../../src/services/llm/adapters/openai/OpenAIAdapter', () => ({
 }));
 jest.mock('../../src/services/llm/adapters/ollama/OllamaAdapter', () => ({
   OllamaAdapter: mockOllamaAdapter,
+}));
+jest.mock('../../src/services/llm/adapters/openai-compatible/OpenAICompatibleAdapter', () => ({
+  OpenAICompatibleAdapter: mockCompatibleAdapter,
 }));
 jest.mock('../../src/services/llm/adapters/webllm/WebLLMAdapter', () => ({
   WebLLMAdapter: mockWebLLMAdapter,
@@ -88,6 +96,39 @@ describe('AdapterRegistry provider instances', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("falling back to 'openai'"));
 
     warn.mockRestore();
+    await registry.dispose();
+  });
+
+  it('keeps two keyless endpoints with the same model independent on mobile', async () => {
+    mockIsMobile.mockReturnValue(true);
+    const first = {
+      driverKind: 'openai-compatible' as const, apiKey: '', enabled: true,
+      openaiCompatible: {
+        schemaVersion: 1 as const, displayName: 'Home', baseUrl: 'https://home.example/v1',
+        models: { shared: { source: 'manual' as const } },
+      },
+    };
+    const second = { ...first, openaiCompatible: { ...first.openaiCompatible, displayName: 'Office', baseUrl: 'https://office.example/p/work/v1' } };
+    const config = settings({ 'openai-compatible-home': first, 'openai-compatible-office': second });
+    const registry = new AdapterRegistry(config);
+    registry.initialize(config);
+    await registry.waitForInit();
+
+    expect(mockCompatibleAdapter).toHaveBeenCalledWith(first, 'openai-compatible-home');
+    expect(mockCompatibleAdapter).toHaveBeenCalledWith(second, 'openai-compatible-office');
+    expect(registry.getAvailableProviders()).toEqual(['openai-compatible-home', 'openai-compatible-office']);
+    expect(registry.getAdapter('openai-compatible-home')).not.toBe(registry.getAdapter('openai-compatible-office'));
+    expect(registry.getProviderInstance('openai-compatible-home')?.displayName).toBe('Home');
+
+    registry.updateSettings(settings({
+      'openai-compatible-home': { ...first, enabled: false },
+      'openai-compatible-office': { ...second, openaiCompatible: { ...second.openaiCompatible, displayName: 'Renamed office' } },
+    }));
+    await registry.waitForInit();
+    expect(registry.getAdapter('openai-compatible-home')).toBeUndefined();
+    expect(registry.getAdapter('openai-compatible')).toBeUndefined();
+    expect(registry.getProviderInstance('openai-compatible-office')?.displayName).toBe('Renamed office');
+    expect(mockCompatibleDispose).toHaveBeenCalledTimes(2);
     await registry.dispose();
   });
 
@@ -152,6 +193,7 @@ describe('AdapterRegistry provider instances', () => {
     }));
 
     expect(drivers).toEqual([
+      { kind: 'openai-compatible', compatibility: 'all' },
       { kind: 'openrouter', compatibility: 'all' },
       { kind: 'requesty', compatibility: 'all' },
       { kind: 'perplexity', compatibility: 'all' },

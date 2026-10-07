@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus · OpenAI-compatible provider</title>
+  <link rel="stylesheet" href="openai-compatible-provider.css">
+  <script defer src="openai-compatible-provider.js"></script>
+</head>
+<!-- Design proposal, 2026-10-07, issue #400. Not yet an accepted visual contract.
+Production origins:
+  src/settings/tabs/ProvidersTab.ts: secure-storage Setting, local/cloud groups, search.
+  src/components/Card.ts + CardManager.ts: agent-management-card, toggle, edit glyph.
+  src/components/LLMProviderModal.ts: Configure title, provider-modal-content, auto-save footer.
+  src/components/llm-provider/providers/{LMStudio,Generic}ProviderModal.ts: URL discovery,
+    available models, model toggles, progressive disclosure.
+  styles.css: card-manager-grid, agent-management-*, llm-provider-*, --space-*.
+Proposed additions: multiple named custom connections and manual model entry.
+Native port: every labeled field is an Obsidian Setting with TextComponent, ToggleComponent,
+  ButtonComponent, or DropdownComponent. details/summary are already used by local providers.
+All mock-only controls have mock-* classes. No real network, storage, or chat operations.
+-->
+<body class="theme-dark">
+  <header class="mock-header">
+    <div><div class="mock-eyebrow">NEXUS / DESIGN REVIEW / #400</div><h1>Your server, inside Nexus.</h1><p>One provider card. A familiar setup. Your usual model picker.</p></div>
+    <div class="mock-review-tag">Interactive proposal · v1</div>
+  </header>
+  <section class="mock-toolbar" aria-label="Mockup controls">
+    <div class="mock-control"><label for="mock-state">Preview</label><select id="mock-state"><option value="providers">Provider cards</option><option value="connections">Saved endpoints</option><option value="setup">New endpoint</option><option value="connecting">Connecting</option><option value="connected">Models found</option><option value="auth">Authentication error</option><option value="manual">Manual model fallback</option></select></div>
+    <div class="mock-control"><label for="mock-device">Device</label><select id="mock-device"><option value="desktop">Desktop</option><option value="mobile">Phone · 390px</option></select></div>
+    <button id="mock-theme" class="mock-theme" aria-label="Switch to light theme">Light theme</button>
+    <span class="mock-simulation">All connections, saves, and model results are simulated.</span>
+  </section>
+  <main class="mock-stage">
+    <section class="mock-device" id="mock-device-frame" aria-label="Nexus settings preview">
+      <header class="nexus-settings-header"><span class="nexus-settings-brand" data-icon="network"></span><strong>Nexus settings</strong><span class="nexus-settings-version">Providers</span></header>
+      <nav class="nexus-settings-tabs" aria-label="Settings tabs"><span>Defaults</span><span>Workspaces</span><span>Prompts</span><span class="is-active" aria-current="page">Providers</span><span>Apps</span><span>Data</span></nav>
+      <div class="nexus-settings-pane" id="provider-pane">
+        <div class="setting-item"><div class="setting-item-info"><div class="setting-item-name">Store API keys in secure storage</div><div class="setting-item-description">Keep API keys in Obsidian’s device-local secure storage instead of the synced settings file. Keys never sync, so you’ll re-enter them once on each device.</div></div><div class="setting-item-control"><button class="checkbox-container is-enabled" role="switch" aria-checked="true" aria-label="Store API keys in secure storage" data-demo-toggle></button></div></div>
+        <div class="searchable-card-manager-search"><span data-icon="search"></span><input id="provider-search" class="searchable-card-manager-input" type="search" placeholder="Search providers..." aria-label="Search providers"></div>
+        <section class="searchable-card-manager-group" data-group="local"><h2>LOCAL &amp; CUSTOM PROVIDERS</h2><div class="card-manager-grid" id="local-cards"></div></section>
+        <section class="searchable-card-manager-group" data-group="cloud"><h2>CLOUD PROVIDERS</h2><div class="card-manager-grid" id="cloud-cards"></div></section>
+        <p id="search-empty" class="card-manager-empty" hidden>No providers match your search.</p>
+      </div>
+      <div class="mock-modal-layer" id="modal-layer" hidden>
+        <section class="modal llm-provider-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+          <div class="modal-content">
+            <header class="llm-provider-header"><h1 id="modal-title">Configure OpenAI-compatible</h1><button class="clickable-icon" id="close-x" aria-label="Close provider settings" data-icon="x"></button></header>
+            <p class="llm-provider-intro" id="provider-intro">Connect a local or hosted service that supports the OpenAI chat format.</p>
+            <section id="endpoint-list-view">
+              <div class="llm-provider-header"><h2>Your endpoints</h2><button class="mod-cta" id="add-endpoint">Add endpoint</button></div>
+              <p class="setting-item-description">Use these connections in chat or when delegating a prompt to a subagent.</p>
+              <div id="endpoint-list" class="nexus-endpoint-list"></div>
+              <p class="setting-item-description">Each endpoint has its own address, key, and enabled models.</p>
+            </section>
+            <div id="endpoint-form-view" hidden>
+            <button id="back-endpoints" class="nexus-endpoint-back">← All endpoints</button>
+            <div class="provider-modal-content">
+              <div class="setting-item"><div class="setting-item-info"><label class="setting-item-name" for="connection-name">Name</label><div class="setting-item-description">Shown in the model picker.</div></div><div class="setting-item-control"><input class="llm-provider-input" id="connection-name" placeholder="My Hermes" autocomplete="off"></div></div>
+              <div class="setting-item"><div class="setting-item-info"><label class="setting-item-name" for="connection-url">API base URL</label><div class="setting-item-description">Use the full base address, including any path such as /v1.</div></div><div class="setting-item-control"><input class="llm-provider-input" id="connection-url" type="url" placeholder="https://my-server.example/v1" autocomplete="off" spellcheck="false"></div></div>
+              <div class="setting-item"><div class="setting-item-info"><label class="setting-item-name" for="connection-key">API key <span class="llm-provider-optional">optional</span></label><div class="setting-item-description">Leave blank if your server doesn’t require a key.</div></div><div class="setting-item-control"><input class="llm-provider-input" id="connection-key" type="password" placeholder="Enter API key" autocomplete="off"><button class="clickable-icon" id="show-key" aria-label="Show API key" data-icon="eye"></button></div></div>
+              <div class="llm-provider-connect-row"><span class="setting-item-description" id="connection-hint">Discover the models your server offers.</span><button class="mod-cta" id="connect-button">Connect</button></div>
+              <div class="llm-provider-connection-status" id="connection-status" role="status" aria-live="polite" hidden></div>
+              <section class="llm-provider-model-section" id="model-section" hidden>
+                <div class="llm-provider-header"><h2>Available models</h2><span class="setting-item-description" id="model-count"></span></div>
+                <p class="setting-item-description">Enable the models you want in your chat model picker.</p>
+                <div class="models-list" id="models-list"></div>
+              </section>
+              <details class="llm-provider-manual" id="manual-section"><summary>Add a model manually</summary><div class="setting-item"><div class="setting-item-info"><label class="setting-item-name" for="manual-id">Model ID</label><div class="setting-item-description">Enter the exact ID expected by your server.</div></div><div class="setting-item-control"><input id="manual-id" class="llm-provider-input" placeholder="e.g. hermes-agent" spellcheck="false"><button id="add-model">Add</button></div></div><p id="manual-error" class="llm-provider-inline-error" role="status" hidden></p></details>
+              <div class="llm-provider-picker-note" id="picker-note" hidden><span data-icon="message-square"></span><span id="picker-label"></span></div>
+            </div>
+            </div>
+            <footer class="modal-status-container llm-provider-status-container"><span class="save-status" id="save-status" aria-live="polite">Ready · mock only</span><button class="mod-cta" id="close-button">Close</button></footer>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="mock-footer"><strong>What’s proposed</strong><span>One provider card holds multiple named endpoints, local or hosted. The same saved models are available for chat and delegated prompts. Existing provider cards and tabs are reference context; their setup screens are outside this mockup.</span></footer>
+  <div class="mock-toast" id="mock-toast" role="status" hidden></div>
+</body>
+</html>

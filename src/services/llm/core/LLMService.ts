@@ -209,6 +209,7 @@ export class LLMService {
 
       // Execute the prompt
       const generateOptions: GenerateOptions = {
+        abortSignal: options.abortSignal,
         model,
         systemPrompt: options.systemPrompt,
         temperature: options.temperature,

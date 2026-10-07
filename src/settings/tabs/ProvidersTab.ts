@@ -26,6 +26,8 @@ import { OAuthService } from '../../services/oauth/OAuthService';
 import { ClaudeCodeAuthService } from '../../services/external/ClaudeCodeAuthService';
 import { GeminiCliAuthService } from '../../services/external/GeminiCliAuthService';
 import { BRAND_NAME } from '../../constants/branding';
+import { OpenAICompatibleModal } from '../../components/openai-compatible/OpenAICompatibleModal';
+import { isCompatibleEndpoint } from '../../components/openai-compatible/OpenAICompatibleEditSession';
 
 /**
  * Provider display configuration
@@ -475,6 +477,19 @@ export class ProvidersTab {
      * Build ProviderCardItem from provider ID and current settings
      */
     private buildProviderCardItem(providerId: string, settings: LLMProviderSettings): ProviderCardItem | null {
+        if (providerId === 'openai-compatible') {
+            const count = Object.values(settings.providers).filter(isCompatibleEndpoint).length;
+            return {
+                id: providerId,
+                providerId,
+                name: 'OpenAI-compatible',
+                description: `${count} ${count === 1 ? 'endpoint' : 'endpoints'} · local or hosted`,
+                isEnabled: false,
+                showToggle: false,
+                category: 'local',
+                comingSoon: false,
+            };
+        }
         const displayConfig = this.providerConfigs[providerId];
         if (!displayConfig) return null;
 
@@ -508,10 +523,10 @@ export class ProvidersTab {
         if (!isDesktop()) {
             this.container.createEl('p', {
                 cls: 'setting-item-description',
-                text: 'On mobile, only fetch-based providers are supported. Configure local providers and SDK-based providers on desktop.'
+                text: 'Configure a supported provider or an OpenAI-compatible endpoint reachable from this device.'
             });
 
-            const items = [...MOBILE_COMPATIBLE_PROVIDERS]
+            const items = [...new Set(['openai-compatible', ...MOBILE_COMPATIBLE_PROVIDERS])]
                 .map(id => this.buildProviderCardItem(id, settings))
                 .filter((item): item is ProviderCardItem => item !== null);
 
@@ -532,6 +547,10 @@ export class ProvidersTab {
                     },
                     onEdit: (item) => {
                         if (item.comingSoon) return;
+                        if (item.providerId === 'openai-compatible') {
+                            this.openCompatibleModal();
+                            return;
+                        }
                         const displayConfig = this.providerConfigs[item.providerId];
                         const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
                         if (displayConfig) {
@@ -551,11 +570,14 @@ export class ProvidersTab {
         const groups: CardGroup<ProviderCardItem>[] = [];
 
         if (supportsLocalLLM()) {
-            const localItems = ['webllm', 'ollama', 'lmstudio']
+            const localItems = ['webllm', 'ollama', 'lmstudio', 'openai-compatible']
                 .map(id => this.buildProviderCardItem(id, settings))
                 .filter((item): item is ProviderCardItem => item !== null);
 
-            groups.push({ title: 'LOCAL PROVIDERS', items: localItems });
+            groups.push({ title: 'LOCAL & CUSTOM PROVIDERS', items: localItems });
+        } else {
+            const custom = this.buildProviderCardItem('openai-compatible', settings);
+            if (custom) groups.push({ title: 'CUSTOM PROVIDERS', items: [custom] });
         }
 
         const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'deepseek', 'deepgram', 'assemblyai', 'openrouter', 'requesty', 'perplexity', 'github-copilot'];
@@ -582,6 +604,10 @@ export class ProvidersTab {
                 },
                 onEdit: (item) => {
                     if (item.comingSoon) return;
+                    if (item.providerId === 'openai-compatible') {
+                        this.openCompatibleModal();
+                        return;
+                    }
                     const displayConfig = this.providerConfigs[item.providerId];
                     const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
                     if (displayConfig) {
@@ -594,6 +620,25 @@ export class ProvidersTab {
                 placeholder: 'Search providers...'
             }
         });
+    }
+
+    private openCompatibleModal(): void {
+        new OpenAICompatibleModal(this.services.app, {
+            getProviders: () => this.getSettings().providers,
+            save: async (id, config) => {
+                const settings = this.getSettings();
+                const previous = settings.providers[id];
+                settings.providers[id] = config;
+                try {
+                    await this.saveSettings();
+                    this.render();
+                } catch (error) {
+                    if (previous) settings.providers[id] = previous;
+                    else delete settings.providers[id];
+                    throw error;
+                }
+            },
+        }).open();
     }
 
     /**

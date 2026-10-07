@@ -249,7 +249,12 @@ export class ChatSettingsRenderer {
 
       const config = llmSettings.providers[id];
       if (!config?.enabled) continue;
-      if (!isProviderCompatible(id)) continue;
+      if (!isProviderCompatible(config.driverKind ?? id)) continue;
+
+      if (config.driverKind === 'openai-compatible') {
+        if (config.openaiCompatible?.baseUrl.trim()) providers.add(id);
+        continue;
+      }
 
       if (id === 'webllm') {
         providers.add(id);
@@ -299,6 +304,8 @@ export class ChatSettingsRenderer {
       noProvidersText: 'No providers enabled',
       modelOptionMap: this.modelOptionMap,
       providerManager: this.providerManager,
+      getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
+        ? this.getProviderDisplayName(id) : undefined,
       isCodexConnected: () => this.isCodexConnected(),
       isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
       isGeminiCliConnected: () => this.isGeminiCliConnected(),
@@ -417,6 +424,8 @@ export class ChatSettingsRenderer {
       noProvidersText: 'No cloud providers enabled',
       modelOptionMap: this.agentModelOptionMap,
       providerManager: this.providerManager,
+      getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
+        ? this.getProviderDisplayName(id) : undefined,
       isCodexConnected: () => this.isCodexConnected(),
       isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
       isGeminiCliConnected: () => this.isGeminiCliConnected(),
@@ -1124,6 +1133,10 @@ export class ChatSettingsRenderer {
   }
 
   private getProviderDisplayName(providerId: string): string {
+    const config = this.config.llmProviderSettings.providers[providerId];
+    if (config?.driverKind === 'openai-compatible') {
+      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
+    }
     return ProviderUtils.getProviderDisplayName(providerId);
   }
 

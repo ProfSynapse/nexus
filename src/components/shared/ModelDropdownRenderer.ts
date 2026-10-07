@@ -68,6 +68,8 @@ export interface ModelDropdownConfig {
 
   /** The provider manager instance for loading models */
   providerManager: LLMProviderManager;
+  /** Optional configured-instance label; builtins retain their existing labels. */
+  getProviderDisplayName?: (providerId: string) => string | undefined;
 
   /** Whether Codex OAuth is connected (for merging Codex models into OpenAI) */
   isCodexConnected: () => boolean;
@@ -162,12 +164,12 @@ function renderProviderDropdown(
         if (displayProvider && !providers.includes(displayProvider)) {
           dropdown.addOption(
             displayProvider,
-            `${PROVIDER_NAMES[displayProvider] || displayProvider} (Unavailable)`
+            `${config.getProviderDisplayName?.(displayProvider) || PROVIDER_NAMES[displayProvider] || displayProvider} (Unavailable)`
           );
         }
 
         providers.forEach(id => {
-          dropdown.addOption(id, PROVIDER_NAMES[id] || id);
+          dropdown.addOption(id, config.getProviderDisplayName?.(id) || PROVIDER_NAMES[id] || id);
         });
       }
 

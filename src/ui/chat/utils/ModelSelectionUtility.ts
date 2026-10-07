@@ -12,7 +12,9 @@ import { Plugin } from 'obsidian';
 import { ModelOption } from '../types/SelectionTypes';
 import { ProviderUtils } from '../utils/ProviderUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
-import { getAvailableProviders } from '../../../utils/platform';
+import { getAvailableProviders, isProviderCompatible } from '../../../utils/platform';
+import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
+import { OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import { ModelWithProvider } from '../../../services/llm/core/ModelDiscoveryService';
 import { Settings } from '../../../settings';
 import type { App } from 'obsidian';
@@ -65,14 +67,22 @@ export class ModelSelectionUtility {
 
       // Allowed providers for chat view
       const allowedProviders = getAvailableProviders();
+      const providerSettings = plugin.settings?.settings?.llmProviders;
 
       // Get all available models from ModelDiscoveryService (via LLMService)
       const allModels = await llmService.getAvailableModels();
 
       // Filter to allowed providers and convert to ModelOption format
       const models: ModelOption[] = allModels
-        .filter((model: ModelWithProvider) => allowedProviders.includes(model.provider))
-        .map((model: ModelWithProvider) => ModelSelectionUtility.mapToModelOption(model));
+        .filter((model: ModelWithProvider) => {
+          const config = providerSettings?.providers[model.provider];
+          if (config?.driverKind === 'openai-compatible') {
+            return config.enabled && config.models?.[model.id]?.enabled !== false &&
+              isProviderCompatible(config.driverKind);
+          }
+          return allowedProviders.includes(model.provider);
+        })
+        .map((model: ModelWithProvider) => ModelSelectionUtility.mapToModelOption(model, providerSettings));
 
       return models;
     } catch {
@@ -142,13 +152,13 @@ export class ModelSelectionUtility {
   /**
    * Convert ModelWithProvider to ModelOption format
    */
-  static mapToModelOption(model: ModelWithProvider): ModelOption {
+  static mapToModelOption(model: ModelWithProvider, settings?: LLMProviderSettings): ModelOption {
     return {
       providerId: model.provider,
-      providerName: ModelSelectionUtility.getProviderDisplayName(model.provider),
+      providerName: ModelSelectionUtility.getProviderDisplayName(model.provider, settings),
       modelId: model.id,
       modelName: model.name,
-      contextWindow: model.contextWindow || 128000, // Default if not specified
+      contextWindow: model.contextWindow || (settings?.providers[model.provider]?.driverKind === 'openai-compatible' ? OPENAI_COMPATIBLE_CONTEXT_WINDOW : 128000),
       supportsThinking: model.supportsThinking || false
     };
   }
@@ -156,7 +166,11 @@ export class ModelSelectionUtility {
   /**
    * Get display name for provider with tool calling indicator
    */
-  static getProviderDisplayName(providerId: string): string {
+  static getProviderDisplayName(providerId: string, settings?: LLMProviderSettings): string {
+    const config = settings?.providers[providerId];
+    if (config?.driverKind === 'openai-compatible') {
+      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
+    }
     return ProviderUtils.getProviderDisplayNameWithTools(providerId);
   }
 }

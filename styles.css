@@ -3042,6 +3042,68 @@ a:hover {
     align-items: center;
 }
 
+/* Generic endpoint settings; see openai-compatible-provider-plan.md. */
+.nexus-compatible-modal .setting-item-control {
+    min-width: 0;
+}
+
+.nexus-compatible-modal .nexus-compatible-url-input {
+    width: 300px;
+    max-width: 100%;
+}
+
+.nexus-compatible-endpoint {
+    margin-top: var(--space-m);
+}
+
+.nexus-compatible-endpoint .setting-item {
+    padding-top: 0;
+    padding-bottom: var(--space-s);
+    border-top: none;
+}
+
+.nexus-compatible-address {
+    overflow-wrap: anywhere;
+}
+
+.nexus-compatible-feedback {
+    margin-bottom: var(--space-m);
+}
+
+.nexus-compatible-manual {
+    margin-top: var(--space-l);
+}
+
+.nexus-compatible-manual summary {
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.nexus-compatible-modal .llm-provider-status-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-top: var(--space-l);
+}
+
+body.is-mobile .nexus-compatible-modal > .provider-modal-content > .setting-item {
+    flex-wrap: wrap;
+}
+
+body.is-mobile .nexus-compatible-modal > .provider-modal-content > .setting-item .setting-item-control {
+    width: 100%;
+}
+
+body.is-mobile .nexus-compatible-modal input {
+    min-height: 44px;
+    max-width: 100%;
+}
+
+body.is-mobile .nexus-compatible-modal button {
+    min-height: 44px;
+}
+
 .llm-provider-model-row {
     display: flex;
     align-items: center;

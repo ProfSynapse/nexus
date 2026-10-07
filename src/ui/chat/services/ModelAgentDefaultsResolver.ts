@@ -4,17 +4,20 @@ import { StaticModelsService } from '../../../services/StaticModelsService';
 import type {
   DefaultRealtimeVoiceModelSettings,
   DefaultSpeechModelSettings,
+  LLMProviderConfig,
   ThinkingSettings
 } from '../../../types/llm/ProviderTypes';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import type { ModelOption, PromptOption } from '../types/SelectionTypes';
 import type { ModelAgentWorkspaceContextService, ModelAgentWorkspaceState } from './ModelAgentWorkspaceContextService';
+import { buildOpenAICompatibleModels, OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 
 interface PluginWithSettings {
   settings?: {
     settings?: {
       llmProviders?: {
+        providers?: Record<string, LLMProviderConfig>;
         defaultThinking?: ThinkingSettings;
         defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
@@ -144,6 +147,19 @@ export class ModelAgentDefaultsResolver {
     );
     if (discoveredModel) {
       return discoveredModel;
+    }
+
+    const config = this.getPlugin()?.settings?.settings?.llmProviders?.providers?.[providerId];
+    if (config?.driverKind === 'openai-compatible') {
+      const model = buildOpenAICompatibleModels(config).find(candidate => candidate.id === modelId);
+      return {
+        providerId,
+        providerName: config.openaiCompatible?.displayName || 'OpenAI-compatible',
+        modelId,
+        modelName: model?.name || modelId,
+        contextWindow: model?.contextWindow || OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+        supportsThinking: model?.supportsThinking ?? false
+      };
     }
 
     const staticModel = this.staticModelsService.findModel(providerId, modelId);

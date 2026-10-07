@@ -1,5 +1,7 @@
 # Refinement log
 
+- 2026-10-07 | A live OpenAI-compatible protocol spike used actual Ollama responses and a fresh random tool result to verify the round trip. SSE deltas prove framing, not temporal delivery or in-app rendering. | No procedure change; existing mock-honesty guidance applies. | Files: refinement-log.md.
+
 - 2026-09-30 | Focused adapter, banner, and pricing tests plus the production build verified the new model and reconnect state. | No skill procedure change. | Files: none.
 
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
@@ -152,3 +154,5 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 - 2026-09-08 | Quality and dimension guards were tested at the outgoing request boundary; disabling them made the regression cases fail. | No procedure change.
 
 - 2026-09-18 | headless-obsidian step 5 copies only `main.js manifest.json styles.css`, but the build also emits `sqlite3.wasm`. Without it SQLite never initialises and ConversationService silently falls back to the legacy `.conversations/*.json` backend — the plugin loads, `dev:errors` is clean, conversations save and reload, and a storage round-trip test passes against a backend the change never touched. Cost a full round of "proven" results that proved nothing about the hybrid path. | Added `sqlite3.wasm` to the copy list, pointed at `npm run build | grep -i copied` to derive it instead, and added a storage-backend stop condition to step 6 that asserts the schema version. | protocols/headless-obsidian.md
+
+- 2026-10-07 | Generic provider verification in macOS Obsidian 1.14.4: synchronous `eval`, `dev:errors`, and in-band vault checks worked; returned async expressions sometimes printed nothing, and main-window screenshots could not see the separate Settings window. Native app automation exercised discovery/save, and synchronous status polling captured the real LLMService/getTools roundtrip. | Added async polling and separate-window guidance to `protocols/live-loop.md`. No missing commands observed.

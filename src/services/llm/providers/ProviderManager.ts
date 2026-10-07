@@ -6,6 +6,8 @@
 import { Vault } from 'obsidian';
 import { ModelInfo } from '../adapters/types';
 import { LLMProviderSettings } from '../../../types';
+import { isProviderCompatible } from '../../../utils/platform';
+import { buildOpenAICompatibleModels } from '../adapters/openai-compatible/OpenAICompatibleConfig';
 import { VaultOperations } from '../../../core/VaultOperations';
 import { LLMService } from '../core/LLMService';
 
@@ -89,7 +91,20 @@ export class LLMProviderManager {
     
     // For each enabled provider, get their models
     for (const provider of enabledProviders) {
-      if (provider.id === 'ollama') {
+      const config = this.settings.providers[provider.id];
+      if (config?.driverKind === 'openai-compatible') {
+        // Saved model definitions are available even while the server is offline.
+        const models = buildOpenAICompatibleModels(config);
+        allModels.push(...models
+          .filter(model => config.models?.[model.id]?.enabled !== false)
+          .map(model => ({
+            ...model,
+            provider: provider.id,
+            isDefault: defaultModel.provider === provider.id && defaultModel.model === model.id,
+            userDescription: config.userDescription,
+            modelDescription: config.models?.[model.id]?.description
+          })));
+      } else if (provider.id === 'ollama') {
         // Special handling for Ollama - dynamically discover installed models from server
         try {
           // Wait for async adapter initialization to complete
@@ -408,13 +423,24 @@ export class LLMProviderManager {
       }
     ];
 
-    return supportedProviders.map(provider => {
+    const configuredProviders = Object.entries(this.settings.providers)
+      .filter(([, config]) => config.driverKind === 'openai-compatible')
+      .map(([id, config]) => ({
+        id,
+        name: config.openaiCompatible?.displayName || 'OpenAI-compatible',
+        description: 'Models from an OpenAI-compatible endpoint'
+      }));
+
+    return [...supportedProviders, ...configuredProviders].map(provider => {
       const config = this.settings.providers[provider.id];
       const isAvailable = this.llmService.isProviderAvailable(provider.id);
 
       // For local providers, check if server URL is configured (except webllm which needs nothing)
       let hasApiKey = false;
-      if (provider.id === 'webllm') {
+      if (config?.driverKind === 'openai-compatible') {
+        // Authentication is optional; readiness depends on endpoint configuration.
+        hasApiKey = Boolean(config.openaiCompatible?.baseUrl.trim());
+      } else if (provider.id === 'webllm') {
         hasApiKey = true; // WebLLM doesn't need an API key
       } else if (provider.id === 'openai-codex') {
         // Codex uses OAuth — check for connected OAuth state with access token
@@ -448,6 +474,10 @@ export class LLMProviderManager {
     const allProviders = this.getProviderInfo();
     const enabled = allProviders.filter(provider => {
       if (!provider.isEnabled) return false;
+      const config = this.settings.providers[provider.id];
+      if (config?.driverKind === 'openai-compatible') {
+        return provider.hasApiKey && isProviderCompatible(config.driverKind);
+      }
 
       // For Ollama and LM Studio, hasApiKey check should consider server URL
       if (provider.id === 'ollama' || provider.id === 'lmstudio') {
@@ -577,7 +607,7 @@ export class LLMProviderManager {
     estimatedTokens: number
   ): Promise<{ inputCost: number; outputCost: number; totalCost: number; currency: string } | null> {
     const modelInfo = await this.findModel(provider, model);
-    if (!modelInfo) return null;
+    if (!modelInfo?.pricing) return null;
 
     // Estimate 75% input, 25% output tokens
     const inputTokens = Math.floor(estimatedTokens * 0.75);
@@ -616,7 +646,7 @@ export class LLMProviderManager {
 
     return allModels
       .filter(model => model.contextWindow >= requiredContextWindow)
-      .sort((a, b) => a.pricing.inputPerMillion - b.pricing.inputPerMillion); // Sort by cost
+      .sort((a, b) => (a.pricing?.inputPerMillion ?? Infinity) - (b.pricing?.inputPerMillion ?? Infinity));
   }
 
   /**
@@ -641,8 +671,8 @@ export class LLMProviderManager {
     providerCount: number;
     averageContextWindow: number;
     maxContextWindow: number;
-    minCostPerMillion: number;
-    maxCostPerMillion: number;
+    minCostPerMillion: number | null;
+    maxCostPerMillion: number | null;
   }> {
     const models = await this.getAvailableModels();
     
@@ -659,15 +689,15 @@ export class LLMProviderManager {
 
     const providers = new Set(models.map(m => m.provider));
     const contextWindows = models.map(m => m.contextWindow);
-    const costs = models.map(m => m.pricing.inputPerMillion);
+    const costs = models.flatMap(m => m.pricing ? [m.pricing.inputPerMillion] : []);
 
     return {
       totalModels: models.length,
       providerCount: providers.size,
       averageContextWindow: Math.round(contextWindows.reduce((a, b) => a + b, 0) / models.length),
       maxContextWindow: Math.max(...contextWindows),
-      minCostPerMillion: Math.min(...costs),
-      maxCostPerMillion: Math.max(...costs)
+      minCostPerMillion: costs.length ? Math.min(...costs) : null,
+      maxCostPerMillion: costs.length ? Math.max(...costs) : null
     };
   }
 }
