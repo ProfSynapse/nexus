@@ -91,6 +91,30 @@ describeLive('OpenAI-compatible live adapter', () => {
       expect(chunks.some(chunk => chunk.complete)).toBe(false);
     } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); }
   }, 30_000);
+  test('DONE completes a real HTTP stream even when the server keeps it open', async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      response.write('data: {"choices":[{"delta":{"content":"finished"},"finish_reason":"stop"}]}\n\n');
+      response.write('data: [DONE]\n\n');
+      // Deliberately do not end the response: DONE must release the socket.
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Fixture port unavailable');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of adapter(`http://127.0.0.1:${address.port}/v1`).generateStreamAsync('hello', { abortSignal: controller.signal })) chunks.push(chunk);
+      expect(chunks.map(chunk => chunk.content).join('')).toBe('finished');
+      expect(chunks.filter(chunk => chunk.complete)).toHaveLength(1);
+      expect(controller.signal.aborted).toBe(false);
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }, 10_000);
   test('caller cancellation after response headers aborts the real body', async () => {
     const server = createServer((_request, response) => {
       response.writeHead(200, { 'Content-Type': 'text/event-stream' });

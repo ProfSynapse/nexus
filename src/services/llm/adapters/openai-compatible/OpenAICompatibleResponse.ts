@@ -170,6 +170,9 @@ export async function* processOpenAICompatibleStream(
     feed(typeof bytes === 'string' ? bytes : decoder.decode(bytes, { stream: true }));
     while (queue.length) yield queue.shift()!;
     if (failure) throw failure;
+    // DONE is terminal even when the server keeps its HTTP connection open.
+    // Breaking also releases the body's iterator (and the desktop socket).
+    if (done) break;
   }
   feed(decoder.decode());
   while (queue.length) yield queue.shift()!;

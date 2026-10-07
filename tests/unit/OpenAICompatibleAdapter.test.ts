@@ -129,6 +129,21 @@ describe('OpenAI-compatible generations', () => {
   });
 });
 describe('wire stream normalization', () => {
+  test('DONE completes and releases the body without waiting for another read', async () => {
+    let released = false;
+    async function* openBody() {
+      try {
+        yield sse({ choices: [{ delta: { content: 'finished' }, finish_reason: 'stop' }] });
+        yield sse({ choices: [], usage: { prompt_tokens: 4, completion_tokens: 2 } }, '[DONE]');
+        throw new Error('Read beyond terminal frame');
+      } finally { released = true; }
+    }
+    const chunks = await collect(processOpenAICompatibleStream(openBody(), 'endpoint'));
+    expect(concatContent(chunks)).toBe('finished');
+    expect(chunks.at(-1)).toMatchObject({ complete: true, usage: { promptTokens: 4, completionTokens: 2 } });
+    expect(chunks.filter(chunk => chunk.complete)).toHaveLength(1);
+    expect(released).toBe(true);
+  });
   test('provider-owned named progress and approval events never become Nexus calls', async () => {
     const wire = 'event: hermes.tool.progress\ndata: {"tool":"lookup","arguments":"{}"}\n\n'
       + sse({ choices: [{ delta: { content: 'hello' } }] })
