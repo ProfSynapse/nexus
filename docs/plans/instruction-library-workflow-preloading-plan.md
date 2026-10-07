@@ -1077,3 +1077,7 @@ Evidence is retained in ignored `test-artifacts/instruction-workflow/` (build/te
 Runtime handoff: after the passing live run, Code's `main.js` and `styles.css` were replaced by another build (the installed-hash comparison changed; the running registry no longer contained the core instruction library). That concurrent runtime was left untouched. This checkout retains the verified build and source. Opening Code now may therefore show the other build, not this feature.
 
 Cleanup completion: the earlier prompt, workspace, and evidence folder were archived through public Nexus tools. The concurrent build no longer exposed the Skills agent, so the remaining disposable native skill package was archived through `storage archive` instead. The temporary worktree dependency symlink was removed; the shared external dependency directory was untouched.
+
+### PR integration verification — 2026-10-07
+
+Rebased onto main at `2e4d0fee`, preserving the concurrent OpenAI-compatible provider, model, attribution, and CLI discovery changes. Only append-only skill refinement logs conflicted; both histories were retained. The combined production build passed and the full suite passed 446 suites / 5,573 tests (12 optional suites skipped). ESLint now excludes generated `test-artifacts/` so saved runtime backups do not become lint input. No combined build was installed into the shared Code vault; the earlier live verification remains scoped to the feature build described above.

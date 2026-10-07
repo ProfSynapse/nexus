@@ -54,6 +54,7 @@ export default defineConfig([
             "dist/",
             "main.js",
             "coverage/",
+            "test-artifacts/",
             "connector.js",
             "nexus-cli.js",
             // Vendored runtime assets (downloaded engines) — not source
