@@ -228,6 +228,50 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    // OpenRouter /api/v1/models snapshot, 2026-10-07. The tilde is part
+    // of the wire id. This alias follows the latest DeepSeek Flash model;
+    // re-check pricing and capabilities when releasing.
+    // Keep the 64K output cap used by our other DeepSeek entries;
+    // the current gateway completion ceiling is 393216 tokens.
+    provider: 'openrouter',
+    name: 'DeepSeek Flash Latest',
+    apiName: '~deepseek/deepseek-flash-latest',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.049,
+    outputCostPerMillion: 1.20,
+    cacheReadCostPerMillion: 0.03,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    // OpenRouter /api/v1/models snapshot, 2026-10-07. The tilde is part
+    // of the wire id. This alias follows the latest DeepSeek Pro model;
+    // re-check pricing and capabilities when releasing.
+    // Keep the 64K output cap used by our other DeepSeek entries;
+    // the current gateway completion ceiling is 393216 tokens.
+    provider: 'openrouter',
+    name: 'DeepSeek Pro Latest',
+    apiName: '~deepseek/deepseek-pro-latest',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.2917,
+    outputCostPerMillion: 4.20,
+    cacheReadCostPerMillion: 0.29,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     // GA snapshot of DeepSeek V4 Pro (released 2026-08-13). On the direct
     // DeepSeek API the undated `deepseek-v4-pro` alias already resolves to this
     // same snapshot; OpenRouter serves the dated id separately from its own
