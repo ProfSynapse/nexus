@@ -73,7 +73,7 @@ Use this if you already have [Claude Code](https://claude.ai/download) installed
 1. Install Claude Code and run `claude` in your terminal to sign in
 2. In Nexus, go to **Settings -> Providers -> Anthropic**
 3. Click **Connect** under **Claude Code**
-4. In chat settings, select a model labeled **(Claude Code)**, such as **Claude Sonnet 4.6 (Claude Code)**
+4. In chat settings, select a model labeled **(Claude Code)**, such as **Claude Sonnet 5.5 (Claude Code)**
 
 Messages route through your local Claude CLI using your existing subscription. Desktop only.
 
@@ -116,6 +116,8 @@ Use this if you have an active ChatGPT Plus or Pro subscription and want support
 4. In chat settings, select a model labeled **(ChatGPT)**
 
 Desktop only. Experimental.
+
+If ChatGPT rejects a saved refresh token during a Codex request, Nexus shows a notice and changes the provider card to **Reconnect with ChatGPT**. Open the OpenAI provider settings and reconnect to continue. Opening Settings alone does not check the connection.
 
 ---
 

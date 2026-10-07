@@ -103,10 +103,15 @@ describe('model specs carry cache rates', () => {
     }
   });
 
-  it('every OpenAI model: read 0.1× input, no write charge', () => {
+  it('OpenAI cache rates use each model’s published rate', () => {
     for (const spec of OPENAI_MODELS) {
-      expect(spec.cacheReadCostPerMillion).toBeCloseTo(spec.inputCostPerMillion * 0.1, 6);
-      expect(spec.cacheWriteCostPerMillion).toBeUndefined();
+      if (spec.apiName === 'gpt-6.1-sol') {
+        expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.10, 6);
+        expect(spec.cacheWriteCostPerMillion).toBeCloseTo(2.50, 6);
+      } else {
+        expect(spec.cacheReadCostPerMillion).toBeCloseTo(spec.inputCostPerMillion * 0.1, 6);
+        expect(spec.cacheWriteCostPerMillion).toBeUndefined();
+      }
     }
   });
 

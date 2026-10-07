@@ -262,6 +262,7 @@ export class GenericProviderModal implements IProviderModal {
     const result = renderOAuthBanner(this.oauthBannerContainer, {
       providerLabel: this.config.oauthConfig.providerLabel,
       isConnected: !!this.config.config.oauth?.connected,
+      reconnectRequired: this.config.config.oauth?.reconnectRequired,
       onConnect: () => this.primaryFlowManager?.connect(),
       onDisconnect: () => this.primaryFlowManager?.disconnect(),
     });
@@ -313,6 +314,7 @@ export class GenericProviderModal implements IProviderModal {
       const result = renderOAuthBanner(this.secondaryBannerContainer, {
         providerLabel: secondary.oauthConfig.providerLabel,
         isConnected: !!secondary.config.oauth?.connected,
+        reconnectRequired: secondary.config.oauth?.reconnectRequired,
         onConnect: () => this.secondaryFlowManager?.connect(),
         onDisconnect: () => this.secondaryFlowManager?.disconnect(),
       });

@@ -17,6 +17,8 @@ export interface OAuthBannerConfig {
   providerLabel: string;
   /** Whether the provider is currently connected */
   isConnected: boolean;
+  /** Whether the previous connection expired and needs reauthorization */
+  reconnectRequired?: boolean;
   /** Called when the connect button is clicked */
   onConnect: () => void | Promise<void>;
   /** Called when the disconnect button is clicked */
@@ -66,8 +68,14 @@ export function renderOAuthBanner(
   } else {
     // Disconnected state: show standalone connect button
     const connectDiv = container.createDiv('oauth-connect-standalone');
+    if (config.reconnectRequired) {
+      connectDiv.createEl('p', {
+        text: `${config.providerLabel} connection expired. Reconnect to continue.`,
+        cls: 'oauth-reconnect-hint',
+      });
+    }
     const connectButton = connectDiv.createEl('button', {
-      text: `Connect with ${config.providerLabel}`,
+      text: `${config.reconnectRequired ? 'Reconnect' : 'Connect'} with ${config.providerLabel}`,
       cls: 'mod-cta oauth-connect-btn',
     });
     connectButton.setAttribute('aria-label', `Connect with ${config.providerLabel} via OAuth`);

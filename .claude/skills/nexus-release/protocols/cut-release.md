@@ -61,6 +61,10 @@ do not hand-revert it, or the next bump churns it again.
 - Only raise `minAppVersion` in `manifest.json` if the release genuinely requires
   a newer Obsidian. Bump it *before* this step so the new `versions.json` entry
   picks up the right value.
+- If the lifecycle script fails, inspect the version files before retrying:
+  npm may already have changed them. Resolve the failure, then rerun the exact
+  intended version with `npm version X.Y.Z --no-git-tag-version --allow-same-version`
+  rather than applying `patch` or `minor` again.
 
 ### 6. Rebuild
 ```bash

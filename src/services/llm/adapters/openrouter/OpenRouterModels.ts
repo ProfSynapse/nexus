@@ -210,6 +210,24 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     }
   },
   {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 5.5',
+    apiName: 'anthropic/claude-sonnet-5.5',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
     // OpenRouter's `~latest` alias for the DeepSeek Flash family. The tilde
     // slug is the wire id — it is not a typo for `deepseek/deepseek-flash`.
     // As of 2026-09-25 the listing resolves it to DeepSeek V4.1 Flash: 1M
@@ -769,6 +787,24 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     inputCostPerMillion: 2.00,
     outputCostPerMillion: 10.00,
     cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 2.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-6.1 Sol',
+    apiName: 'openai/gpt-6.1-sol',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 10.00,
+    cacheReadCostPerMillion: 0.10,
     cacheWriteCostPerMillion: 2.50,
     capabilities: {
       supportsJSON: true,

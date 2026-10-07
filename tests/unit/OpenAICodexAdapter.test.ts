@@ -7,6 +7,8 @@ jest.mock('../../src/utils/platform', () => ({
 }));
 
 import { OpenAICodexAdapter, CodexOAuthTokens } from '../../src/services/llm/adapters/openai-codex/OpenAICodexAdapter';
+import { createBuiltinProviderDrivers } from '../../src/services/llm/providers/BuiltinProviderDrivers';
+import { providerInstanceId } from '../../src/services/llm/providers/ProviderDriver';
 
 type RequestRecord = {
   url: string;
@@ -36,7 +38,7 @@ describe('OpenAICodexAdapter', () => {
     }));
   });
 
-  it.each(['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'])('omits temperature for %s on the subscription endpoint', async (model) => {
+  it.each(['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'])('omits temperature for %s on the subscription endpoint', async (model) => {
     const requests: RequestRecord[] = [];
     __setRequestUrlMock(async (request) => {
       requests.push(request);
@@ -92,6 +94,69 @@ describe('OpenAICodexAdapter', () => {
 
     expect(seenUrls.some((url) => url.includes('/oauth/token'))).toBe(true);
     expect(refreshed[0].accessToken).toBe('refreshed-at');
+  });
+
+  it('marks a rejected Codex refresh token for reconnection and persists the state', async () => {
+    const config = {
+      enabled: true,
+      apiKey: 'test-access-token',
+      oauth: {
+        connected: true,
+        providerId: 'openai-codex',
+        connectedAt: Date.now(),
+        refreshToken: 'test-refresh-token' as string | undefined,
+        expiresAt: Date.now() - 1000 as number | undefined,
+        metadata: { accountId: 'acct-test-123' },
+        reconnectRequired: false,
+      },
+    };
+    const onSettingsDirty = jest.fn();
+    const registration = createBuiltinProviderDrivers().find(({ driver }) => driver.kind === 'openai-codex');
+    expect(registration).toBeDefined();
+    const instance = await registration!.driver.createInstance({
+      instanceId: providerInstanceId('openai-codex'),
+      displayName: 'OpenAI Codex',
+      config,
+      onSettingsDirty,
+    });
+    __setRequestUrlMock(async () => ({
+      status: 401,
+      headers: {},
+      text: '{"error":{"code":"invalid_refresh_token"}}',
+      json: { error: { code: 'invalid_refresh_token' } },
+      arrayBuffer: new ArrayBuffer(0),
+    }));
+
+    await expect(async () => {
+      for await (const chunk of instance.adapter.generateStreamAsync('hello')) void chunk;
+    }).rejects.toMatchObject({ code: 'AUTHENTICATION_ERROR' });
+
+    expect(config.apiKey).toBe('');
+    expect(config.oauth).toMatchObject({ connected: false, reconnectRequired: true });
+    expect(config.oauth.refreshToken).toBeUndefined();
+    expect(onSettingsDirty).toHaveBeenCalledTimes(1);
+    await instance.dispose();
+  });
+
+  it('keeps the connection after a temporary refresh failure', async () => {
+    const rejected = jest.fn();
+    const adapter = new OpenAICodexAdapter(
+      createTokens({ expiresAt: Date.now() - 1000 }),
+      undefined,
+      rejected,
+    );
+    __setRequestUrlMock(async () => ({
+      status: 503,
+      headers: {},
+      text: 'Service unavailable',
+      json: { error: { code: 'server_error' } },
+      arrayBuffer: new ArrayBuffer(0),
+    }));
+
+    await expect(async () => {
+      for await (const chunk of adapter.generateStreamAsync('hello')) void chunk;
+    }).rejects.toMatchObject({ code: 'AUTHENTICATION_ERROR' });
+    expect(rejected).not.toHaveBeenCalled();
   });
 
   it('sends codex headers and request body through requestUrl', async () => {

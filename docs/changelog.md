@@ -1,5 +1,15 @@
 # Nexus Changelog
 
+## October 2026
+
+**v5.19.1** — Claude Sonnet 5.5, GPT-6.1 Sol, and a clear ChatGPT reconnect notice
+
+- Claude Sonnet 5.5 is available through Anthropic, Claude Code, OpenRouter, and Requesty ([#401](https://github.com/ProfSynapse/nexus/pull/401)).
+- GPT-6.1 Sol is available through OpenAI, ChatGPT/Codex, OpenRouter, and Requesty. OpenAI and ChatGPT requests omit the sampling parameters this model rejects ([#402](https://github.com/ProfSynapse/nexus/pull/402)).
+- If ChatGPT rejects a saved refresh token, Nexus now shows a notice and offers **Reconnect with ChatGPT** in provider settings instead of continuing to report **Connected**. This happens on the next Codex request; opening Settings alone does not validate the connection. Temporary network or server failures keep the connection intact ([#402](https://github.com/ProfSynapse/nexus/pull/402)).
+
+---
+
 ## September 2026
 
 

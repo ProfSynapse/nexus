@@ -1,8 +1,12 @@
 # Refinement log
 
+- 2026-09-30 | GPT-6.1 Sol was verified on the API, Codex, OpenRouter, and Requesty. The Codex credential failure followed the existing twin-verification guidance. | No skill procedure change. | Files: none.
+
 Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
+
+- 2026-09-28 | Sonnet 5.5 was listed by Anthropic, OpenRouter, and Requesty. The first Claude Code probe failed on an expired login; after reauthentication it returned text. This credential failure is already covered by the existing twin-verification guidance. | No skill procedure change. | Files: none.
 
 - 2026-08-14 | Dogfooded the skill fixing the four defects its own validator
   found. Four gaps surfaced. (a) `change-default.md` assumed the job was always

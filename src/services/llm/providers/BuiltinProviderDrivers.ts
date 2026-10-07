@@ -1,4 +1,4 @@
-import type { Vault } from 'obsidian';
+import { Notice, type Vault } from 'obsidian';
 import type { LLMProviderConfig } from '../../../types';
 import type { BaseAdapter } from '../adapters/BaseAdapter';
 import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
@@ -238,6 +238,16 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
             oauthState.expiresAt = newTokens.expiresAt;
           }
           onSettingsDirty?.();
+        }, (rejectedRefreshToken) => {
+          const oauthState = config.oauth;
+          if (!oauthState?.connected || oauthState.refreshToken !== rejectedRefreshToken) return;
+          config.apiKey = '';
+          oauthState.connected = false;
+          oauthState.reconnectRequired = true;
+          delete oauthState.refreshToken;
+          delete oauthState.expiresAt;
+          onSettingsDirty?.();
+          new Notice('ChatGPT connection expired. Reconnect in Nexus settings.', 10000);
         });
       },
     }),

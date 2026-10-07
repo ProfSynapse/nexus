@@ -108,6 +108,7 @@ export interface CodexOAuthTokens {
  * new tokens survive across plugin restarts.
  */
 export type TokenPersistCallback = (tokens: CodexOAuthTokens) => void;
+export type TokenRejectedCallback = (refreshToken: string) => void;
 
 export class OpenAICodexAdapter extends BaseAdapter {
   readonly name = 'openai-codex';
@@ -115,17 +116,20 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
   private tokens: CodexOAuthTokens;
   private onTokenRefresh?: TokenPersistCallback;
+  private onTokenRejected?: TokenRejectedCallback;
   private refreshInProgress: Promise<void> | null = null;
 
   /**
    * @param tokens - Current OAuth token state (access token, refresh token, expiry, account ID)
    * @param onTokenRefresh - Optional callback invoked after successful token refresh to persist new tokens
+   * @param onTokenRejected - Optional callback invoked when the server rejects the refresh token
    */
-  constructor(tokens: CodexOAuthTokens, onTokenRefresh?: TokenPersistCallback) {
+  constructor(tokens: CodexOAuthTokens, onTokenRefresh?: TokenPersistCallback, onTokenRejected?: TokenRejectedCallback) {
     // Pass accessToken as apiKey for BaseAdapter compatibility; baseUrl is the Codex endpoint
     super(tokens.accessToken, 'gpt-5.6-sol', CODEX_API_ENDPOINT, false);
     this.tokens = { ...tokens };
     this.onTokenRefresh = onTokenRefresh;
+    this.onTokenRejected = onTokenRejected;
     this.initializeCache();
   }
 
@@ -181,6 +185,16 @@ export class OpenAICodexAdapter extends BaseAdapter {
     });
 
     if (!response.ok) {
+      const error = response.json?.error;
+      const errorCode = typeof error === 'string'
+        ? error
+        : typeof error === 'object' && error !== null && 'code' in error
+          ? error.code
+          : undefined;
+      if ((response.status === 400 || response.status === 401)
+        && (errorCode === 'invalid_refresh_token' || errorCode === 'invalid_grant')) {
+        this.onTokenRejected?.(this.tokens.refreshToken);
+      }
       throw new LLMProviderError(
         `Token refresh failed (HTTP ${response.status}): ${response.text.slice(0, 200)}`,
         this.name,
