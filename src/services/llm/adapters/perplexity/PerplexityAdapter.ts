@@ -123,6 +123,7 @@ export class PerplexityAdapter extends BaseAdapter {
         method: 'POST',
         headers: this.buildHeaders({
           'Authorization': `Bearer ${this.apiKey}`,
+          'X-Pplx-Integration': 'nexus',
         }),
         body: JSON.stringify(requestBody),
         timeoutMs: 120_000
@@ -192,6 +193,7 @@ export class PerplexityAdapter extends BaseAdapter {
       method: 'POST',
       headers: this.buildHeaders({
         'Authorization': `Bearer ${this.apiKey}`,
+        'X-Pplx-Integration': 'nexus',
       }),
       body: JSON.stringify(requestBody),
       timeoutMs: 60_000
