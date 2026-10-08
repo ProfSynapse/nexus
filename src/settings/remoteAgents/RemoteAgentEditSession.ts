@@ -1,4 +1,4 @@
-import type { RemoteAgentConnection, RemoteAgentProbe } from '../../services/remoteAgents/types';
+import type { RemoteAgentConnection, RemoteAgentConnectorKind, RemoteAgentProbe } from '../../services/remoteAgents/types';
 
 export type RemoteAgentConnectionCheck = RemoteAgentProbe;
 
@@ -12,7 +12,7 @@ export class RemoteAgentEditSession {
   constructor(
     connection: RemoteAgentConnection,
     private readonly persist: (connection: RemoteAgentConnection) => Promise<void>,
-    private readonly normalizeUrl: (value: string) => string,
+    private readonly normalizeUrl: (value: string, connector: RemoteAgentConnectorKind) => string,
     private readonly check: (connection: RemoteAgentConnection) => Promise<RemoteAgentConnectionCheck>,
   ) {
     this.draft = { ...connection, apiKey: connection.apiKey ?? '' };
@@ -28,7 +28,7 @@ export class RemoteAgentEditSession {
   validationError(): string | null {
     if (!this.draft.displayName.trim()) return 'Enter a name for this agent.';
     try {
-      this.normalizeUrl(this.draft.baseUrl);
+      this.normalizeUrl(this.draft.baseUrl, this.draft.connector);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : 'Enter a valid server URL.';
@@ -41,7 +41,7 @@ export class RemoteAgentEditSession {
     return {
       ...this.draft,
       displayName: this.draft.displayName.trim(),
-      baseUrl: this.normalizeUrl(this.draft.baseUrl),
+      baseUrl: this.normalizeUrl(this.draft.baseUrl, this.draft.connector),
       description: this.draft.description?.trim() || undefined,
       apiKey: this.draft.apiKey ?? '',
     };

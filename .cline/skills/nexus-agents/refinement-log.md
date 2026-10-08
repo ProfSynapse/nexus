@@ -41,3 +41,5 @@ whole skill.
 
 - 2026-10-03: No change. Registration, discovery and execution checks covered core skills; the protocol integration lesson is recorded in nexus-testing to avoid duplicate guidance.
 - 2026-10-07 | Remote delegation reused prompt sub with a target and trusted runtime identity; generated catalogs and dispatch mutation checks caught routing regressions. | No procedure change.
+
+- 2026-10-07 | OpenClaw uses the existing prompt sub target path and trusted originating-chat context. No tool schema changed; existing tool verification guidance applied without correction. | No change to procedure.

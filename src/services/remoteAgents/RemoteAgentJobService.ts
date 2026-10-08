@@ -1,8 +1,9 @@
 import { generateUUID } from '../../utils/uuid';
 import type { AgentStatusItem, SubagentParams } from '../../types/branch/BranchTypes';
 import { RemoteAgentJobRepository, remoteJobBranchState, type RemoteAgentJob } from '../../database/repositories/RemoteAgentJobRepository';
-import { RemoteAgentError, type RemoteAgentConnection, type RemoteAgentRun } from './types';
+import { RemoteAgentError, isRemoteAgentReady, type RemoteAgentConnection, type RemoteAgentRequest, type RemoteAgentRun } from './types';
 import type { RemoteAgentConnectionRegistry } from './RemoteAgentConnectionRegistry';
+import { normalizeRemoteAgentConnectionUrl } from './RemoteAgentConfig';
 
 const POLL_MS = 15_000;
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
@@ -18,9 +19,7 @@ export interface RemoteAgentJobServiceDependencies {
 
 /** Public endpoint identity only; API keys never enter synced job metadata. */
 export function remoteEndpointFingerprint(connection: RemoteAgentConnection): string {
-  const url = new URL(connection.baseUrl.trim());
-  if (url.username || url.password || url.search || url.hash) throw new Error('Remote endpoint URL must not contain credentials, query or fragment.');
-  return `${connection.connector}:${url.href.replace(/\/+$/, '')}`;
+  return `${connection.connector}:${normalizeRemoteAgentConnectionUrl(connection.baseUrl, connection.connector)}`;
 }
 
 export async function remoteCredentialFingerprint(connection: RemoteAgentConnection): Promise<string> {
@@ -107,11 +106,19 @@ export class RemoteAgentJobService {
     if (this.stopped) throw new Error('Remote job service stopped before submission.');
     const connection = this.deps.registry.get(params.target);
     const health = this.deps.registry.getHealth(params.target);
-    if (!connection?.enabled || !health?.connected || !health.runsAvailable || !health.durableIdempotency || !health.idempotencyRetentionMs) {
-      throw new Error('Remote agent is unavailable or does not support durable idempotent runs. Check its connection.');
+    if (!connection?.enabled || !isRemoteAgentReady(health)) {
+      throw new Error('Remote agent is unavailable or does not support recoverable runs. Check its connection.');
     }
     if (!params.task.trim()) throw new Error('Remote task must not be empty.');
     const jobId = `remote_${generateUUID()}`;
+    const connector = this.deps.registry.getConnector(connection);
+    const input = { input: params.context ? `${params.task}\n\nContext:\n${params.context}` : params.task };
+    const request: RemoteAgentRequest = connector.prepareRequest
+      ? await connector.prepareRequest(connection, input, jobId) : input;
+    if (this.stopped) throw new Error('Remote job service stopped before submission.');
+    if (health?.recoveryMode === 'session-history' && !request.sessionId?.trim()) {
+      throw new Error('Remote history recovery requires a prepared, explicit session identity.');
+    }
     const timestamp = this.now();
     const credentialFingerprint = await remoteCredentialFingerprint(connection);
     if (this.stopped) throw new Error('Remote job service stopped before submission.');
@@ -123,9 +130,9 @@ export class RemoteAgentJobService {
       parentOptions: { provider: params.provider, model: params.model, workspaceId: params.workspaceId,
         sessionId: params.sessionId, agentPrompt: params.agentPrompt, thinkingEnabled: params.thinkingEnabled,
         thinkingEffort: params.thinkingEffort },
-      request: { input: params.context ? `${params.task}\n\nContext:\n${params.context}` : params.task },
+      request, remoteSessionId: request.sessionId, recoveryMode: health?.recoveryMode,
       idempotencyKey: jobId, state: 'pending_submission', remoteStatus: 'pending_submission',
-      createdAt: timestamp, updatedAt: timestamp, idempotencyRetentionMs: health.idempotencyRetentionMs,
+      createdAt: timestamp, updatedAt: timestamp, idempotencyRetentionMs: health?.idempotencyRetentionMs,
       branchResultMessageId: `${jobId}-result`, parentResultMessageId: `${jobId}-parent-result`,
     }, this.deps.vaultName, this.lifecycleAbort.signal);
     this.changed(job);
@@ -226,7 +233,19 @@ export class RemoteAgentJobService {
     if (signal.aborted || this.stopped) return;
     await this.deps.repository.ensureTaskMessage(job);
     if (signal.aborted || this.stopped) return;
+    const historyRecovery = job.recoveryMode === 'session-history';
+    let operation: 'submit' | 'get' | 'cancel' | undefined;
     try {
+      if (historyRecovery && !job.runId && job.submissionStartedAt !== undefined) {
+        // Losing the acknowledgement must never authorize another POST. Both
+        // history and cancel use the persisted run key and exact prepared session.
+        operation = job.cancelRequestedAt !== undefined ? 'cancel' : 'get';
+        const run = operation === 'cancel'
+          ? await connector.cancel(connection, job.idempotencyKey, signal, job.request)
+          : await connector.get(connection, job.idempotencyKey, signal, job.request);
+        await this.acceptRun(job, run);
+        return;
+      }
       if (!job.runId) {
         if (job.cancelRequestedAt !== undefined) {
           if (job.submissionStartedAt !== undefined) {
@@ -236,7 +255,7 @@ export class RemoteAgentJobService {
           }
           return;
         }
-        if (job.submissionStartedAt !== undefined && (!job.idempotencyRetentionMs
+        if (!historyRecovery && job.submissionStartedAt !== undefined && (!job.idempotencyRetentionMs
           || this.now() - job.submissionStartedAt >= job.idempotencyRetentionMs)) {
           await this.write(job, { state: 'attention', error: 'Submission outcome is unknown and its idempotency retention expired. Check the remote agent before creating another job.', nextPollAt: this.now() + 60_000 });
           return;
@@ -247,19 +266,42 @@ export class RemoteAgentJobService {
           if (signal.aborted || this.stopped) return;
           health = this.deps.registry.getHealth(job.targetId);
         }
-        if (!health?.connected || !health.runsAvailable || !health.durableIdempotency || !health.idempotencyRetentionMs) {
-          await this.write(job, { state: 'attention', error: 'Remote agent durable Runs capability is unavailable. Existing submission identity is retained.', nextPollAt: this.now() + 60_000 });
+        const ready = historyRecovery ? health?.recoveryMode === 'session-history' && isRemoteAgentReady(health)
+          : isRemoteAgentReady(health) && health?.durableIdempotency && !!health.idempotencyRetentionMs;
+        if (!ready) {
+          await this.write(job, { state: 'attention', error: 'Remote agent recoverable Runs capability is unavailable. Existing submission identity is retained.', nextPollAt: this.now() + 60_000 });
           return;
         }
-        if (job.submissionStartedAt !== undefined
-          && this.now() - job.submissionStartedAt >= health.idempotencyRetentionMs) {
+        const advertisedRetention = health?.idempotencyRetentionMs;
+        if (!historyRecovery && job.submissionStartedAt !== undefined
+          && (typeof advertisedRetention !== 'number' || this.now() - job.submissionStartedAt >= advertisedRetention)) {
           await this.write(job, { state: 'attention', error: 'Remote replay retention is no longer sufficient to retry this submission safely.', nextPollAt: this.now() + 60_000 });
           return;
         }
         if (signal.aborted || this.stopped) return;
         const previouslyAttempted = job.submissionStartedAt !== undefined;
-        job = await this.write(job, { state: 'submitting', remoteStatus: 'submitting',
-          submissionStartedAt: job.submissionStartedAt ?? this.now(), error: undefined });
+        if (historyRecovery) {
+          const claim = await this.deps.repository.claimSubmission(job.branchId, this.now());
+          job = claim.job;
+          this.changed(job);
+          if (signal.aborted || this.stopped) return;
+          if (TERMINAL.has(job.state)) return;
+          if (!claim.claimed && job.submissionStartedAt !== undefined) {
+            operation = job.cancelRequestedAt !== undefined ? 'cancel' : 'get';
+            const run = operation === 'cancel'
+              ? await connector.cancel(connection, job.idempotencyKey, signal, job.request)
+              : await connector.get(connection, job.idempotencyKey, signal, job.request);
+            await this.acceptRun(job, run);
+            return;
+          }
+          const current = await this.deps.repository.get(job.branchId);
+          if (!current) return;
+          job = current;
+          if (TERMINAL.has(job.state)) return;
+        } else {
+          job = await this.write(job, { state: 'submitting', remoteStatus: 'submitting',
+            submissionStartedAt: job.submissionStartedAt ?? this.now(), error: undefined });
+        }
         // The repository merges the latest record. Stop may have been persisted
         // while health/readiness was awaited, after the earlier snapshot check.
         if (job.cancelRequestedAt !== undefined) {
@@ -269,14 +311,17 @@ export class RemoteAgentJobService {
           return;
         }
         if (signal.aborted || this.stopped) return;
+        operation = 'submit';
         const run = await connector.submit(connection, job.request, job.idempotencyKey, signal);
         await this.acceptRun(job, run);
       } else {
         if (job.cancelRequestedAt !== undefined) {
-          const run = await connector.cancel(connection, job.runId, signal);
+          operation = 'cancel';
+          const run = await connector.cancel(connection, job.runId, signal, historyRecovery ? job.request : undefined);
           await this.acceptRun(job, run);
         } else {
-          const run = await connector.get(connection, job.runId, signal);
+          operation = 'get';
+          const run = await connector.get(connection, job.runId, signal, historyRecovery ? job.request : undefined);
           await this.acceptRun(job, run);
         }
       }
@@ -285,7 +330,7 @@ export class RemoteAgentJobService {
       const failureCount = Math.min((job.failureCount ?? 0) + 1, 6);
       const nextPollAt = this.now() + Math.min(POLL_MS * 2 ** (failureCount - 1), 60_000);
       if (error instanceof RemoteAgentError) {
-        const explicitSubmitRejection = !job.runId && !error.submissionOutcomeUnknown;
+        const explicitSubmitRejection = operation === 'submit' && !job.runId && !error.submissionOutcomeUnknown;
         const unrecoverable = error.code === 'RUN_NOT_FOUND' || error.code === 'IDEMPOTENCY_CONFLICT'
           || ['INVALID_CONFIG', 'UNSUPPORTED', 'PROTOCOL'].includes(error.code)
           || error.status === 401 || error.status === 403;
@@ -304,7 +349,7 @@ export class RemoteAgentJobService {
   private async acceptRun(job: RemoteAgentJob, run: RemoteAgentRun): Promise<void> {
     const state = String(run.state);
     const terminal = TERMINAL.has(state);
-    await this.write(job, { runId: run.runId, remoteSessionId: run.sessionId, remoteStatus: run.remoteStatus,
+    await this.write(job, { runId: run.runId, remoteSessionId: run.sessionId ?? job.remoteSessionId ?? job.request.sessionId, remoteStatus: run.remoteStatus,
       state: terminal ? state as 'completed' | 'failed' | 'cancelled' : state === 'needs_attention' || state === 'unknown' ? 'attention' : 'running',
       output: run.output, error: run.error, failureCount: 0,
       nextPollAt: terminal ? undefined : this.now() + POLL_MS });
