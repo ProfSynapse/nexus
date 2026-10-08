@@ -1,5 +1,7 @@
+import { validateRemoteAgentConnection } from './RemoteAgentConfig';
+export { normalizeRemoteAgentBaseUrl, validateRemoteAgentConnection } from './RemoteAgentConfig';
 import { ProviderHttpClient, type ProviderHttpResponse } from '../llm/adapters/shared/ProviderHttpClient';
-import { normalizeOpenAICompatibleBaseUrl, openAICompatibleHeaders } from '../llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import { openAICompatibleHeaders } from '../llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import {
   RemoteAgentError, type RemoteAgentConnection, type RemoteAgentConnector, type RemoteAgentProbe,
   type RemoteAgentRequest, type RemoteAgentRun, type RemoteAgentState,
@@ -11,27 +13,6 @@ export const REMOTE_AGENT_REQUEST_TIMEOUT_MS = 30_000;
 type JsonRecord = Record<string, unknown>;
 function record(value: unknown): JsonRecord | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : undefined;
-}
-
-export function normalizeRemoteAgentBaseUrl(value: string): string {
-  let result: string;
-  try { result = normalizeOpenAICompatibleBaseUrl(value); }
-  catch { throw new RemoteAgentError('Enter a clean HTTPS API base URL, or HTTP on localhost, without credentials, queries or fragments.', 'INVALID_CONFIG'); }
-  if (/\/(?:runs(?:\/.*)?|capabilities|health)$/i.test(new URL(result).pathname)) {
-    throw new RemoteAgentError('Enter the API base prefix (usually ending /v1), not a Runs or health URL.', 'INVALID_CONFIG');
-  }
-  return result;
-}
-
-export function validateRemoteAgentConnection(connection: RemoteAgentConnection): string {
-  if (!connection || connection.connector !== 'hermes' || typeof connection.id !== 'string'
-    || !connection.id.trim() || typeof connection.displayName !== 'string' || !connection.displayName.trim()
-    || typeof connection.enabled !== 'boolean' || typeof connection.baseUrl !== 'string'
-    || (connection.apiKey !== undefined && typeof connection.apiKey !== 'string')
-    || (connection.description !== undefined && typeof connection.description !== 'string')) {
-    throw new RemoteAgentError('Remote agent connection settings are incomplete.', 'INVALID_CONFIG');
-  }
-  return normalizeRemoteAgentBaseUrl(connection.baseUrl);
 }
 
 /** Also applied to successful server output: an echoed bearer key cannot reach saved jobs. */
@@ -86,6 +67,7 @@ export class HermesConnector implements RemoteAgentConnector {
     connection: RemoteAgentConnection, route: string, method: 'GET' | 'POST',
     body: JsonRecord | undefined, signal?: AbortSignal, idempotencyKey?: string,
   ): Promise<ProviderHttpResponse<unknown>> {
+    if (connection.connector !== 'hermes') throw new RemoteAgentError('This connection is not a Hermes agent.', 'INVALID_CONFIG');
     const baseUrl = validateRemoteAgentConnection(connection);
     const headers = openAICompatibleHeaders(connection.apiKey ?? '');
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;

@@ -88,3 +88,5 @@ skill.
 - 2026-10-03: No change. Core migration introduced no production Node imports; the reachability check remained clean.
 
 - 2026-10-07 | Remote-agent implementation added no Node dependency to the mobile runtime; static reachability check passed. | No procedure change; physical-device behavior remains unverified.
+
+- 2026-10-07 | New OpenClaw transport uses native WebSocket, WebCrypto and IndexedDB with no Node imports or npm dependency. Reachability check is clean; actual Obsidian signed pairing passes, physical mobile remains unverified. | No change to procedure.

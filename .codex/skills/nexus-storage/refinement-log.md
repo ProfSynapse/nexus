@@ -130,3 +130,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-10-07 | Remote jobs use existing branch metadata and deterministic message IDs; isolated real-app JSONL replay restored job and delivery state. | No procedure change.
 
 - 2026-10-07 | Live SQLite rejected metadataJson although the TypeScript row interface declared it. Source DDL had no message metadata column. | Added schema v18 and fresh/upgrade/replay checks in implementation; no skill procedure change, since change-schema already requires both actual runtime paths.
+
+- 2026-10-07 | OpenClaw persists a prepared native session and submission marker before network dispatch; ambiguous acknowledgements recover by identity without replay. Same-adapter claims and terminal-state merges have race regressions. | No change to procedure; existing source-of-truth and replay guidance applied.

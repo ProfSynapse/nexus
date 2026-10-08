@@ -3,7 +3,7 @@ import type { ServiceManager } from '../../core/ServiceManager';
 import { CardManager, CardItem } from '../../components/CardManager';
 import { Settings } from '../../settings';
 import { generateUUID } from '../../utils/uuid';
-import { normalizeRemoteAgentBaseUrl } from '../../services/remoteAgents/HermesConnector';
+import { normalizeRemoteAgentConnectionUrl } from '../../services/remoteAgents/RemoteAgentConfig';
 import type { RemoteAgentConnection } from '../../services/remoteAgents/types';
 import type { RemoteAgentConnectionRegistry } from '../../services/remoteAgents/RemoteAgentConnectionRegistry';
 import { RemoteAgentModal, connectionAvailabilityLabel } from '../remoteAgents/RemoteAgentModal';
@@ -47,7 +47,7 @@ export class RemoteAgentsTab {
     const manager = new CardManager<RemoteAgentCard>({
       containerEl: cards,
       title: 'Remote agents',
-      emptyStateText: 'No remote agents yet. Add a Hermes connection to get started.',
+      emptyStateText: 'No remote agents yet. Add a connection to get started.',
       addButtonText: 'Add remote agent',
       showAddButton: true,
       showToggle: true,
@@ -77,7 +77,7 @@ export class RemoteAgentsTab {
       const card = manager.getCard(item.id)?.getElement();
       card?.createDiv({
         cls: 'setting-item-description nexus-remote-agent-address',
-        text: `Hermes · ${item.connection.baseUrl}`,
+        text: `${item.connection.connector === 'openclaw' ? 'OpenClaw' : 'Hermes'} · ${item.connection.baseUrl}`,
       });
       const label = connectionAvailabilityLabel(item.connection.enabled, registry?.getHealth(item.id), this.checking.has(item.id));
       card?.createDiv({
@@ -90,7 +90,7 @@ export class RemoteAgentsTab {
 
   private edit(connection: RemoteAgentConnection): void {
     new RemoteAgentModal(this.services.app, connection, {
-      normalizeUrl: normalizeRemoteAgentBaseUrl,
+      normalizeUrl: normalizeRemoteAgentConnectionUrl,
       save: config => this.save(config),
       check: async config => {
         this.checking.add(config.id);

@@ -1,6 +1,8 @@
-import { HermesConnector, validateRemoteAgentConnection } from './HermesConnector';
+import { HermesConnector } from './HermesConnector';
+import { OpenClawConnector } from './OpenClawConnector';
+import { validateRemoteAgentConnection } from './RemoteAgentConfig';
 import {
-  RemoteAgentError, type RemoteAgentConnection, type RemoteAgentConnector, type RemoteAgentConnectorKind,
+  RemoteAgentError, isRemoteAgentReady, type RemoteAgentConnection, type RemoteAgentConnector, type RemoteAgentConnectorKind,
   type RemoteAgentProbe, type RemoteAgentSummary,
 } from './types';
 
@@ -21,7 +23,7 @@ export class RemoteAgentConnectionRegistry {
 
   constructor(
     private readonly getConnections: () => RemoteAgentConnection[],
-    connectors: RemoteAgentConnector[] = [new HermesConnector()],
+    connectors: RemoteAgentConnector[] = [new HermesConnector(), new OpenClawConnector()],
   ) {
     for (const connector of connectors) this.connectors.set(connector.kind, connector);
   }
@@ -70,7 +72,7 @@ export class RemoteAgentConnectionRegistry {
     if (this.disposed) return [];
     return this.list().flatMap(connection => {
       const health = this.getHealth(connection.id);
-      if (!connection.enabled || !health?.connected || !health.runsAvailable || !health.durableIdempotency) return [];
+      if (!connection.enabled || !isRemoteAgentReady(health)) return [];
       return [{
         id: connection.id, connector: connection.connector, displayName: connection.displayName,
         description: connection.description?.trim() || DEFAULT_REMOTE_AGENT_DESCRIPTION,

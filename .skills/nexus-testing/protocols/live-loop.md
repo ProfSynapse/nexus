@@ -156,7 +156,11 @@ Obsidian (the headless container) to turn a skip into a failure.
      empty result is not success. Immediately after plugin reload, even a
      synchronous read may briefly return nothing while the renderer/services
      initialize. Use a bounded, read-only in-band readiness probe before sending
-     mutations. Do not blindly retry a mutating expression whose acknowledgement
+     mutations. For persisted-state checks, also wait for the hybrid storage
+     adapter's `isQueryReady()`: a constructed job service can still be waiting
+     on startup replay. Give bootstrap its own deadline and progress reporting,
+     rather than charging that wait against an unrelated operation's timeout.
+     Do not blindly retry a mutating expression whose acknowledgement
      was lost: it may already have executed.
 
      Settings can live in a separate native window. In that case `document`

@@ -1,10 +1,10 @@
-import { App, ButtonComponent, Modal, Notice, Setting } from 'obsidian';
-import type { RemoteAgentConnection } from '../../services/remoteAgents/types';
+import { App, ButtonComponent, Modal, Notice, Setting, TextComponent } from 'obsidian';
+import { isRemoteAgentReady, type RemoteAgentConnection, type RemoteAgentConnectorKind } from '../../services/remoteAgents/types';
 import { RemoteAgentConnectionCheck, RemoteAgentEditSession } from './RemoteAgentEditSession';
 
 export interface RemoteAgentModalOptions {
   save: (connection: RemoteAgentConnection) => Promise<void>;
-  normalizeUrl: (url: string) => string;
+  normalizeUrl: (url: string, connector: RemoteAgentConnectorKind) => string;
   check: (connection: RemoteAgentConnection) => Promise<RemoteAgentConnectionCheck>;
 }
 
@@ -18,6 +18,8 @@ export class RemoteAgentModal extends Modal {
   private closing = false;
   private status!: HTMLElement;
   private feedback!: HTMLElement;
+  private urlSetting!: Setting;
+  private urlInput!: TextComponent;
 
   constructor(app: App, connection: RemoteAgentConnection, options: RemoteAgentModalOptions) {
     super(app);
@@ -32,19 +34,26 @@ export class RemoteAgentModal extends Modal {
     contentEl.createEl('h1', { text: this.editor.draft.displayName ? `Configure ${this.editor.draft.displayName}` : 'Add remote agent' });
     contentEl.createEl('p', { cls: 'setting-item-description', text: 'This agent uses its own tools. Connecting it does not grant access to your vault.' });
     new Setting(contentEl).setName('Agent type').addDropdown(dropdown => {
-      dropdown.addOption('hermes', 'Hermes').setValue(this.editor.draft.connector);
+      dropdown.addOption('hermes', 'Hermes').addOption('openclaw', 'OpenClaw').setValue(this.editor.draft.connector).onChange(value => {
+        if (value !== 'hermes' && value !== 'openclaw') return;
+        this.changed({ connector: value });
+        this.updateUrlField();
+        this.feedback.setText('Agent type changed. Check the address and test the connection again.');
+      });
     });
     new Setting(contentEl).setName('Name').setDesc('How Nexus identifies this agent.').addText(text => {
       text.setPlaceholder('My agent').setValue(this.editor.draft.displayName).onChange(value => this.changed({ displayName: value }));
     });
-    new Setting(contentEl).setName('Server URL').setDesc('The API base address of your server, including /v1.').addText(text => {
+    this.urlSetting = new Setting(contentEl).addText(text => {
+      this.urlInput = text;
       text.inputEl.type = 'url';
       text.inputEl.addClass('nexus-remote-agent-url');
-      text.setPlaceholder('https://hermes.example.com/v1').setValue(this.editor.draft.baseUrl).onChange(value => {
+      text.setValue(this.editor.draft.baseUrl).onChange(value => {
         this.changed({ baseUrl: value });
         this.feedback.setText('Connection changed. Test the connection again.');
       });
     });
+    this.updateUrlField();
     new Setting(contentEl).setName('API key').setDesc('Optional. Leave blank if your server does not require a key.').addText(text => {
       text.inputEl.type = 'password';
       text.inputEl.autocomplete = 'off';
@@ -82,6 +91,14 @@ export class RemoteAgentModal extends Modal {
     this.status = footer.createDiv({ cls: 'save-status', text: 'Ready' });
     this.status.setAttribute('role', 'status');
     new ButtonComponent(footer).setButtonText('Close').setCta().onClick(() => this.close());
+  }
+
+  private updateUrlField(): void {
+    const gateway = this.editor.draft.connector === 'openclaw';
+    this.urlSetting.setName(gateway ? 'Gateway URL' : 'Server URL').setDesc(gateway
+      ? 'Your gateway address. Use wss:// for a remote server or ws:// for localhost. HTTPS addresses also work.'
+      : 'The API base address of your server, including /v1.');
+    this.urlInput.setPlaceholder(gateway ? 'wss://openclaw.example.com' : 'https://hermes.example.com/v1');
   }
 
   close(): void {
@@ -148,8 +165,8 @@ export class RemoteAgentModal extends Modal {
 
 export function connectionCheckMessage(result: RemoteAgentConnectionCheck): string {
   if (!result.connected) return result.error || 'Could not connect. Check the server URL and API key.';
-  if (!result.runsAvailable || !result.durableIdempotency) {
-    return 'Server reached, but resumable remote tasks are unavailable. Check the Hermes server setup.';
+  if (!isRemoteAgentReady(result)) {
+    return result.error || 'Server reached, but resumable remote tasks are unavailable. Check the server setup.';
   }
   return 'Connection ready. This server supports remote tasks.';
 }
@@ -159,6 +176,6 @@ export function connectionAvailabilityLabel(enabled: boolean, health?: RemoteAge
   if (checking) return 'Checking connection…';
   if (!health) return 'Not checked';
   if (!health.connected) return 'Connection unavailable';
-  if (!health.runsAvailable || !health.durableIdempotency) return 'Remote tasks unavailable';
+  if (!isRemoteAgentReady(health)) return 'Remote tasks unavailable';
   return 'Available';
 }

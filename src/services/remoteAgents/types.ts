@@ -1,4 +1,4 @@
-export type RemoteAgentConnectorKind = 'hermes';
+export type RemoteAgentConnectorKind = 'hermes' | 'openclaw';
 export type RemoteAgentState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'needs_attention' | 'unknown';
 
 export interface RemoteAgentConnection {
@@ -35,6 +35,8 @@ export interface RemoteAgentProbe {
   connected: boolean;
   runsAvailable: boolean;
   durableIdempotency: boolean;
+  /** History recovery never authorizes replay of an uncertain submission. */
+  recoveryMode?: 'session-history';
   /** Advertised retention only. Undefined means safe replay retention is unverified. */
   idempotencyRetentionMs?: number;
   checkedAt: number;
@@ -50,10 +52,17 @@ export interface RemoteAgentSummary {
 
 export interface RemoteAgentConnector {
   readonly kind: RemoteAgentConnectorKind;
+  prepareRequest?(connection: RemoteAgentConnection, request: RemoteAgentRequest, idempotencyKey: string): Promise<RemoteAgentRequest>;
   submit(connection: RemoteAgentConnection, request: RemoteAgentRequest, idempotencyKey: string, signal?: AbortSignal): Promise<RemoteAgentRun>;
-  get(connection: RemoteAgentConnection, runId: string, signal?: AbortSignal): Promise<RemoteAgentRun>;
-  cancel(connection: RemoteAgentConnection, runId: string, signal?: AbortSignal): Promise<RemoteAgentRun>;
+  get(connection: RemoteAgentConnection, runId: string, signal?: AbortSignal, request?: RemoteAgentRequest): Promise<RemoteAgentRun>;
+  cancel(connection: RemoteAgentConnection, runId: string, signal?: AbortSignal, request?: RemoteAgentRequest): Promise<RemoteAgentRun>;
   probe(connection: RemoteAgentConnection, signal?: AbortSignal): Promise<RemoteAgentProbe>;
+}
+
+export function isRemoteAgentReady(probe?: RemoteAgentProbe): boolean {
+  return !!probe?.connected && probe.runsAvailable
+    && (probe.recoveryMode === 'session-history' || (probe.durableIdempotency
+      && typeof probe.idempotencyRetentionMs === 'number' && probe.idempotencyRetentionMs > 0));
 }
 
 export type RemoteAgentErrorCode = 'INVALID_CONFIG' | 'UNSUPPORTED' | 'NETWORK' | 'TIMEOUT' | 'ABORTED' | 'PROTOCOL' | 'HTTP_ERROR' | 'IDEMPOTENCY_CONFLICT' | 'RUN_NOT_FOUND';

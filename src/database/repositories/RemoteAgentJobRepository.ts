@@ -26,6 +26,8 @@ export interface RemoteAgentJob {
   updatedAt: number;
   submissionStartedAt?: number;
   idempotencyRetentionMs?: number;
+  /** After the first attempt this mode authorizes only read-only history recovery. */
+  recoveryMode?: 'session-history';
   runId?: string;
   remoteSessionId?: string;
   output?: string;
@@ -38,6 +40,10 @@ export interface RemoteAgentJob {
   notifiedAt?: number;
   failureCount?: number;
 }
+
+// Serialize claims/updates across runner owners sharing the same adapter. This
+// is a local coordination boundary, not a cross-device idempotency guarantee.
+const adapterWrites = new WeakMap<IStorageAdapter, Map<string, Promise<unknown>>>();
 
 export function remoteJobBranchState(job: RemoteAgentJob): BranchState {
   if (job.state === 'completed') return 'complete';
@@ -58,8 +64,12 @@ function readJob(conversation: ConversationMetadata): RemoteAgentJob | null {
 
 /** Uses existing conversation events, so normal JSONL replay restores jobs. */
 export class RemoteAgentJobRepository {
-  private readonly writes = new Map<string, Promise<unknown>>();
-  constructor(private readonly storage: IStorageAdapter) {}
+  private readonly writes: Map<string, Promise<unknown>>;
+  constructor(private readonly storage: IStorageAdapter) {
+    let writes = adapterWrites.get(storage);
+    if (!writes) { writes = new Map(); adapterWrites.set(storage, writes); }
+    this.writes = writes;
+  }
 
   async ready(): Promise<void> {
     if (this.storage.waitForQueryReady && !await this.storage.waitForQueryReady()) {
@@ -110,8 +120,24 @@ export class RemoteAgentJobRepository {
   }
 
   async update(branchId: string, patch: Partial<RemoteAgentJob>): Promise<RemoteAgentJob> {
+    return this.serialize(branchId, () => this.applyUpdate(branchId, patch));
+  }
+
+  async claimSubmission(branchId: string, timestamp: number): Promise<{ job: RemoteAgentJob; claimed: boolean }> {
+    return this.serialize(branchId, async () => {
+      const existing = await this.get(branchId);
+      if (!existing) throw new Error('Remote job branch no longer exists.');
+      if (existing.submissionStartedAt !== undefined || existing.cancelRequestedAt !== undefined
+        || ['completed', 'failed', 'cancelled'].includes(existing.state)) return { job: existing, claimed: false };
+      const job = await this.applyUpdate(branchId, { submissionStartedAt: timestamp,
+        updatedAt: timestamp, state: 'submitting', remoteStatus: 'submitting', error: undefined });
+      return { job, claimed: true };
+    });
+  }
+
+  private async serialize<T>(branchId: string, work: () => Promise<T>): Promise<T> {
     const pending = (this.writes.get(branchId) ?? Promise.resolve()).catch(() => undefined)
-      .then(() => this.applyUpdate(branchId, patch));
+      .then(work);
     this.writes.set(branchId, pending);
     try { return await pending; }
     finally { if (this.writes.get(branchId) === pending) this.writes.delete(branchId); }
@@ -121,7 +147,12 @@ export class RemoteAgentJobRepository {
     const conversation = await this.storage.getConversation(branchId);
     const existing = conversation && readJob(conversation);
     if (!conversation || !existing) throw new Error('Remote job branch no longer exists.');
-    const job = { ...existing, ...patch, branchId, jobId: existing.jobId };
+    // A later read-only response can arrive after another owner persisted a
+    // terminal result. Keep that result immutable; delivery acknowledgements
+    // (which carry no state) can still be recorded after completion.
+    if (['completed', 'failed', 'cancelled'].includes(existing.state) && patch.state !== undefined) return existing;
+    const job = { ...existing, ...patch, branchId, jobId: existing.jobId,
+      cancelRequestedAt: existing.cancelRequestedAt ?? patch.cancelRequestedAt };
     await this.storage.updateConversation(branchId, {
       updated: job.updatedAt,
       metadata: { ...conversation.metadata, remoteAgentJob: job,

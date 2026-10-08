@@ -9,12 +9,12 @@ import type { ConversationMetadata, MessageData } from '../../../src/types/stora
 import { RemoteAgentJobRepository, type RemoteAgentJob } from '../../../src/database/repositories/RemoteAgentJobRepository';
 import { RemoteAgentJobService } from '../../../src/services/remoteAgents/RemoteAgentJobService';
 import { RemoteAgentConnectionRegistry } from '../../../src/services/remoteAgents/RemoteAgentConnectionRegistry';
-import { RemoteAgentError, type RemoteAgentConnection, type RemoteAgentConnector } from '../../../src/services/remoteAgents/types';
+import { RemoteAgentError, type RemoteAgentConnection, type RemoteAgentConnector, type RemoteAgentRequest } from '../../../src/services/remoteAgents/types';
 
 const RETENTION = 86_400_000;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
-function fixture() {
+function fixture(historyRecovery = false) {
   let clock = 1000;
   let sequence = 0;
   let failAck = false;
@@ -63,12 +63,16 @@ function fixture() {
     getMessages: jest.fn(() => { throw new Error('Job recovery must not scan full transcripts'); }),
   };
   const connections: RemoteAgentConnection[] = [{
-    id: 'hermes-personal', displayName: 'My Hermes', connector: 'hermes', baseUrl: 'https://agent.example/v1', enabled: true, apiKey: 'secret-token',
+    id: 'hermes-personal', displayName: 'My Hermes', connector: historyRecovery ? 'openclaw' : 'hermes', baseUrl: historyRecovery ? 'wss://agent.example' : 'https://agent.example/v1', enabled: true, apiKey: 'secret-token',
   }];
   const connector: RemoteAgentConnector = {
-    kind: 'hermes',
-    probe: jest.fn(async () => ({ connected: true, runsAvailable: true, durableIdempotency: true,
-      idempotencyRetentionMs: RETENTION, checkedAt: Date.now() })),
+    kind: historyRecovery ? 'openclaw' : 'hermes',
+    ...(historyRecovery ? { prepareRequest: jest.fn(async (_connection: RemoteAgentConnection, request: RemoteAgentRequest, key: string) => ({
+      ...request, sessionId: `agent:default:nexus:${key}`
+    })) } : {}),
+    probe: jest.fn(async () => historyRecovery
+      ? { connected: true, runsAvailable: true, durableIdempotency: false, recoveryMode: 'session-history' as const, checkedAt: Date.now() }
+      : { connected: true, runsAvailable: true, durableIdempotency: true, idempotencyRetentionMs: RETENTION, checkedAt: Date.now() }),
     submit: jest.fn(async () => ({ runId: 'run-1', state: 'running', remoteStatus: 'running' })),
     get: jest.fn(async () => ({ runId: 'run-1', state: 'completed', remoteStatus: 'completed', output: 'Remote answer' })),
     cancel: jest.fn(async () => ({ runId: 'run-1', state: 'cancelled', remoteStatus: 'cancelled' })),
@@ -82,6 +86,231 @@ function fixture() {
 }
 
 const params = { target: 'hermes-personal', task: 'Find an answer', context: 'Explicit context', parentConversationId: 'parent', parentMessageId: 'origin', provider: 'openai', model: 'chosen-model', workspaceId: 'workspace', sessionId: 'session', agentPrompt: 'Parent prompt must not go to remote' };
+
+describe('RemoteAgentJobService session-history recovery', () => {
+  it('persists the prepared exact session before POST and preserves it when acknowledgements omit it', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockImplementation(async (_connection, request, key) => {
+      const job = [...f.conversations.values()].find(conversation => conversation.metadata?.remoteAgentJob)
+        ?.metadata?.remoteAgentJob as RemoteAgentJob;
+      expect(job).toEqual(expect.objectContaining({ recoveryMode: 'session-history', submissionStartedAt: 1000 }));
+      expect(job.request).toEqual(request);
+      expect(request.sessionId).toBe(`agent:default:nexus:${key}`);
+      return { runId: key, state: 'running', remoteStatus: 'running' };
+    });
+    const service = f.service();
+    const accepted = await service.executeSubagent(params);
+    await service.reconcile();
+    const job = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    expect(f.connector.prepareRequest).toHaveBeenCalledTimes(1);
+    expect(job.remoteSessionId).toBe(job.request.sessionId);
+  });
+
+  it('recovers a lost acknowledgement after restart using only the saved session history, even beyond replay retention', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockRejectedValue(new RemoteAgentError('Acknowledgement lost', 'NETWORK', undefined, true));
+    const first = f.service();
+    const accepted = await first.executeSubagent(params);
+    await first.reconcile();
+    await first.cleanup();
+    const saved = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    jest.mocked(f.connector.get).mockResolvedValue({ runId: saved.idempotencyKey, state: 'completed', remoteStatus: 'completed', output: 'Recovered answer' });
+    f.advance(RETENTION * 2);
+    const restarted = f.service();
+    await restarted.reconcile();
+    await restarted.reconcile();
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect(f.connector.prepareRequest).toHaveBeenCalledTimes(1);
+    expect(f.connector.get).toHaveBeenCalledWith(f.connections[0], saved.idempotencyKey, expect.any(AbortSignal), saved.request);
+    const result = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    expect(result.state).toBe('completed');
+    expect(result.remoteSessionId).toBe(saved.request.sessionId);
+    expect([...f.messages.values()].filter(message => message.metadata?.type === 'subagent_result')).toHaveLength(1);
+  });
+
+  it('marks missing history as attention and never treats new durable capability as permission to reissue', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockRejectedValue(new RemoteAgentError('Acknowledgement lost', 'NETWORK', undefined, true));
+    const first = f.service();
+    const accepted = await first.executeSubagent(params);
+    await first.reconcile();
+    await first.cleanup();
+    const saved = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    jest.mocked(f.connector.get).mockResolvedValue({ runId: saved.idempotencyKey, state: 'unknown', remoteStatus: 'unconfirmed', error: 'No matching history is available.' });
+    jest.mocked(f.connector.probe).mockResolvedValue({ connected: true, runsAvailable: true, durableIdempotency: true, idempotencyRetentionMs: RETENTION, checkedAt: Date.now() });
+    await f.registry.refresh();
+    f.advance(16_000);
+    const restarted = f.service();
+    await restarted.reconcile();
+    f.advance(61_000);
+    await restarted.reconcile();
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect(f.connector.get).toHaveBeenCalledTimes(2);
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('attention');
+    expect([...f.messages.values()].some(message => message.content?.includes('No matching history'))).toBe(true);
+  });
+
+  it('does not classify a denied read-only history lookup as a hard submission rejection', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockRejectedValue(new RemoteAgentError('Acknowledgement lost', 'NETWORK', undefined, true));
+    const first = f.service();
+    const accepted = await first.executeSubagent(params);
+    await first.reconcile();
+    await first.cleanup();
+    jest.mocked(f.connector.get).mockRejectedValue(new RemoteAgentError('History access denied', 'HTTP_ERROR', 403));
+    f.advance(16_000);
+    const restarted = f.service();
+    await restarted.reconcile();
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('attention');
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps gateway identity stable across HTTPS and WSS aliases', async () => {
+    const f = fixture(true);
+    const service = f.service();
+    const accepted = await service.executeSubagent(params);
+    await service.reconcile();
+    f.connections[0].baseUrl = 'https://agent.example/';
+    f.advance(16_000);
+    await service.reconcile();
+    expect(f.connector.get).toHaveBeenCalledTimes(1);
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('completed');
+  });
+
+  it('fails an explicitly rejected first POST without trying history or creating a replacement', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockRejectedValue(new RemoteAgentError('Input rejected', 'HTTP_ERROR', 400));
+    const service = f.service();
+    const accepted = await service.executeSubagent(params);
+    await service.reconcile();
+    f.advance(61_000);
+    await service.reconcile();
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('failed');
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect(f.connector.get).not.toHaveBeenCalled();
+  });
+
+  it('cancels an ambiguous submission by the deterministic run and saved session, never by submitting', async () => {
+    const f = fixture(true);
+    jest.mocked(f.connector.submit).mockRejectedValue(new RemoteAgentError('Acknowledgement lost', 'NETWORK', undefined, true));
+    const service = f.service();
+    const accepted = await service.executeSubagent(params);
+    await service.reconcile();
+    const saved = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    jest.mocked(f.connector.cancel).mockResolvedValue({ runId: saved.idempotencyKey, state: 'cancelled', remoteStatus: 'cancelled' });
+    await service.cancelSubagent(accepted.subagentId);
+    await service.reconcile();
+    expect(f.connector.cancel).toHaveBeenCalledWith(f.connections[0], saved.idempotencyKey, expect.any(AbortSignal), saved.request);
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('cancelled');
+  });
+
+  it('honors Stop before the first submission without sending a remote cancel or POST', async () => {
+    const f = fixture(true);
+    f.storage.addMessage.mockRejectedValueOnce(new Error('Task message temporarily unavailable'));
+    const service = f.service();
+    const accepted = await service.executeSubagent(params);
+    await service.reconcile();
+    await service.cancelSubagent(accepted.subagentId);
+    await service.reconcile();
+    expect(f.connector.submit).not.toHaveBeenCalled();
+    expect(f.connector.cancel).not.toHaveBeenCalled();
+    expect((f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob).state).toBe('cancelled');
+  });
+
+  it('checks shutdown after preparing a request and never persists a late result', async () => {
+    const f = fixture(true);
+    let release!: () => void;
+    let entered!: () => void;
+    const prepared = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    jest.mocked(f.connector.prepareRequest!).mockImplementation(async (_connection, request, key) => {
+      entered(); await gate; return { ...request, sessionId: `agent:default:nexus:${key}` };
+    });
+    const service = f.service();
+    const accepted = service.executeSubagent(params);
+    const rejection = expect(accepted).rejects.toThrow('stopped before submission');
+    await prepared;
+    const shutdown = service.cleanup();
+    release();
+    await rejection;
+    await shutdown;
+    expect(f.storage.createConversation).not.toHaveBeenCalled();
+    expect(f.connector.submit).not.toHaveBeenCalled();
+  });
+
+  it('claims the initial POST once across two runner owners sharing an adapter', async () => {
+    const f = fixture(true);
+    f.storage.addMessage.mockRejectedValueOnce(new Error('Defer task message'));
+    const creator = f.service();
+    const accepted = await creator.executeSubagent(params);
+    await creator.reconcile();
+    await creator.cleanup();
+    const saved = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    await new RemoteAgentJobRepository(f.storage as unknown as IStorageAdapter).ensureTaskMessage({ ...saved, branchId: accepted.branchId });
+    let release!: () => void;
+    const snapshots = new Promise<void>(resolve => { release = resolve; });
+    let readers = 0;
+    const scan = f.storage.getConversations.getMockImplementation()!;
+    f.storage.getConversations.mockImplementation(async options => {
+      const initial = await scan(options);
+      if (++readers === 2) release();
+      await snapshots;
+      return initial;
+    });
+    jest.mocked(f.connector.submit).mockResolvedValue({ runId: saved.idempotencyKey, state: 'running', remoteStatus: 'running' });
+    jest.mocked(f.connector.get).mockResolvedValue({ runId: saved.idempotencyKey, state: 'running', remoteStatus: 'running' });
+    await Promise.all([f.service().reconcile(), f.service().reconcile()]);
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect(f.connector.get).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['unknown', 'running'] as const)('a losing owner cannot replace completed output with late %s history', async lateState => {
+    const f = fixture(true);
+    f.storage.addMessage.mockRejectedValueOnce(new Error('Defer task message'));
+    const creator = f.service();
+    const accepted = await creator.executeSubagent(params);
+    await creator.reconcile();
+    await creator.cleanup();
+    const saved = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    await new RemoteAgentJobRepository(f.storage as unknown as IStorageAdapter).ensureTaskMessage({ ...saved, branchId: accepted.branchId });
+    let releaseScans!: () => void;
+    const snapshots = new Promise<void>(resolve => { releaseScans = resolve; });
+    let scans = 0;
+    const scan = f.storage.getConversations.getMockImplementation()!;
+    f.storage.getConversations.mockImplementation(async options => {
+      const initial = await scan(options);
+      if (++scans === 2) releaseScans();
+      await snapshots; return initial;
+    });
+    let releaseHistory!: (run: Awaited<ReturnType<RemoteAgentConnector['get']>>) => void;
+    let historyEntered!: () => void;
+    const waiting = new Promise<void>(resolve => { historyEntered = resolve; });
+    jest.mocked(f.connector.get).mockImplementationOnce(() => {
+      historyEntered(); return new Promise(resolve => { releaseHistory = resolve; });
+    });
+    jest.mocked(f.connector.submit).mockImplementation(async () => {
+      await waiting;
+      return { runId: saved.idempotencyKey, state: 'completed', remoteStatus: 'completed', output: 'Definitive answer' };
+    });
+    const winner = f.service();
+    const loser = f.service();
+    const first = winner.reconcile();
+    const second = loser.reconcile();
+    await waiting;
+    await Promise.race([first, second]);
+    await f.service().reconcile();
+    const completed = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    expect(completed.deliveredAt).toBeDefined();
+    releaseHistory({ runId: saved.idempotencyKey, state: lateState, remoteStatus: lateState === 'unknown' ? 'unconfirmed' : 'running', error: 'Stale history' });
+    await Promise.all([first, second]);
+    const after = f.conversations.get(accepted.branchId)?.metadata?.remoteAgentJob as RemoteAgentJob;
+    expect(after).toEqual(completed);
+    expect(after.output).toBe('Definitive answer');
+    expect(f.connector.submit).toHaveBeenCalledTimes(1);
+    expect([...f.messages.values()].filter(message => message.metadata?.type === 'subagent_result')).toHaveLength(1);
+  });
+});
 
 describe('RemoteAgentJobService', () => {
   it('persists branch/request/key before POST and keeps credentials/Nexus instructions out of the job', async () => {

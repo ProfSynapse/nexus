@@ -1,5 +1,6 @@
 import { RemoteAgentEditSession } from '../../src/settings/remoteAgents/RemoteAgentEditSession';
 import { normalizeRemoteAgentBaseUrl } from '../../src/services/remoteAgents/HermesConnector';
+import { normalizeRemoteAgentConnectionUrl } from '../../src/services/remoteAgents/RemoteAgentConfig';
 import type { RemoteAgentConnection, RemoteAgentProbe } from '../../src/services/remoteAgents/types';
 
 const connection = (): RemoteAgentConnection => ({ id: 'hermes-home', connector: 'hermes', displayName: 'My Hermes', baseUrl: 'https://hermes.example/v1', apiKey: 'old-key', enabled: true });
@@ -27,6 +28,43 @@ describe('Remote agent editor', () => {
     editor.update({ apiKey: '' });
     probe.resolve(ready());
     expect(await test).toBeNull();
+  });
+
+  it('routes URL normalization by connector and saves the selected type without losing other fields', async () => {
+    const persist = jest.fn(async () => undefined);
+    const check = jest.fn(async () => ready());
+    const editor = new RemoteAgentEditSession(connection(), persist, normalizeRemoteAgentConnectionUrl, check);
+    editor.update({ connector: 'openclaw', baseUrl: 'https://gateway.example/', description: 'Team assistant' });
+    await editor.save();
+    await editor.testConnection();
+    const expected = expect.objectContaining({ id: 'hermes-home', connector: 'openclaw', baseUrl: 'wss://gateway.example', apiKey: 'old-key', displayName: 'My Hermes', enabled: true, description: 'Team assistant' });
+    expect(persist).toHaveBeenCalledWith(expected);
+    expect(check).toHaveBeenCalledWith(expected);
+    editor.update({ connector: 'hermes' });
+    expect(editor.draft.baseUrl).toBe('https://gateway.example/');
+    await editor.save();
+    expect(persist).toHaveBeenLastCalledWith(expect.objectContaining({ connector: 'hermes', baseUrl: 'https://gateway.example' }));
+  });
+
+  it('ignores an old probe after changing connector even when the URL and key stay the same', async () => {
+    const probe = deferred<RemoteAgentProbe>();
+    const editor = new RemoteAgentEditSession(connection(), jest.fn(), normalizeRemoteAgentConnectionUrl, () => probe.promise);
+    const test = editor.testConnection();
+    editor.update({ connector: 'openclaw' });
+    probe.resolve(ready());
+    expect(await test).toBeNull();
+  });
+
+  it('does not overwrite saved settings if the existing gateway URL is invalid for the new connector', async () => {
+    const persist = jest.fn(async () => undefined);
+    const editor = new RemoteAgentEditSession({ ...connection(), connector: 'openclaw', baseUrl: 'wss://gateway.example' }, persist, normalizeRemoteAgentConnectionUrl, jest.fn());
+    editor.update({ connector: 'hermes' });
+    await expect(editor.save()).rejects.toThrow();
+    expect(persist).not.toHaveBeenCalled();
+    expect(editor.draft.apiKey).toBe('old-key');
+    editor.update({ baseUrl: 'https://hermes.example/v1' });
+    await editor.save();
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ connector: 'hermes', baseUrl: 'https://hermes.example/v1', apiKey: 'old-key' }));
   });
 
   it('ignores a failed test after the editor is closed', async () => {

@@ -25,6 +25,18 @@ describe('RemoteAgentConnectionRegistry', () => {
       expect(registry.getAvailable()).toEqual([]);
     }
   });
+  test('OpenClaw history recovery is available without advertising durable replay', async () => {
+    const config: RemoteAgentConnection = { ...connection, connector: 'openclaw', baseUrl: 'wss://gateway.test' };
+    const fake: RemoteAgentConnector = { ...connector(), kind: 'openclaw', probe: jest.fn(async () => ({
+      connected: true, runsAvailable: true, durableIdempotency: false, recoveryMode: 'session-history', checkedAt: Date.now(),
+    })) };
+    const registry = new RemoteAgentConnectionRegistry(() => [config], [fake]);
+    await registry.refresh();
+    expect(registry.getAvailable()).toEqual([expect.objectContaining({ connector: 'openclaw', id: config.id })]);
+    expect(registry.getHealth(config.id)?.durableIdempotency).toBe(false);
+    expect(fake.submit).not.toHaveBeenCalled();
+    registry.cleanup();
+  });
   test('expiry and URL/key changes invalidate health without a settings notification', async () => {
     let connections = [{ ...connection }];
     const registry = new RemoteAgentConnectionRegistry(() => connections, [connector()]);
