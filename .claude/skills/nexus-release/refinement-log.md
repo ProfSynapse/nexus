@@ -88,3 +88,14 @@ it, and the deploy script is Windows-only. | `protocols/cut-release.md`.
 VERIFIED on the in-vault checkout with no deploy (the 2026-09-17 wording held),
 readiness check 0/0, and the run published all five assets with attestation. |
 No change. | —
+
+2026-10-08 | Cutting 5.20.0 (clean minor release). Remote agents (#407/#408)
+probe every enabled connection at startup and every 30 s, which contradicted
+README Network Use ("Nothing is sent when the plugin loads"). No PR had touched
+that section, and doc-review's surface table did not name it, so it surfaced
+only because the executor happened to check the polling before writing the
+disclosure. Also: a leftover `styles.css` edit in the working tree was
+byte-identical to upstream #406 and was dropped before the pull. | Added README
+**Network Use** to doc-review's surface table, with what to look for (new hosts,
+user-entered URLs, requests without a user action) and a grep to find them.
+| `protocols/doc-review.md`.

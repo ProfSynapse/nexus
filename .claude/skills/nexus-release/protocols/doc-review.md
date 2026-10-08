@@ -34,6 +34,7 @@ Surfaces that most often need a change:
 |---|---|
 | `<repo>/guide/apps.md` | the **Available Apps** table — app name, its tools, desktop-only/experimental marks |
 | `README.md` | the **Use Cases** and **Mobile Support (Experimental)** sections |
+| `README.md` **Network Use** | every outbound request and what triggers it. Any new host, user-entered URL, or request made without a user action (startup checks, polling) must be listed, and the "nothing is sent when the plugin loads" claim re-checked. Find them with `grep -rn "setInterval\|requestUrl\|WebSocket" ` over the files the release changed |
 | `<repo>/guide/` feature pages | e.g. task management, workspace memory, semantic search, adaptive search, the CLI guide |
 
 Confirm exact tool names, flags and enum values against `<repo>/src/` rather than
