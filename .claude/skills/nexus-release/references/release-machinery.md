@@ -57,7 +57,8 @@ Read it: `cat .github/workflows/release.yml`.
   the bare number — there is no manual naming step and nothing to get wrong.
   Release notes are auto-generated. Uploaded assets are the plugin files plus
   the release's CLI and MCP catalogs.
-- **Attest.** A build-provenance attestation is generated for those three assets.
+- **Attest.** Build-provenance attestations cover the plugin assets and both
+  versioned tool catalogs listed in the workflow's `subject-path`.
   This is the reason releases must come from the workflow: a hand-made release
   has no attestation and one cannot be added afterwards.
 

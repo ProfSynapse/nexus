@@ -4,6 +4,18 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
 
+2026-10-08 | Released 5.20.1 from db1d352a after independent Astra review and
+  remediation, newest-first model picker checks, clean npm ci/build, shipped
+  guidance checks and a clean readiness guard. CI run 37828415997 succeeded;
+  the published release has all five assets and successful attestation. The
+  broad Windows test run had one unchanged OAuth random-port EACCES failure
+  (11/11 passed on rerun), and two Unix-specific suites were excluded. The
+  Obsidian CLI was unavailable, so in-app verification was explicitly skipped.
+  The release reference still claimed only three assets were attested despite
+  the workflow including both versioned tool catalogs. | Corrected the
+  attestation description to follow the workflow's subject-path. |
+  `references/release-machinery.md`.
+
 2026-10-01 | Cutting 5.19.1 for Sonnet 5.5, GPT-6.1 Sol, and the Codex
 reconnect state. The version lifecycle updated metadata and catalogs before the
 sandbox blocked its git staging step; retrying the exact target with
