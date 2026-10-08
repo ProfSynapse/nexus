@@ -2,6 +2,31 @@
 
 ## October 2026
 
+**v5.20.0** — Hand tasks to Hermes and OpenClaw agents, connect any OpenAI-compatible server, and manage prompts and skills in one Instructions library
+
+**Delegate tasks to remote agents**
+- A new **Settings → Nexus → Remote agents** tab connects Hermes and OpenClaw agents running on your own server. Each connection has a name, an address, an optional API key and an optional description that helps the model decide when to use it. **Test connection** shows whether the agent is reachable ([#407](https://github.com/ProfSynapse/nexus/pull/407), [#408](https://github.com/ProfSynapse/nexus/pull/408)).
+- Available agents are listed in the chat system prompt, and the model hands a task to one with `prompt sub --target <agent id>`. Without `--target`, subagents run locally as before. You can keep chatting while the agent works. Its final answer arrives in the chat that started the task, and you can check on or stop the job from the agents status menu.
+- Remote agents use their own tools and never get access to your vault. They receive only the task and the context the model sends with it.
+- Jobs are saved before they are sent and pick up again after a plugin reload. OpenClaw jobs also recover after a gateway restart by matching the gateway's session history, and Nexus never resends a submission it cannot confirm. If you change an agent's address or key while a job is running, the job asks for attention instead of quietly moving to the new server.
+- While a connection is enabled, Nexus checks its availability at startup and every 30 seconds. Turn the connection off to stop those checks.
+
+**Connect your own OpenAI-compatible server**
+- A new **OpenAI-compatible** provider connects any local or hosted server that speaks the OpenAI Chat Completions API. Add as many named endpoints as you need. Each has its own address, optional API key and model list. Nexus can discover models from the server's `/models` list, or you can add a model ID by hand ([#405](https://github.com/ProfSynapse/nexus/pull/405)).
+- Chat, streaming and tool calls work through these endpoints, and the provider is available on mobile as long as the server is reachable from the phone.
+
+**One Instructions library for prompts and skills**
+- **Settings → Nexus → Prompts** is now **Instructions**, which lists prompts and skills together and filters them by type, category and source. Your saved prompts keep their IDs, and skills stay as folders with a `SKILL.md` ([#406](https://github.com/ProfSynapse/nexus/pull/406)).
+- Skills are now part of core Nexus. You no longer install or enable a Skills app to use them, and your provider import and sync-back preferences carry over.
+- `memory load-workspace <workspace> --workflow <name or id>` prepares a workflow's prompt, steps, skill instructions and required tool schemas without running anything. If a dependency is missing or archived, the load fails and your current setup is left unchanged. There is no default workflow, so loading a workspace without `--workflow` clears the active one.
+
+**Smaller fixes and additions**
+- On Linux, **Get Started** reported "Node.js 18+ is not available on PATH" when Node was installed with nvm. Nexus now also checks nvm, Volta, fnm, asdf, mise and `~/.local/bin` installs ([#403](https://github.com/ProfSynapse/nexus/pull/403)).
+- DeepSeek Flash Latest and DeepSeek Pro Latest are available through OpenRouter. Both always point to DeepSeek's newest model in that tier ([#399](https://github.com/ProfSynapse/nexus/pull/399)).
+- Requests to Perplexity now include an `X-Pplx-Integration: nexus` header so Perplexity can tell they came from Nexus. Nothing else about those requests changed ([#404](https://github.com/ProfSynapse/nexus/pull/404)).
+
+---
+
 **v5.19.1** — Claude Sonnet 5.5, GPT-6.1 Sol, and a clear ChatGPT reconnect notice
 
 - Claude Sonnet 5.5 is available through Anthropic, Claude Code, OpenRouter, and Requesty ([#401](https://github.com/ProfSynapse/nexus/pull/401)).

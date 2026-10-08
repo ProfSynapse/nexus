@@ -12,6 +12,7 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 |------|----------|----------|
 | API key | Fastest cloud setup | Anthropic, OpenAI, Google AI, Groq, Mistral, OpenRouter, Perplexity, Requesty |
 | Local desktop runtime | Local models on your machine | Ollama, LM Studio |
+| OpenAI-compatible endpoint | Your own server or gateway that speaks the OpenAI Chat Completions API | Any endpoint you add by URL |
 | Existing subscription or local CLI | Reuse an existing login instead of managing API keys | Claude Code, Antigravity CLI, GitHub Copilot, Codex via ChatGPT |
 
 ---
@@ -63,6 +64,20 @@ By default, API keys live in the plugin's settings file (`data.json`), which syn
 4. Confirm the local endpoint and choose a model in chat
 
 Both local runtimes support **tool calling**, so a capable local model can drive agentic chats (Ollama also auto-discovers every model you have installed). For reasoning models, the model's thinking streams live into collapsible **Thinking** blocks in chat, each placed above the text it led to, and is available in the tool-inspection view.
+
+---
+
+## OpenAI-compatible Endpoints
+
+Use this to connect any local or hosted server that exposes the OpenAI Chat Completions API. You can add several endpoints; each keeps its own address, key and model list.
+
+1. Open **Settings -> Nexus -> Providers** and choose **OpenAI-compatible**
+2. Click **Add endpoint**
+3. Enter a **Name** (shown in the model picker) and the **API base URL**, including any path such as `/v1`
+4. Enter an **API key** only if your server requires one; it is sent as a Bearer token
+5. Click **Connect** to discover the server's models through `/models`, then choose which ones to show in the model picker. If the server returns no list, use **Add a model manually** and enter the exact model ID it expects
+
+Chat and standard tool calling work through these endpoints. The endpoint must be reachable from the device you are using, so a `localhost` address only works on that computer.
 
 ---
 
@@ -131,6 +146,12 @@ If you prefer OpenRouter browser sign-in instead of an API key:
 4. Select an OpenRouter model in chat
 
 If you already have an OpenRouter API key, that is usually the simpler route.
+
+---
+
+## Remote Agents Are Not Providers
+
+**Settings -> Nexus -> Remote agents** connects a separate agent (Hermes or OpenClaw) that runs its own tools and that Nexus can hand tasks to. It does not add models to the model picker. See [Native chat](native-chat.md#remote-agents).
 
 ---
 

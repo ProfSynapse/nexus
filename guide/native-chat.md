@@ -119,6 +119,7 @@ Configure providers in **Settings &rarr; Nexus &rarr; Providers**. All configure
 | Perplexity | API key | `pplx-...` |
 | Ollama | None | Local, requires Ollama running |
 | LM Studio | None | Local, requires LM Studio running |
+| OpenAI-compatible | Optional API key | Any server with an OpenAI Chat Completions API; add one or more endpoints by URL |
 | **Claude Code** | Local CLI | Must be installed and signed in on your computer first; no API key needed |
 | **Antigravity CLI** | Local CLI | Install the Antigravity CLI, then run `agy` once to complete Google sign-in; no API key needed. Text-completion only (no tool calling) |
 | **GitHub Copilot** | OAuth device flow | Requires active Copilot subscription; sign in via code in modal |
@@ -137,3 +138,11 @@ Switch between any configured provider and model mid-conversation.
 ## Subagents
 
 The chat can spawn subagent conversations — branched LLM calls that handle tool continuations autonomously, then report results back to the main thread.
+
+### Remote Agents
+
+A subagent can also be a **remote agent**: a Hermes or OpenClaw agent running on your own server, with its own tools and environment. Add one in **Settings -> Nexus -> Remote agents** with **Add remote agent**, then pick the **Agent type**, give it a **Name**, enter the **Server URL** (Hermes, including `/v1`) or **Gateway URL** (OpenClaw, `wss://` or `ws://` for localhost), add an **API key** if the server needs one, and click **Test connection**. An optional **Description** helps the model decide when to use it.
+
+Connected, available agents are listed in the chat system prompt, and the model delegates with `prompt sub --target <agent id>`. Leaving out `--target` runs a normal local subagent. You can keep chatting while the remote agent works; its final answer is delivered into the chat that started it. Check on or stop a running job from the agents status menu.
+
+A remote agent does not get access to your vault or Nexus tools. It receives only the task and the context the model includes with it, so that context has to be self-contained. Jobs are saved before they are sent and are recovered after a plugin reload; if you change an agent's address or key while a job is running, the job asks for attention instead of moving to the new server.

@@ -49,7 +49,7 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 
 ## Network Use
 
-**Nexus does not call out on its own.** Nothing is sent when the plugin loads, and there is no telemetry, analytics, crash reporting, or usage tracking of any kind. Your notes stay in your vault unless you do something that sends them somewhere. Every request below is listed with the action that causes it.
+**Nexus does not call out on its own.** Nothing is sent when the plugin loads unless you have enabled a remote agent (see below), and there is no telemetry, analytics, crash reporting, or usage tracking of any kind. Your notes stay in your vault unless you do something that sends them somewhere. Every request below is listed with the action that causes it.
 
 **AI provider APIs.** Contacted only once you enter that provider's API key and then use it. Your prompt — and whatever vault content the agent decides to include — goes to the provider you chose, and your key is only ever sent to the provider it belongs to.
 
@@ -60,6 +60,8 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 | Sign-in flows | `auth.openai.com` and `chatgpt.com` (OpenAI Codex), `api.github.com` (GitHub Copilot) |
 
 Ollama and LM Studio talk to your own machine and leave it entirely.
+
+**Addresses you add yourself.** An OpenAI-compatible endpoint (Providers) is contacted only at the URL you enter, and only when you connect to discover models or chat with one of its models. A Hermes or OpenClaw remote agent (Remote agents) is contacted only at the URL you enter; while a connection is enabled, Nexus also checks its availability once on startup and every 30 seconds after that, without sending any vault content. A task delegated to a remote agent sends that agent the task text and whatever context the model attaches to it. Turn the connection off to stop all of these requests.
 
 **Downloads for optional desktop features.** A few features fetch their engine the first time you enable them, rather than shipping inside `main.js` — the download is cached and does not repeat. Never enabling the feature means never making the request.
 
