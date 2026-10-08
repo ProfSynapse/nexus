@@ -1,3 +1,5 @@
+import { SubagentTool } from '../../src/agents/promptManager/tools/subagent';
+import type { RemoteAgentJobService } from '../../src/services/remoteAgents/RemoteAgentJobService';
 import { ToolBatchExecutionService } from '../../src/agents/toolManager/services/ToolBatchExecutionService';
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
 import type { ITool } from '../../src/agents/interfaces/ITool';
@@ -54,6 +56,22 @@ const context = {
 };
 
 describe('ToolBatchExecutionService', () => {
+  it('uses trusted batch origin for remote subagents even if the selected view changed', async () => {
+    const tool = new SubagentTool();
+    const executeSubagent = jest.fn().mockResolvedValue({ subagentId: 'job', branchId: 'branch' });
+    tool.setRemoteAgentJobs({ executeSubagent } as unknown as RemoteAgentJobService);
+    tool.setContextProvider(() => ({ conversationId: 'wrong-chat', messageId: 'wrong-msg', source: 'internal' }));
+    const registry = new Map<string, IAgent>([['promptManager', createMultiToolAgent('promptManager', [tool])]]);
+    const service = new ToolBatchExecutionService({} as never, registry);
+    const call = { context, calls: [{ agent: 'promptManager', tool: tool.slug, params: { task: 'Do the task', target: 'home' } }] };
+    const result = await service.execute(call, { operationOrigin: 'native-chat', conversationId: 'origin-chat', messageId: 'origin-msg' });
+    expect(result.success).toBe(true);
+    expect(executeSubagent).toHaveBeenCalledWith(expect.objectContaining({ parentConversationId: 'origin-chat', parentMessageId: 'origin-msg' }));
+    executeSubagent.mockClear();
+    expect((await service.execute(call)).success).toBe(false);
+    expect(executeSubagent).not.toHaveBeenCalled();
+  });
+
   it('runs a parallel batch only when every tool is explicitly parallel-safe', async () => {
     let active = 0;
     let maxActive = 0;

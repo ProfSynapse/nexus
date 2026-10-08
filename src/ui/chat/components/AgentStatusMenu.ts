@@ -12,7 +12,7 @@
 
 import { setIcon, Component, Events } from 'obsidian';
 import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
-import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
+import type { SubagentStatusSource } from '../../../types/branch/BranchTypes';
 import type { SubagentExecutorEvents } from '../../../types/branch/BranchTypes';
 
 export interface AgentStatusMenuCallbacks {
@@ -79,7 +79,7 @@ export class AgentStatusMenu {
 
   constructor(
     private container: HTMLElement,
-    private subagentExecutor: SubagentExecutor | null,
+    private subagentExecutor: SubagentStatusSource | null,
     private callbacks: AgentStatusMenuCallbacks,
     private component: Component,
     private insertBefore?: HTMLElement // Insert before this element (e.g., settings button)
@@ -138,7 +138,7 @@ export class AgentStatusMenu {
   /**
    * Update the executor reference (if initialized later)
    */
-  setSubagentExecutor(executor: SubagentExecutor): void {
+  setSubagentExecutor(executor: SubagentStatusSource): void {
     this.subagentExecutor = executor;
     this.updateDisplay();
   }

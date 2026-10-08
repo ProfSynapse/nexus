@@ -27,7 +27,8 @@ import {
   SecretStore,
   appCredentialSecretId,
   llmApiKeySecretId,
-  llmOAuthRefreshSecretId
+  llmOAuthRefreshSecretId,
+  remoteAgentApiKeySecretId
 } from './SecretStore';
 
 /**
@@ -96,6 +97,15 @@ function collectSecretFields(settings: MCPSettings): SecretFieldRef[] {
     }
   }
 
+  for (const connection of settings.remoteAgents ?? []) {
+    refs.push({
+      id: remoteAgentApiKeySecretId(connection.id),
+      clearWhenEmpty: true,
+      read: () => connection.apiKey,
+      write: (value) => { connection.apiKey = value; }
+    });
+  }
+
   return refs;
 }
 
@@ -148,7 +158,7 @@ export function stripSecretsForPersist(
       // An endpoint can intentionally switch from bearer auth to no auth.
       // Otherwise hydration would restore its previous stored credential.
       if (field.clearWhenEmpty && store.get(field.id) && !store.clear(field.id)) {
-        throw new Error('Failed to clear the stored OpenAI-compatible API key');
+        throw new Error(`Failed to clear the stored ${field.id.startsWith('nexus-remote-agent-') ? 'remote agent' : 'OpenAI-compatible'} API key`);
       }
       field.write('');
       continue;

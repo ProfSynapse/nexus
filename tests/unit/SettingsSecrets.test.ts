@@ -55,6 +55,26 @@ function settingsWithSecrets(): MCPSettings {
 }
 
 describe('SettingsSecrets boundary (unit)', () => {
+  it('isolates, strips, hydrates and explicitly clears remote credentials', () => {
+    const { api } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    settings.remoteAgents = [
+      { id: 'home', connector: 'hermes', displayName: 'Home', baseUrl: 'https://one.example/v1', enabled: true, apiKey: 'remote-key' },
+      { id: 'work', connector: 'hermes', displayName: 'Work', baseUrl: 'https://two.example/v1', enabled: true, apiKey: 'work-key' },
+    ];
+    const saved = stripSecretsForPersist(settings, store).settings;
+    expect(saved.remoteAgents?.map(c => c.apiKey)).toEqual(['', '']);
+    expect(settings.remoteAgents[0].apiKey).toBe('remote-key');
+    hydrateSecrets(saved, store);
+    expect(saved.remoteAgents?.map(c => c.apiKey)).toEqual(['remote-key', 'work-key']);
+    settings.remoteAgents[0].apiKey = '';
+    const cleared = stripSecretsForPersist(settings, store).settings;
+    hydrateSecrets(cleared, store);
+    expect(cleared.remoteAgents?.map(c => c.apiKey)).toEqual(['', 'work-key']);
+    expect(cleared.llmProviders?.providers.openai.apiKey).toBe('sk-openai');
+  });
+
   it('clears an endpoint key when switching to no authentication, without clearing another endpoint', () => {
     const { api, map } = createMockSecretStorage();
     const store = new SecretStore({ secretStorage: api });

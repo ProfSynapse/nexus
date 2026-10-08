@@ -86,3 +86,5 @@ skill.
 
 - 2026-10-07 | Generic provider startup graph passed the mobile import checker; transport reuses Obsidian requestUrl for buffered mobile responses, with unit coverage for abort/late-result suppression. No physical-phone test was available. | No procedure change.
 - 2026-10-03: No change. Core migration introduced no production Node imports; the reachability check remained clean.
+
+- 2026-10-07 | Remote-agent implementation added no Node dependency to the mobile runtime; static reachability check passed. | No procedure change; physical-device behavior remains unverified.

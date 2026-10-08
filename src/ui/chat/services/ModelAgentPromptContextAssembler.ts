@@ -11,6 +11,7 @@ import type {
   ContextStatusInfo,
   SystemPromptBuilder,
   ToolCatalogEntry,
+  RemoteAgentPromptInfo,
 } from './SystemPromptBuilder';
 
 interface ContextTokenTrackerLike {
@@ -60,6 +61,7 @@ export interface ModelAgentMessageOptions {
 interface ModelAgentPromptContextAssemblerDependencies {
   systemPromptBuilder: Pick<SystemPromptBuilder, 'build'>;
   getSessionId: () => Promise<string | undefined>;
+  getRemoteAgents?: () => RemoteAgentPromptInfo[];
   getToolCatalog?: () => ToolCatalogEntry[];
   restoreWorkflow?: (sessionId: string) => Promise<ServiceResult<PreparedWorkflow | null>>;
   prepareIndividualSkills?: (sessionId: string, workflow: PreparedWorkflow | null) => Promise<{ skills: PreparedInstruction[]; tools: CliToolSchema[] }>;
@@ -94,6 +96,7 @@ export class ModelAgentPromptContextAssembler {
       compactionFrontier: snapshot.compactionFrontier,
       legacyCompactionRecord: snapshot.latestCompactionRecord,
       toolCatalog: this.deps.getToolCatalog?.(),
+      remoteAgents: this.deps.getRemoteAgents?.(),
     });
     if ((preparedWorkflow || individual.skills.length) && snapshot.selectedModel && Math.ceil((prompt?.length ?? 0) / 4) > Math.max(0, snapshot.selectedModel.contextWindow - (snapshot.contextTokenTracker?.getStatus().usedTokens ?? 0) - 2048)) {
       throw new Error('Loaded instructions and tools exceed this model context budget. Load fewer skills or choose a larger model.');

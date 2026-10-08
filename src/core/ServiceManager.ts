@@ -109,6 +109,9 @@ export class ServiceManager implements IServiceManager {
     private isStarted = false;
     private isInitializing = false;
     private initializationPromise: Promise<void> | null = null;
+    private backgroundTimer: number | null = null;
+    private stopped = false;
+    private stopPromise: Promise<void> | null = null;
     
     constructor(
         private app: App,
@@ -190,6 +193,7 @@ export class ServiceManager implements IServiceManager {
      * Get service instance - unified retrieval method
      */
     async getService<T>(name: string): Promise<T> {
+        if (this.stopped) throw new Error('Service manager has stopped');
         try {
             return await this.container.get<T>(name);
         } catch (error) {
@@ -215,6 +219,7 @@ export class ServiceManager implements IServiceManager {
     }
 
     async initializeServices(): Promise<void> {
+        if (this.stopped) return;
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
@@ -238,9 +243,13 @@ export class ServiceManager implements IServiceManager {
     private async performInitialization(): Promise<void> {
         try {
             await this.initializeStage(ServiceStage.IMMEDIATE);
+            if (this.stopped) return;
             await this.initializeStage(ServiceStage.FAST);
+            if (this.stopped) return;
 
-            window.setTimeout(() => {
+            this.backgroundTimer = window.setTimeout(() => {
+                this.backgroundTimer = null;
+                if (this.stopped) return;
                 this.initializeStage(ServiceStage.BACKGROUND).catch(error => {
                     console.error('[ServiceManager] Background service initialization failed:', error);
                 });
@@ -256,6 +265,7 @@ export class ServiceManager implements IServiceManager {
      * Initialize all services in a specific stage
      */
     async initializeStage(stage: ServiceStage): Promise<void> {
+        if (this.stopped) return;
         const serviceNames = this.getServicesByStage(stage);
         if (serviceNames.length === 0) {
             return;
@@ -329,7 +339,7 @@ export class ServiceManager implements IServiceManager {
      * Start the service manager
      */
     async start(): Promise<void> {
-        if (this.isStarted) {
+        if (this.stopped || this.isStarted) {
             return;
         }
         
@@ -343,17 +353,18 @@ export class ServiceManager implements IServiceManager {
     /**
      * Stop the service manager
      */
-    async stop(): Promise<void> {
-        if (!this.isStarted) {
-            return;
-        }
-        
-        // Service manager stopping
-        
-        // Stop services in reverse dependency order
-        await this.cleanup();
-        
+    stop(): Promise<void> {
+        if (this.stopPromise) return this.stopPromise;
+        this.stopped = true;
         this.isStarted = false;
+        if (this.backgroundTimer !== null) {
+            window.clearTimeout(this.backgroundTimer);
+            this.backgroundTimer = null;
+        }
+        // The normal plugin path initializes services lazily without start().
+        // Those instances still own timers and must always be cleaned up.
+        this.stopPromise = this.cleanup();
+        return this.stopPromise;
     }
 
     /**

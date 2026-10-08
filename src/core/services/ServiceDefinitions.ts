@@ -643,6 +643,36 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     },
 
     {
+        name: 'remoteAgentRegistry',
+        create: defineService(async (context) => {
+            const { RemoteAgentConnectionRegistry } = await import('../../services/remoteAgents/RemoteAgentConnectionRegistry');
+            return new RemoteAgentConnectionRegistry(() => context.settings.settings.remoteAgents ?? []);
+        })
+    },
+
+    {
+        name: 'remoteAgentJobs',
+        dependencies: ['hybridStorageAdapter', 'remoteAgentRegistry', 'agentManager'],
+        create: defineService(async (context) => {
+            const { RemoteAgentJobService } = await import('../../services/remoteAgents/RemoteAgentJobService');
+            const { RemoteAgentJobRepository } = await import('../../database/repositories/RemoteAgentJobRepository');
+            const storage = await context.serviceManager.getService<IStorageAdapter>('hybridStorageAdapter');
+            const registry = await context.serviceManager.getService<import('../../services/remoteAgents/RemoteAgentConnectionRegistry').RemoteAgentConnectionRegistry>('remoteAgentRegistry');
+            const agentManager = await context.serviceManager.getService<AgentManager>('agentManager');
+            if (!storage || !registry) throw new Error('Remote agent dependencies are unavailable');
+            const service = new RemoteAgentJobService({
+                repository: new RemoteAgentJobRepository(storage),
+                registry,
+                vaultName: context.app.vault.getName(),
+                onError: () => console.error('[Remote agents] Job recovery or delivery failed; the saved job will be retried.'),
+            });
+            const promptManager = agentManager?.getAgent('promptManager') as import('../../agents/promptManager/promptManager').PromptManagerAgent | undefined;
+            promptManager?.setRemoteAgentJobs(service);
+            return service;
+        })
+    },
+
+    {
         name: 'workflowRunService',
         dependencies: ['chatService', 'workspaceService', 'customPromptStorageService', 'workflowPreparationService', 'sessionWorkflowService'],
         create: defineService(async (context) => {

@@ -156,6 +156,15 @@ export interface AgentStatusItem {
   startedAt: number;
   completedAt?: number;
   lastToolUsed?: string;
+  remoteTargetId?: string;
+  remoteStatus?: string;
+  remoteError?: string;
+}
+
+/** Shared status surface for local executors and durable remote jobs. */
+export interface SubagentStatusSource {
+  getAgentStatusList(): AgentStatusItem[];
+  cancelSubagent(subagentId: string): boolean | Promise<boolean>;
 }
 
 /**

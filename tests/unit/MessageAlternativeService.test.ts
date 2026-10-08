@@ -351,6 +351,18 @@ describe('MessageAlternativeService', () => {
   // ==========================================================================
 
   describe('success path', () => {
+    it('keeps independent remote replies in the parent when retry moves ordinary continuations', async () => {
+      const remote = createAssistantMessage({ id: 'remote-reply', metadata: { type: 'subagent_result', remoteJobId: 'remote_job' } });
+      const continuation = createAssistantMessage({ id: 'follow-up' });
+      const ai = createAssistantMessage({ id: 'msg_ai', branches: [{ id: 'branch_new', type: 'human',
+        inheritContext: true, messages: [], created: 1000, updated: 1000 }] });
+      const conversation = createConversation({ messages: [createUserMessage({ id: 'msg_user' }), ai, continuation, remote] });
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+      expect(conversation.messages.map(message => message.id)).toEqual(['msg_user', 'msg_ai', 'remote-reply']);
+      expect(mockBranchManager.addMessagesToBranch).toHaveBeenCalledWith('branch_new', [continuation]);
+      expect(ai.branches?.[0].messages).not.toContain(remote);
+    });
+
     it('should save conversation after streaming completes', async () => {
       const conversation = createConversation({
         messages: [

@@ -24,6 +24,7 @@ export class ServiceRegistrar {
 
     // Pending timer handle for deferred migration work
     private migrationTimer: number | null = null;
+    private stopped = false;
 
     constructor(context: ServiceCreationContext) {
         this.context = context;
@@ -107,11 +108,13 @@ export class ServiceRegistrar {
      * Heavy migration work is deferred to background to avoid blocking startup.
      */
     async initializeDataDirectories(): Promise<void> {
+        if (this.stopped) return;
         try {
             const { app, plugin, settings, serviceManager } = this.context;
 
             // Get vaultOperations service with proper typing
             const vaultOperations = await serviceManager.getService<VaultOperations>('vaultOperations');
+            if (this.stopped) return;
 
             // Use the actual installed plugin folder, not manifest.id, so legacy
             // installs under claudesidian-mcp do not recreate a nexus folder.
@@ -125,6 +128,8 @@ export class ServiceRegistrar {
             } catch {
                 // Directories may already exist
             }
+
+            if (this.stopped) return;
 
             // Update settings with correct path
             if (!settings.settings.memory) {
@@ -315,6 +320,7 @@ export class ServiceRegistrar {
      * migration callbacks from firing after the plugin has been unloaded.
      */
     shutdown(): void {
+        this.stopped = true;
         if (this.migrationTimer !== null) {
             window.clearTimeout(this.migrationTimer);
             this.migrationTimer = null;

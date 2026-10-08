@@ -35,6 +35,7 @@ function harness() {
     pendingTimers: number[];
     serviceRegistrar: unknown;
     settingsTabManager: unknown;
+    backgroundProcessor: unknown;
     initializeEmbeddingsWhenReady(adapter: HybridStorageAdapter): Promise<void>;
     startBackgroundInitialization(): Promise<void>;
   };
@@ -47,6 +48,7 @@ function harness() {
   internals.pendingTimers = [];
   internals.serviceRegistrar = registrar;
   internals.settingsTabManager = { cleanup: jest.fn() };
+  internals.backgroundProcessor = { shutdown: jest.fn().mockResolvedValue(undefined) };
   return { lifecycle, internals, adapter, services, registrar, loadSettings };
 }
 

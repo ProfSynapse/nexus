@@ -23,6 +23,7 @@ import { BranchManager } from './BranchManager';
 import { MessageStreamHandler } from './MessageStreamHandler';
 import { AbortHandler } from '../utils/AbortHandler';
 import { filterCompletedToolCalls } from '../utils/toolCallUtils';
+import { isRemoteAgentReply } from '../../../utils/remoteAgentMessages';
 
 export interface MessageAlternativeServiceEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -129,7 +130,11 @@ export class MessageAlternativeService {
       // 1b. Collect and move continuation messages (e.g. tool-call follow-ups)
       //     that follow the retried AI message into the branch so they don't
       //     linger as stale content after the new response streams in.
-      const continuationMessages = conversation.messages.splice(aiMessageIndex + 1);
+      const followingMessages = conversation.messages.splice(aiMessageIndex + 1);
+      // Background job replies are independent of the response being retried.
+      // Keep them in their originating chat instead of copying them into an alternative.
+      conversation.messages.push(...followingMessages.filter(isRemoteAgentReply));
+      const continuationMessages = followingMessages.filter(message => !isRemoteAgentReply(message));
       if (continuationMessages.length > 0 && branchId) {
         const targetBranch = aiMessage.branches?.find(b => b.id === branchId);
         if (targetBranch) {

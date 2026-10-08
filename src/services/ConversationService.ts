@@ -9,6 +9,7 @@
 // The adapter is prioritized if available, otherwise falls back to legacy.
 
 import { Plugin } from 'obsidian';
+import { isRemoteAgentReply } from '../utils/remoteAgentMessages';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
 import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata } from '../types/storage/StorageTypes';
@@ -508,7 +509,10 @@ export class ConversationService {
           const existingById = new Map(existingMessages.map(m => [m.id, m]));
 
           for (const existingMessage of existingMessages) {
-            if (!nextMessageIds.has(existingMessage.id)) {
+            // Remote jobs append replies independently of foreground chat snapshots.
+            // An absent reply may have arrived after that snapshot was read; only an
+            // explicit message/conversation deletion is allowed to remove it.
+            if (!nextMessageIds.has(existingMessage.id) && !isRemoteAgentReply(existingMessage)) {
               await adapter.deleteMessage(id, existingMessage.id);
             }
           }
@@ -596,8 +600,8 @@ export class ConversationService {
    * full objects enable content/state comparison that avoids redundant writes
    * (the data is already fetched by adapter.getMessages, so this is free).
    */
-  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number }>> {
-    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number }> = [];
+  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number; metadata?: MessageData['metadata'] }>> {
+    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number; metadata?: MessageData['metadata'] }> = [];
     let page = 0;
     let hasNextPage = true;
 
@@ -615,6 +619,7 @@ export class ConversationService {
         reasoningSegments: serializeReasoningSegments(message.reasoningSegments),
         toolCallId: message.toolCallId,
         activeAlternativeIndex: message.activeAlternativeIndex,
+        metadata: message.metadata,
       })));
       hasNextPage = !!result.hasNextPage;
       page += 1;

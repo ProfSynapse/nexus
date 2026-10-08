@@ -1,3 +1,5 @@
+import { SubagentTool } from '../../promptManager/tools/subagent';
+import type { SubagentToolParams } from '../../promptManager/tools/subagent';
 import { App } from 'obsidian';
 import { IAgent } from '../../interfaces/IAgent';
 import { CommonResult } from '../../../types';
@@ -277,9 +279,9 @@ export class ToolBatchExecutionService {
               replayPolicy: executionPolicy?.replay
                 ?? getRegisteredToolExecutionPolicy(call.agent, call.tool).replay,
             },
-            () => this.executeCall(context, call)
+            () => this.executeCall(context, call, options)
           )
-        : await this.executeCall(context, call);
+        : await this.executeCall(context, call, options);
       options.observer?.onStepCompleted?.({
         ...stepEvent,
         result
@@ -414,7 +416,7 @@ export class ToolBatchExecutionService {
     }
   }
 
-  private async executeCall(context: ToolContext, call: ToolCallParams): Promise<ToolCallResult> {
+  private async executeCall(context: ToolContext, call: ToolCallParams, options: ToolBatchExecutionOptions): Promise<ToolCallResult> {
     const { agent: agentName, tool: toolSlug } = call;
 
     const callWithAny = call as ToolCallParams & { parameters?: Record<string, unknown> };
@@ -463,7 +465,16 @@ export class ToolBatchExecutionService {
     }
 
     try {
-      const toolResult = await toolInstance.execute(params || {}) as CommonResult;
+      const toolResult = toolInstance instanceof SubagentTool
+        ? await toolInstance.execute(params as unknown as SubagentToolParams, {
+            conversationId: options.conversationId || '',
+            messageId: options.messageId || '',
+            workspaceId: context.workspaceId,
+            sessionId: context.sessionId,
+            source: options.operationOrigin === 'external-mcp' || !options.operationOrigin ? 'mcp' : 'internal',
+            isSubagentBranch: options.operationOrigin === 'subagent',
+          })
+        : await toolInstance.execute(params || {}) as CommonResult;
 
       const result: ToolCallResult = {
         agent: agentName,

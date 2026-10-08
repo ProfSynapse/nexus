@@ -467,6 +467,9 @@ export interface IStorageAdapter {
     options?: PaginationParams
   ): Promise<PaginatedResult<MessageData>>;
 
+  /** Exact lookup for durable delivery deduplication without loading a transcript. */
+  getMessage?(id: string): Promise<MessageData | null>;
+
   /**
    * Add a new message to a conversation
    *

@@ -76,7 +76,9 @@ describe('ChatSubagentIntegration', () => {
 
     const createPreservationService = jest.fn(() => preservationService as never);
 
+    let generating = false;
     const integration = new ChatSubagentIntegration({
+      isGenerating: () => generating,
       app: {} as App,
       component: {} as Component,
       getChatService: () => ({
@@ -142,6 +144,15 @@ describe('ChatSubagentIntegration', () => {
     expect(capturedEvents).not.toBeNull();
     await capturedEvents?.onConversationNeedsRefresh?.('conv-1');
     expect(conversationManager.selectConversation).toHaveBeenCalledWith(currentConversation);
+    conversationManager.selectConversation.mockClear();
+    generating = true;
+    await capturedEvents?.onConversationNeedsRefresh?.('conv-1');
+    expect(conversationManager.selectConversation).not.toHaveBeenCalled();
+    generating = false;
+    integration.flushPendingRefresh();
+    expect(conversationManager.selectConversation).toHaveBeenCalledTimes(1);
+    integration.flushPendingRefresh();
+    expect(conversationManager.selectConversation).toHaveBeenCalledTimes(1);
 
     expect(subagentController.setNavigationCallbacks).toHaveBeenCalledTimes(1);
     capturedNavigationCallbacks?.onNavigateToBranch('branch-1');

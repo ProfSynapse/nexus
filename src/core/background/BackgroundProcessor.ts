@@ -25,6 +25,9 @@ export interface BackgroundProcessorConfig {
 export class BackgroundProcessor {
     private config: BackgroundProcessorConfig;
     private hasRunBackgroundStartup = false;
+    private startupTimer: number | null = null;
+    private startupPromise: Promise<void> | null = null;
+    private stopped = false;
 
     constructor(config: BackgroundProcessorConfig) {
         this.config = config;
@@ -35,14 +38,27 @@ export class BackgroundProcessor {
      */
     startBackgroundStartupProcessing(): void {
         // Prevent multiple background startup processes
-        if (this.hasRunBackgroundStartup) {
+        if (this.stopped || this.hasRunBackgroundStartup || this.startupTimer !== null) {
             return;
         }
         
         // Run startup processing in background without blocking plugin initialization
-        window.setTimeout(() => {
-            void this.runBackgroundStartup();
+        this.startupTimer = window.setTimeout(() => {
+            this.startupTimer = null;
+            if (this.stopped) return;
+            this.startupPromise = this.runBackgroundStartup().finally(() => {
+                this.startupPromise = null;
+            });
         }, 2000); // 2 second delay to ensure Obsidian is fully loaded
+    }
+
+    async shutdown(): Promise<void> {
+        this.stopped = true;
+        if (this.startupTimer !== null) {
+            window.clearTimeout(this.startupTimer);
+            this.startupTimer = null;
+        }
+        await this.startupPromise;
     }
 
     validateSearchFunctionality(): void {
@@ -97,17 +113,27 @@ export class BackgroundProcessor {
     private async runBackgroundStartup(): Promise<void> {
         try {
             // Double-check to prevent race conditions
-            if (this.hasRunBackgroundStartup) {
+            if (this.stopped || this.hasRunBackgroundStartup) {
                 return;
             }
 
             this.hasRunBackgroundStartup = true;
 
+            const remoteRegistry = await this.config.getService<{ start: () => void | Promise<void> }>('remoteAgentRegistry');
+            if (this.stopped) return;
+            const remoteJobs = await this.config.getService<{ start: () => Promise<void> }>('remoteAgentJobs');
+            if (this.stopped) return;
+            // Independent recovery services must not prevent workflow startup on a connection failure.
+            await Promise.allSettled([remoteRegistry?.start(), remoteJobs?.start()]);
+            if (this.stopped) return;
+
             const workflowScheduleService = await this.config.getService<{ start: () => Promise<void> }>('workflowScheduleService');
+            if (this.stopped) return;
             if (workflowScheduleService) {
                 await workflowScheduleService.start();
             }
         } catch (error) {
+            if (this.stopped) return;
             console.error('Error in background startup processing:', error);
             // Reset flag on error so it can be retried
             this.hasRunBackgroundStartup = false;

@@ -5,6 +5,27 @@ type SqliteCacheLike = {
 };
 
 describe('ConversationEventApplier', () => {
+  it.each([
+    { type: 'subagent_result', remoteJobId: 'job-1', branchId: 'branch-1', details: { success: true } },
+    undefined
+  ])('replays message metadata including legacy events without it (%j)', async metadata => {
+    const sqliteCache = { run: jest.fn(async (_sql: string, _params: unknown[]) => undefined) };
+    const applier = new ConversationEventApplier(sqliteCache);
+    const event = {
+      id: 'evt-message-1', type: 'message' as const, deviceId: 'device-1', timestamp: 123456,
+      conversationId: 'conv-1',
+      data: { id: 'msg-1', role: 'assistant' as const, content: 'Remote reply', sequenceNumber: 1, metadata }
+    };
+
+    await applier.apply(event);
+
+    const [sql, values] = sqliteCache.run.mock.calls[0];
+    const columns = /\(([^)]+)\)/.exec(sql)?.[1].split(',').map(column => column.trim()) ?? [];
+    expect(columns).toContain('metadataJson');
+    expect(values).toHaveLength(columns.length);
+    expect(values[columns.indexOf('metadataJson')]).toEqual(metadata ? JSON.stringify(metadata) : null);
+  });
+
   it('applies message_deleted events to SQLite cache', async () => {
     const sqliteCache = {
       run: jest.fn(async () => undefined)

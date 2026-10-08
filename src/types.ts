@@ -99,6 +99,7 @@ export const DEFAULT_SETTINGS: MCPSettings = {
   storage: DEFAULT_STORAGE_SETTINGS,
   customPrompts: DEFAULT_CUSTOM_PROMPTS_SETTINGS,
   llmProviders: DEFAULT_LLM_PROVIDER_SETTINGS,
+  remoteAgents: [],
   lastUpdateVersion: undefined,
   lastUpdateDate: undefined,
   availableUpdateVersion: undefined,

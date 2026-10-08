@@ -170,6 +170,7 @@ export class ChatView extends ItemView {
       app: this.app,
       component: this,
       getChatService: () => this.chatService ?? null,
+      isGenerating: () => this.messageManager?.getIsLoading() ?? false,
       getConversationManager: () => this.conversationManager ?? null,
       getModelAgentManager: () => this.modelAgentManager ?? null,
       getStreamingController: () => this.streamingController ?? null,
@@ -1047,6 +1048,7 @@ export class ChatView extends ItemView {
       // (send, retry, alternative), making the subscription unconditional.
       this.toolEventCoordinator.beginTurn();
     } else {
+      this.subagentIntegration.flushPendingRefresh();
       this.workingIndicatorController.end();
       // Uniform teardown: MessageManager's finally block funnels completion,
       // abort AND error through here, so an errored turn (which never emits

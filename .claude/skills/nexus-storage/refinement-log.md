@@ -127,3 +127,6 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
   | references/failure-modes.md.
 
 - 2026-10-03: No change. Durable settings authority and the real SQLite rebuild test followed the existing persistence/rebuild protocol.
+- 2026-10-07 | Remote jobs use existing branch metadata and deterministic message IDs; isolated real-app JSONL replay restored job and delivery state. | No procedure change.
+
+- 2026-10-07 | Live SQLite rejected metadataJson although the TypeScript row interface declared it. Source DDL had no message metadata column. | Added schema v18 and fresh/upgrade/replay checks in implementation; no skill procedure change, since change-schema already requires both actual runtime paths.

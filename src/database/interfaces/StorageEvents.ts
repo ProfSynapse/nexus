@@ -453,6 +453,8 @@ export interface MessageEvent extends BaseStorageEvent {
     tool_call_id?: string;
     /** Message lifecycle state */
     state?: string;
+    /** Durable message identity and application metadata */
+    metadata?: Record<string, unknown>;
     /** Reasoning/thinking content (for extended thinking models) */
     reasoning?: string;
     /** That reasoning split into the runs the model emitted, anchored to content offsets */

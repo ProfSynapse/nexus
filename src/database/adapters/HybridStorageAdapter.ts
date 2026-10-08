@@ -1043,6 +1043,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.messageRepo.getMessages(conversationId, options);
   };
 
+  getMessage = async (id: string): Promise<MessageData | null> => {
+    await this.ensureInitialized();
+    return this.messageRepo.getById(id);
+  };
+
   addMessage = async (
     conversationId: string,
     message: Omit<MessageData, 'id' | 'conversationId' | 'sequenceNumber'> & { id?: string }

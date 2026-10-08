@@ -3042,6 +3042,69 @@ a:hover {
     align-items: center;
 }
 
+/* Remote agent connections; see remote-agents-plan.md. */
+.nexus-remote-agent-cards {
+    margin-top: var(--space-l);
+}
+
+.nexus-remote-agent-modal .nexus-remote-agent-url {
+    width: 300px;
+    max-width: 100%;
+}
+
+.nexus-remote-agent-description {
+    width: 280px;
+    max-width: 100%;
+    min-height: 90px;
+}
+
+.nexus-remote-agent-feedback {
+    margin-top: var(--space-m);
+}
+
+.nexus-remote-agent-address {
+    overflow-wrap: anywhere;
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-remote-agent-status {
+    margin-top: var(--space-s);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-remote-agent-status.is-available {
+    color: var(--text-success);
+}
+
+.nexus-remote-agent-status.is-unavailable {
+    color: var(--text-error);
+}
+
+.nexus-remote-agent-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-top: var(--space-l);
+}
+
+body.is-mobile .nexus-remote-agent-modal .setting-item {
+    flex-wrap: wrap;
+}
+
+body.is-mobile .nexus-remote-agent-modal .setting-item-control {
+    width: 100%;
+}
+
+body.is-mobile .nexus-remote-agent-modal input,
+body.is-mobile .nexus-remote-agent-modal textarea,
+body.is-mobile .nexus-remote-agent-modal button {
+    min-height: 44px;
+    max-width: 100%;
+}
+
 /* Generic endpoint settings; see openai-compatible-provider-plan.md. */
 .nexus-compatible-modal .setting-item-control {
     min-width: 0;

@@ -442,6 +442,10 @@ export class PromptManagerAgent extends BaseAgent {
    * @param executor The SubagentExecutor instance
    * @param contextProvider Function that provides execution context
    */
+  setRemoteAgentJobs(service: import('../../services/remoteAgents/RemoteAgentJobService').RemoteAgentJobService): void {
+    this.subagentTool.setRemoteAgentJobs(service);
+  }
+
   setSubagentExecutor(
     executor: SubagentExecutor,
     contextProvider: () => SubagentToolContext

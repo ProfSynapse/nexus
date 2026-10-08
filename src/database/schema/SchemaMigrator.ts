@@ -75,7 +75,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 export interface Migration {
   version: number;
@@ -644,6 +644,16 @@ export const MIGRATIONS: Migration[] = [
     // NULL already renders correctly (falls back to flat reasoningContent), and
     // the offsets exist only in the live stream, so a replay would restore
     // nothing a NULL does not already say.
+    requiresRebuild: false
+  },
+  {
+    version: 18,
+    description: 'Add metadataJson to messages so durable result identity survives reload and replay',
+    sql: [
+      'ALTER TABLE messages ADD COLUMN metadataJson TEXT'
+    ],
+    // Older message events did not record metadata, so a replay cannot recover
+    // it. Existing rows remain NULL; new events populate this additive column.
     requiresRebuild: false
   },
 ];

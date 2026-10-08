@@ -153,7 +153,11 @@ Obsidian (the headless container) to turn a skip into a failure.
      Launch the async operation into a uniquely named `window` status object,
      catch rejection into that object, return a synchronous acknowledgement,
      and poll it with separate synchronous `eval` calls and a deadline. An
-     empty result is not success.
+     empty result is not success. Immediately after plugin reload, even a
+     synchronous read may briefly return nothing while the renderer/services
+     initialize. Use a bounded, read-only in-band readiness probe before sending
+     mutations. Do not blindly retry a mutating expression whose acknowledgement
+     was lost: it may already have executed.
 
      Settings can live in a separate native window. In that case `document`
      and `dev:screenshot` target the main vault window even while the settings

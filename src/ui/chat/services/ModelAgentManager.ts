@@ -1,3 +1,4 @@
+import type { RemoteAgentConnectionRegistry } from '../../../services/remoteAgents/RemoteAgentConnectionRegistry';
 /**
  * ModelAgentManager - Handles model and agent selection, loading, and state management
  * Refactored to use extracted utilities following SOLID principles
@@ -123,6 +124,11 @@ export class ModelAgentManager {
       getSessionId: async () => await this.getCurrentSessionId(),
       restoreWorkflow: sessionId => this.workspaceIntegration.restoreWorkflow(sessionId),
       prepareIndividualSkills: (sessionId, workflow) => this.workspaceIntegration.prepareIndividualSkills(sessionId, workflow),
+      getRemoteAgents: () => {
+        const plugin = getNexusPlugin(this.app) as { getServiceIfReady?<T>(name: string): T | null } | null;
+        return plugin?.getServiceIfReady?.<RemoteAgentConnectionRegistry>('remoteAgentRegistry')
+          ?.getAvailable().map(({ id, displayName, description }) => ({ id, displayName, description })) ?? [];
+      },
       getToolCatalog: () => {
         try {
           const plugin = getNexusPlugin(this.app) as { getServiceIfReady?<T>(name: string): T | null } | null;
