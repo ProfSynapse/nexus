@@ -53,6 +53,11 @@ export function llmApiKeySecretId(providerId: string): string {
   return `${ID_PREFIX}-llm-${normalizeSecretIdFragment(providerId)}-apikey`;
 }
 
+/** Separate namespace for remote agent credentials. */
+export function remoteAgentApiKeySecretId(connectionId: string): string {
+  return `${ID_PREFIX}-remote-agent-${normalizeSecretIdFragment(connectionId)}-apikey`;
+}
+
 /** Secret id for an LLM provider OAuth refresh token: `nexus-llm-<providerId>-oauth-refresh`. */
 export function llmOAuthRefreshSecretId(providerId: string): string {
   return `${ID_PREFIX}-llm-${normalizeSecretIdFragment(providerId)}-oauth-refresh`;

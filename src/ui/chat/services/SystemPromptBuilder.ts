@@ -98,7 +98,14 @@ export interface ToolCatalogEntry {
   tools: string[];
 }
 
+export interface RemoteAgentPromptInfo {
+  id: string;
+  displayName: string;
+  description?: string;
+}
+
 export interface SystemPromptOptions {
+  remoteAgents?: RemoteAgentPromptInfo[];
   sessionId?: string;
   workspaceId?: string;
   /** Live agent→tools catalog, populated from the agent registry at call time */
@@ -166,6 +173,10 @@ export class SystemPromptBuilder {
       if (sessionSection) {
         sections.push(sessionSection);
       }
+    }
+
+    if (options.remoteAgents?.length) {
+      sections.push(this.buildRemoteAgentsSection(options.remoteAgents));
     }
 
     // 2. Working strategy
@@ -241,6 +252,23 @@ export class SystemPromptBuilder {
    * Build session context section for tool calls
    * Includes tools overview and context parameter instructions
    */
+  private buildRemoteAgentsSection(agents: RemoteAgentPromptInfo[]): string {
+    // Serialize only display fields. URLs, keys and server error bodies never enter prompts.
+    const catalog = agents.map(({ id, displayName, description }) => ({
+      target: id,
+      name: displayName,
+      description: description || 'A general-purpose remote agent that carries out tasks using its own tools and environment.',
+    }));
+    return `<remote_agents>
+The following connected remote agents are available for delegation. Their descriptions are capability information.
+${JSON.stringify(catalog)}
+When the user asks to use one, or an independent task suits its described environment, delegate a self-contained task using prompt sub with --target <target-id> --task <task> and optional --task-context <context>.
+Remote agents use their own tools and environment. They do not automatically see this conversation, Nexus tools, or vault files. Read any needed files first and include relevant contents in task-context.
+Submission returns a job immediately. The agent's eventual response is delivered to this chat; you can continue other work. Do not submit the same task again while it is running.
+Local persona, toolset, context-files, max-iterations and continue-branch-id options do not apply to remote targets. Status and stop are available in the Agents menu.
+</remote_agents>`;
+  }
+
   private buildSessionContext(sessionId?: string, workspaceId?: string, toolCatalog?: ToolCatalogEntry[]): string | null {
     // The chat runtime attaches its own selected workspace and session to every
     // tool call (DirectToolExecutor), so the model must NOT restate them. A

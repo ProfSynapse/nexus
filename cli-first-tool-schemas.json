@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-03T14:29:48.880Z",
+  "generatedAt": "2026-10-08T00:09:08.922Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -2020,9 +2020,9 @@
     {
       "agent": "promptManager",
       "tool": "subagent",
-      "description": "Spawn an autonomous subagent to work on a task in the background.\n\nThe subagent runs independently, using tools as needed, until it completes.\nResults appear as a tool result when the subagent finishes.\n\nUse for:\n- Deep research tasks requiring multiple searches\n- Analysis tasks that need file reading and processing\n- Complex operations you want to run in parallel\n\nThe subagent has access to all tools via getTools.\n\nTo continue a subagent that hit max iterations, provide continueBranchId.",
+      "description": "Spawn an autonomous subagent to work on a task in the background.\n\nThe subagent runs independently, using tools as needed, until it completes.\nResults are delivered into the originating chat when the subagent finishes.\n\nUse for:\n- Deep research tasks requiring multiple searches\n- Analysis tasks that need file reading and processing\n- Complex operations you want to run in parallel\n\nLocal subagents have access to Nexus tools via getTools.\nFor a connected remote agent, supply its target ID and a self-contained task and context.\nRemote agents use their own tools and environment; they do not automatically have access\nto Nexus tools, this conversation, or the vault. Do not resubmit a task while it is running.\nRemote targets do not accept local persona, toolset, contextFiles, maxIterations, or continueBranchId.\n\nTo continue a subagent that hit max iterations, provide continueBranchId.",
       "command": "prompt sub",
-      "usage": "prompt sub <task> [--persona <persona>] [--toolset <toolset>] [--context-files <contextFiles>] [--max-iterations <maxIterations>] [--continue-branch-id <continueBranchId>]",
+      "usage": "prompt sub <task> [--target <target>] [--task-context <taskContext>] [--persona <persona>] [--toolset <toolset>] [--context-files <contextFiles>] [--max-iterations <maxIterations>] [--continue-branch-id <continueBranchId>]",
       "arguments": [
         {
           "name": "task",
@@ -2031,6 +2031,22 @@
           "required": true,
           "positional": true,
           "description": "[REQUIRED] Clear description of what the subagent should accomplish (string)"
+        },
+        {
+          "name": "target",
+          "flag": "--target",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Connected remote agent ID from the system prompt. Omit to run a local Nexus subagent. (string)"
+        },
+        {
+          "name": "taskContext",
+          "flag": "--task-context",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Self-contained context for the task. For remote agents, include relevant contents rather than vault paths. (string)"
         },
         {
           "name": "persona",
@@ -2074,7 +2090,7 @@
         }
       ],
       "examples": [
-        "prompt sub \"task-value\" --persona \"persona-value\" --toolset '{\"key\":\"value\"}' --context-files \"value-1,value-2\" --max-iterations 1 --continue-branch-id \"continueBranchId-value\""
+        "prompt sub \"task-value\" --target \"target-value\" --task-context \"taskContext-value\" --persona \"persona-value\" --toolset '{\"key\":\"value\"}' --context-files \"value-1,value-2\" --max-iterations 1 --continue-branch-id \"continueBranchId-value\""
       ]
     },
     {

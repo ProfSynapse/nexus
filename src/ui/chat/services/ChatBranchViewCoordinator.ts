@@ -230,6 +230,7 @@ export class ChatBranchViewCoordinator {
     }
 
     const contextMetadata = this.currentBranchContext?.metadata;
+    if (isSubagentMetadata(contextMetadata) && contextMetadata.remoteTargetId) return;
     if (isSubagentMetadata(contextMetadata) && contextMetadata.subagentId === subagentId) {
       this.branchHeader?.update({
         metadata: { ...contextMetadata, state: 'cancelled' },

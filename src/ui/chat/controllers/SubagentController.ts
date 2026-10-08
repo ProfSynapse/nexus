@@ -1,3 +1,4 @@
+import type { RemoteAgentJobService } from '../../../services/remoteAgents/RemoteAgentJobService';
 /**
  * SubagentController - Manages subagent infrastructure and lifecycle
  * Location: /src/ui/chat/controllers/SubagentController.ts
@@ -11,7 +12,7 @@
  * branch conversations for subagents and coordinates their execution.
  */
 
-import { App, Component } from 'obsidian';
+import { App, Component, Notice } from 'obsidian';
 import { BranchService } from '../../../services/chat/BranchService';
 import { MessageQueueService } from '../../../services/chat/MessageQueueService';
 import { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
@@ -50,6 +51,7 @@ export interface SubagentControllerDependencies {
   promptManagerAgent: PromptManagerAgent;
   storageAdapter: HybridStorageAdapter;
   llmService: LLMService;
+  remoteAgentJobs?: RemoteAgentJobService;
 }
 
 /**
@@ -77,6 +79,10 @@ export interface SubagentControllerEvents {
 }
 
 export class SubagentController {
+  private remoteAgentJobs?: RemoteAgentJobService;
+  private detachRemoteJobs?: () => void;
+  private readonly displayedRemoteResults = new Set<string>();
+  private contextProvider?: SubagentContextProvider;
   private branchService: BranchService | null = null;
   private messageQueueService: MessageQueueService | null = null;
   private subagentExecutor: SubagentExecutor | null = null;
@@ -160,6 +166,22 @@ export class SubagentController {
     if (this.initialized) return;
 
     try {
+      this.contextProvider = contextProvider;
+      this.remoteAgentJobs = deps.remoteAgentJobs;
+      if (deps.remoteAgentJobs) {
+        deps.promptManagerAgent.setRemoteAgentJobs(deps.remoteAgentJobs);
+        this.detachRemoteJobs = deps.remoteAgentJobs.onChange(job => {
+          getSubagentEventBus().trigger('status-changed');
+          if (job) {
+            this.events.onConversationNeedsRefresh?.(job.branchId);
+            if (job.deliveredAt !== undefined && !this.displayedRemoteResults.has(job.jobId)) {
+              this.displayedRemoteResults.add(job.jobId);
+              this.events.onConversationNeedsRefresh?.(job.parentConversationId);
+            }
+          }
+          this.events.onStatusChanged();
+        });
+      }
       // Create BranchService with ConversationService (unified model)
       // BranchService is now a facade over ConversationService
       const conversationService = deps.chatService.getConversationService() as unknown as ConversationService;
@@ -195,7 +217,7 @@ export class SubagentController {
       if (settingsButtonContainer) {
         this.agentStatusMenu = new AgentStatusMenu(
           settingsButtonContainer,
-          this.subagentExecutor,
+          this,
           { onOpenModal: () => this.openAgentStatusModal(contextProvider) },
           this.component,
           settingsButton
@@ -471,6 +493,14 @@ export class SubagentController {
    * Cancel a running subagent
    */
   cancelSubagent(subagentId: string): boolean {
+    if (this.remoteAgentJobs?.getActiveSubagents().some(job => job.subagentId === subagentId)) {
+      void this.remoteAgentJobs.cancelSubagent(subagentId).catch(() => {
+        console.error('[SubagentController] Could not persist remote stop request');
+        new Notice('Could not save the remote stop request. Please try again.');
+      });
+      // This acknowledges a stop request; actual terminal state comes from the server.
+      return true;
+    }
     if (!this.subagentExecutor) return false;
     const cancelled = this.subagentExecutor.cancelSubagent(subagentId);
     if (cancelled) {
@@ -483,7 +513,13 @@ export class SubagentController {
    * Get agent status list for UI
    */
   getAgentStatusList(): AgentStatusItem[] {
-    return this.subagentExecutor?.getAgentStatusList() || [];
+    const conversation = this.contextProvider?.getCurrentConversation();
+    const parentId = typeof conversation?.metadata?.parentConversationId === 'string'
+      ? conversation.metadata.parentConversationId : conversation?.id;
+    return [
+      ...(this.subagentExecutor?.getAgentStatusList() ?? []),
+      ...(this.remoteAgentJobs?.getActiveSubagents() ?? []),
+    ].filter(job => !parentId || job.conversationId === parentId);
   }
 
   /**
@@ -544,7 +580,7 @@ export class SubagentController {
     const currentConversation = contextProvider.getCurrentConversation();
     const modal = new AgentStatusModal(
       this.app,
-      this.subagentExecutor,
+      this,
       {
         onViewBranch: (branchId) => {
           if (this.navigationCallback) {
@@ -583,7 +619,7 @@ export class SubagentController {
     const currentConversation = contextProvider.getCurrentConversation();
     const modal = new AgentStatusModal(
       this.app,
-      this.subagentExecutor,
+      this,
       callbacks,
       this.branchService,
       currentConversation?.id ?? null
@@ -602,6 +638,11 @@ export class SubagentController {
    * Cleanup resources
    */
   cleanup(): void {
+    this.detachRemoteJobs?.();
+    this.detachRemoteJobs = undefined;
+    this.displayedRemoteResults.clear();
+    this.remoteAgentJobs = undefined;
+    this.contextProvider = undefined;
     this.agentStatusMenu?.cleanup();
     this.subagentExecutor = null;
     this.branchService = null;

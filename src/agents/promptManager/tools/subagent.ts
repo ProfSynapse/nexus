@@ -14,11 +14,16 @@ import { ToolStatusTense } from '../../interfaces/ITool';
 import { verbs, labelNamed } from '../../utils/toolStatusLabels';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 import { CommonParameters, CommonResult } from '../../../types';
+import type { RemoteAgentJobService } from '../../../services/remoteAgents/RemoteAgentJobService';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
 
 export interface SubagentToolParams extends CommonParameters {
   /** Clear description of what the subagent should accomplish */
   task: string;
+  /** Connected remote agent ID; omit for a local Nexus subagent. */
+  target?: string;
+  /** Self-contained context to send with a delegated task. */
+  taskContext?: string;
   /**
    * Optional custom agent/persona name to use.
    *
@@ -76,6 +81,7 @@ export interface SubagentToolContext {
 
 export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResult> {
   private subagentExecutor: SubagentExecutor | null = null;
+  private remoteAgentJobs: RemoteAgentJobService | null = null;
   private contextProvider: (() => SubagentToolContext) | null = null;
 
   constructor() {
@@ -85,14 +91,18 @@ export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResul
       `Spawn an autonomous subagent to work on a task in the background.
 
 The subagent runs independently, using tools as needed, until it completes.
-Results appear as a tool result when the subagent finishes.
+Results are delivered into the originating chat when the subagent finishes.
 
 Use for:
 - Deep research tasks requiring multiple searches
 - Analysis tasks that need file reading and processing
 - Complex operations you want to run in parallel
 
-The subagent has access to all tools via getTools.
+Local subagents have access to Nexus tools via getTools.
+For a connected remote agent, supply its target ID and a self-contained task and context.
+Remote agents use their own tools and environment; they do not automatically have access
+to Nexus tools, this conversation, or the vault. Do not resubmit a task while it is running.
+Remote targets do not accept local persona, toolset, contextFiles, maxIterations, or continueBranchId.
 
 To continue a subagent that hit max iterations, provide continueBranchId.`,
       '2.1.0'
@@ -113,9 +123,13 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
     this.contextProvider = provider;
   }
 
-  async execute(params: SubagentToolParams): Promise<SubagentToolResult> {
+  setRemoteAgentJobs(service: RemoteAgentJobService): void {
+    this.remoteAgentJobs = service;
+  }
+
+  async execute(params: SubagentToolParams, executionContext?: SubagentToolContext): Promise<SubagentToolResult> {
     // Validate executor is available
-    if (!this.subagentExecutor) {
+    if (!params.target && !this.subagentExecutor) {
       return createResult<SubagentToolResult>(
         false,
         null,
@@ -124,7 +138,11 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
     }
 
     // Get execution context
-    const context = this.contextProvider?.();
+    const viewContext = this.contextProvider?.();
+    // Runtime identity is authoritative; a user can switch tabs while a tool runs.
+    const context = executionContext
+      ? { ...(viewContext?.conversationId === executionContext.conversationId ? viewContext : {}), ...executionContext }
+      : viewContext;
     if (!context) {
       return createResult<SubagentToolResult>(
         false,
@@ -152,7 +170,7 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
     }
 
     // Validate task is provided
-    if (!params.task) {
+    if (typeof params.task !== 'string' || !params.task.trim()) {
       return createResult<SubagentToolResult>(
         false,
         null,
@@ -160,7 +178,39 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
       );
     }
 
+    if (params.target !== undefined && (typeof params.target !== 'string' || !params.target.trim())) {
+      return createResult<SubagentToolResult>(false, null, 'Target must be a connected remote agent ID');
+    }
+    if (params.taskContext !== undefined && typeof params.taskContext !== 'string') {
+      return createResult<SubagentToolResult>(false, null, 'Context must be text');
+    }
+
     try {
+      if (params.target) {
+        if (!this.remoteAgentJobs) throw new Error('Remote agent service is not ready');
+        if (params.persona || params.toolset || params.contextFiles || params.maxIterations !== undefined || params.continueBranchId) {
+          throw new Error('Remote agents accept task, target and taskContext. Read any needed vault files first and include their relevant contents in taskContext.');
+        }
+        const result = await this.remoteAgentJobs.executeSubagent({
+          target: params.target,
+          task: params.task,
+          context: params.taskContext,
+          parentConversationId: context.conversationId,
+          parentMessageId: context.messageId,
+          provider: context.provider,
+          model: context.model,
+          workspaceId: context.workspaceId,
+          sessionId: context.sessionId,
+          agentPrompt: context.agentPrompt,
+          thinkingEnabled: context.thinkingEnabled,
+          thinkingEffort: context.thinkingEffort,
+        });
+        return createResult<SubagentToolResult>(true, {
+          ...result, status: 'started',
+          message: 'Remote task accepted. Its result will return to this chat. Do not submit it again while it is running.',
+        });
+      }
+      if (!this.subagentExecutor) throw new Error('Subagent executor not initialized');
       // Merge context notes: tool params can add more, but inherit parent's too
       const allContextFiles = [
         ...(context.contextNotes || []),
@@ -172,6 +222,7 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
         parentConversationId: context.conversationId,
         parentMessageId: context.messageId,
         agent: params.persona,
+        context: params.taskContext,
         tools: params.toolset,
         contextFiles: allContextFiles.length > 0 ? allContextFiles : undefined,
         workspaceId: context.workspaceId,
@@ -206,7 +257,7 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
       return createResult<SubagentToolResult>(
         false,
         null,
-        `Failed to spawn subagent: ${error instanceof Error ? error.message : String(error)}`
+        `${params.target ? 'Remote delegation could not be confirmed. Check Agents before retrying' : 'Failed to spawn subagent'}: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -218,6 +269,14 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
         task: {
           type: 'string',
           description: 'Clear description of what the subagent should accomplish',
+        },
+        target: {
+          type: 'string',
+          description: 'Connected remote agent ID from the system prompt. Omit to run a local Nexus subagent.',
+        },
+        taskContext: {
+          type: 'string',
+          description: 'Self-contained context for the task. For remote agents, include relevant contents rather than vault paths.',
         },
         persona: {
           type: 'string',

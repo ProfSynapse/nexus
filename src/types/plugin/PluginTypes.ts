@@ -8,6 +8,7 @@ import { LLMProviderSettings } from '../llm/ProviderTypes';
 import { AppsSettings } from '../apps/AppTypes';
 import type { PluginScopedStorageState } from '../../database/migration/PluginScopedStorageCoordinator';
 import type { CoreSkillsSettings, InstructionLibrarySettings } from '../../services/instructions/types';
+import type { RemoteAgentConnection } from '../../services/remoteAgents/types';
 
 // Forward declarations for service types to avoid circular imports
 // Actual types are imported where needed
@@ -87,6 +88,7 @@ export interface MCPSettings {
   storage?: MCPStorageSettings;
   customPrompts?: CustomPromptsSettings;
   llmProviders?: LLMProviderSettings;
+  remoteAgents?: RemoteAgentConnection[];
   apps?: AppsSettings;
   instructionLibrary?: InstructionLibrarySettings;
   skills?: CoreSkillsSettings;

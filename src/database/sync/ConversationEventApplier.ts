@@ -147,8 +147,8 @@ export class ConversationEventApplier {
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO messages
-       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, reasoningSegmentsJson, sequenceNumber, alternativesJson, activeAlternativeIndex)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, reasoningSegmentsJson, sequenceNumber, alternativesJson, activeAlternativeIndex, metadataJson)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
         event.conversationId,
@@ -162,7 +162,8 @@ export class ConversationEventApplier {
         event.data.reasoning_segments ? JSON.stringify(event.data.reasoning_segments) : null,
         event.data.sequenceNumber ?? 0,
         event.data.alternatives ? JSON.stringify(event.data.alternatives) : null,
-        event.data.activeAlternativeIndex ?? 0
+        event.data.activeAlternativeIndex ?? 0,
+        event.data.metadata ? JSON.stringify(event.data.metadata) : null
       ]
     );
 

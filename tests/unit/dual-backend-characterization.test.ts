@@ -284,6 +284,36 @@ describe('ConversationService dual-backend characterization', () => {
       expect(fs.readConversation).not.toHaveBeenCalled();
     });
 
+    it('preserves a remote reply delivered after a chat snapshot was captured', async () => {
+      const adapter = createMockAdapter(true);
+      const service = new ConversationService(plugin, createMockFileSystem(), createMockIndexManager(), adapter);
+      const snapshot = [{ id: 'stream', role: 'assistant' as const, content: 'Final answer',
+        timestamp: 1000, conversationId: 'conv1', state: 'complete' as const }];
+      const rows = new Map<string, { id: string; role: string; content: string; timestamp: number;
+        state: string; metadata?: Record<string, unknown> }>([
+        ['stream', { ...snapshot[0], content: 'Partial answer' }],
+        ['removed', { ...snapshot[0], id: 'removed' }]
+      ]);
+      let releaseSnapshotSave!: () => void;
+      const barrier = new Promise<void>(resolve => { releaseSnapshotSave = resolve; });
+      adapter.getConversation.mockImplementation(async () => {
+        await barrier;
+        return { id: 'conv1', title: 'Chat', created: 1000, updated: 1000, metadata: {} };
+      });
+      adapter.getMessages.mockImplementation(async () => ({ items: [...rows.values()], hasNextPage: false }));
+      adapter.deleteMessage.mockImplementation(async (_conversationId: string, id: string) => { rows.delete(id); });
+      const saving = service.updateConversation('conv1', { messages: snapshot });
+      // The remote job commits while a foreground save still owns the older snapshot.
+      rows.set('remote-result', { id: 'remote-result', role: 'assistant', content: 'Remote answer',
+        timestamp: 1001, state: 'complete', metadata: { type: 'subagent_result', remoteJobId: 'remote_job' } });
+      releaseSnapshotSave();
+      await saving;
+      expect(rows.get('remote-result')?.content).toBe('Remote answer');
+      expect(adapter.deleteMessage).toHaveBeenCalledWith('conv1', 'removed');
+      expect(adapter.deleteMessage).not.toHaveBeenCalledWith('conv1', 'remote-result');
+      expect(adapter.updateMessage).toHaveBeenCalledWith('conv1', 'stream', expect.objectContaining({ content: 'Final answer' }));
+    });
+
     it('updateConversation deletes adapter-backed messages that were removed from the conversation', async () => {
       const fs = createMockFileSystem();
       const idx = createMockIndexManager();

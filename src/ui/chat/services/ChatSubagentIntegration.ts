@@ -1,3 +1,4 @@
+import type { RemoteAgentJobService } from '../../../services/remoteAgents/RemoteAgentJobService';
 import type { App, Component } from 'obsidian';
 import type NexusPlugin from '../../../main';
 import type { AgentManager } from '../../../services/AgentManager';
@@ -49,6 +50,7 @@ interface SubagentControllerLike {
       directToolExecutor: DirectToolExecutor;
       promptManagerAgent: PromptManagerAgent;
       storageAdapter: HybridStorageAdapter;
+      remoteAgentJobs?: RemoteAgentJobService;
       llmService: NonNullable<ReturnType<ChatService['getLLMService']>>;
     },
     contextProvider: SubagentContextProvider,
@@ -81,6 +83,7 @@ interface ChatSubagentIntegrationDependencies {
    * `ChatView.waitForChatServiceAndInitialize()` assigns the real service.
    */
   getChatService: () => ChatService | null;
+  isGenerating?: () => boolean;
   getConversationManager: () => ConversationManagerLike | null;
   getModelAgentManager: () => ModelAgentManagerLike | null;
   getStreamingController: () => StreamingController | null;
@@ -98,6 +101,17 @@ interface ChatSubagentIntegrationDependencies {
 }
 
 export class ChatSubagentIntegration {
+  private pendingRefresh = new Set<string>();
+
+  /** A remote reply must not tear down an active streaming turn. */
+  flushPendingRefresh(): void {
+    if (this.deps.isGenerating?.()) return;
+    const current = this.deps.getConversationManager()?.getCurrentConversation();
+    const refresh = current && this.pendingRefresh.has(current.id);
+    this.pendingRefresh.clear();
+    if (refresh) void this.deps.getConversationManager()?.selectConversation(current);
+  }
+
   constructor(private readonly deps: ChatSubagentIntegrationDependencies) {}
 
   createContextProvider(): SubagentContextProvider {
@@ -163,6 +177,7 @@ export class ChatSubagentIntegration {
         return { preservationService: null, subagentController: null };
       }
 
+      const remoteAgentJobs = await plugin.getService<RemoteAgentJobService>('remoteAgentJobs');
       const subagentController = this.createSubagentController();
       const contextProvider = this.createContextProvider();
 
@@ -174,6 +189,7 @@ export class ChatSubagentIntegration {
           promptManagerAgent,
           storageAdapter,
           llmService,
+          remoteAgentJobs: remoteAgentJobs ?? undefined,
         },
         contextProvider,
         streamingController,
@@ -227,7 +243,8 @@ export class ChatSubagentIntegration {
       onConversationNeedsRefresh: (conversationId: string) => {
         const currentConversation = this.deps.getConversationManager()?.getCurrentConversation();
         if (currentConversation?.id === conversationId) {
-          void this.deps.getConversationManager()?.selectConversation(currentConversation);
+          this.pendingRefresh.add(conversationId);
+          this.flushPendingRefresh();
         }
       },
     });

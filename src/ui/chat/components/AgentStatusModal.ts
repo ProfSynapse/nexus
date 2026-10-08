@@ -11,7 +11,7 @@
  */
 
 import { App, Component, Modal, setIcon, Events } from 'obsidian';
-import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
+import type { SubagentStatusSource } from '../../../types/branch/BranchTypes';
 import type { BranchService } from '../../../services/chat/BranchService';
 import type { AgentStatusItem, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
 import { getStateIconName } from '../../../utils/branchStatusUtils';
@@ -24,7 +24,7 @@ export interface AgentStatusModalCallbacks {
 }
 
 export class AgentStatusModal extends Modal {
-  private subagentExecutor: SubagentExecutor;
+  private subagentExecutor: SubagentStatusSource;
   private branchService: BranchService | null;
   private conversationId: string | null;
   private callbacks: AgentStatusModalCallbacks;
@@ -34,7 +34,7 @@ export class AgentStatusModal extends Modal {
 
   constructor(
     app: App,
-    subagentExecutor: SubagentExecutor,
+    subagentExecutor: SubagentStatusSource,
     callbacks: AgentStatusModalCallbacks,
     branchService?: BranchService | null,
     conversationId?: string | null
@@ -98,6 +98,9 @@ export class AgentStatusModal extends Modal {
             parentMessageId: info.parentMessageId,
             task: metadata.task,
             state: metadata.state,
+            remoteTargetId: typeof metadata.remoteTargetId === 'string' ? metadata.remoteTargetId : undefined,
+            remoteStatus: typeof metadata.remoteStatus === 'string' ? metadata.remoteStatus : undefined,
+            remoteError: typeof metadata.error === 'string' ? metadata.error : undefined,
             iterations: metadata.iterations,
             maxIterations: metadata.maxIterations,
             startedAt: metadata.startedAt,
@@ -148,7 +151,7 @@ export class AgentStatusModal extends Modal {
       }
 
       if (completed.length > 0) {
-        listEl.createDiv({ cls: 'nexus-agent-section-header', text: 'Completed' });
+        listEl.createDiv({ cls: 'nexus-agent-section-header', text: 'Finished' });
         for (const agent of completed) {
           this.renderCompactRow(listEl, agent, false);
         }
@@ -170,8 +173,11 @@ export class AgentStatusModal extends Modal {
 
     // Left: Task description with iterations inline
     const info = row.createDiv({ cls: 'nexus-agent-info' });
-    const taskText = `${this.truncateTask(agent.task, 40)} (${agent.iterations}/${agent.maxIterations})`;
+    const taskText = agent.remoteTargetId
+      ? `${this.truncateTask(agent.task, 40)} · ${agent.remoteStatus?.replace(/_/g, ' ') || 'Pending'}`
+      : `${this.truncateTask(agent.task, 40)} (${agent.iterations}/${agent.maxIterations})`;
     info.createDiv({ cls: 'nexus-agent-task', text: taskText });
+    if (agent.remoteError) info.createDiv({ cls: 'setting-item-description', text: agent.remoteError });
 
     // Middle: Tool badge
     const toolContainer = row.createDiv({ cls: 'nexus-agent-tool-container' });
@@ -201,7 +207,7 @@ export class AgentStatusModal extends Modal {
       });
       setIcon(stopBtn, 'square');
       renderEvents.registerDomEvent(stopBtn, 'click', () => {
-        this.subagentExecutor.cancelSubagent(agent.subagentId);
+        void this.subagentExecutor.cancelSubagent(agent.subagentId);
         this.renderContent();
       });
     } else {

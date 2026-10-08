@@ -80,6 +80,9 @@ export class PluginLifecycleManager {
 
     // Pending timer handles for cleanup on shutdown
     private pendingTimers: number[] = [];
+    private shutdownPromise: Promise<void> | null = null;
+    private backgroundInitialization: Promise<void> | null = null;
+    private sqliteInitialization: Promise<void> | null = null;
 
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
@@ -179,7 +182,8 @@ export class PluginLifecycleManager {
 
             // PHASE 4: Start background initialization via window.setTimeout(0)
             const bgInitTimer = window.setTimeout(() => {
-                this.startBackgroundInitialization().catch(error => {
+                if (this.shuttingDown) return;
+                this.backgroundInitialization = this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
                 });
             }, 0);
@@ -239,7 +243,8 @@ export class PluginLifecycleManager {
             // 3 second delay gives Obsidian enough time to finish loading screen
             if (!Platform.isMobile) {
                 const sqliteTimer = window.setTimeout(() => {
-                    void (async () => {
+                    if (this.shuttingDown) return;
+                    this.sqliteInitialization = (async () => {
                         try {
                             const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
                             if (this.shuttingDown) return;
@@ -258,6 +263,7 @@ export class PluginLifecycleManager {
                                 );
                             }
                         } catch (err) {
+                            if (this.shuttingDown) return;
                             console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
                         }
                     })();
@@ -287,6 +293,7 @@ export class PluginLifecycleManager {
             this.backgroundProcessor.startBackgroundStartupProcessing();
 
         } catch (error) {
+            if (this.shuttingDown) return;
             console.error('[PluginLifecycleManager] Background initialization failed:', error);
         }
     }
@@ -396,15 +403,35 @@ export class PluginLifecycleManager {
     /**
      * Shutdown and cleanup
      */
-    async shutdown(): Promise<void> {
+    shutdown(): Promise<void> {
+        if (this.shutdownPromise) return this.shutdownPromise;
         this.shuttingDown = true;
         this.isInitialized = false;
+        this.shutdownPromise = this.performShutdown();
+        return this.shutdownPromise;
+    }
+
+    private async performShutdown(): Promise<void> {
         try {
             // Cancel any pending timers that haven't fired yet
             for (const timer of this.pendingTimers) {
                 window.clearTimeout(timer);
             }
             this.pendingTimers = [];
+            // Set the processor's stop fence synchronously, before any awaits.
+            const backgroundShutdown = this.backgroundProcessor.shutdown();
+            // An unload can spend seconds draining embeddings or saving state.
+            // Stop remote submission/poll timers now, before that first await.
+            const remoteCleanup: Promise<unknown>[] = [];
+            for (const name of ['remoteAgentJobs', 'remoteAgentRegistry']) {
+                const service = this.config.serviceManager?.getServiceIfReady<{ cleanup(): void | Promise<void> }>(name);
+                try {
+                    if (service) remoteCleanup.push(Promise.resolve(service.cleanup()));
+                } catch (error) {
+                    console.error('[PluginLifecycleManager] Remote service cleanup failed:', error);
+                }
+            }
+            const remoteShutdown = Promise.allSettled(remoteCleanup);
 
             // Clean up ServiceRegistrar's pending timers
             this.serviceRegistrar.shutdown();
@@ -413,7 +440,13 @@ export class PluginLifecycleManager {
             // dependency. Drain explicitly so teardown order cannot close the
             // adapter before an accepted scan has observed cancellation.
             const skills = this.config.serviceManager?.getServiceIfReady<{ cleanup(): Promise<void> }>('skillService');
-            if (skills) await skills.cleanup();
+            if (skills) {
+                try {
+                    await skills.cleanup();
+                } catch (error) {
+                    console.error('[PluginLifecycleManager] Skill cleanup failed during shutdown:', error);
+                }
+            }
 
             // Shutdown embedding system first (before database closes)
             if (this.embeddingManager) {
@@ -427,7 +460,11 @@ export class PluginLifecycleManager {
             // Save processed files state before cleanup
             const stateManager = this.config.serviceManager?.getServiceIfReady<StateManager>('stateManager');
             if (stateManager && typeof stateManager.saveState === 'function') {
-                await stateManager.saveState();
+                try {
+                    await stateManager.saveState();
+                } catch (error) {
+                    console.error('[PluginLifecycleManager] Failed to save state during shutdown:', error);
+                }
             }
 
             // Detach the notes index BEFORE the database it writes through is
@@ -444,18 +481,19 @@ export class PluginLifecycleManager {
                 }
             }
 
-            // Capture the adapter before clearing the container. Consumers
-            // must cancel and drain their cache work while SQLite is open.
+            // Capture storage before container teardown removes its reference.
             const storageAdapter = this.config.serviceManager?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
 
-            // Cleanup settings tab accordions
-            this.settingsTabManager.cleanup();
-
-            // Cleanup service manager (handles all service cleanup)
+            // Stop timers and drain service writes before closing their database.
+            // This also cleans services initialized lazily without manager.start().
             if (this.config.serviceManager) {
                 await this.config.serviceManager.stop();
             }
+            await Promise.allSettled([
+                remoteShutdown, backgroundShutdown, this.backgroundInitialization, this.sqliteInitialization
+            ]);
 
+            // Close HybridStorageAdapter to properly shut down SQLite
             if (storageAdapter && typeof storageAdapter.close === 'function') {
                 try {
                     await storageAdapter.close();
@@ -463,6 +501,9 @@ export class PluginLifecycleManager {
                     void error;
                 }
             }
+
+            // Cleanup settings tab accordions
+            this.settingsTabManager.cleanup();
 
             // Stop the MCP connector
             if (this.config.connector) {

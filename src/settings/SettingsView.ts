@@ -26,6 +26,7 @@ import { WorkspacesTab } from './tabs/WorkspacesTab';
 import { InstructionsTab } from './tabs/InstructionsTab';
 import type { InstructionLibraryService } from '../services/instructions/InstructionLibraryService';
 import { ProvidersTab } from './tabs/ProvidersTab';
+import { RemoteAgentsTab } from './tabs/RemoteAgentsTab';
 import { AppsTab } from './tabs/AppsTab';
 import { DataTab } from './tabs/DataTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
@@ -63,6 +64,7 @@ export class SettingsView extends PluginSettingTab {
     private workspacesTab: WorkspacesTab | undefined;
     private instructionsTab: InstructionsTab | undefined;
     private providersTab: ProvidersTab | undefined;
+    private remoteAgentsTab: RemoteAgentsTab | undefined;
     private appsTab: AppsTab | undefined;
     private dataTab: DataTab | undefined;
     private getStartedTab: GetStartedTabType | undefined;
@@ -139,6 +141,7 @@ export class SettingsView extends PluginSettingTab {
         this.workspacesTab?.destroy();
         this.instructionsTab?.destroy();
         this.providersTab?.destroy();
+        this.remoteAgentsTab?.destroy();
         this.appsTab?.destroy();
         this.dataTab?.destroy();
         this.getStartedTab?.destroy();
@@ -211,6 +214,7 @@ export class SettingsView extends PluginSettingTab {
             { key: 'workspaces', label: 'Workspaces' },
             { key: 'instructions', label: 'Instructions' },
             { key: 'providers', label: 'Providers' },
+            { key: 'remote-agents', label: 'Remote agents' },
             { key: 'apps', label: 'Apps' },
             { key: 'data', label: 'Data' },
         ];
@@ -343,6 +347,14 @@ export class SettingsView extends PluginSettingTab {
                 break;
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
+                break;
+            case 'remote-agents':
+                this.remoteAgentsTab?.destroy();
+                this.remoteAgentsTab = new RemoteAgentsTab(pane, {
+                    app: this.app,
+                    settings: this.settingsManager,
+                    serviceManager: this.serviceManager,
+                });
                 break;
             case 'apps':
                 this.renderAppsTab(pane, state, services);

@@ -41,3 +41,4 @@ after-shipping life of a mockup were the two largest missing topics. | every fil
 in this skill.
 
 - 2026-10-03: No change. User removed explanatory helper copy and required existing UI primitives; existing fidelity/handoff guidance already requires reuse, and the accepted contract records that correction.
+- 2026-10-07 | Remote-agent mockup passed validation and production settings were inspected in the native Code-vault Settings window, including scrolling and empty-input validation. | No procedure change.

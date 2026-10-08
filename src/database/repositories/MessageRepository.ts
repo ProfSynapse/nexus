@@ -372,6 +372,7 @@ export class MessageRepository
             })),
             tool_call_id: data.toolCallId,
             state: data.state,
+            metadata: data.metadata,
             // JSONL is the source of truth and SQLite is a rebuildable cache, so
             // reasoning written only to the INSERT below would vanish on the next
             // rebuild. The event type has always declared this field and the
@@ -389,8 +390,8 @@ export class MessageRepository
       // 2. Update SQLite cache
       await this.sqliteCache.run(
         `INSERT INTO ${this.tableName}
-         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent, reasoningSegmentsJson, alternativesJson, activeAlternativeIndex)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent, reasoningSegmentsJson, alternativesJson, activeAlternativeIndex, metadataJson)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           conversationId,
@@ -404,7 +405,8 @@ export class MessageRepository
           data.reasoning ?? null,
           data.reasoningSegments ? JSON.stringify(data.reasoningSegments) : null,
           data.alternatives ? JSON.stringify(data.alternatives) : null,
-          data.activeAlternativeIndex ?? 0
+          data.activeAlternativeIndex ?? 0,
+          data.metadata ? JSON.stringify(data.metadata) : null
         ]
       );
 
@@ -428,6 +430,7 @@ export class MessageRepository
           reasoningSegments: data.reasoningSegments,
           alternatives: data.alternatives,
           activeAlternativeIndex: data.activeAlternativeIndex ?? 0,
+          metadata: data.metadata,
         });
       }
 

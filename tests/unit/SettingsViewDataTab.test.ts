@@ -34,6 +34,9 @@ const mockPromptsTab = jest.fn().mockImplementation(() => ({
 const mockProvidersTab = jest.fn().mockImplementation(() => ({
   destroy: jest.fn()
 }));
+const mockRemoteAgentsTab = jest.fn().mockImplementation(() => ({
+  destroy: jest.fn()
+}));
 const mockAppsTab = jest.fn().mockImplementation(() => ({
   destroy: jest.fn()
 }));
@@ -88,6 +91,10 @@ jest.mock('../../src/settings/tabs/InstructionsTab', () => ({
 
 jest.mock('../../src/settings/tabs/ProvidersTab', () => ({
   ProvidersTab: mockProvidersTab
+}));
+
+jest.mock('../../src/settings/tabs/RemoteAgentsTab', () => ({
+  RemoteAgentsTab: mockRemoteAgentsTab
 }));
 
 jest.mock('../../src/settings/tabs/AppsTab', () => ({

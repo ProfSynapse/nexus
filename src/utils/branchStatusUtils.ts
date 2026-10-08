@@ -63,6 +63,7 @@ export function createStateIcon(state: BranchState, parent?: HTMLElement): HTMLE
  * @returns Human-readable status text
  */
 export function getStatusText(metadata: SubagentBranchMetadata): string {
+  if (typeof metadata.remoteStatus === 'string') return metadata.remoteStatus.replace(/_/g, ' ');
   const { state, iterations, maxIterations } = metadata;
 
   switch (state) {
@@ -91,6 +92,7 @@ export function buildStatusDescription(
   metadata: SubagentBranchMetadata,
   timeAgo: string
 ): string {
+  if (typeof metadata.remoteStatus === 'string') return metadata.remoteStatus.replace(/_/g, ' ');
   const { state, iterations, maxIterations } = metadata;
 
   switch (state) {
