@@ -85,3 +85,17 @@ acknowledgements; it never repeats a mutating expression blindly. Its default
 proof output is `/tmp/nexus-hermes-live-proof.json` and includes no API key.
 This verification covers local desktop execution; physical phones, remote
 network interruption and simultaneous synced-device execution remain untested.
+
+## PR integration verification
+
+The feature was rebased onto main's instruction-library change before PR #407.
+Both instruction/workflow preparation and conditional remote-agent discovery were
+preserved. The rebased production build and full active Jest suite passed; two
+additional lifecycle regressions then verified simultaneous skill/remote cleanup
+and continued teardown after rejected skill cleanup.
+
+The final rebased build also passed the opt-in actual Code-vault fixture test:
+submission, reload recovery, stopped old poller, single result delivery, stale
+snapshot preservation, JSONL replay, cancellation, and verified fixture removal.
+Both `dev:errors` and `dev:console level=error` were empty. Original Code plugin
+files were restored and SHA-256 verified after the test.

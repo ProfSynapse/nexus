@@ -36,3 +36,5 @@ their tools appear in no export.
 - 2026-09-08 | Image model additions appeared in the regenerated CLI enum and the release bundle checks passed. | No procedure change.
 
 - 2026-10-03: No change. Release regeneration, exporter coverage and alias/catalog validation followed the existing protocol.
+
+- 2026-10-07 | Rebase overlapped generated catalogs from instruction-library and remote-delegation changes. Regenerating the combined live registry resolved conflicts and catalog/consumer checks passed. | No procedure change; refresh-catalog already forbids hand-patching generated JSON.
