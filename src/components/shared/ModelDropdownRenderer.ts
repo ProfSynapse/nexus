@@ -8,6 +8,7 @@
 
 import { Setting } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
+import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 
 /**
  * Provider display names shared across all model dropdown sections
@@ -242,6 +243,11 @@ function renderModelDropdown(
           ];
         }
 
+        // Sorting is presentation-only. The provider's first model remains
+        // the fallback when no selection was saved.
+        const originalFirstModel = models[0];
+        models = sortModelsNewestFirst(models, model => ({ provider: model.provider, id: model.id }));
+
         if (models.length === 0) {
           dropdown.addOption('', 'No models available');
         } else {
@@ -262,10 +268,10 @@ function renderModelDropdown(
           } else if (currentProvider && currentModel) {
             dropdown.addOption(selectedOptionKey, `${currentModel} (Unavailable)`);
             dropdown.setValue(selectedOptionKey);
-          } else if (models.length > 0) {
-            const firstOptionKey = buildModelOptionKey(models[0].provider, models[0].id);
+          } else if (originalFirstModel) {
+            const firstOptionKey = buildModelOptionKey(originalFirstModel.provider, originalFirstModel.id);
             const firstEntry = config.modelOptionMap.get(firstOptionKey);
-            config.onModelChange(models[0].id, firstEntry?.provider);
+            config.onModelChange(originalFirstModel.id, firstEntry?.provider);
             config.notifyChange();
             dropdown.setValue(firstOptionKey);
           }

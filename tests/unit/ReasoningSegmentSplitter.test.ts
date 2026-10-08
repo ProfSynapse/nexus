@@ -1,9 +1,8 @@
 /**
  * ReasoningSegmentSplitter Unit Tests
  *
- * The splitter decides where each "Thinking" block lands in an assistant turn.
- * Get it wrong and either the answer text is duplicated, silently truncated, or
- * every thought stacks at the top of the bubble again.
+ * The splitter places one combined Thinking section in an assistant turn while
+ * preserving the visible answer text and its order.
  */
 
 import { ReasoningSegmentSplitter } from '../../src/ui/chat/components/helpers/ReasoningSegmentSplitter';
@@ -23,7 +22,7 @@ describe('ReasoningSegmentSplitter', () => {
     ]);
   });
 
-  it('puts each thinking block above the text it preceded', () => {
+  it('combines thinking across rounds into one section without duplicating answer text', () => {
     const content = 'Step one. Step two.';
     const parts = ReasoningSegmentSplitter.split(
       content,
@@ -34,18 +33,11 @@ describe('ReasoningSegmentSplitter', () => {
       'First thoughtSecond thought'
     );
 
-    expect(parts).toEqual([
-      {
-        reasoning: { text: 'First thought', contentOffset: 0 },
-        reasoningIndex: 0,
-        text: 'Step one.'
-      },
-      {
-        reasoning: { text: 'Second thought', contentOffset: 9 },
-        reasoningIndex: 1,
-        text: ' Step two.'
-      }
-    ]);
+    expect(parts).toEqual([{
+      reasoning: { text: 'First thought\n\nSecond thought', contentOffset: 0 },
+      reasoningIndex: 0,
+      text: content
+    }]);
     // Nothing is lost or repeated: the runs still reassemble the answer
     expect(parts.map(part => part.text).join('')).toBe(content);
   });
@@ -93,5 +85,25 @@ describe('ReasoningSegmentSplitter', () => {
     );
 
     expect(parts).toEqual([{ text: 'Answer' }]);
+  });
+
+  it('combines repeated reasoning boundaries with interleaved text and tool rounds', () => {
+    const answer = 'Checking first source. Checking second source. Final answer.';
+    const segments = [
+      { text: 'Find the first source.', contentOffset: 0 },
+      { text: 'Compare tool result with second source.', contentOffset: 22 },
+      { text: 'Stitch the two findings.', contentOffset: 46 }
+    ];
+
+    const parts = ReasoningSegmentSplitter.split(answer, segments, segments.map(s => s.text).join(''));
+
+    expect(parts.filter(part => part.reasoning)).toHaveLength(1);
+    expect(parts[0].reasoning?.text).toBe(segments.map(s => s.text).join('\n\n'));
+    expect(parts.map(part => part.text).join('')).toBe(answer);
+    expect(segments).toEqual([
+      { text: 'Find the first source.', contentOffset: 0 },
+      { text: 'Compare tool result with second source.', contentOffset: 22 },
+      { text: 'Stitch the two findings.', contentOffset: 46 }
+    ]);
   });
 });

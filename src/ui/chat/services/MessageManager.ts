@@ -159,7 +159,7 @@ export class MessageManager {
       operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
       operationScopeId?: string;
       enableThinking?: boolean;
-      thinkingEffort?: 'low' | 'medium' | 'high';
+      thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       temperature?: number;
       imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;
@@ -249,7 +249,7 @@ export class MessageManager {
       workspaceId?: string;
       sessionId?: string;
       enableThinking?: boolean;
-      thinkingEffort?: 'low' | 'medium' | 'high';
+      thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       temperature?: number;
       imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;

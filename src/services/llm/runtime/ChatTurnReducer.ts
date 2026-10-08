@@ -146,11 +146,19 @@ export function reduceChatTurn(
       return { ...state, usage: { ...event.usage } };
     case 'cost.updated':
       return { ...state, cost: { ...event.cost } };
-    case 'response.metadata':
+    case 'response.metadata': {
+      const metadata = { ...state.metadata, ...event.metadata };
+      // A new raw stop report can arrive before its completion event. Do not
+      // pair it with the previous round's normalized finish reason on failure.
+      if (typeof event.metadata.stopReason === 'string'
+        && event.metadata.finishReason === undefined) {
+        delete metadata.finishReason;
+      }
       return {
         ...state,
-        metadata: { ...state.metadata, ...event.metadata },
+        metadata,
       };
+    }
     case 'response.resolved':
       return {
         ...state,
@@ -164,6 +172,7 @@ export function reduceChatTurn(
           ? 'waiting-for-tool'
           : activePhase(state.phase),
         reasoning: closeReasoningSegment(state.reasoning),
+        metadata: recordMistralResponse(recordResponseStop(state, event), state.content.length),
       };
     case 'turn.completed':
       return settle(state, event, 'complete');
@@ -175,6 +184,64 @@ export function reduceChatTurn(
         error: event.error,
       };
   }
+}
+
+/** Persist one complete Mistral assistant response per provider boundary. */
+function recordMistralResponse(metadata: Record<string, unknown>, contentEndOffset: number): Record<string, unknown> {
+  const next = { ...metadata };
+  const raw = next.mistralResponse;
+  delete next.mistralResponse;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return next;
+  const record = raw as Record<string, unknown>;
+  if (!(typeof record.content === 'string' || Array.isArray(record.content))
+    || !Array.isArray(record.toolCallIds)
+    || !record.toolCallIds.every((id: unknown) => typeof id === 'string')) return next;
+
+  const previous: unknown[] = Array.isArray(next.mistralResponses)
+    ? next.mistralResponses : [];
+  const toolCallIds: unknown[] = record.toolCallIds;
+  return {
+    ...next,
+    mistralResponses: [...previous, {
+      content: record.content,
+      toolCallIds: [...toolCallIds],
+      contentEndOffset
+    }]
+  };
+}
+
+/** Keep every response boundary: a later tool round must not erase truncation evidence. */
+function recordResponseStop(
+  state: ChatTurnState,
+  event: Extract<ChatRuntimeEvent, { type: 'response.completed' }>
+): Record<string, unknown> {
+  if (event.stopReason === undefined && event.finishReason === undefined) {
+    return state.metadata;
+  }
+
+  const responseStop = {
+    ...(state.provider ? { provider: state.provider } : {}),
+    ...(state.model ? { model: state.model } : {}),
+    ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+    ...(event.finishReason !== undefined ? { finishReason: event.finishReason } : {}),
+    ...(event.stopSequence !== undefined ? { stopSequence: event.stopSequence } : {}),
+  };
+  const previousStops = Array.isArray(state.metadata.responseStops)
+    ? state.metadata.responseStops as unknown[]
+    : [];
+  const metadata = { ...state.metadata };
+  // Latest-response fields must not borrow a reason from an earlier provider round.
+  delete metadata.stopReason;
+  delete metadata.finishReason;
+  delete metadata.stopSequence;
+
+  return {
+    ...metadata,
+    ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+    ...(event.finishReason !== undefined ? { finishReason: event.finishReason } : {}),
+    ...(event.stopSequence !== undefined ? { stopSequence: event.stopSequence } : {}),
+    responseStops: [...previousStops, responseStop],
+  };
 }
 
 /**

@@ -111,6 +111,8 @@ export interface ToolCall {
   providerExecuted?: boolean;
   /** Exact Anthropic thinking state; never derive this from the visible reasoning summary. */
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /** Mistral Large 4 assistant chunks (including ThinkChunk) for exact continuation replay. */
+  mistral_assistant_content?: Array<Record<string, unknown>>;
   /**
    * Google Gemini thought signature captured with the functionCall. Gemini 3+
    * rejects a replayed functionCall without it (HTTP 400), so it must survive
@@ -158,14 +160,14 @@ export interface Conversation {
       contextNotes?: string[];
       thinking?: {
         enabled: boolean;
-        effort: 'low' | 'medium' | 'high';
+        effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       };
       temperature?: number;
       agentProvider?: string;
       agentModel?: string;
       agentThinking?: {
         enabled: boolean;
-        effort: 'low' | 'medium' | 'high';
+        effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       };
     };
     promptId?: string;

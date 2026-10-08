@@ -76,7 +76,7 @@ export interface SubagentToolContext {
   contextNotes?: string[];
   // Inherited thinking settings
   thinkingEnabled?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResult> {

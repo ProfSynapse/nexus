@@ -108,7 +108,7 @@ export interface SubagentParams {
   inheritedContextNotes?: string[];  // Note paths from parent's context notes
   // Inherited from parent conversation - Thinking settings
   thinkingEnabled?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 /**

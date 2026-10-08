@@ -20,6 +20,7 @@ Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then sel
 ## What Provider Setup Unlocks
 
 - **Standard text chat**: any configured chat provider works in the chat model picker
+- **New model options**: Claude Haiku 5.5 is available through Anthropic, Claude Code and OpenRouter. Mistral Large 4 (Le Chonk, public preview) is available through Mistral, OpenRouter and Requesty. Availability through a subscription depends on the account and installed CLI.
 - **Image generation and editing**: configure an OpenAI key to select GPT Image 2.5 Sunburst or Flare. Both use medium quality and accept reference images. Adding these models does not change your saved default.
 - **Live voice**: configure OpenAI, Google AI, or AssemblyAI, then choose the live voice provider/model in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. See [Native Chat](native-chat.md) for which models run the whole conversation and which only transcribe
 - **Read aloud and `generateAudio`**: configure a speech-capable backend such as OpenAI, ElevenLabs, Google AI, Mistral, or OpenRouter, then choose defaults in **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice**. This is a different surface from live voice and is not OpenAI-only
@@ -63,7 +64,7 @@ By default, API keys live in the plugin's settings file (`data.json`), which syn
 3. In Nexus, open **Settings -> Providers -> LM Studio**
 4. Confirm the local endpoint and choose a model in chat
 
-Both local runtimes support **tool calling**, so a capable local model can drive agentic chats (Ollama also auto-discovers every model you have installed). For reasoning models, the model's thinking streams live into collapsible **Thinking** blocks in chat, each placed above the text it led to, and is available in the tool-inspection view.
+Both local runtimes support **tool calling**, so a capable local model can drive agentic chats (Ollama also auto-discovers every model you have installed). For reasoning models, thinking streams live into a collapsible **Thinking** block in chat and is available in the tool-inspection view.
 
 ---
 

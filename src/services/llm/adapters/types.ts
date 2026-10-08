@@ -3,7 +3,7 @@
  * Based on patterns from services/llm/
  */
 
-import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
+import type { AnthropicThinkingBlock, ThinkingEffort } from '../../../types/llm/ProviderTypes';
 
 /**
  * Supported LLM providers
@@ -21,7 +21,7 @@ export interface GenerateOptions {
   stopSequences?: string[];
   enableThinking?: boolean;
   enableInteractiveThinking?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: ThinkingEffort;
   tools?: Tool[];
   enableTools?: boolean;
   webSearch?: boolean;
@@ -47,6 +47,7 @@ export interface GenerateOptions {
 export interface StreamChunk {
   content: string;
   complete: boolean;
+  finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
   usage?: TokenUsage;
   toolCalls?: ToolCall[];
   toolCallsReady?: boolean; // True when tool calls are complete and safe to execute
@@ -137,6 +138,8 @@ export interface ModelPricing {
   rateCacheReadPerMillion?: number;
   /** Omitted = charged at the input rate. */
   rateCacheWritePerMillion?: number;
+  /** Request-wide rates selected by gross prompt length, including cached input. */
+  promptPricingTiers?: import('./modelTypes').PromptPricingTier[];
   currency: string;
 }
 
@@ -194,6 +197,8 @@ export interface ToolCall {
   thought_signature?: string;
   // Anthropic: exact signed/redacted blocks required for tool continuations.
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /** Mistral Large 4 assistant chunks (including ThinkChunk) for exact continuation replay. */
+  mistral_assistant_content?: Array<Record<string, unknown>>;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */
   sourceFormat?: ToolCallFormat;
 }

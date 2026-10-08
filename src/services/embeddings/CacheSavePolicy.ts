@@ -83,6 +83,8 @@ export const MAX_ITEMS_AT_RISK = 50;
 
 /** However large the database gets, do not wait longer than this between saves. */
 const MAX_MS_BETWEEN_SAVES = 5 * 60 * 1000;
+const ALLOCATION_RETRY_BASE_MS = 2 * 60 * 1000;
+const ALLOCATION_RETRY_MAX_MS = 30 * 60 * 1000;
 
 /** What one save is expected to cost, in milliseconds, at this database size. */
 export function estimateSaveCostMs(sizeBytes: number | null): number {
@@ -177,6 +179,8 @@ export class SaveCadence {
   private itemsSinceAttempt = 0;
   private itemsSinceSuccess = 0;
   private lastAttemptAt: number;
+  private allocationFailureCount = 0;
+  private nextAllocationRetryAt = 0;
 
   constructor(options: SaveCadenceOptions) {
     this.minItems = Math.max(1, options.minItems);
@@ -205,19 +209,22 @@ export class SaveCadence {
    * attempt, which is the "whichever is later" of Option B in the plan.
    *
    * The ceiling is the bounded loss: once MAX_ITEMS_AT_RISK items sit in the
-   * database with no snapshot covering them, a save is due whatever the clock
-   * says. It has to override the time floor, because the time floor is where
+   * database with no snapshot covering them, a save is due whatever the usual
+   * cadence says. It has to override the time floor, because the time floor is where
    * the exposure came from: at 153 MB it is about 38 s, longer than an entire
    * short incremental run, so nothing periodic could fire inside one.
    *
    * The ceiling still respects the caller's flat floor. Without that, a failing
    * save would be retried on the very next item forever, since a failure never
    * clears the exposure that is asking for it, and each retry costs the full
-   * export. So the sequence after a failure is: retry every `minItems` items
-   * rather than every item, and rather than not until the time floor, which
-   * would leave the rest of the run uncovered.
+   * export. Ordinary failures retry every `minItems` items. A full-buffer
+   * allocation failure additionally waits before another periodic attempt.
+   * The final save still runs regardless of this policy.
    */
   shouldSave(): boolean {
+    // A contiguous export allocation that just failed is unlikely to work on
+    // the next few items. The final save remains an explicit caller decision.
+    if (this.now() < this.nextAllocationRetryAt) return false;
     const { items, intervalMs } = this.decide();
     if (this.itemsSinceSuccess >= MAX_ITEMS_AT_RISK && this.itemsSinceAttempt >= this.minItems) {
       return true;
@@ -235,7 +242,7 @@ export class SaveCadence {
    * hundreds of milliseconds to be refused again. What a failed attempt does
    * NOT do is reduce the exposure: `itemsSinceSuccess` is untouched here, so
    * the ceiling keeps asking, at the flat floor rather than at the full
-   * cadence, until a save lands.
+   * cadence, until a save lands, except while an allocation retry delay is active.
    */
   markSaveAttempt(): void {
     this.itemsSinceAttempt = 0;
@@ -254,6 +261,17 @@ export class SaveCadence {
    */
   markSaveSuccess(): void {
     this.itemsSinceSuccess = 0;
+    this.allocationFailureCount = 0;
+    this.nextAllocationRetryAt = 0;
+  }
+
+  /** Delay only periodic retries after a full-buffer allocation failure. */
+  markSaveFailure(error: unknown): void {
+    if (!(error instanceof RangeError) || !/array buffer allocation failed/i.test(error.message)) return;
+    this.allocationFailureCount++;
+    const exponent = Math.min(this.allocationFailureCount - 1, 20);
+    const delay = Math.min(ALLOCATION_RETRY_BASE_MS * 2 ** exponent, ALLOCATION_RETRY_MAX_MS);
+    this.nextAllocationRetryAt = this.now() + delay;
   }
 
   /** The cadence in force right now. Exposed for tests and for log lines. */

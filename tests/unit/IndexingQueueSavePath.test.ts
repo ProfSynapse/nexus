@@ -304,15 +304,25 @@ describe('IndexingQueue save cadence', () => {
     expect(harness.save).toHaveBeenCalledTimes(2);
   }, 30000);
 
-  // Wiring, and the thing most likely to be got wrong later: the success mark
-  // belongs on the path where save() returned, not in the `finally` beside the
-  // attempt mark. Put it in the `finally` and a failed save would count as
-  // having cleared the exposure, so the retry would not come until a whole
-  // ceiling later and this run would save once instead of twice.
-  it('retries at the flat floor after a failed save, because nothing was cleared', async () => {
+  // A failed contiguous export must not make the item ceiling hammer the same
+  // allocation ten notes later. The final save still runs despite the delay.
+  it('delays periodic allocation retries but still attempts the final save', async () => {
     const harness = createHarness(CEILING_NOTES + SAVE_INTERVAL, LARGE_CACHE_BYTES);
     harness.save
       .mockRejectedValueOnce(new RangeError('Array buffer allocation failed'))
+      .mockResolvedValue(undefined);
+
+    await harness.queue.startFullIndex();
+
+    expect(harness.save).toHaveBeenCalledTimes(2);
+  }, 30000);
+
+  // Other failures retain the original flat-floor retry. This also pins that
+  // a failed save never clears the number of unsaved items.
+  it('retries other save failures at the flat floor', async () => {
+    const harness = createHarness(CEILING_NOTES + SAVE_INTERVAL, LARGE_CACHE_BYTES);
+    harness.save
+      .mockRejectedValueOnce(new Error('IDB transaction aborted'))
       .mockResolvedValue(undefined);
 
     await harness.queue.startFullIndex();

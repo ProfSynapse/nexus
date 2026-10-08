@@ -251,6 +251,9 @@ describe('GoogleGeminiCliAdapter (agy slice-d invocation)', () => {
     await adapter.generateUncached('x', { model: 'gemini-3.1-pro', thinkingEffort: 'medium' });
     expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.1 Pro (High)');
 
+    await adapter.generateUncached('x', { model: 'gemini-3.5-flash', thinkingEffort: 'max' });
+    expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.5 Flash (High)');
+
     // A saved legacy effort-variant slug still resolves (explicit effort wins).
     await adapter.generateUncached('x', { model: 'gemini-3.5-flash-low', thinkingEffort: 'high' });
     expect(capturedArgs[capturedArgs.indexOf('--model') + 1]).toBe('Gemini 3.5 Flash (Low)');

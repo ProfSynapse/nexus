@@ -2,6 +2,19 @@
 
 ## October 2026
 
+**v5.20.1** — More reliable tool calls and cache saves, roomier thinking, and new Claude and Mistral models
+
+- Malformed tool arguments now return an error the model can correct instead of crashing the tool follow-up. Successful calls are not run again.
+- Thinking across a reply and its tool calls is combined into one collapsible block. Mistral conversation history retains each response, including final answers and interrupted replies.
+- The effort slider now includes **Extra high** and **Max**. Nexus maps each setting to the levels the selected provider supports. Anthropic requests use the model's output allowance when you have not set a limit; Gemini no longer receives an unnecessary default cap. Provider limits still apply.
+- Claude Haiku 5.5 is available through Anthropic, Claude Code and OpenRouter. Turning thinking off explicitly disables it for the Anthropic API, and cost estimates account for its higher rates above 100,000 prompt tokens.
+- Mistral Large 4 (Le Chonk, public preview) is available through Mistral, OpenRouter and Requesty, with reasoning display and tool follow-ups. Switching thinking on cannot reuse an answer cached with thinking off.
+- Model pickers put models with newer published dates first while retaining saved selections and provider defaults.
+- Anthropic stop reasons are saved with replies to help diagnose token-limit stops and other interruptions.
+- Repeated cache allocation failures back off instead of repeatedly exporting the same database. Closed desktop cache connections reopen automatically, and unsaved changes remain available for the next successful save.
+
+---
+
 **v5.20.0** — Hand tasks to Hermes and OpenClaw agents, connect any OpenAI-compatible server, and manage prompts and skills in one Instructions library
 
 **Delegate tasks to remote agents**

@@ -8,6 +8,7 @@
 
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { AppManifest } from '../types/apps/AppTypes';
+import { sortModelsNewestFirst } from '../utils/modelOrdering';
 
 /**
  * An option in a settings dropdown.
@@ -242,7 +243,10 @@ export class AppConfigModal extends Modal {
         // Add a "use default" option
         dropdown.addOption('', 'Default');
 
-        for (const option of result.options) {
+        for (const option of sortModelsNewestFirst(result.options, item => ({
+          provider: this.config.manifest.id,
+          id: item.value
+        }))) {
           dropdown.addOption(option.value, option.label);
         }
 

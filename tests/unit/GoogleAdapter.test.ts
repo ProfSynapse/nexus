@@ -237,6 +237,44 @@ describe('GoogleAdapter', () => {
       expect(body.generationConfig).not.toHaveProperty('topP');
     });
 
+    it('clamps max to high in the Gemini 3 thinkingLevel request', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse({ candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] }));
+      });
+      await collect(new GoogleAdapter('gk-test', 'gemini-3.6-flash').generateStreamAsync('hi', {
+        enableThinking: true, thinkingEffort: 'max'
+      }));
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'high' });
+      expect(body.generationConfig).not.toHaveProperty('maxOutputTokens');
+    });
+
+    it('keeps an explicit output allowance when thinking is enabled', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse({ candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] }));
+      });
+      await collect(new GoogleAdapter('gk-test', 'gemini-3.6-flash').generateStreamAsync('hi', {
+        enableThinking: true, thinkingEffort: 'max', maxTokens: 60000
+      }));
+      expect(JSON.parse(requests[0].body ?? '{}').generationConfig.maxOutputTokens).toBe(60000);
+    });
+
+    it('maps Gemini 3 Pro Preview medium to its supported high tier', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse({ candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] }));
+      });
+      await collect(new GoogleAdapter('gk-test', 'gemini-3-pro-preview').generateStreamAsync('hi', {
+        enableThinking: true, thinkingEffort: 'medium'
+      }));
+      expect(JSON.parse(requests[0].body ?? '{}').generationConfig.thinkingConfig.thinkingLevel).toBe('high');
+    });
+
     it('requests thought summaries on the legacy thinkingBudget path', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {

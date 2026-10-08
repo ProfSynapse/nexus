@@ -87,6 +87,46 @@ describe('OpenRouterAdapter', () => {
       expect(result.metadata?.thinking).toBe('Working it out');
     });
 
+    it('passes max reasoning effort through to OpenRouter', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] });
+      });
+      await new OpenRouterAdapter('or-test').generateUncached('hi', {
+        enableThinking: true, thinkingEffort: 'max'
+      });
+      expect(JSON.parse(requests[0].body ?? '{}').reasoning).toEqual({ effort: 'max', exclude: false });
+    });
+
+    it.each(['low', 'medium', 'high', 'xhigh', 'max'] as const)('maps %s to the supported Mistral Large 4 effort without an output cap', async thinkingEffort => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] });
+      });
+      await new OpenRouterAdapter('or-test').generateUncached('hi', {
+        model: 'mistralai/mistral-large-4-0', enableThinking: true, thinkingEffort
+      });
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.reasoning).toEqual({ effort: 'high', exclude: false });
+      expect(body).not.toHaveProperty('max_tokens');
+    });
+
+    it('disables Mistral Large 4 reasoning explicitly on its online route', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] });
+      });
+      await new OpenRouterAdapter('or-test').generateUncached('hi', {
+        model: 'mistralai/mistral-large-4-0:online', enableThinking: false, maxTokens: 100000
+      });
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.reasoning).toEqual({ effort: 'none', exclude: false });
+      expect(body.max_tokens).toBe(100000);
+    });
+
     it('throws UNKNOWN_ERROR when the response has no choices', async () => {
       __setRequestUrlMock(async () => jsonResponse(200, { choices: [] }));
 

@@ -1,6 +1,6 @@
 /**
  * Mistral Model Specifications
- * Updated June 17, 2025 with latest Mistral releases
+ * Includes Mistral Large 4 public preview (October 8, 2026).
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -66,6 +66,26 @@ export const MISTRAL_MODELS: ModelSpec[] = [
       supportsJSON: true,
       supportsImages: false,
       supportsFunctions: false,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://docs.mistral.ai/models/mistral-large (checked 2026-10-08).
+  // Launch pricing is 50% off for two weeks; the provider does not publish
+  // a separate output ceiling. Leave maxTokens unknown instead of imposing a cap.
+  {
+    provider: 'mistral',
+    name: 'Mistral Large 4 (Le Chonk, preview)',
+    apiName: 'mistral-large-4',
+    releaseDate: '2026-10-06',
+    contextWindow: 1000000,
+    inputCostPerMillion: 0.68,
+    outputCostPerMillion: 2.09,
+    cacheReadCostPerMillion: 0.07,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: true
     }

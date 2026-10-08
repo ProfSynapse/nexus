@@ -75,6 +75,28 @@ Provider-specific quirks stay in the adapter — Groq nests failures under
 `x_groq.error`, Google's blocked prompts arrive as `promptFeedback.blockReason`
 with no candidates, Anthropic's error is an `error` *event type*.
 
+## Response completion diagnostics
+
+A provider response boundary is distinct from the end of the assistant turn.
+Forward its normalized reason in `StreamChunk.finishReason` and preserve its
+exact provider reason in `metadata.stopReason` (and any matched stop sequence in
+`metadata.stopSequence`). Do not infer a raw reason from tool presence or a
+transport disconnect. `ChatTurnReducer` saves completed response diagnostics in
+`metadata.responseStops`, so a later tool round cannot overwrite earlier evidence.
+
+When stop metadata arrives before the response boundary, an adapter can opt into
+`SSEStreamOptions.yieldMetadataUpdates` on the Node SSE path. This emits a
+nonterminal metadata chunk: a subsequent stream error still throws, but the
+already received stop reason survives in the failed message's metadata. It must
+never turn a metadata event into successful response completion.
+
+Thinking effort does not remove the request's total output limit. When diagnosing
+a cutoff, inspect both the thinking budget (where the model uses one) and the
+output cap in the actual request. Prefer the selected model's supported output
+allowance when the provider requires a cap; omit optional caps when the caller
+has not requested one. Elevated manual-thinking budgets must fit that allowance
+and leave room for the reply, rather than inheriting a fixed lower-tier budget.
+
 ## Tool call accumulation
 When `accumulateToolCalls` is on, the processor assembles streamed fragments by
 index, concatenating argument deltas, and yields progress on an interval. It

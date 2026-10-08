@@ -569,6 +569,12 @@ export class OpenRouterAdapter extends BaseAdapter {
     options: GenerateOptions | undefined,
     hasTools: boolean
   ): Record<string, unknown> {
+    // This model supports a binary high/none reasoning setting, even though
+    // the router's unified schema permits additional effort levels.
+    if (model.replace(/:online$/, '') === 'mistralai/mistral-large-4-0') {
+      if (options?.enableThinking === undefined) return {};
+      return { reasoning: { effort: options.enableThinking ? 'high' : 'none', exclude: false } };
+    }
     if (options?.enableThinking) {
       return {
         reasoning: {

@@ -87,6 +87,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
           const toolResultContent: LLMContentBlock[] = msg.toolCalls.map((toolCall: ToolCall) => ({
             type: 'tool_result' as const,
             tool_use_id: toolCall.id,
+            ...(toolCall.success ? {} : { is_error: true }),
             content: toolCall.success
               ? JSON.stringify(toolCall.result || {})
               : `Error: ${toolCall.error || 'Tool execution failed'}`
@@ -106,6 +107,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
           const toolResultContent: LLMContentBlock[] = msg.toolCalls.map((toolCall: ToolCall) => ({
             type: 'tool_result' as const,
             tool_use_id: toolCall.id,
+            ...(toolCall.success ? {} : { is_error: true }),
             content: toolCall.success
               ? JSON.stringify(toolCall.result || {})
               : `Error: ${toolCall.error || 'Tool execution failed'}`
@@ -148,7 +150,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
       type: 'tool_use' as const,
       id: tc.id,
       name: tc.function?.name || '',
-      input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
+      input: this.parseToolInput(tc.function?.arguments)
       }))
     ];
 
@@ -158,6 +160,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
     const toolResultBlocks: LLMContentBlock[] = toolResults.map(result => ({
       type: 'tool_result' as const,
       tool_use_id: result.id,
+      ...(result.success ? {} : { is_error: true }),
       content: result.success
         ? JSON.stringify(result.result || {})
         : `Error: ${result.error || 'Tool execution failed'}`
@@ -185,7 +188,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
       type: 'tool_use' as const,
       id: tc.id,
       name: tc.function?.name || '',
-      input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
+      input: this.parseToolInput(tc.function?.arguments)
       }))
     ];
 
@@ -195,6 +198,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
     const toolResultBlocks: LLMContentBlock[] = toolResults.map(result => ({
       type: 'tool_result' as const,
       tool_use_id: result.id,
+      ...(result.success ? {} : { is_error: true }),
       content: result.success
         ? JSON.stringify(result.result || {})
         : `Error: ${result.error || 'Tool execution failed'}`
@@ -203,6 +207,19 @@ export class AnthropicContextBuilder implements IContextBuilder {
     messages.push({ role: 'user', content: toolResultBlocks });
 
     return messages;
+  }
+
+  private parseToolInput(argumentsJson: string | undefined): Record<string, unknown> {
+    try {
+      const parsed: unknown = JSON.parse(argumentsJson || '{}');
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      // Anthropic requires an object for tool_use.input. The paired error
+      // result explains why this call never executed and asks for correction.
+      return {};
+    }
   }
 
   private getPreservedThinkingBlocks(

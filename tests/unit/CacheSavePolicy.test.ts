@@ -152,6 +152,42 @@ describe('SaveCadence', () => {
     expect(cadence.shouldSave()).toBe(true);
   });
 
+  it('delays periodic retries after allocation failures even above the item ceiling', () => {
+    const { cadence, advance, items } = createCadence(152 * MB);
+    items(MAX_ITEMS_AT_RISK);
+    expect(cadence.shouldSave()).toBe(true);
+
+    cadence.markSaveFailure(new RangeError('Array buffer allocation failed'));
+    cadence.markSaveAttempt();
+    items(500);
+    expect(cadence.itemsAtRisk()).toBe(MAX_ITEMS_AT_RISK + 500);
+    expect(cadence.shouldSave()).toBe(false);
+
+    advance(2 * 60 * 1000);
+    expect(cadence.shouldSave()).toBe(true);
+    cadence.markSaveFailure(new RangeError('Array buffer allocation failed'));
+    cadence.markSaveAttempt();
+    items(500);
+    advance(4 * 60 * 1000 - 1);
+    expect(cadence.shouldSave()).toBe(false);
+    advance(1);
+    expect(cadence.shouldSave()).toBe(true);
+
+    cadence.markSaveSuccess();
+    cadence.markSaveAttempt();
+    items(MAX_ITEMS_AT_RISK);
+    expect(cadence.shouldSave()).toBe(true);
+  });
+
+  it('keeps the existing item retry cadence for other save failures', () => {
+    const { cadence, items } = createCadence(152 * MB);
+    items(MAX_ITEMS_AT_RISK);
+    cadence.markSaveFailure(new Error('IDB transaction aborted'));
+    cadence.markSaveAttempt();
+    items(10);
+    expect(cadence.shouldSave()).toBe(true);
+  });
+
   it('backs off for the whole cadence after an attempt that landed', () => {
     const { cadence, advance, items } = createCadence(152 * MB);
     items(500);

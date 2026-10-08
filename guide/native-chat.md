@@ -31,6 +31,16 @@ Type special characters to trigger context-aware suggestions:
 
 When the AI uses tools during a conversation, you see them as collapsible panels with live streaming results. Each tool call shows the agent, tool name, parameters, and output.
 
+If a model sends malformed tool arguments, Nexus returns an error that lets it correct that call and continue. Calls that already succeeded are not repeated.
+
+## Thinking and model selection
+
+Thinking for a reply appears in one collapsible **Thinking** block, including reasoning between tool calls. In chat settings or **Settings &rarr; Nexus &rarr; Defaults**, the effort slider offers **Low**, **Medium**, **High**, **Extra high** and **Max** when the model supports thinking. Nexus maps these choices to the effort levels the provider accepts; some models support only one enabled level.
+
+Model lists put models with newer published dates first. Your saved model and provider defaults stay selected. Custom or undated models retain their existing order.
+
+Thinking shares the provider's output allowance with the visible answer. Nexus uses the model allowance where the API requires a limit, and leaves optional limits unset unless you supply one. Provider limits still apply.
+
 ---
 
 ## Voice And Media Defaults

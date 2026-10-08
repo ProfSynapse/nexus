@@ -17,9 +17,9 @@ import {
 } from '../types';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
-import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
+import { ThinkingEffortMapper, mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
-import type { AnthropicThinkingBlock } from '../../../../types/llm/ProviderTypes';
+import type { AnthropicThinkingBlock, ThinkingEffort } from '../../../../types/llm/ProviderTypes';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { acceptsSamplingParams } from '../shared/SamplingParams';
 
@@ -102,6 +102,8 @@ interface AnthropicStreamEvent extends AnthropicResponse {
     partial_json?: string;
     thinking?: string;
     signature?: string;
+    stop_reason?: string | null;
+    stop_sequence?: string | null;
   };
 }
 
@@ -142,7 +144,7 @@ export class AnthropicAdapter extends BaseAdapter {
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
-      let maxTokens = options?.maxTokens || 4096;
+      let maxTokens = this.resolveMaxTokens(options);
       const tools: AnthropicToolDefinition[] = [];
       const requestParams: Record<string, unknown> = {
         model: this.normalizeModelId(options?.model || this.currentModel),
@@ -179,6 +181,8 @@ export class AnthropicAdapter extends BaseAdapter {
           effort,
           maxTokens
         );
+      } else {
+        this.applyDisabledThinkingConfig(requestParams, options);
       }
 
       // Add tools if provided
@@ -207,6 +211,7 @@ export class AnthropicAdapter extends BaseAdapter {
       const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
 
       let usage: AnthropicUsage | undefined;
+      let stopReason: string | null = null;
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
       const thinkingBlocks = new Map<number, AnthropicThinkingBlock>();
       const nodeStream = await this.requestStream({
@@ -220,9 +225,21 @@ export class AnthropicAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Anthropic',
+        yieldMetadataUpdates: true,
         extractMetadata: (parsed) => {
           this.captureThinkingBlock(parsed, thinkingBlocks);
-          return null;
+          if (parsed.type !== 'message_delta') return null;
+          const event = parsed as AnthropicStreamEvent;
+          const result: Record<string, unknown> = {};
+          if (typeof event.delta?.stop_reason === 'string') {
+            stopReason = event.delta.stop_reason;
+            result.stopReason = stopReason;
+          }
+          if (event.delta && 'stop_sequence' in event.delta
+            && (typeof event.delta.stop_sequence === 'string' || event.delta.stop_sequence === null)) {
+            result.stopSequence = event.delta.stop_sequence;
+          }
+          return Object.keys(result).length > 0 ? result : null;
         },
         extractContent: (event: AnthropicStreamEvent) => {
           // message_start carries the input classes (input, cache read, cache
@@ -275,7 +292,7 @@ export class AnthropicAdapter extends BaseAdapter {
         },
         extractFinishReason: (event: AnthropicStreamEvent) => {
           if (event.type === 'message_stop') {
-            return 'stop';
+            return this.mapStopReason(stopReason);
           }
           return null;
         },
@@ -360,11 +377,11 @@ export class AnthropicAdapter extends BaseAdapter {
    */
   private async generateWithBasicMessages(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const messages = this.buildMessages(prompt, options?.systemPrompt);
-    let maxTokens = options?.maxTokens || 4096;
+    let maxTokens = this.resolveMaxTokens(options);
     const tools: AnthropicToolDefinition[] = [];
     
     const requestParams: Record<string, unknown> = {
-      model: options?.model || this.currentModel,
+      model: this.normalizeModelId(options?.model || this.currentModel),
       max_tokens: maxTokens,
       messages: messages.filter(msg => msg.role !== 'system'),
       temperature: options?.temperature,
@@ -387,6 +404,8 @@ export class AnthropicAdapter extends BaseAdapter {
         effort,
         maxTokens
       );
+    } else {
+      this.applyDisabledThinkingConfig(requestParams, options);
     }
 
     // Add tools if provided
@@ -429,6 +448,7 @@ export class AnthropicAdapter extends BaseAdapter {
     const toolCalls = this.extractToolCalls(responseJson.content);
     const metadata = {
       thinking: this.extractThinking(responseJson),
+      stopReason: responseJson.stop_reason,
       stopSequence: responseJson.stop_sequence
     };
 
@@ -453,6 +473,12 @@ export class AnthropicAdapter extends BaseAdapter {
     return modelId.replace(':1m', '');
   }
 
+  private resolveMaxTokens(options?: GenerateOptions): number {
+    const modelId = this.normalizeModelId(options?.model || this.currentModel);
+    // The request requires max_tokens; unknown model limits cannot be inferred.
+    return options?.maxTokens ?? ANTHROPIC_MODELS.find(model => model.apiName === modelId)?.maxTokens ?? 4096;
+  }
+
   private supportsThinking(modelId: string): boolean {
     const model = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(modelId));
     return model?.capabilities.supportsThinking || false;
@@ -460,7 +486,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
   private supportsAdaptiveThinking(modelId: string): boolean {
     const normalized = this.normalizeModelId(modelId);
-    return /^claude-(?:fable|mythos|opus|sonnet)-(?:5(?:-|$)|4-(?:6|7|8)(?:-|$))/.test(normalized);
+    return /^claude-(?:(?:fable|mythos|opus|sonnet)-(?:5(?:-|$)|4-(?:6|7|8)(?:-|$))|haiku-5-5(?:-|$))/.test(normalized);
   }
 
   private captureThinkingBlock(
@@ -508,10 +534,30 @@ export class AnthropicAdapter extends BaseAdapter {
     }
   }
 
+  private applyDisabledThinkingConfig(requestParams: Record<string, unknown>, options?: GenerateOptions): void {
+    if (this.normalizeModelId(options?.model || this.currentModel) !== 'claude-haiku-5-5') return;
+    // Haiku defaults to adaptive thinking if the field is omitted. Explicitly
+    // disable it and keep a stale enabled-mode effort below the rejection tier.
+    const effort = options?.thinkingEffort || 'medium';
+    requestParams.thinking = { type: 'disabled' };
+    requestParams.output_config = { effort: effort === 'xhigh' || effort === 'max' ? 'high' : effort };
+  }
+
+  protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
+    const key = super.generateCacheKey(prompt, options);
+    const model = this.normalizeModelId(options?.model || this.currentModel);
+    if (model !== 'claude-haiku-5-5') return key;
+    const requested = options?.thinkingEffort || 'medium';
+    const effort = options?.enableThinking
+      ? mapAnthropicAdaptiveEffort(requested, model)
+      : requested === 'xhigh' || requested === 'max' ? 'high' : requested;
+    return `${key}:thinking=${Boolean(options?.enableThinking)}:effort=${effort}`;
+  }
+
   private applyThinkingConfig(
     requestParams: Record<string, unknown>,
     modelId: string,
-    effort: 'low' | 'medium' | 'high',
+    effort: ThinkingEffort,
     maxTokens: number
   ): number {
     // Anthropic rejects sampling temperature whenever thinking is enabled.
@@ -519,12 +565,15 @@ export class AnthropicAdapter extends BaseAdapter {
 
     if (this.supportsAdaptiveThinking(modelId)) {
       requestParams.thinking = { type: 'adaptive', display: 'summarized' };
-      requestParams.output_config = { effort };
+      requestParams.output_config = { effort: mapAnthropicAdaptiveEffort(effort, modelId) };
       return maxTokens;
     }
 
-    const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
-    const budgetTokens = thinkingParams?.budget_tokens || 16000;
+    const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort }, maxTokens);
+    const budgetTokens = thinkingParams?.budget_tokens ?? 16000;
+    if ((effort === 'xhigh' || effort === 'max') && budgetTokens < 1024) {
+      throw new Error('Anthropic manual thinking at Extra high or Max requires maxTokens of at least 2048.');
+    }
     requestParams.thinking = { type: 'enabled', budget_tokens: budgetTokens };
 
     if (maxTokens <= budgetTokens) {
@@ -612,8 +661,10 @@ export class AnthropicAdapter extends BaseAdapter {
     const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
       'end_turn': 'stop',
       'max_tokens': 'length',
+      'model_context_window_exceeded': 'length',
       'tool_use': 'tool_calls',
-      'stop_sequence': 'stop'
+      'stop_sequence': 'stop',
+      'refusal': 'content_filter'
     };
     return reasonMap[reason] || 'stop';
   }

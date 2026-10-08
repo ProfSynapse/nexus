@@ -16,6 +16,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     provider: 'openai-codex',
     name: 'GPT-6.1 Sol',
     apiName: 'gpt-6.1-sol',
+    releaseDate: '2026-09-29',
     contextWindow: 1050000,
     maxTokens: 128000,
     inputCostPerMillion: 0,

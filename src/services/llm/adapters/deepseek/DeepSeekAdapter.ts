@@ -91,8 +91,8 @@ function isDeepSeekChatCompletionResponse(parsed: unknown): parsed is DeepSeekCh
  * 'low' tier; we surface 'high' as the entry point and reserve 'max' for the
  * 'high' setting (which our UI treats as the most aggressive option).
  */
-function mapDeepSeekReasoningEffort(effort: 'low' | 'medium' | 'high'): 'high' | 'max' {
-  return effort === 'high' ? 'max' : 'high';
+function mapDeepSeekReasoningEffort(effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'): 'high' | 'max' {
+  return effort === 'high' || effort === 'xhigh' || effort === 'max' ? 'max' : 'high';
 }
 
 export class DeepSeekAdapter extends BaseAdapter {

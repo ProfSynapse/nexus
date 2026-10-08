@@ -47,4 +47,15 @@ describe('ProviderStreamEventMapper', () => {
 
     expect(events.some(event => event.type.startsWith('turn.'))).toBe(false);
   });
+
+  it('prefers the observed provider finish reason over tool presence and forwards raw Anthropic stop metadata', () => {
+    const events = mapProviderStreamChunk({
+      content: '', complete: true, finishReason: 'length',
+      toolCalls: [{ id: 'toolu_1', type: 'function', function: { name: 'search', arguments: '{}' } }],
+      metadata: { stopReason: 'max_tokens', stopSequence: null },
+    });
+    expect(events).toContainEqual({
+      type: 'response.completed', finishReason: 'length', stopReason: 'max_tokens', stopSequence: null
+    });
+  });
 });

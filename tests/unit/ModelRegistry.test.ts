@@ -1,5 +1,52 @@
 import { ModelRegistry, DEFAULT_MODELS } from '../../src/services/llm/adapters/ModelRegistry';
 
+describe('ModelRegistry Claude Haiku 5.5', () => {
+  const capabilities = {
+    supportsJSON: true,
+    supportsImages: true,
+    supportsFunctions: true,
+    supportsStreaming: true,
+    supportsThinking: true
+  };
+
+  it('uses Anthropic’s published limits and short-prompt pricing for the direct API', () => {
+    expect(ModelRegistry.findModel('anthropic', 'claude-haiku-5-5')).toEqual(expect.objectContaining({
+      name: 'Claude Haiku 5.5',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      inputCostPerMillion: 0.10,
+      outputCostPerMillion: 0.50,
+      cacheReadCostPerMillion: 0.01,
+      cacheWriteCostPerMillion: 0.125,
+      supportsSamplingParams: false,
+      capabilities
+    }));
+  });
+
+  it('uses the listed OpenRouter slug and subscription pricing for Claude Code', () => {
+    expect(ModelRegistry.findModel('openrouter', 'anthropic/claude-haiku-5.5')).toEqual(expect.objectContaining({
+      name: 'Claude Haiku 5.5',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      inputCostPerMillion: 0.10,
+      outputCostPerMillion: 0.50,
+      capabilities
+    }));
+    expect(ModelRegistry.findModel('anthropic-claude-code', 'claude-haiku-5-5')).toEqual(expect.objectContaining({
+      name: 'Claude Haiku 5.5',
+      inputCostPerMillion: 0,
+      outputCostPerMillion: 0,
+      capabilities
+    }));
+  });
+
+  it('keeps the existing provider defaults', () => {
+    expect(DEFAULT_MODELS.anthropic).toBe('claude-haiku-4-5-20251001');
+    expect(DEFAULT_MODELS['anthropic-claude-code']).toBe('claude-sonnet-5');
+    expect(DEFAULT_MODELS.openrouter).toBe('openai/gpt-5.6-sol');
+  });
+});
+
 describe('ModelRegistry Claude Opus 4.8 models', () => {
   it('registers Claude Opus 4.8 for Anthropic', () => {
     expect(ModelRegistry.findModel('anthropic', 'claude-opus-4-8')).toEqual(expect.objectContaining({

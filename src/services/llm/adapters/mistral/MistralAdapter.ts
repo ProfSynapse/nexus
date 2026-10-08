@@ -53,6 +53,8 @@ type MistralToolInput = {
 interface MistralMessageContentPart {
   type?: string;
   text?: string;
+  thinking?: Array<{ type?: string; text?: string }>;
+  [key: string]: unknown;
 }
 
 interface MistralMessage {
@@ -79,7 +81,7 @@ interface MistralChatResponse {
 type MistralStreamChunk = {
   choices?: Array<{
     delta?: {
-      content?: string;
+      content?: string | MistralMessageContentPart[];
       tool_calls?: Array<Record<string, unknown>>;
     };
     finish_reason?: string;
@@ -98,6 +100,21 @@ export class MistralAdapter extends BaseAdapter {
   constructor(apiKey: string, model?: string) {
     super(apiKey, model || MISTRAL_DEFAULT_MODEL);
     this.initializeCache();
+  }
+
+  private isLarge4Model(model: string): boolean {
+    return model === 'mistral-large-4' || model === 'mistral-large-4-0';
+  }
+
+  private getReasoningEffort(model: string, options?: GenerateOptions): 'high' | 'none' | undefined {
+    return this.isLarge4Model(model) ? (options?.enableThinking ? 'high' : 'none') : undefined;
+  }
+
+  protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
+    const key = super.generateCacheKey(prompt, options);
+    const model = options?.model || this.currentModel;
+    if (!this.isLarge4Model(model)) return key;
+    return `${key}:reasoning=${this.getReasoningEffort(model, options)}`;
   }
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -120,14 +137,21 @@ export class MistralAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
+      const model = options?.model || this.currentModel;
+      const assistantContent: MistralMessageContentPart[] = [];
+      let sawTypedContent = false;
+      let plainContent = '';
+      let reasoningStarted = false;
+      let reasoningClosed = false;
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/v1/chat/completions`,
         operation: 'streaming generation',
         method: 'POST',
         headers: buildBearerJsonHeaders(this.apiKey),
         body: JSON.stringify({
-          model: options?.model || this.currentModel,
+          model,
           messages: buildMessagesWithConversationHistory(prompt, options),
+          reasoning_effort: this.getReasoningEffort(model, options),
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
           top_p: options?.topP,
@@ -138,9 +162,30 @@ export class MistralAdapter extends BaseAdapter {
         timeoutMs: 120_000
       });
 
-      yield* this.processNodeStream(nodeStream, {
+      for await (const chunk of this.processNodeStream(nodeStream, {
         debugLabel: 'Mistral',
-        extractContent: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.delta?.content || null,
+        extractMetadata: (chunk) => {
+          if (!this.isLarge4Model(model)) return null;
+          const content = (chunk as MistralStreamChunk).choices?.[0]?.delta?.content;
+          if (!content) return null;
+          if (Array.isArray(content)) sawTypedContent = true;
+          this.appendAssistantContent(assistantContent, content);
+          return {
+            thinking: this.extractThinkingText(assistantContent),
+            mistralAssistantContent: assistantContent.map(part => ({ ...part }))
+          };
+        },
+        extractContent: (chunk) => this.extractMessageContent((chunk as MistralStreamChunk).choices?.[0]?.delta?.content) || null,
+        extractReasoning: (chunk) => {
+          if (!this.isLarge4Model(model)) return null;
+          const content = (chunk as MistralStreamChunk).choices?.[0]?.delta?.content;
+          const thinking = this.extractThinkingText(content);
+          const answer = this.extractMessageContent(content);
+          if (thinking) reasoningStarted = true;
+          const complete = Boolean(answer && reasoningStarted && !reasoningClosed);
+          if (complete) reasoningClosed = true;
+          return thinking || complete ? { text: thinking, complete } : null;
+        },
         extractToolCalls: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.delta?.tool_calls || null,
         extractFinishReason: (chunk) => (chunk as MistralStreamChunk).choices?.[0]?.finish_reason || null,
         // Mistral reports failures both as {"error":{...}} and as its own
@@ -152,7 +197,26 @@ export class MistralAdapter extends BaseAdapter {
           initialYield: true,
           progressInterval: 50
         }
-      });
+      })) {
+        if (this.isLarge4Model(model) && chunk.content) plainContent += chunk.content;
+        if (this.isLarge4Model(model) && chunk.toolCalls && assistantContent.length > 0) {
+          const content = assistantContent.map(part => ({ ...part }));
+          chunk.toolCalls = chunk.toolCalls.map(call => ({
+            ...call,
+            mistral_assistant_content: content
+          }));
+        }
+        if (this.isLarge4Model(model) && chunk.complete) {
+          chunk.metadata = {
+            ...chunk.metadata,
+            mistralResponse: {
+              content: sawTypedContent ? assistantContent.map(part => ({ ...part })) : plainContent,
+              toolCallIds: chunk.toolCalls?.map(call => call.id) ?? []
+            }
+          };
+        }
+        yield chunk;
+      }
     } catch (error) {
       console.error('[MistralAdapter] Streaming error:', error);
       throw error;
@@ -163,7 +227,7 @@ export class MistralAdapter extends BaseAdapter {
     try {
       return Promise.resolve(MISTRAL_MODELS.map(model => ({
         ...staticModelToModelInfo(model),
-        supportsThinking: false
+        supportsThinking: model.capabilities.supportsThinking ?? false
       })));
     } catch (error) {
       this.handleError(error, 'listing models');
@@ -178,8 +242,8 @@ export class MistralAdapter extends BaseAdapter {
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
-      supportsThinking: false,
-      maxContextWindow: 128000,
+      supportsThinking: true,
+      maxContextWindow: Math.max(...MISTRAL_MODELS.map(model => model.contextWindow)),
       supportedFeatures: [
         'messages',
         'function_calling',
@@ -203,6 +267,7 @@ export class MistralAdapter extends BaseAdapter {
       messages: options?.conversationHistory && options.conversationHistory.length > 0
         ? options.conversationHistory
         : this.buildMessages(prompt, options?.systemPrompt),
+      reasoning_effort: this.getReasoningEffort(model, options),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       top_p: options?.topP,
@@ -237,6 +302,10 @@ export class MistralAdapter extends BaseAdapter {
     }
     
     let text = this.extractMessageContent(choice.message?.content) || '';
+    const thinking = this.extractThinkingText(choice.message?.content);
+    const metadata = thinking || Array.isArray(choice.message?.content)
+      ? { thinking, mistralAssistantContent: choice.message?.content }
+      : undefined;
     const usage = this.extractUsage(responseJson);
     const finishReason = choice.finish_reason || choice.finishReason || 'stop';
     const toolCalls = choice.message?.toolCalls || choice.message?.tool_calls || [];
@@ -250,7 +319,7 @@ export class MistralAdapter extends BaseAdapter {
       text,
       model,
       usage,
-      undefined,
+      metadata,
       finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter'
     );
   }
@@ -285,6 +354,30 @@ export class MistralAdapter extends BaseAdapter {
         .join('');
     }
     return '';
+  }
+
+  private extractThinkingText(content: MistralMessage['content']): string {
+    if (!Array.isArray(content)) return '';
+    return content
+      .filter(chunk => chunk.type === 'thinking')
+      .flatMap(chunk => chunk.thinking ?? [])
+      .filter(chunk => chunk.type === 'text')
+      .map(chunk => chunk.text ?? '')
+      .join('');
+  }
+
+  private appendAssistantContent(target: MistralMessageContentPart[], content: MistralMessage['content']): void {
+    const parts = typeof content === 'string' ? [{ type: 'text', text: content }] : content ?? [];
+    for (const part of parts) {
+      const previous = target[target.length - 1];
+      if (part.type === 'text' && previous?.type === 'text') {
+        previous.text = (previous.text ?? '') + (part.text ?? '');
+      } else if (part.type === 'thinking' && previous?.type === 'thinking') {
+        previous.thinking = [...(previous.thinking ?? []), ...(part.thinking ?? [])];
+      } else {
+        target.push({ ...part });
+      }
+    }
   }
 
   protected extractUsage(response: MistralChatResponse): TokenUsage | undefined {

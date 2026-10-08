@@ -23,6 +23,12 @@ this.
 downstream logic, so it is the right place to disambiguate entries that share an
 id: a variant pair is distinguishable to a user only by its name.
 
+**`releaseDate`** (optional) — a provider-published `YYYY-MM-DD` date used to
+order model pickers newest first. Record the source beside the entry. Do not
+infer dates from model version numbers, git history, or pricing refresh times.
+Undated models retain their existing display order. Sort at the UI boundary;
+changing registry order can change first-model fallbacks and provider defaults.
+
 **`apiName`** — the id sent to the provider, verbatim. Not a slug you tidied, not
 the marketing name. Two rules follow from that:
 - Gateway providers expect an upstream-namespaced id (`vendor/model`). Direct
@@ -36,12 +42,23 @@ the marketing name. Two rules follow from that:
 **`contextWindow` / `maxTokens`** — input window and max output tokens. Both are
 displayed and both feed budgeting, so an inflated window shows up as a request
 the provider rejects rather than as a warning.
+`maxTokens` is optional when the provider has not published an output ceiling.
+Omit it with a source comment instead of borrowing a gateway's number or
+inventing a conservative cap. Adapters must keep explicit user limits intact
+and must not turn unknown catalog metadata into a default request limit.
 
 **`inputCostPerMillion` / `outputCostPerMillion`** — USD per million tokens,
 Standard tier. Use `0` for both where the provider bills by subscription rather
 than by token (OAuth- and CLI-backed providers) and where the model runs locally.
 Zero here means "no per-token billing", not "unknown" — leaving a real price at
 zero makes spend silently invisible.
+
+**`promptPricingTiers`** (optional) — provider-published rates selected for the
+entire request once gross prompt tokens reach `minPromptTokens`. Gross input
+includes fresh input, cache reads and cache writes. Specify all applicable
+rates for each tier; verify both sides of each threshold and cached requests
+through the actual cost calculator. A base-rate comment alone does not make
+the displayed cost accurate above a threshold.
 
 **`capabilities`** — all five flags, always. An omitted flag reads as
 unsupported, and the failure is an affordance that never appears rather than an

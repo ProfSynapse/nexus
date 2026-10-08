@@ -39,6 +39,7 @@ import {
   extractResponsesApiStreamError
 } from '../../streaming/streamErrorFrames';
 import { BRAND_NAME } from '../../../../constants/branding';
+import { mapOpenAIThinkingEffort } from '../../utils/ThinkingEffortMapper';
 
 /** Codex API endpoint (requires ChatGPT subscription) */
 const CODEX_API_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
@@ -343,6 +344,11 @@ export class OpenAICodexAdapter extends BaseAdapter {
       }
       if (options?.maxTokens !== undefined) {
         requestBody.max_output_tokens = options.maxTokens;
+      }
+      if (options?.enableThinking) {
+        requestBody.reasoning = {
+          effort: mapOpenAIThinkingEffort(options.thinkingEffort || 'medium', model)
+        };
       }
 
       // Convert tools from Chat Completions format to Responses API flat format

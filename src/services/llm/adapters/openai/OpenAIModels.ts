@@ -20,6 +20,7 @@ export const OPENAI_MODELS: ModelSpec[] = [
     provider: 'openai',
     name: 'GPT-6.1 Sol',
     apiName: 'gpt-6.1-sol',
+    releaseDate: '2026-09-29',
     contextWindow: 1050000,
     maxTokens: 128000,
     inputCostPerMillion: 2.00,

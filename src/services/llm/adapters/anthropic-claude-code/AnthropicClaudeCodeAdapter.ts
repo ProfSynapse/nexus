@@ -17,6 +17,7 @@ import {
 import { ModelRegistry } from '../ModelRegistry';
 import { ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './AnthropicClaudeCodeModels';
 import { getPrimaryServerKey } from '../../../../constants/branding';
+import { mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
 
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
 type ClaudeCodeDesktopModuleMap = {
@@ -134,11 +135,11 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         args.push('--append-system-prompt-file', systemPromptPath);
       }
 
+      const model = options?.model || this.currentModel;
       if (options?.enableThinking && options?.thinkingEffort) {
-        args.push('--effort', options.thinkingEffort);
+        args.push('--effort', mapAnthropicAdaptiveEffort(options.thinkingEffort, model));
       }
 
-      const model = options?.model || this.currentModel;
       if (model) {
         args.push('--model', model);
       }

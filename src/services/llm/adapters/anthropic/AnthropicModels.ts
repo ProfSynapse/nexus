@@ -12,6 +12,34 @@ import { ModelSpec } from '../modelTypes';
 
 export const ANTHROPIC_MODELS: ModelSpec[] = [
   // Claude models
+  // Haiku 5.5 has native 1M context and higher rates for prompts over 100k tokens.
+  {
+    provider: 'anthropic',
+    name: 'Claude Haiku 5.5',
+    apiName: 'claude-haiku-5-5',
+    releaseDate: '2026-10-07',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.10,
+    outputCostPerMillion: 0.50,
+    cacheReadCostPerMillion: 0.01,
+    cacheWriteCostPerMillion: 0.125,
+    promptPricingTiers: [{
+      minPromptTokens: 100001,
+      inputCostPerMillion: 0.50,
+      outputCostPerMillion: 2.50,
+      cacheReadCostPerMillion: 0.05,
+      cacheWriteCostPerMillion: 0.625
+    }],
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'anthropic',
     name: 'Claude 4.5 Haiku',
@@ -36,6 +64,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     provider: 'anthropic',
     name: 'Claude Fable 5.1',
     apiName: 'claude-fable-5-1',
+    releaseDate: '2026-09-01',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
@@ -79,6 +108,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     provider: 'anthropic',
     name: 'Claude Opus 5.5',
     apiName: 'claude-opus-5-5',
+    releaseDate: '2026-09-22',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 4.00,
@@ -227,6 +257,7 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     provider: 'anthropic',
     name: 'Claude Sonnet 5.5',
     apiName: 'claude-sonnet-5-5',
+    releaseDate: '2026-09-28',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 2.00,

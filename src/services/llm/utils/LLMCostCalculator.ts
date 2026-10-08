@@ -18,14 +18,14 @@
  */
 
 import { TokenUsage, CostDetails, ModelPricing } from '../adapters/types';
-import type { ModelSpec } from '../adapters/modelTypes';
+import type { ModelSpec, PromptPricingTier } from '../adapters/modelTypes';
 
 export class LLMCostCalculator {
   /**
    * Build the pricing view of a ModelSpec, including cache rates when the
    * spec declares them.
    */
-  static pricingFromSpec(spec: Pick<ModelSpec, 'inputCostPerMillion' | 'outputCostPerMillion' | 'cacheReadCostPerMillion' | 'cacheWriteCostPerMillion'>): ModelPricing {
+  static pricingFromSpec(spec: Pick<ModelSpec, 'inputCostPerMillion' | 'outputCostPerMillion' | 'cacheReadCostPerMillion' | 'cacheWriteCostPerMillion' | 'promptPricingTiers'>): ModelPricing {
     const pricing: ModelPricing = {
       rateInputPerMillion: spec.inputCostPerMillion,
       rateOutputPerMillion: spec.outputCostPerMillion,
@@ -36,6 +36,9 @@ export class LLMCostCalculator {
     }
     if (spec.cacheWriteCostPerMillion !== undefined) {
       pricing.rateCacheWritePerMillion = spec.cacheWriteCostPerMillion;
+    }
+    if (spec.promptPricingTiers !== undefined) {
+      pricing.promptPricingTiers = spec.promptPricingTiers;
     }
     return pricing;
   }
@@ -56,22 +59,34 @@ export class LLMCostCalculator {
     const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
     const freshTokens = Math.max(0, usage.promptTokens - cacheReadTokens - cacheWriteTokens);
 
-    const readRate = modelPricing.rateCacheReadPerMillion ?? modelPricing.rateInputPerMillion;
-    const writeRate = modelPricing.rateCacheWritePerMillion ?? modelPricing.rateInputPerMillion;
+    // promptTokens is the gross input count, including cache reads and writes.
+    const tier = modelPricing.promptPricingTiers?.reduce<PromptPricingTier | undefined>(
+      (selected, candidate) => usage.promptTokens >= candidate.minPromptTokens &&
+        (!selected || candidate.minPromptTokens > selected.minPromptTokens) ? candidate : selected,
+      undefined
+    );
+    const inputRate = tier?.inputCostPerMillion ?? modelPricing.rateInputPerMillion;
+    const outputRate = tier?.outputCostPerMillion ?? modelPricing.rateOutputPerMillion;
+    const readRate = tier
+      ? tier.cacheReadCostPerMillion ?? inputRate
+      : modelPricing.rateCacheReadPerMillion ?? inputRate;
+    const writeRate = tier
+      ? tier.cacheWriteCostPerMillion ?? inputRate
+      : modelPricing.rateCacheWritePerMillion ?? inputRate;
 
-    const freshCost = (freshTokens / 1_000_000) * modelPricing.rateInputPerMillion;
+    const freshCost = (freshTokens / 1_000_000) * inputRate;
     const cacheReadCost = (cacheReadTokens / 1_000_000) * readRate;
     const cacheWriteCost = (cacheWriteTokens / 1_000_000) * writeRate;
     const inputCost = freshCost + cacheReadCost + cacheWriteCost;
-    const outputCost = (usage.completionTokens / 1_000_000) * modelPricing.rateOutputPerMillion;
+    const outputCost = (usage.completionTokens / 1_000_000) * outputRate;
 
     const costDetails: CostDetails = {
       inputCost,
       outputCost,
       totalCost: inputCost + outputCost,
       currency: modelPricing.currency || 'USD',
-      rateInputPerMillion: modelPricing.rateInputPerMillion,
-      rateOutputPerMillion: modelPricing.rateOutputPerMillion
+      rateInputPerMillion: inputRate,
+      rateOutputPerMillion: outputRate
     };
 
     if (cacheReadTokens > 0) {

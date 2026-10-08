@@ -550,6 +550,7 @@ export class IndexingQueue extends Events {
       // save that threw has cleared nothing.
       cadence.markSaveSuccess();
     } catch (error) {
+      cadence.markSaveFailure(error);
       console.error(
         describeCacheSaveFailure('IndexingQueue', stage, readCacheSizeBytes(this.db)),
         error

@@ -30,6 +30,8 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   private readonly idbKey: string;
   private readonly factory: IDBFactory;
   private dbPromise: Promise<IDBDatabase> | null = null;
+  private currentDb: IDBDatabase | null = null;
+  private connectionGeneration = 0;
   private persistRequested = false;
 
   constructor(opts: IndexedDBCacheBlobStoreOptions) {
@@ -43,9 +45,10 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   }
 
   async read(): Promise<ArrayBuffer | null> {
-    const db = await this.openDb();
+    const tx = await this.startTransaction('readonly');
     return new Promise<ArrayBuffer | null>((resolve, reject) => {
-      const tx = db.transaction(IndexedDBCacheBlobStore.STORE_NAME, 'readonly');
+      tx.onabort = () => reject(tx.error ?? new Error('IDB read transaction aborted'));
+      tx.onerror = () => reject(tx.error ?? new Error('IDB read transaction failed'));
       const req = tx.objectStore(IndexedDBCacheBlobStore.STORE_NAME).get(this.idbKey);
       req.onsuccess = () => {
         const value = req.result as CacheBlobRecord | undefined;
@@ -60,14 +63,13 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   }
 
   async write(buffer: ArrayBuffer): Promise<void> {
-    const db = await this.openDb();
+    const tx = await this.startTransaction('readwrite');
     const value: CacheBlobRecord = {
       blob: buffer,
       size: buffer.byteLength,
       mtime: Date.now()
     };
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IndexedDBCacheBlobStore.STORE_NAME, 'readwrite');
       tx.objectStore(IndexedDBCacheBlobStore.STORE_NAME).put(value, this.idbKey);
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(tx.error ?? new Error('IDB write transaction aborted'));
@@ -76,9 +78,8 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   }
 
   async remove(): Promise<void> {
-    const db = await this.openDb();
+    const tx = await this.startTransaction('readwrite');
     return new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(IndexedDBCacheBlobStore.STORE_NAME, 'readwrite');
       tx.objectStore(IndexedDBCacheBlobStore.STORE_NAME).delete(this.idbKey);
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(tx.error ?? new Error('IDB delete transaction aborted'));
@@ -87,9 +88,10 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   }
 
   async getMetadata(): Promise<CacheBlobMetadata | null> {
-    const db = await this.openDb();
+    const tx = await this.startTransaction('readonly');
     return new Promise<CacheBlobMetadata | null>((resolve, reject) => {
-      const tx = db.transaction(IndexedDBCacheBlobStore.STORE_NAME, 'readonly');
+      tx.onabort = () => reject(tx.error ?? new Error('IDB metadata transaction aborted'));
+      tx.onerror = () => reject(tx.error ?? new Error('IDB metadata transaction failed'));
       const req = tx.objectStore(IndexedDBCacheBlobStore.STORE_NAME).get(this.idbKey);
       req.onsuccess = () => {
         const value = req.result as CacheBlobRecord | undefined;
@@ -108,20 +110,43 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
    * Useful for re-open-after-close coverage without exposing the IDBDatabase.
    */
   closeForTesting(): void {
-    if (this.dbPromise) {
-      this.dbPromise
-        .then(db => {
-          try { db.close(); } catch { /* noop */ }
-        })
-        .catch(() => undefined);
-      this.dbPromise = null;
+    const pending = this.dbPromise;
+    this.invalidateConnection();
+    pending?.then(db => db.close()).catch(() => undefined);
+  }
+
+  /** A closed handle may be observed before its onclose event reaches us. */
+  private async startTransaction(mode: IDBTransactionMode): Promise<IDBTransaction> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const db = await this.openDb();
+      try {
+        return db.transaction(IndexedDBCacheBlobStore.STORE_NAME, mode);
+      } catch (err) {
+        // Only transaction creation is retried. A failed request or an aborted
+        // transaction may already have run and must be reported to the caller.
+        if (!err || typeof err !== 'object' || !('name' in err) || err.name !== 'InvalidStateError') {
+          throw err;
+        }
+        this.invalidateConnection(db);
+        db.close();
+        if (attempt !== 0) throw err;
+      }
     }
+    throw new Error('IDB transaction could not start');
+  }
+
+  private invalidateConnection(db?: IDBDatabase): void {
+    if (db && this.currentDb !== db) return;
+    this.connectionGeneration++;
+    this.currentDb = null;
+    this.dbPromise = null;
   }
 
   private openDb(): Promise<IDBDatabase> {
     if (!this.dbPromise) {
-      this.dbPromise = this.openDbInternal().catch(err => {
-        this.dbPromise = null;
+      const generation = ++this.connectionGeneration;
+      this.dbPromise = this.openDbInternal(generation).catch(err => {
+        if (this.connectionGeneration === generation) this.invalidateConnection();
         throw err;
       });
       // Best-effort persistence request; never branch behavior on outcome (C5).
@@ -130,7 +155,7 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
     return this.dbPromise;
   }
 
-  private openDbInternal(): Promise<IDBDatabase> {
+  private openDbInternal(generation: number): Promise<IDBDatabase> {
     return new Promise<IDBDatabase>((resolve, reject) => {
       const req = this.factory.open(
         IndexedDBCacheBlobStore.DB_NAME,
@@ -144,8 +169,18 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
       };
       req.onsuccess = () => {
         const db = req.result;
+        if (this.connectionGeneration !== generation) {
+          db.close();
+          reject(new Error('IDB open superseded by a newer connection'));
+          return;
+        }
+        this.currentDb = db;
         db.onclose = () => {
-          this.dbPromise = null;
+          this.invalidateConnection(db);
+        };
+        db.onversionchange = () => {
+          this.invalidateConnection(db);
+          db.close();
         };
         resolve(db);
       };

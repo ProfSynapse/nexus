@@ -9,7 +9,7 @@ import type { VideoAspectRatio, VideoResolution } from '../../services/llm/types
 /**
  * Thinking effort levels - unified across all providers
  */
-export type ThinkingEffort = 'low' | 'medium' | 'high';
+export type ThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /**
  * Thinking settings for models that support extended thinking

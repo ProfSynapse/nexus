@@ -50,6 +50,7 @@ import {
   type VideoResolution,
 } from '../../services/llm/types/VideoTypes';
 import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
+import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 
 export interface DefaultsTabServices {
   app: App;
@@ -367,7 +368,7 @@ export class DefaultsTab {
         return;
       }
 
-      models.forEach(model => {
+      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
         modelDropdown?.createEl('option', { value: model.id, text: model.name });
       });
 
@@ -692,7 +693,7 @@ export class DefaultsTab {
         return;
       }
 
-      models.forEach(model => {
+      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
         modelDropdown?.createEl('option', { value: model.id, text: model.name });
       });
 
@@ -867,7 +868,7 @@ export class DefaultsTab {
         return;
       }
 
-      models.forEach(model => {
+      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
         modelDropdown?.createEl('option', { value: model.id, text: model.name });
       });
 

@@ -16,6 +16,8 @@ checked, and proven against the live endpoint.
    output tokens, input and output price per million tokens, and which of the
    five capability flags hold. `references/registry-anatomy.md` says what each
    one means and how the value is used.
+   Also capture a published release date when available for newest-first model
+   pickers. Omit an unknown date instead of inventing one.
 
    - The same model has a *different id and a different price* through each
      gateway. Never copy an entry from one provider's registry into another's.
@@ -57,6 +59,8 @@ checked, and proven against the live endpoint.
    capability: if you cannot confirm the model supports tool calls or reasoning
    from the provider's own documentation, that is a fact still to be gathered,
    not a coin flip.
+   If the provider does not publish a separate output ceiling, omit the optional
+   `maxTokens` with a source comment; another gateway's limit is not evidence.
 
 4. **Decide whether this model becomes the provider default.** If it does, stop
    here and work `change-default.md` before continuing — the default lives in

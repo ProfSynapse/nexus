@@ -3,6 +3,7 @@ import {
   IngestProviderOption,
   normalizeIngestSelection
 } from '../../agents/ingestManager/tools/services/IngestCapabilityService';
+import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 
 export interface IngestModelDropdownConfig {
   labelPrefix: string;
@@ -47,7 +48,7 @@ export function renderIngestModelDropdowns(
       return;
     }
 
-    provider.models.forEach(model => {
+    sortModelsNewestFirst(provider.models, model => ({ provider: provider.id, id: model.id })).forEach(model => {
       modelDropdown?.createEl('option', {
         value: model.id,
         text: model.name

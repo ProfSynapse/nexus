@@ -46,7 +46,11 @@ export function mapProviderStreamChunk(chunk: StreamChunk): ChatRuntimeEvent[] {
   if (chunk.complete) {
     events.push({
       type: 'response.completed',
-      finishReason: chunk.toolCalls?.length ? 'tool_calls' : undefined,
+      finishReason: chunk.finishReason ?? (chunk.toolCalls?.length ? 'tool_calls' : undefined),
+      ...(typeof chunk.metadata?.stopReason === 'string' ? { stopReason: chunk.metadata.stopReason } : {}),
+      ...(typeof chunk.metadata?.stopSequence === 'string' || chunk.metadata?.stopSequence === null
+        ? { stopSequence: chunk.metadata.stopSequence }
+        : {}),
     });
   }
 

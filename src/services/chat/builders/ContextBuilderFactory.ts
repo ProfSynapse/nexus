@@ -21,6 +21,7 @@ import { CustomFormatContextBuilder } from './CustomFormatContextBuilder';
 
 // Singleton instances for each builder (they're stateless)
 const openAIBuilder = new OpenAIContextBuilder();
+const mistralBuilder = new OpenAIContextBuilder('mistral');
 const anthropicBuilder = new AnthropicContextBuilder();
 const googleBuilder = new GoogleContextBuilder();
 const customFormatBuilder = new CustomFormatContextBuilder();
@@ -73,12 +74,17 @@ export function getContextBuilder(provider: string, model?: string): IContextBui
     case 'webllm':
       return customFormatBuilder;
 
+    case 'mistral':
+      return mistralBuilder;
+    case 'requesty':
+      return model === 'mistral/mistral-large-4' || model === 'mistral-large-4'
+        ? mistralBuilder
+        : openAIBuilder;
+
     // OpenAI-compatible (default)
     case 'openai':
     case 'openrouter':
     case 'groq':
-    case 'mistral':
-    case 'requesty':
     case 'perplexity':
     default:
       return openAIBuilder;

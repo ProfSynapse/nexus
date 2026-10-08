@@ -118,7 +118,7 @@ export class MessageBubble extends Component {
     const bubble = messageContainer.createDiv('message-bubble');
 
     // Message body. `.message-content` holds the turn in the order the model
-    // produced it: each "Thinking" block above the stretch of text it preceded.
+    // produced it: one "Thinking" block for the assistant turn.
     // The "working" ticker for empty assistant streaming is attached by
     // createElement() via ensureWorkingTicker() so it sits inside this
     // container (kept attached even when there is no text).
@@ -198,7 +198,7 @@ export class MessageBubble extends Component {
 
   /**
    * Render the whole message body into `.message-content`: the turn's thinking
-   * blocks and text runs in the order the model produced them, then the source
+   * block and text runs, then the source
    * footer. Rebuilds from scratch, so callers empty the container first.
    */
   private async renderBody(container: HTMLElement, content: string): Promise<void> {
@@ -230,9 +230,7 @@ export class MessageBubble extends Component {
       const part = parts[index];
 
       if (part.reasoning && part.reasoningIndex !== undefined) {
-        // Only the last block stays open, and only while the turn is still
-        // running: once text follows, the thinking that produced it folds away
-        // instead of pushing the answer off screen.
+        // Keep the single block open while reasoning is still arriving.
         const isLast = index === parts.length - 1;
         this.syncReasoningBlock(
           container,
@@ -425,10 +423,7 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Create or update one collapsible "Thinking" block inside `.message-content`,
-   * keyed by its index in the turn's reasoning segments. New blocks are appended
-   * after everything rendered so far (above the working ticker), which is where
-   * the thinking belongs: directly over the text it is about to produce.
+   * Create or update the turn's collapsible "Thinking" block.
    */
   private syncReasoningBlock(
     container: HTMLElement,
@@ -488,24 +483,11 @@ export class MessageBubble extends Component {
       : null;
   }
 
-  /** Fold every thinking block before `segmentIndex` the reader has not opened themselves. */
-  private collapseReasoningBlocksBefore(container: HTMLElement, segmentIndex: number): void {
-    const blocks = container.querySelectorAll(':scope > .message-reasoning');
-    blocks.forEach(block => {
-      if (!this.isHTMLElement(block) || block.tagName !== 'DETAILS') return;
-      const index = Number.parseInt(block.getAttribute('data-reasoning-index') ?? '', 10);
-      if (!Number.isInteger(index) || index >= segmentIndex) return;
-      if (this.reasoningUserState.has(index)) return;
-      this.reasoningAutoState.set(index, false);
-      (block as HTMLDetailsElement).open = false;
-    });
-  }
-
   /**
-   * Live update during streaming: write the newest thinking into its own block.
+   * Live update during streaming: extend the existing turn-level block.
    *
-   * Returns true when this delta opened a NEW block, which is the caller's cue
-   * to seal the text run above it so the next tokens start a fresh run below.
+   * Returns true only when the first block opens, which is the caller's cue to
+   * seal any text run above it. Later tool rounds update that same block.
    */
   updateReasoning(
     reasoningText: string,
@@ -520,17 +502,9 @@ export class MessageBubble extends Component {
     // re-render (updateContent, reconcile) rebuilds the same layout.
     this.message = { ...this.message, reasoning: reasoningText, reasoningSegments: segments };
 
-    const list: ReasoningSegment[] = segments && segments.length > 0
-      ? segments
-      : [{ text: reasoningText, contentOffset: 0 }];
-    const lastIndex = list.length - 1;
-
-    const isNewBlock = this.findReasoningBlock(container, lastIndex) === null;
-    if (isNewBlock) {
-      this.collapseReasoningBlocksBefore(container, lastIndex);
-    }
-
-    const block = this.syncReasoningBlock(container, lastIndex, list[lastIndex].text, !isComplete);
+    const displayText = ReasoningSegmentSplitter.combine(segments, reasoningText);
+    const isNewBlock = this.findReasoningBlock(container, 0) === null;
+    const block = this.syncReasoningBlock(container, 0, displayText, !isComplete);
 
     // Only report a block that actually rendered: a segment whose first delta is
     // whitespace must not seal the text run above an element that is not there.

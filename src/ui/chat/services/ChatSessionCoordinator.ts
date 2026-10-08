@@ -12,7 +12,7 @@ export interface WorkflowMessageOptions {
   operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
   operationScopeId?: string;
   enableThinking?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
 interface ConversationManagerLike {

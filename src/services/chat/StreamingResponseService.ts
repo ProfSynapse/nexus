@@ -50,7 +50,7 @@ export interface StreamingOptions {
   abortSignal?: AbortSignal;
   excludeFromMessageId?: string; // Exclude this message and everything after from context (for retry)
   enableThinking?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   temperature?: number; // 0.0-1.0, controls randomness
   imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
@@ -154,7 +154,7 @@ export class StreamingResponseService {
       // NOTE: buildLLMMessages includes ALL messages from storage, including the user message
       // that was just saved by sendMessage(), so we DON'T add it again here
       const messages = filteredConversation ?
-        this.buildLLMMessages(filteredConversation, provider, options?.systemPrompt) : [];
+        this.buildLLMMessages(filteredConversation, provider, options?.systemPrompt, options?.model || defaultModel.model) : [];
 
       // Add system prompt if provided and not already added by buildLLMMessages
       if (options?.systemPrompt && !messages.some(m => m.role === 'system')) {
@@ -396,7 +396,7 @@ export class StreamingResponseService {
    * with ProviderMessageBuilder's old text transcript, is why history used to
    * reach the model as prose in the system prompt instead of as turns.
    */
-  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): LLMConversationMessage[] {
+  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string, model?: string): LLMConversationMessage[] {
     const currentProvider = provider || this.getCurrentProvider();
 
     // Apply compaction boundary: only send messages at or after the boundary to the LLM.
@@ -406,7 +406,8 @@ export class StreamingResponseService {
     return ConversationContextBuilder.buildContextForProvider(
       filteredConversation,
       currentProvider,
-      systemPrompt
+      systemPrompt,
+      model
     ) as LLMConversationMessage[];
   }
 

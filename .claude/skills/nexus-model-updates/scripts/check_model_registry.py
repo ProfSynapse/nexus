@@ -90,7 +90,6 @@ REQUIRED_FIELDS = (
     "name",
     "apiName",
     "contextWindow",
-    "maxTokens",
     "inputCostPerMillion",
     "outputCostPerMillion",
     "capabilities",

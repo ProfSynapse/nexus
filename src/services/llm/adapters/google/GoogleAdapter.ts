@@ -19,7 +19,8 @@ import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL } from './GoogleModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
-import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
+import { ThinkingEffortMapper, clampThinkingEffortToHigh } from '../../utils/ThinkingEffortMapper';
+import type { ThinkingEffort } from '../../../../types/llm/ProviderTypes';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
@@ -246,7 +247,8 @@ export class GoogleAdapter extends BaseAdapter {
       const config: GoogleGenerationConfig = {
         generationConfig: {
           ...samplingConfig,
-          maxOutputTokens: options?.maxTokens || 4096,
+          // Let the provider use its model allowance unless the caller supplies a cap.
+          maxOutputTokens: options?.maxTokens,
           // Enable thinking mode when tools are present or explicitly requested
           ...((options?.enableThinking || (options?.tools && options.tools.length > 0)) && {
             thinkingConfig
@@ -651,7 +653,7 @@ export class GoogleAdapter extends BaseAdapter {
 
   private getThinkingConfig(
     model: string,
-    effort: 'low' | 'medium' | 'high',
+    effort: ThinkingEffort,
     includeThoughts: boolean
   ): GoogleThinkingConfig {
     // Ask for thought summaries whenever the user turned thinking on — Gemini
@@ -662,7 +664,8 @@ export class GoogleAdapter extends BaseAdapter {
     // thinkingLevel and the legacy thinkingBudget are mutually exclusive: sending
     // both in one request is rejected, so each generation gets exactly one.
     if (this.isGemini3Model(model)) {
-      return { ...thoughts, thinkingLevel: effort };
+      const level = clampThinkingEffortToHigh(effort);
+      return { ...thoughts, thinkingLevel: model.startsWith('gemini-3-pro-preview') && level === 'medium' ? 'high' : level };
     }
 
     const params = ThinkingEffortMapper.getGoogleParams({ enabled: true, effort });

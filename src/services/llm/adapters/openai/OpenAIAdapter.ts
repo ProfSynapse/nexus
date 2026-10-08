@@ -33,6 +33,7 @@ import {
 } from '../../streaming/streamErrorFrames';
 import { getRegistryModelPricing } from '../shared/StaticModelHelpers';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
+import { mapOpenAIThinkingEffort } from '../../utils/ThinkingEffortMapper';
 
 interface OpenAIResponsesTool {
   type: string;
@@ -259,7 +260,7 @@ export class OpenAIAdapter extends BaseAdapter {
         // This enables chain-of-thought reasoning that streams to the UI
         if (options?.enableThinking && this.supportsReasoning(model)) {
           responseParams.reasoning = {
-            effort: options.thinkingEffort || 'medium',  // Use user-selected effort level
+            effort: mapOpenAIThinkingEffort(options.thinkingEffort || 'medium', model),
             summary: 'auto'    // Can be 'auto', 'concise', or 'detailed'
           };
           // Include encrypted_content for multi-turn conversations
@@ -622,7 +623,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
     if (options?.enableThinking && this.supportsReasoning(model)) {
       responseParams.reasoning = {
-        effort: options.thinkingEffort || 'medium',
+        effort: mapOpenAIThinkingEffort(options.thinkingEffort || 'medium', model),
         summary: 'auto'
       };
       responseParams.include = ['reasoning.encrypted_content'];

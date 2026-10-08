@@ -25,6 +25,7 @@ export const REQUESTY_MODELS: ModelSpec[] = [
     provider: 'requesty',
     name: 'GPT-6.1 Sol',
     apiName: 'openai/gpt-6.1-sol',
+    releaseDate: '2026-09-29',
     contextWindow: 1050000,
     maxTokens: 128000,
     inputCostPerMillion: 2.00,
@@ -176,6 +177,7 @@ export const REQUESTY_MODELS: ModelSpec[] = [
     provider: 'requesty',
     name: 'Claude Fable 5.1',
     apiName: 'anthropic/claude-fable-5.1',
+    releaseDate: '2026-09-01',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 10.00,
@@ -224,6 +226,7 @@ export const REQUESTY_MODELS: ModelSpec[] = [
     provider: 'requesty',
     name: 'Claude Sonnet 5.5',
     apiName: 'anthropic/claude-sonnet-5-5',
+    releaseDate: '2026-09-28',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 2.00,
@@ -309,6 +312,7 @@ export const REQUESTY_MODELS: ModelSpec[] = [
     provider: 'requesty',
     name: 'GLM 5.3',
     apiName: 'zai/glm-5.3',
+    releaseDate: '2026-08-14',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 1.40,
@@ -339,6 +343,26 @@ export const REQUESTY_MODELS: ModelSpec[] = [
   },
 
   // Mistral models via Requesty
+  {
+    // Requesty's preview catalog, 2026-10-08, publishes no output ceiling.
+    // Prices are promotional upstream rates; Requesty PAYG adds its fee.
+    // https://www.requesty.ai/model/mistral/mistral-large-4
+    provider: 'requesty',
+    name: 'Mistral Large 4',
+    apiName: 'mistral/mistral-large-4',
+    releaseDate: '2026-10-06',
+    contextWindow: 1000000,
+    inputCostPerMillion: 0.68,
+    outputCostPerMillion: 2.09,
+    cacheReadCostPerMillion: 0.07,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'requesty',
     name: 'Mistral Large',

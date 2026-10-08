@@ -10,11 +10,119 @@
  *   - Concurrent reads of the same idbKey resolve to identical buffers
  */
 
-import { IDBFactory, IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
+import { IDBDatabase as FakeIDBDatabase, IDBFactory, IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb';
 
 import { IndexedDBCacheBlobStore } from '../../src/database/storage/IndexedDBCacheBlobStore';
 
 describe('IndexedDBCacheBlobStore edge cases', () => {
+  it('reopens and saves when the cached connection closed before its onclose event', async () => {
+    const factory = new IDBFactory();
+    const store = new IndexedDBCacheBlobStore({ idbKey: 'stale-connection', factory });
+    await store.write(new Uint8Array([1]).buffer);
+
+    const originalTx = FakeIDBDatabase.prototype.transaction;
+    let staleDb: IDBDatabase | null = null;
+    let reopenCount = 0;
+    const originalOpen = factory.open.bind(factory);
+    const openSpy = jest.spyOn(factory, 'open').mockImplementation((...args) => {
+      reopenCount++;
+      return originalOpen(...args);
+    });
+    FakeIDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args) {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+      staleDb = this;
+      this.close();
+      return originalTx.apply(this, args);
+    } as typeof originalTx;
+
+    try {
+      await expect(store.write(new Uint8Array([2, 3]).buffer)).resolves.toBeUndefined();
+      expect(reopenCount).toBe(1);
+      expect(new Uint8Array((await store.read())!)).toEqual(new Uint8Array([2, 3]));
+      // A delayed event from the old connection must not discard the new one.
+      staleDb!.onclose?.(new Event('close') as Event);
+      await store.getMetadata();
+      expect(reopenCount).toBe(1);
+    } finally {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+      openSpy.mockRestore();
+    }
+  });
+
+  it('stops after one retry if the new connection also cannot start a transaction', async () => {
+    const factory = new IDBFactory();
+    const store = new IndexedDBCacheBlobStore({ idbKey: 'closed-twice', factory });
+    await store.write(new Uint8Array([1]).buffer);
+    const originalOpen = factory.open.bind(factory);
+    const openSpy = jest.spyOn(factory, 'open').mockImplementation((...args) => originalOpen(...args));
+    const originalTx = FakeIDBDatabase.prototype.transaction;
+    let attempts = 0;
+    FakeIDBDatabase.prototype.transaction = function (this: IDBDatabase) {
+      attempts++;
+      throw new DOMException('The database connection is closed.', 'InvalidStateError');
+    } as typeof originalTx;
+    try {
+      await expect(store.write(new Uint8Array([2]).buffer)).rejects.toMatchObject({ name: 'InvalidStateError' });
+      expect(attempts).toBe(2);
+      FakeIDBDatabase.prototype.transaction = originalTx;
+      await store.write(new Uint8Array([3]).buffer);
+      expect(openSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+      openSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ['read', 'abort', 'read transaction aborted'],
+    ['read', 'error', 'read transaction failed'],
+    ['getMetadata', 'abort', 'metadata transaction aborted'],
+    ['getMetadata', 'error', 'metadata transaction failed']
+  ] as const)('rejects %s when its transaction emits %s without a request error', async (method, event, message) => {
+    const factory = new IDBFactory();
+    const store = new IndexedDBCacheBlobStore({ idbKey: `aborted-${method}`, factory });
+    await store.write(new Uint8Array([1]).buffer);
+
+    const originalTx = FakeIDBDatabase.prototype.transaction;
+    FakeIDBDatabase.prototype.transaction = function (this: IDBDatabase) {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+      const stubTx = {
+        onabort: null as (() => void) | null,
+        onerror: null as (() => void) | null,
+        error: null,
+        objectStore: () => ({ get: () => ({ onsuccess: null, onerror: null }) })
+      };
+      setTimeout(() => stubTx[`on${event}`]?.(), 0);
+      return stubTx as unknown as IDBTransaction;
+    } as typeof originalTx;
+
+    try {
+      await expect(store[method]()).rejects.toThrow(message);
+    } finally {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+    }
+  });
+
+  it('closes and invalidates a connection on versionchange', async () => {
+    const factory = new IDBFactory();
+    const store = new IndexedDBCacheBlobStore({ idbKey: 'versionchange', factory });
+    await store.write(new Uint8Array([1]).buffer);
+    const originalTx = FakeIDBDatabase.prototype.transaction;
+    let activeDb: IDBDatabase | null = null;
+    FakeIDBDatabase.prototype.transaction = function (this: IDBDatabase, ...args) {
+      activeDb = this;
+      return originalTx.apply(this, args);
+    } as typeof originalTx;
+    try {
+      await store.read();
+      activeDb!.onversionchange?.(new Event('versionchange') as IDBVersionChangeEvent);
+      await expect(store.write(new Uint8Array([2]).buffer)).resolves.toBeUndefined();
+      expect(new Uint8Array((await store.read())!)).toEqual(new Uint8Array([2]));
+    } finally {
+      FakeIDBDatabase.prototype.transaction = originalTx;
+    }
+  });
+
   it('closeForTesting allows re-open with the same factory and reads previously-written bytes', async () => {
     const factory = new IDBFactory();
     const store = new IndexedDBCacheBlobStore({ idbKey: 'reopen:k', factory });

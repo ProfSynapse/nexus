@@ -84,7 +84,7 @@ export interface GenerateOptionsInternal {
   onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
   onUsageAvailable?: (usage: unknown, cost?: unknown) => void;
   enableThinking?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   previousResponseId?: string; // OpenAI Responses API
 }
 
@@ -113,7 +113,7 @@ export interface StreamingOptions {
   transcriptionProvider?: string;
   transcriptionModel?: string;
   enableThinking?: boolean;
-  thinkingEffort?: 'low' | 'medium' | 'high';
+  thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   // Responses API (OpenAI/LM Studio): ID from first response, reused for all continuations
   responsesApiId?: string;
   // Callback when responsesApiId is first captured - caller should persist to conversation metadata
@@ -349,7 +349,8 @@ export class ProviderMessageBuilder {
         toolCalls,
         toolResults,
         previousMessages,
-        generateOptions.systemPrompt
+        generateOptions.systemPrompt,
+        generateOptions.model
       ) as ConversationMessage[];
 
       return {

@@ -18,7 +18,7 @@ export interface ProviderThinkingConfig {
   // OpenAI: reasoning.effort
   openai?: {
     reasoning: {
-      effort: 'low' | 'medium' | 'high';
+      effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     };
   };
   // Google Gemini: thinkingBudget
@@ -51,13 +51,34 @@ export interface ProviderThinkingConfig {
  * 'low' and 'medium' both downshift to 'high' (the entry point).
  */
 function mapDeepSeekEffort(effort: ThinkingEffort): 'high' | 'max' {
-  return effort === 'high' ? 'max' : 'high';
+  return effort === 'high' || effort === 'xhigh' || effort === 'max' ? 'max' : 'high';
+}
+
+/** Provider tiers that stop at high must not receive a Nexus-only enum. */
+export function clampThinkingEffortToHigh(effort: ThinkingEffort): 'low' | 'medium' | 'high' {
+  return effort === 'xhigh' || effort === 'max' ? 'high' : effort;
+}
+
+export function mapOpenAIThinkingEffort(effort: ThinkingEffort, modelId: string): 'low' | 'medium' | 'high' | 'xhigh' | 'max' {
+  if (effort !== 'xhigh' && effort !== 'max') return effort;
+  if (/^gpt-6(?:\.\d+)?-/.test(modelId) || /^gpt-5\.6(?:-|$)/.test(modelId)) return effort;
+  if (/^gpt-5\.[2-9](?:-|$)/.test(modelId)) return 'xhigh';
+  return 'high';
+}
+
+export function mapAnthropicAdaptiveEffort(effort: ThinkingEffort, modelId: string): ThinkingEffort {
+  if (effort !== 'xhigh' && effort !== 'max') return effort;
+  const model = modelId.replace(':1m', '');
+  const supportsMax = /^claude-(?:fable-5(?:-1)?|mythos-5(?:-1|-preview)?|opus-(?:4-(?:6|7|8)|5(?:-5)?)|sonnet-(?:4-6|5(?:-5)?)|haiku-5-5)(?:-|$)/.test(model);
+  if (!supportsMax) return 'high';
+  if (effort === 'xhigh' && /^claude-(?:mythos-5-preview|opus-4-6|sonnet-4-6)(?:-|$)/.test(model)) return 'high';
+  return effort;
 }
 
 /**
  * Token budgets for each effort level by provider
  */
-const ANTHROPIC_BUDGETS: Record<ThinkingEffort, number> = {
+const ANTHROPIC_BUDGETS: Record<'low' | 'medium' | 'high', number> = {
   low: 4000,
   medium: 16000,
   high: 32000
@@ -66,22 +87,33 @@ const ANTHROPIC_BUDGETS: Record<ThinkingEffort, number> = {
 const GOOGLE_BUDGETS: Record<ThinkingEffort, number> = {
   low: 4096,
   medium: 8192,
-  high: 24576
+  high: 24576,
+  xhigh: 24576,
+  max: 24576
 };
 
 const OPENROUTER_BUDGETS: Record<ThinkingEffort, number> = {
   low: 4096,
   medium: 8192,
-  high: 16384
+  high: 16384,
+  xhigh: 16384,
+  max: 16384
 };
 
 export class ThinkingEffortMapper {
   /**
    * Get Anthropic thinking parameters
    */
-  static getAnthropicParams(settings: ThinkingSettings): { budget_tokens?: number } | null {
+  static getAnthropicParams(settings: ThinkingSettings, maxOutputTokens?: number): { budget_tokens?: number } | null {
     if (!settings.enabled) {
       return null;
+    }
+    if (settings.effort === 'xhigh' || settings.effort === 'max') {
+      // The caller must supply its effective model/request output cap to lift
+      // manual thinking above High. Leave 1,024 tokens for the visible reply.
+      if (maxOutputTokens === undefined) return { budget_tokens: ANTHROPIC_BUDGETS.high };
+      const available = Math.max(0, Math.floor(maxOutputTokens) - 1024);
+      return { budget_tokens: settings.effort === 'xhigh' ? Math.min(64000, available) : available };
     }
     return {
       budget_tokens: ANTHROPIC_BUDGETS[settings.effort]
@@ -91,13 +123,13 @@ export class ThinkingEffortMapper {
   /**
    * Get OpenAI reasoning parameters
    */
-  static getOpenAIParams(settings: ThinkingSettings): { reasoning?: { effort: string } } | null {
+  static getOpenAIParams(settings: ThinkingSettings, modelId = ''): { reasoning?: { effort: string } } | null {
     if (!settings.enabled) {
       return null;
     }
     return {
       reasoning: {
-        effort: settings.effort
+        effort: mapOpenAIThinkingEffort(settings.effort, modelId)
       }
     };
   }
@@ -136,7 +168,7 @@ export class ThinkingEffortMapper {
       return null;
     }
     return {
-      reasoning_effort: settings.effort
+      reasoning_effort: clampThinkingEffortToHigh(settings.effort)
     };
   }
 
@@ -169,14 +201,14 @@ export class ThinkingEffortMapper {
       case 'anthropic':
         return {
           anthropic: {
-            budget_tokens: ANTHROPIC_BUDGETS[settings.effort]
+            budget_tokens: this.getAnthropicParams(settings)?.budget_tokens ?? ANTHROPIC_BUDGETS.high
           }
         };
       case 'openai':
         return {
           openai: {
             reasoning: {
-              effort: settings.effort
+              effort: mapOpenAIThinkingEffort(settings.effort, '')
             }
           }
         };
@@ -198,7 +230,7 @@ export class ThinkingEffortMapper {
       case 'groq':
         return {
           groq: {
-            reasoning_effort: settings.effort
+            reasoning_effort: clampThinkingEffortToHigh(settings.effort)
           }
         };
       case 'deepseek':
@@ -230,7 +262,7 @@ export class ThinkingEffortMapper {
   static getBudget(providerId: string, effort: ThinkingEffort): number {
     switch (providerId.toLowerCase()) {
       case 'anthropic':
-        return ANTHROPIC_BUDGETS[effort];
+        return this.getAnthropicParams({ enabled: true, effort })?.budget_tokens ?? ANTHROPIC_BUDGETS.high;
       case 'google':
       case 'gemini':
         return GOOGLE_BUDGETS[effort];
@@ -238,7 +270,7 @@ export class ThinkingEffortMapper {
         return OPENROUTER_BUDGETS[effort];
       default:
         // Default to Anthropic-style budgets
-        return ANTHROPIC_BUDGETS[effort];
+        return this.getAnthropicParams({ enabled: true, effort })?.budget_tokens ?? ANTHROPIC_BUDGETS.high;
     }
   }
 }

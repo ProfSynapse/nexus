@@ -64,7 +64,7 @@ export interface SubagentContextProvider {
   getSelectedPrompt: () => { name?: string; systemPrompt?: string } | null;
   getLoadedWorkspaceData: () => Record<string, unknown> | null;
   getContextNotes: () => string[];
-  getThinkingSettings: () => { enabled?: boolean; effort?: 'low' | 'medium' | 'high' } | null;
+  getThinkingSettings: () => { enabled?: boolean; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } | null;
   getSelectedWorkspaceId: () => string | null;
 }
 

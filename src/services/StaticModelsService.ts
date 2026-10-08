@@ -25,7 +25,7 @@ export interface ModelWithProvider {
   id: string;
   name: string;
   contextWindow: number;
-  maxTokens: number;
+  maxTokens?: number;
   pricing: {
     inputPerMillion: number;
     outputPerMillion: number;

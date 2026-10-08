@@ -486,6 +486,8 @@ describe('SQLiteCacheManager save path', () => {
     manager: SQLiteCacheManager;
     /** Number of full-database exports performed since the harness was armed. */
     exportCount(): number;
+    exportAttempts(): number;
+    failNextExports(error: Error, count: number): void;
     /** Buffers handed to the blob store since the harness was armed. */
     writtenBuffers(): ArrayBuffer[];
     /** Hold every subsequent blob store write open until released. */
@@ -511,6 +513,9 @@ describe('SQLiteCacheManager save path', () => {
     const writtenBuffers: ArrayBuffer[] = [];
     const held: Array<{ resolve: () => void }> = [];
     let gated = false;
+    let attempts = 0;
+    let exportFailure: Error | null = null;
+    let failuresRemaining = 0;
 
     const dbHandle = {
       exec: jest.fn(),
@@ -529,6 +534,11 @@ describe('SQLiteCacheManager save path', () => {
       // A distinct buffer per call, so two overlapping saves are two live
       // allocations and not one shared object.
       exportDatabase: jest.fn(() => {
+        attempts++;
+        if (exportFailure && failuresRemaining > 0) {
+          failuresRemaining--;
+          throw exportFailure;
+        }
         const buffer = new ArrayBuffer(4096);
         exportedBuffers.push(buffer);
         return buffer;
@@ -600,10 +610,16 @@ describe('SQLiteCacheManager save path', () => {
     // so every number below belongs to the test.
     exportedBuffers.length = 0;
     writtenBuffers.length = 0;
+    attempts = 0;
 
     return {
       manager,
       exportCount: () => exportedBuffers.length,
+      exportAttempts: () => attempts,
+      failNextExports: (error, count) => {
+        exportFailure = error;
+        failuresRemaining = count;
+      },
       writtenBuffers: () => writtenBuffers,
       gateWrites: () => { gated = true; },
       releaseWrites: () => {
@@ -786,6 +802,69 @@ describe('SQLiteCacheManager save path', () => {
       await inFlight;
       await flushMicrotasks();
     } finally {
+      await harness.dispose();
+    }
+  });
+
+  // A failed sqlite3_js_db_export leaves the cache dirty. Without a delay, the
+  // timer repeatedly asks V8 for the same full-size contiguous buffer.
+  it('backs off automatic allocation retries while retaining the dirty cache', async () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await createSaveHarness({ autoSaveInterval: 1000 });
+    try {
+      harness.failNextExports(new RangeError('Array buffer allocation failed'), 2);
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['t1']);
+
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(1);
+      expect(harness.manager.hasUnsavedChanges()).toBe(true);
+
+      jest.advanceTimersByTime(119000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(1);
+
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(2);
+      expect(harness.manager.hasUnsavedChanges()).toBe(true);
+
+      jest.advanceTimersByTime(239000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(2);
+
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(3);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+      await harness.dispose();
+    }
+  });
+
+  it('allows an explicit save during allocation backoff and resets the automatic delay on success', async () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await createSaveHarness({ autoSaveInterval: 1000 });
+    try {
+      harness.failNextExports(new RangeError('Array buffer allocation failed'), 1);
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['t1']);
+
+      await expect(harness.manager.save()).rejects.toThrow('Array buffer allocation failed');
+      expect(harness.manager.hasUnsavedChanges()).toBe(true);
+      await harness.manager.save();
+      expect(harness.exportAttempts()).toBe(2);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+
+      await harness.manager.run('INSERT INTO memory_traces (id) VALUES (?)', ['t2']);
+      jest.advanceTimersByTime(1000);
+      await flushMicrotasks();
+      expect(harness.exportAttempts()).toBe(3);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
       await harness.dispose();
     }
   });

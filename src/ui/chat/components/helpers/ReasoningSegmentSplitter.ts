@@ -1,13 +1,10 @@
 /**
- * ReasoningSegmentSplitter - Interleave a turn's thinking with its visible text
+ * ReasoningSegmentSplitter - Lay out a turn's thinking and visible text
  * Location: /src/ui/chat/components/helpers/ReasoningSegmentSplitter.ts
  *
- * A reasoning model does not think once and then answer. It thinks, writes,
- * calls a tool, thinks again and writes again. The turn stores that thinking as
- * segments anchored to the length of visible content at the moment each one
- * opened; this splitter turns those anchors back into an ordered list of parts,
- * so each block of thinking renders above the text it actually preceded instead
- * of every thought piling into one block at the top of the bubble.
+ * A reasoning model can think across several tool rounds in one assistant turn.
+ * The stored segments retain their original boundaries and offsets, while the
+ * display combines their text into one collapsible Thinking section.
  *
  * Used by MessageBubble to lay out an assistant message's body.
  */
@@ -15,22 +12,22 @@
 import type { ReasoningSegment } from '../../../../types/chat/ChatTypes';
 
 export interface TurnPart {
-  /** Thinking that opened this part, if any. Absent for text before the first thought. */
+  /** Combined display thinking, if any. Absent for text before the first thought. */
   reasoning?: ReasoningSegment;
-  /** Index of that thinking in the message's `reasoningSegments`. */
+  /** Display block index (always zero for one assistant turn). */
   reasoningIndex?: number;
   /** The stretch of visible content that followed it. May be empty. */
   text: string;
 }
 
 export class ReasoningSegmentSplitter {
-  /**
-   * Build the ordered parts of an assistant turn.
-   *
-   * Falls back to a single leading block when only the legacy flat `reasoning`
-   * string is available (messages stored before segments existed, and providers
-   * that never split their thinking).
-   */
+  /** Combine display text only; signed provider thinking blocks remain untouched. */
+  static combine(segments: ReasoningSegment[] | undefined, reasoning: string | undefined): string {
+    const text = segments?.filter(segment => segment?.text?.trim()).map(segment => segment.text).join('\n\n');
+    return text || reasoning || '';
+  }
+
+  /** Put one Thinking section at the first reasoning offset, preserving text order. */
   static split(
     content: string,
     segments: ReasoningSegment[] | undefined,
@@ -44,22 +41,13 @@ export class ReasoningSegmentSplitter {
         : [{ text: content }];
     }
 
-    const parts: TurnPart[] = [];
-
     const leading = content.slice(0, usable[0].offset);
-    if (leading) {
-      parts.push({ text: leading });
-    }
-
-    for (let index = 0; index < usable.length; index++) {
-      const end = index + 1 < usable.length ? usable[index + 1].offset : content.length;
-      parts.push({
-        reasoning: usable[index].segment,
-        reasoningIndex: usable[index].index,
-        text: content.slice(usable[index].offset, end)
-      });
-    }
-
+    const parts: TurnPart[] = leading ? [{ text: leading }] : [];
+    parts.push({
+      reasoning: { text: this.combine(usable.map(item => item.segment), reasoning), contentOffset: usable[0].offset },
+      reasoningIndex: 0,
+      text: content.slice(usable[0].offset)
+    });
     return parts;
   }
 
@@ -71,12 +59,12 @@ export class ReasoningSegmentSplitter {
   private static normalize(
     segments: ReasoningSegment[] | undefined,
     contentLength: number
-  ): Array<{ segment: ReasoningSegment; offset: number; index: number }> {
+  ): Array<{ segment: ReasoningSegment; offset: number }> {
     if (!segments || segments.length === 0) {
       return [];
     }
 
-    const normalized: Array<{ segment: ReasoningSegment; offset: number; index: number }> = [];
+    const normalized: Array<{ segment: ReasoningSegment; offset: number }> = [];
     let previousOffset = 0;
 
     for (let index = 0; index < segments.length; index++) {
@@ -89,7 +77,7 @@ export class ReasoningSegmentSplitter {
       const offset = Math.min(Math.max(raw, previousOffset), contentLength);
       previousOffset = offset;
 
-      normalized.push({ segment, offset, index });
+      normalized.push({ segment, offset });
     }
 
     return normalized;

@@ -50,6 +50,7 @@ import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogServic
 import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
 import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
+import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 
 /**
  * Current settings state
@@ -139,11 +140,13 @@ interface PluginWithAppSettings {
   };
 }
 
-const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high'];
+const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_LABELS: Record<ThinkingEffort, string> = {
   low: 'Low',
   medium: 'Medium',
-  high: 'High'
+  high: 'High',
+  xhigh: 'Extra high',
+  max: 'Max'
 };
 
 export class ChatSettingsRenderer {
@@ -385,7 +388,7 @@ export class ChatSettingsRenderer {
 
     effortSetting.addSlider(slider => {
       slider
-        .setLimits(0, 2, 1)
+        .setLimits(0, EFFORT_LEVELS.length - 1, 1)
         .setValue(EFFORT_LEVELS.indexOf(getThinking().effort))
         .onChange((value: number) => {
           if (isAgent && !this.settings.agentThinking) {
@@ -590,7 +593,7 @@ export class ChatSettingsRenderer {
         if (models.length === 0) {
           dropdown.addOption('', 'No models available');
         } else {
-          models.forEach(m => {
+          sortModelsNewestFirst(models, m => ({ provider: this.settings.imageProvider, id: m.id })).forEach(m => {
             dropdown.addOption(m.id, m.name);
           });
 
@@ -817,7 +820,7 @@ export class ChatSettingsRenderer {
         return;
       }
 
-      models.forEach(model => {
+      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
         modelDropdown?.createEl('option', { value: model.id, text: model.name });
       });
 
@@ -979,7 +982,7 @@ export class ChatSettingsRenderer {
         return;
       }
 
-      models.forEach(model => {
+      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
         modelDropdown?.createEl('option', { value: model.id, text: model.name });
       });
 

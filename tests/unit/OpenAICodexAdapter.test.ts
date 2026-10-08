@@ -54,6 +54,43 @@ describe('OpenAICodexAdapter', () => {
     expect(JSON.parse(requests[0].body ?? '{}')).not.toHaveProperty('temperature');
   });
 
+  it.each([
+    ['gpt-6.1-sol', 'max', 'max'],
+    ['gpt-5.6-sol', 'max', 'max'],
+    ['gpt-5.2', 'max', 'xhigh']
+  ] as const)('sends %s effort %s as %s through streaming and non-streaming calls', async (model, requested, expected) => {
+    const requests: RequestRecord[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return {
+        status: 200, headers: {}, json: {}, arrayBuffer: new ArrayBuffer(0),
+        text: 'data: {"type":"response.output_text.delta","delta":"OK"}\n\ndata: {"type":"response.completed","response":{"id":"resp_1"}}\n\n'
+      };
+    });
+    const adapter = new OpenAICodexAdapter(createTokens());
+    for await (const chunk of adapter.generateStreamAsync('hi', {
+      model, enableThinking: true, thinkingEffort: requested
+    })) void chunk;
+    await adapter.generateUncached('hi', { model, enableThinking: true, thinkingEffort: requested });
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(JSON.parse(request.body ?? '{}').reasoning).toEqual({ effort: expected });
+    }
+  });
+
+  it('omits reasoning when thinking is disabled', async () => {
+    const requests: RequestRecord[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return { status: 200, headers: {}, json: {}, arrayBuffer: new ArrayBuffer(0),
+        text: 'data: {"type":"response.completed","response":{"id":"resp_1"}}\n\n' };
+    });
+    for await (const chunk of new OpenAICodexAdapter(createTokens()).generateStreamAsync('hi', {
+      model: 'gpt-6-sol', enableThinking: false, thinkingEffort: 'max'
+    })) void chunk;
+    expect(JSON.parse(requests[0].body ?? '{}')).not.toHaveProperty('reasoning');
+  });
+
   it('refreshes expiring tokens before inference', async () => {
     const seenUrls: string[] = [];
     const refreshed: CodexOAuthTokens[] = [];

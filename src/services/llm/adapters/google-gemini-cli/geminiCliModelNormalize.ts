@@ -197,7 +197,9 @@ export function composeAgyModelLabel(
 
   // Base slug: effort comes from the slider (default when unset).
   if (BASE_MODELS[trimmed]) {
-    const effort = isAgyEffort(sliderEffort) ? sliderEffort : DEFAULT_EFFORT;
+    const effort = sliderEffort === 'xhigh' || sliderEffort === 'max'
+      ? 'high'
+      : isAgyEffort(sliderEffort) ? sliderEffort : DEFAULT_EFFORT;
     return composeFromBase(trimmed, effort);
   }
 

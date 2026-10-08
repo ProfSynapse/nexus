@@ -14,7 +14,7 @@ jest.mock('../../src/utils/platform', () => ({
 
 import { AnthropicAdapter } from '../../src/services/llm/adapters/anthropic/AnthropicAdapter';
 import { ANTHROPIC_DEFAULT_MODEL } from '../../src/services/llm/adapters/anthropic/AnthropicModels';
-import { LLMProviderError } from '../../src/services/llm/adapters/types';
+import { LLMProviderError, StreamChunk } from '../../src/services/llm/adapters/types';
 import { ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
 import {
   jsonResponse,
@@ -62,6 +62,7 @@ describe('AnthropicAdapter', () => {
       expect(result.model).toBe('claude-test-model');
       expect(result.provider).toBe('anthropic');
       expect(result.finishReason).toBe('stop');
+      expect(result.metadata?.stopReason).toBe('end_turn');
       // totalTokens is derived as input + output (Anthropic sends no total)
       expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
       expect(result.metadata?.thinking).toBe('pondering');
@@ -72,7 +73,26 @@ describe('AnthropicAdapter', () => {
       const body = JSON.parse(requests[0].body ?? '{}');
       expect(body.system).toBe('Be brief');
       expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
-      expect(body.max_tokens).toBe(4096);
+      expect(body.max_tokens).toBe(64000);
+    });
+
+    it.each([
+      ['claude-haiku-4-5-20251001', true, undefined, 64000, 'claude-haiku-4-5-20251001'],
+      ['claude-haiku-5-5', true, undefined, 128000, 'claude-haiku-5-5'],
+      ['claude-opus-4-8:1m', true, undefined, 128000, 'claude-opus-4-8'],
+      ['claude-haiku-5-5', true, 2048, 2048, 'claude-haiku-5-5'],
+      ['claude-haiku-5-5', false, 0, 0, 'claude-haiku-5-5'],
+      ['unknown-claude-model', false, undefined, 4096, 'unknown-claude-model']
+    ] as const)('uses the effective model cap for %s (thinking=%s, explicit=%s)', async (model, enableThinking, maxTokens, expected, expectedModel) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn' });
+      });
+      await new AnthropicAdapter('ak-test', model).generateUncached('hi', { model, enableThinking, maxTokens });
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.model).toBe(expectedModel);
+      expect(body.max_tokens).toBe(expected);
     });
 
     it('extracts tool_use blocks into toolCalls with stringified input', async () => {
@@ -105,6 +125,53 @@ describe('AnthropicAdapter', () => {
       expect(result.model).toBe(ANTHROPIC_DEFAULT_MODEL);
     });
 
+    it('classifies a context-window stop as length while keeping its raw reason', async () => {
+      __setRequestUrlMock(async () => jsonResponse(200, {
+        content: [{ type: 'text', text: 'partial' }],
+        stop_reason: 'model_context_window_exceeded',
+        stop_sequence: null
+      }));
+      const response = await new AnthropicAdapter('ak-test').generateUncached('hi');
+      expect(response.finishReason).toBe('length');
+      expect(response.metadata).toMatchObject({ stopReason: 'model_context_window_exceeded', stopSequence: null });
+    });
+
+    it.each(['low', 'medium', 'high', 'xhigh', 'max'] as const)('explicitly disables Haiku 5.5 thinking with a safe %s effort on both request paths', async thinkingEffort => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        if (JSON.parse(request.body ?? '{}').stream) {
+          return sseResponse(sse({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }, { type: 'message_stop' }));
+        }
+        return jsonResponse(200, { model: 'claude-haiku-5-5', content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn' });
+      });
+      const adapter = new AnthropicAdapter('ak-test', 'claude-haiku-5-5');
+      await adapter.generateUncached('hi', { enableThinking: false, thinkingEffort });
+      await collect(adapter.generateStreamAsync('hi', { enableThinking: false, thinkingEffort }));
+      for (const request of requests) {
+        const body = JSON.parse(request.body ?? '{}');
+        expect(body.thinking).toEqual({ type: 'disabled' });
+        expect(body.output_config).toEqual({ effort: thinkingEffort === 'xhigh' || thinkingEffort === 'max' ? 'high' : thinkingEffort });
+      }
+      expect(requests).toHaveLength(2);
+    });
+
+    it('separates Haiku thinking modes in the actual generation cache', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { model: 'claude-haiku-5-5', content: [{ type: 'text', text: 'OK' }], stop_reason: 'end_turn' });
+      });
+      const adapter = new AnthropicAdapter('ak-test', 'claude-haiku-5-5');
+      await adapter.generate('hi', { enableThinking: false, thinkingEffort: 'max' });
+      await adapter.generate('hi', { enableThinking: true, thinkingEffort: 'max' });
+      await adapter.generate('hi', { enableThinking: true, thinkingEffort: 'low' });
+      expect(requests).toHaveLength(3);
+      expect(JSON.parse(requests[0].body ?? '{}').thinking).toEqual({ type: 'disabled' });
+      expect(JSON.parse(requests[1].body ?? '{}').output_config.effort).toBe('max');
+      expect(JSON.parse(requests[2].body ?? '{}').output_config.effort).toBe('low');
+    });
+
     it('uses adaptive summarized thinking and effort for Claude 4.6+', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
@@ -128,6 +195,22 @@ describe('AnthropicAdapter', () => {
       expect(body.output_config).toEqual({ effort: 'low' });
       expect(body).not.toHaveProperty('temperature');
       expect(body.max_tokens).toBe(4096);
+    });
+
+    it.each([
+      ['claude-opus-4-8', 'xhigh', 'xhigh'],
+      ['claude-opus-4-6', 'xhigh', 'high'],
+      ['claude-haiku-5-5', 'max', 'max']
+    ] as const)('maps %s requested %s to adaptive effort %s', async (model, requested, expected) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' });
+      });
+      await new AnthropicAdapter('ak-test', model).generateUncached('hi', {
+        enableThinking: true, thinkingEffort: requested
+      });
+      expect(JSON.parse(requests[0].body ?? '{}').output_config).toEqual({ effort: expected });
     });
 
     // Models flagged supportsSamplingParams: false reject temperature even with
@@ -194,9 +277,80 @@ describe('AnthropicAdapter', () => {
       expect(body).not.toHaveProperty('temperature');
       expect(body.max_tokens).toBe(4096);
     });
+
+    it.each([
+      ['claude-haiku-4-5-20251001', 'xhigh', undefined, 64000, 62976, 'enabled'],
+      ['claude-haiku-4-5-20251001', 'max', undefined, 64000, 62976, 'enabled'],
+      ['claude-haiku-4-5-20251001', 'max', 4096, 4096, 3072, 'enabled'],
+      ['claude-haiku-5-5', 'max', undefined, 128000, null, 'adaptive']
+    ] as const)('uses manual thinking room for %s at %s with cap %s', async (model, effort, maxTokens, expectedMax, expectedBudget, mode) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, { model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' });
+      });
+      await new AnthropicAdapter('ak-test', model).generateUncached('hi', {
+        enableThinking: true, thinkingEffort: effort, maxTokens
+      });
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.max_tokens).toBe(expectedMax);
+      expect(body.thinking.type).toBe(mode);
+      if (expectedBudget === null) expect(body.thinking).not.toHaveProperty('budget_tokens');
+      else expect(body.thinking.budget_tokens).toBe(expectedBudget);
+    });
+
+    it('rejects a tiny explicit cap for elevated manual thinking before sending a request', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return jsonResponse(200, {});
+      });
+      const error = await captureError(new AnthropicAdapter('ak-test', 'claude-haiku-4-5-20251001')
+        .generateUncached('hi', { enableThinking: true, thinkingEffort: 'max', maxTokens: 1024 }));
+      expect((error as Error).message).toContain('requires maxTokens of at least 2048');
+      expect(requests).toHaveLength(0);
+    });
   });
 
   describe('SSE streaming', () => {
+    it.each([
+      ['claude-haiku-4-5-20251001', 'max', undefined, 64000, 62976],
+      ['claude-haiku-4-5-20251001', 'max', 4096, 4096, 3072],
+      ['claude-haiku-5-5', 'max', undefined, 128000, null]
+    ] as const)('sends %s max thinking within output cap %s', async (model, effort, maxTokens, expectedMax, expectedBudget) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse({ type: 'message_stop' }));
+      });
+      await collect(new AnthropicAdapter('ak-test', model).generateStreamAsync('hi', {
+        enableThinking: true, thinkingEffort: effort, maxTokens
+      }));
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.max_tokens).toBe(expectedMax);
+      if (expectedBudget === null) expect(body.thinking).not.toHaveProperty('budget_tokens');
+      else expect(body.thinking.budget_tokens).toBe(expectedBudget);
+    });
+
+    it.each([
+      ['claude-haiku-4-5-20251001', true, undefined, 64000, 'claude-haiku-4-5-20251001'],
+      ['claude-haiku-5-5', true, undefined, 128000, 'claude-haiku-5-5'],
+      ['claude-opus-4-8:1m', true, undefined, 128000, 'claude-opus-4-8'],
+      ['claude-haiku-5-5', true, 2048, 2048, 'claude-haiku-5-5'],
+      ['claude-haiku-5-5', false, 0, 0, 'claude-haiku-5-5'],
+      ['unknown-claude-model', false, undefined, 4096, 'unknown-claude-model']
+    ] as const)('uses the effective model cap for streaming %s (thinking=%s, explicit=%s)', async (model, enableThinking, maxTokens, expected, expectedModel) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse({ type: 'message_stop' }));
+      });
+      await collect(new AnthropicAdapter('ak-test', model).generateStreamAsync('hi', { model, enableThinking, maxTokens }));
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.model).toBe(expectedModel);
+      expect(body.max_tokens).toBe(expected);
+    });
+
     it('yields text deltas, thinking deltas, accumulated tool calls, and final usage', async () => {
       __setRequestUrlMock(async () => sseResponse(sse(
         { type: 'message_start', message: { usage: { input_tokens: 10, output_tokens: 1 } } },
@@ -291,6 +445,55 @@ describe('AnthropicAdapter', () => {
         cachedTokens: 2000,
         cacheWriteTokens: 300
       });
+    });
+
+    it.each([
+      ['max_tokens', 'length', null],
+      ['model_context_window_exceeded', 'length', null],
+      ['tool_use', 'tool_calls', null],
+      ['end_turn', 'stop', null],
+      ['pause_turn', 'stop', null],
+      ['stop_sequence', 'stop', 'END'],
+      ['refusal', 'content_filter', null]
+    ] as const)('keeps raw %s and emits normalized %s only at message_stop', async (raw, normalized, sequence) => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'message_start', message: { usage: { input_tokens: 3, output_tokens: 0 } } },
+        { type: 'message_delta', delta: { stop_reason: raw, stop_sequence: sequence }, usage: { output_tokens: 4 } },
+        { type: 'message_stop' }
+      )));
+      const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('hi'));
+      const completed = chunks.filter(chunk => chunk.complete);
+      expect(completed).toHaveLength(1);
+      expect(completed[0].finishReason).toBe(normalized);
+      expect(completed[0].metadata).toMatchObject({ stopReason: raw, stopSequence: sequence });
+      expect(completed[0].usage?.completionTokens).toBe(4);
+    });
+
+    it('does not invent a normalized finish reason if the stream disconnects after message_delta', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'message_delta', delta: { stop_reason: 'max_tokens', stop_sequence: null } }
+      )));
+      const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('hi'));
+      const final = chunks[chunks.length - 1];
+      expect(final.complete).toBe(true);
+      expect(final.finishReason).toBeUndefined();
+      expect(final.metadata).toMatchObject({ stopReason: 'max_tokens', stopSequence: null });
+    });
+
+    it('emits stop metadata before a later provider error without a completion chunk', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { type: 'message_delta', delta: { stop_reason: 'max_tokens', stop_sequence: null } },
+        { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }
+      )));
+      const chunks: StreamChunk[] = [];
+      const error = await captureError((async () => {
+        for await (const chunk of new AnthropicAdapter('ak-test').generateStreamAsync('hi')) chunks.push(chunk);
+      })());
+      expect(error).toMatchObject({ code: 'PROVIDER_STREAM_ERROR' });
+      expect(chunks).toContainEqual({
+        content: '', complete: false, metadata: { stopReason: 'max_tokens', stopSequence: null }
+      });
+      expect(chunks.some(chunk => chunk.complete)).toBe(false);
     });
 
     it('preserves signed and redacted thinking blocks on tool calls for exact replay', async () => {

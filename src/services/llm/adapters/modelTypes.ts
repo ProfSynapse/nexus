@@ -3,6 +3,15 @@
  * Updated June 17, 2025
  */
 
+/** Rates applied to an entire request when its prompt reaches minPromptTokens. */
+export interface PromptPricingTier {
+  minPromptTokens: number;
+  inputCostPerMillion: number;
+  outputCostPerMillion: number;
+  cacheReadCostPerMillion?: number;
+  cacheWriteCostPerMillion?: number;
+}
+
 export interface ModelSpec {
   /** Provider name (openai, google, anthropic, etc.) */
   provider: string;
@@ -10,10 +19,12 @@ export interface ModelSpec {
   name: string;
   /** API identifier used in requests */
   apiName: string;
+  /** Provider-published model release date in YYYY-MM-DD format. */
+  releaseDate?: string;
   /** Context window size in tokens */
   contextWindow: number;
-  /** Maximum output tokens */
-  maxTokens: number;
+  /** Published maximum output tokens. Omit when the provider does not publish a ceiling. */
+  maxTokens?: number;
   /** Input cost per million tokens in USD */
   inputCostPerMillion: number;
   /** Output cost per million tokens in USD */
@@ -22,6 +33,8 @@ export interface ModelSpec {
   cacheReadCostPerMillion?: number;
   /** Cache-write (cache creation) input cost per million tokens in USD. Omit if the provider does not charge one. */
   cacheWriteCostPerMillion?: number;
+  /** Optional prompt-length rates; threshold counts fresh, cache-read and cache-write input tokens. */
+  promptPricingTiers?: PromptPricingTier[];
   /** Model capabilities */
   capabilities: {
     supportsJSON: boolean;

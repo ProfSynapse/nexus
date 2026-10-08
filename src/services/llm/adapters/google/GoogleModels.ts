@@ -23,6 +23,7 @@ export const GOOGLE_MODELS: ModelSpec[] = [
     provider: 'google',
     name: 'Gemini 3.8 Flash',
     apiName: 'gemini-3.8-flash',
+    releaseDate: '2026-09-02',
     contextWindow: 1048576,
     maxTokens: 65536,
     inputCostPerMillion: 0.75,

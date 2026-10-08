@@ -202,6 +202,7 @@ export abstract class BaseAdapter {
     const pumpState = { isCompleted: false };
     let usage: SSEParsedUsage | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
+    let observedFinishReason: StreamChunk['finishReason'] | undefined;
     let streamError: string | undefined = undefined;
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
@@ -216,7 +217,8 @@ export abstract class BaseAdapter {
           usage: this.formatStreamUsage(usage),
           toolCalls: finalToolCalls,
           toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
-          metadata
+          metadata,
+          finishReason: observedFinishReason
         });
         pumpState.isCompleted = true;
         return;
@@ -238,7 +240,13 @@ export abstract class BaseAdapter {
         }
 
         if (options.extractMetadata) {
-          metadata = { ...(metadata || {}), ...(options.extractMetadata(parsed) || {}) };
+          const update = options.extractMetadata(parsed);
+          metadata = { ...(metadata || {}), ...(update || {}) };
+          if (update && Object.keys(update).length > 0) {
+            if (options.yieldMetadataUpdates) {
+              eventQueue.push({ content: '', complete: false, metadata: { ...metadata } });
+            }
+          }
         }
 
         const content = options.extractContent(parsed);
@@ -326,8 +334,12 @@ export abstract class BaseAdapter {
         }
 
         const finishReason = options.extractFinishReason(parsed);
+        if (finishReason === 'stop' || finishReason === 'length'
+          || finishReason === 'tool_calls' || finishReason === 'content_filter') {
+          observedFinishReason = finishReason;
+        }
         if (!options.usageArrivesAfterFinish
-          && (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls')) {
+          && observedFinishReason && finishReason === observedFinishReason) {
           const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
           eventQueue.push({
             content: '',
@@ -335,7 +347,8 @@ export abstract class BaseAdapter {
             usage: this.formatStreamUsage(usage),
             toolCalls: finalToolCalls,
             toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
-            metadata
+            metadata,
+            finishReason: observedFinishReason
           });
           pumpState.isCompleted = true;
         }
@@ -360,7 +373,8 @@ export abstract class BaseAdapter {
             usage: this.formatStreamUsage(usage),
             toolCalls: finalToolCalls,
             toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
-            metadata
+            metadata,
+            finishReason: observedFinishReason
           };
         })()),
       buildErrorChunk: () => ({ content: '', complete: false })

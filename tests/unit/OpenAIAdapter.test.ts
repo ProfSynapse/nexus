@@ -35,6 +35,24 @@ describe('OpenAIAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([
+    ['gpt-6.1-sol', 'max', 'max'],
+    ['gpt-5.6-sol', 'max', 'max'],
+    ['gpt-5.4', 'max', 'xhigh'],
+    ['gpt-5.2', 'max', 'xhigh'],
+    ['gpt-6-sol', 'xhigh', 'xhigh']
+  ] as const)('maps %s requested %s to API effort %s', async (model, requested, expected) => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] });
+    });
+    await new OpenAIAdapter('sk-test').generateUncached('hi', {
+      model, enableThinking: true, thinkingEffort: requested
+    });
+    expect(JSON.parse(requests[0].body ?? '{}').reasoning.effort).toBe(expected);
+  });
+
   // GPT-6 models reject sampling parameters that normal chat settings supply.
   it.each([
     ['gpt-6.1-sol', false], ['gpt-6.1-sol', true],

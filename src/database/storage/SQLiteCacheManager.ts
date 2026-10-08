@@ -103,6 +103,8 @@ class DatabaseAdapter {
  * - Transaction support
  */
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
+  private static readonly ALLOCATION_RETRY_BASE_MS = 2 * 60 * 1000;
+  private static readonly ALLOCATION_RETRY_MAX_MS = 30 * 60 * 1000;
   private app: App;
   private dbPath: string;  // Relative path within vault
   private wasmPath?: string;
@@ -143,6 +145,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private lastSavedBytes: number | null = null;
   private autoSaveInterval: number;
   private autoSaveTimer: number | null = null;
+  private allocationFailureCount = 0;
+  private nextAutoSaveAttemptAt = 0;
   private readonly transactionCoordinator: SQLiteTransactionCoordinator;
   private readonly syncStateStore: SQLiteSyncStateStore;
   private readonly persistenceService: SQLitePersistenceService;
@@ -297,6 +301,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     // handle went away. Rebuild Cache reopens the same instance, so clear it
     // or the reopened handle would never run a coalesced save again.
     this.followUpCancelled = false;
+    this.allocationFailureCount = 0;
+    this.nextAutoSaveAttemptAt = 0;
 
     try {
       // Load WASM binary using Obsidian's vault adapter
@@ -379,7 +385,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
         this.autoSaveTimer = window.setInterval(() => {
-          if (this.hasUnsavedData) {
+          if (this.hasUnsavedData && !this.saveInFlight && !this.pendingSave &&
+              Date.now() >= this.nextAutoSaveAttemptAt) {
             this.saveToFile().catch(err => {
               console.error('[SQLiteCacheManager] Auto-save failed:', err);
             });
@@ -454,7 +461,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     const save = async (): Promise<void> => {
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
-      await this.persistenceService.saveDatabase(sqlite3, db);
+      try {
+        await this.persistenceService.saveDatabase(sqlite3, db);
+      } catch (error) {
+        if (error instanceof RangeError && /array buffer allocation failed/i.test(error.message)) {
+          this.allocationFailureCount++;
+          const exponent = Math.min(this.allocationFailureCount - 1, 20);
+          const delay = Math.min(
+            SQLiteCacheManager.ALLOCATION_RETRY_BASE_MS * 2 ** exponent,
+            SQLiteCacheManager.ALLOCATION_RETRY_MAX_MS
+          );
+          this.nextAutoSaveAttemptAt = Date.now() + delay;
+        }
+        throw error;
+      }
+      this.allocationFailureCount = 0;
+      this.nextAutoSaveAttemptAt = 0;
       this.lastSavedBytes = this.persistenceService.getLastSavedBytes() ?? this.lastSavedBytes;
       // Only the writes this snapshot contains are clean. Anything that landed
       // during the write bumped the counter and stays dirty, so the autosave

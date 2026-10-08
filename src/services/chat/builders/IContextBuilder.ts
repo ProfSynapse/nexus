@@ -34,6 +34,7 @@ export interface LLMToolCall {
   sourceFormat?: 'bracket' | 'xml' | 'native';
   /** Provider-issued blocks that must be replayed exactly before Anthropic tool_use. */
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  mistral_assistant_content?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -62,6 +63,7 @@ export interface LLMContentBlock {
   name?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
+  is_error?: boolean;
   content?: string;
   thinking?: string;
   signature?: string;
@@ -104,7 +106,7 @@ export interface GoogleMessage {
  */
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | LLMContentBlock[] | null;
+  content: string | LLMContentBlock[] | Array<Record<string, unknown>> | null;
   tool_calls?: LLMToolCall[];
   tool_call_id?: string;
   name?: string;

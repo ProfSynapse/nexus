@@ -98,6 +98,8 @@ export interface SSEStreamOptions {
   extractFinishReason: (parsed: SSEParsedEvent) => string | null;
   extractUsage?: (parsed: SSEParsedEvent) => SSEParsedUsage | undefined;
   extractMetadata?: (parsed: SSEParsedEvent) => Record<string, unknown> | null;
+  /** Emit nonterminal metadata chunks as updates arrive (Node SSE path only). */
+  yieldMetadataUpdates?: boolean;
   // Reasoning/thinking extraction for models that support it
   extractReasoning?: (parsed: SSEParsedEvent) => { text: string; complete: boolean } | null;
   // Some providers deliver a fatal error as an in-stream event (HTTP 200, then an

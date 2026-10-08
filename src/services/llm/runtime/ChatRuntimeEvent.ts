@@ -35,6 +35,9 @@ export type ChatRuntimeEvent =
   | {
       type: 'response.completed';
       finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
+      /** Exact provider reason, kept separately from the normalized finish reason. */
+      stopReason?: string;
+      stopSequence?: string | null;
     }
   | {
       type: 'turn.completed';

@@ -60,6 +60,7 @@ export const DEEPSEEK_MODELS: ModelSpec[] = [
     provider: 'deepseek',
     name: 'DeepSeek V4 Pro',
     apiName: 'deepseek-v4-pro',
+    releaseDate: '2026-08-13',
     contextWindow: 1_000_000,
     maxTokens: 65_536,
     inputCostPerMillion: 0.435,

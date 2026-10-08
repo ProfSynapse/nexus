@@ -103,6 +103,16 @@ function collectBySelector(element: MockElement, selector: string, found: MockEl
 }
 
 function findBySelector(element: MockElement, selector: string): MockElement | null {
+  if (selector.startsWith(':scope > .message-reasoning[')) {
+    const index = selector.match(/data-reasoning-index="(\d+)"/)?.[1];
+    return element.children.find(child => child.hasClass('message-reasoning') &&
+      child.getAttribute('data-reasoning-index') === index) ?? null;
+  }
+  if (selector.includes(' ')) {
+    const [first, ...rest] = selector.split(' ');
+    const ancestor = findBySelector(element, first);
+    return ancestor ? findBySelector(ancestor, rest.join(' ')) : null;
+  }
   if (matchesClassSelector(element, selector)) {
     return element;
   }
@@ -319,7 +329,7 @@ describe('MessageBubble', () => {
     expect(activeBranchToolCall.id).toBe('tc_branch_active');
   });
 
-  it('renders a thinking block above each stretch of text it produced', () => {
+  it('renders one combined thinking block for interleaved reasoning and answer text', () => {
     const message = createAssistantMessage({
       id: 'msg_segmented',
       content: 'Step one. Step two.',
@@ -345,18 +355,16 @@ describe('MessageBubble', () => {
 
     const element = bubble.createElement() as unknown as MockElement;
 
-    // One text run per segment, each carrying only the text that followed it --
-    // the second thought must not push the first answer down the bubble.
-    expect(mockRenderContent).toHaveBeenCalledTimes(2);
-    expect(mockRenderContent.mock.calls[0][1]).toBe('Step one.');
-    expect(mockRenderContent.mock.calls[1][1]).toBe(' Step two.');
+    expect(mockRenderContent).toHaveBeenCalledTimes(1);
+    expect(mockRenderContent.mock.calls[0][1]).toBe('Step one. Step two.');
 
     const blocks = collectBySelector(element, '.message-reasoning');
-    expect(blocks).toHaveLength(2);
-    expect(blocks.map(block => block.getAttribute('data-reasoning-index'))).toEqual(['0', '1']);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].getAttribute('data-reasoning-index')).toBe('0');
+    expect(findBySelector(blocks[0], '.message-reasoning-content')?.textContent).toBe('First\n\nSecond');
 
     const runs = collectBySelector(element, '.message-turn-text');
-    expect(runs).toHaveLength(2);
+    expect(runs).toHaveLength(1);
   });
 
   it('keeps a single leading thinking block for a message with no segments', () => {
@@ -384,6 +392,28 @@ describe('MessageBubble', () => {
     expect(collectBySelector(element, '.message-reasoning')).toHaveLength(1);
     expect(mockRenderContent).toHaveBeenCalledTimes(1);
     expect(mockRenderContent.mock.calls[0][1]).toBe('Answer');
+  });
+
+  it('extends one live Thinking section after a completed reasoning boundary', () => {
+    const bubble = new MessageBubble(
+      createAssistantMessage({ id: 'msg_live_reasoning', content: '', toolCalls: undefined }),
+      app,
+      jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn()
+    );
+    activeBubble = bubble;
+    const element = bubble.createElement() as MockElement;
+    const first = [{ text: 'Check the first tool.', contentOffset: 0 }];
+    const second = [...first, { text: 'Check the second tool.', contentOffset: 12 }];
+
+    expect(bubble.updateReasoning('Check the first tool.', false, first)).toBe(true);
+    expect(bubble.updateReasoning('Check the first tool.', true, first)).toBe(false);
+    expect(bubble.updateReasoning('Check the first tool.Check the second tool.', false, second)).toBe(false);
+
+    const blocks = collectBySelector(element, '.message-reasoning');
+    expect(blocks).toHaveLength(1);
+    expect(findBySelector(blocks[0], '.message-reasoning-content')?.textContent).toBe(
+      'Check the first tool.\n\nCheck the second tool.'
+    );
   });
 
   it('renders source links from assistant metadata', async () => {

@@ -392,7 +392,7 @@ export class ChatService {
       abortSignal?: AbortSignal;
       excludeFromMessageId?: string;
       enableThinking?: boolean;
-      thinkingEffort?: 'low' | 'medium' | 'high';
+      thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       temperature?: number;
       imageProvider?: 'google' | 'openrouter' | 'openai';
       imageModel?: string;

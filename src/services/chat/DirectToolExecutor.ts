@@ -554,7 +554,11 @@ export class DirectToolExecutor {
                 try {
                     parameters = JSON.parse(argumentsStr) as Record<string, unknown>;
                 } catch (parseError) {
-                    throw new Error(`Invalid tool arguments: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}`);
+                    throw new Error(
+                        `Invalid tool arguments: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}. ` +
+                        'This call was not executed. Retry this call with valid JSON arguments. ' +
+                        `Original arguments: ${argumentsStr.slice(0, 2000)}${argumentsStr.length > 2000 ? ' (truncated)' : ''}`
+                    );
                 }
 
                 // Notify tool started

@@ -131,7 +131,8 @@ export class ToolContinuationService {
 	          success: result?.success || false,
 	          error: result?.error,
 	          executionTime: result?.executionTime,
-	          function: originalCall.function
+	          function: originalCall.function,
+              mistral_assistant_content: originalCall.mistral_assistant_content
         };
 	      });
 
@@ -168,7 +169,8 @@ export class ToolContinuationService {
         provider,
         previousMessages,
         detectedToolCalls,
-        toolResults
+        toolResults,
+        generateOptions.model
       );
 
       // Step 3: Start NEW stream with continuation (pingpong)
@@ -369,7 +371,8 @@ export class ToolContinuationService {
       provider,
       previousMessages,
       recursiveToolCalls,
-      recursiveToolResults
+      recursiveToolResults,
+      generateOptions.model
     );
 
     yield { type: 'assistant.delta', text: '\n\n' };
@@ -426,10 +429,16 @@ export class ToolContinuationService {
       return {};
     }
 
-    const parsed = JSON.parse(argumentsJson) as unknown;
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
+    try {
+      const parsed = JSON.parse(argumentsJson) as unknown;
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      // The executor already rejected this call. Keep its error and raw
+      // function.arguments so the model can correct it in the continuation.
+      return {};
+    }
   }
 
   /**
@@ -439,7 +448,8 @@ export class ToolContinuationService {
     provider: string,
     previousMessages: ConversationMessage[],
     toolCalls: ToolCallUnion[],
-    toolResults: ToolResult[]
+    toolResults: ToolResult[],
+    model?: string
   ): ConversationMessage[] {
     const updatedMessages = ConversationContextBuilder.appendToolExecution(
       provider === 'anthropic' ? 'anthropic' :
@@ -447,7 +457,8 @@ export class ToolContinuationService {
       provider,
       toolCalls,
       toolResults,
-      previousMessages
+      previousMessages,
+      model
     );
 
     return updatedMessages as ConversationMessage[];
