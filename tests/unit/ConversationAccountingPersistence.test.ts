@@ -1,4 +1,4 @@
-import { ConversationService } from '../../src/services/conversationService';
+import { ConversationService } from '../../src/services/ConversationService';
 import type { IStorageAdapter } from '../../src/database/interfaces/IStorageAdapter';
 import type { MessageData, ConversationMetadata } from '../../src/types/storage/HybridStorageTypes';
 import type { ConversationMessage, IndividualConversation } from '../../src/types/storage/StorageTypes';
