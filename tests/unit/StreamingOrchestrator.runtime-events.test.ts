@@ -7,6 +7,7 @@ import type { StreamChunk } from '../../src/services/llm/adapters/types';
 import type { IAdapterRegistry } from '../../src/services/llm/core/AdapterRegistry';
 import { StreamingOrchestrator } from '../../src/services/llm/core/StreamingOrchestrator';
 import type { ChatRuntimeEvent } from '../../src/services/llm/runtime/ChatRuntimeEvent';
+import { createInitialChatTurnState, reduceChatTurn } from '../../src/services/llm/runtime/ChatTurnReducer';
 import type { LLMProviderSettings } from '../../src/types';
 import type { IToolExecutor } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
 
@@ -181,13 +182,13 @@ describe('StreamingOrchestrator canonical runtime events', () => {
     expect(executeToolCalls.mock.calls.map(call => call[1]?.operationSequence)).toEqual([0, 1]);
   });
 
-  it('refuses to dispatch more than 15 recursive tool-bearing responses', async () => {
+  it('refuses to dispatch more than 25 tool-bearing responses and warns the user', async () => {
     const repeatedCall = {
       id: 'repeated_0',
       type: 'function' as const,
       function: { name: 'content_read', arguments: '{"path":"note.md"}' },
     };
-    const adapter = adapterWithResponses(Array.from({ length: 16 }, () => [
+    const adapter = adapterWithResponses(Array.from({ length: 26 }, () => [
       { content: '', complete: true, toolCalls: [repeatedCall], toolCallsReady: true },
     ]));
     const executeToolCalls = jest.fn(async () => [{
@@ -207,11 +208,153 @@ describe('StreamingOrchestrator canonical runtime events', () => {
       }],
     });
 
-    expect(executeToolCalls).toHaveBeenCalledTimes(15);
+    expect(executeToolCalls).toHaveBeenCalledTimes(25);
     expect(events).toContainEqual(expect.objectContaining({
       type: 'assistant.delta',
-      text: expect.stringContaining('TOOL_LIMIT_REACHED'),
+      text: expect.stringContaining("I've paused after 25 tool calls."),
     }));
+  });
+
+  it('waits for confirmation, resumes pending calls once, and asks again after 25 more iterations', async () => {
+    const responses = Array.from({ length: 51 }, (_, index): StreamChunk[] => [{
+      content: '', complete: true, toolCallsReady: true,
+      toolCalls: [{ id: `call-${index}`, type: 'function',
+        function: { name: 'content_read', arguments: '{}' } }],
+    }]);
+    const executeToolCalls = jest.fn<ReturnType<NonNullable<IToolExecutor['executeToolCalls']>>, Parameters<NonNullable<IToolExecutor['executeToolCalls']>>>(
+      calls => Promise.resolve(calls.map(call => ({ id: call.id, name: 'content_read', success: true, result: {} })))
+    );
+    let allowContinue: (continueRun: boolean) => void = () => { throw new Error('Confirmation not reached'); };
+    let reachedCheckpoint: () => void = () => {};
+    const checkpoint = new Promise<void>(resolve => { reachedCheckpoint = resolve; });
+    const onToolLimitReached = jest.fn((completed: number) => {
+      if (completed === 25) {
+        reachedCheckpoint();
+        return new Promise<boolean>(resolve => { allowContinue = resolve; });
+      }
+      return Promise.resolve(false);
+    });
+    const orchestrator = new StreamingOrchestrator(registryWith(adapterWithResponses(responses)), settings(), { executeToolCalls });
+    const result = collectWithOptions(orchestrator, {
+      onToolLimitReached,
+      tools: [{ type: 'function', function: { name: 'content_read', description: 'Read', parameters: { type: 'object' } } }],
+    });
+
+    await checkpoint;
+    expect(executeToolCalls).toHaveBeenCalledTimes(25);
+    allowContinue(true);
+    const events = await result;
+    expect(onToolLimitReached.mock.calls.map(call => call[0])).toEqual([25, 50]);
+    expect(executeToolCalls.mock.calls.map(call => call[0][0].id)).toEqual(
+      Array.from({ length: 50 }, (_, index) => `call-${index}`)
+    );
+    expect(executeToolCalls.mock.calls.map(call => call[1]?.operationSequence)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index)
+    );
+    expect(events.filter(event => event.type.startsWith('turn.'))).toEqual([
+      { type: 'turn.aborted', reason: 'Stopped by user' },
+    ]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool.snapshot', calls: expect.arrayContaining([
+      expect.objectContaining({ id: 'call-49', success: true }),
+    ]) }));
+  }, 15000);
+
+  it('aborts promptly while confirmation is pending without dispatching more tools', async () => {
+    const repeatedCall = { id: 'call-1', type: 'function' as const,
+      function: { name: 'content_read', arguments: '{}' } };
+    const executeToolCalls = jest.fn(() => Promise.resolve([
+      { id: repeatedCall.id, name: 'content_read', success: true, result: {} },
+    ]));
+    const controller = new AbortController();
+    const onToolLimitReached = jest.fn(() => {
+      controller.abort();
+      return new Promise<boolean>(() => {});
+    });
+    const orchestrator = new StreamingOrchestrator(
+      registryWith(adapterWithResponses(Array.from({ length: 26 }, () => [
+        { content: '', complete: true, toolCallsReady: true, toolCalls: [repeatedCall] },
+      ]))), settings(), { executeToolCalls }
+    );
+    const events = await collectWithOptions(orchestrator, {
+      abortSignal: controller.signal, onToolLimitReached,
+      tools: [{ type: 'function', function: { name: 'content_read', description: 'Read', parameters: { type: 'object' } } }],
+    });
+    expect(executeToolCalls).toHaveBeenCalledTimes(25);
+    expect(events.at(-1)).toEqual({ type: 'turn.aborted', reason: 'Stopped by user' });
+    expect(events.some(event => event.type === 'turn.completed')).toBe(false);
+  });
+
+  it.each([30, 24])('pauses at exactly 25 individual calls when a batch crosses the allowance (initial batch: %s)', async (initialCount) => {
+    const calls = Array.from({ length: 30 }, (_, index) => ({
+      id: `batched-${index}`, type: 'function' as const,
+      function: { name: 'content_read', arguments: '{}' },
+    }));
+    const responses: StreamChunk[][] = [[{
+      content: '', complete: true, toolCallsReady: true, toolCalls: calls.slice(0, initialCount),
+    }]];
+    if (initialCount < calls.length) responses.push([{
+      content: '', complete: true, toolCallsReady: true, toolCalls: calls.slice(initialCount),
+    }]);
+    responses.push([{ content: 'Finished', complete: true }]);
+    const dispatched: string[] = [];
+    const executeToolCalls: IToolExecutor['executeToolCalls'] = batch => {
+      dispatched.push(...batch.map(call => call.id));
+      return Promise.resolve(batch.map(call => ({ id: call.id, name: 'content_read', success: true, result: {} })));
+    };
+    let continueRun: (decision: boolean) => void = () => { throw new Error('Checkpoint not reached'); };
+    let checkpointReached: () => void = () => {};
+    const checkpoint = new Promise<void>(resolve => { checkpointReached = resolve; });
+    const onToolLimitReached = jest.fn(() => {
+      checkpointReached();
+      return new Promise<boolean>(resolve => { continueRun = resolve; });
+    });
+    const adapter = adapterWithResponses(responses);
+    const stream = jest.spyOn(adapter, 'generateStreamAsync');
+    const result = collectWithOptions(new StreamingOrchestrator(registryWith(adapter), settings(), { executeToolCalls }), {
+      onToolLimitReached,
+      tools: [{ type: 'function', function: { name: 'content_read', description: 'Read', parameters: { type: 'object' } } }],
+    });
+
+    await checkpoint;
+    expect(dispatched).toEqual(calls.slice(0, 25).map(call => call.id));
+    expect(onToolLimitReached).toHaveBeenCalledWith(25, undefined);
+    continueRun(true);
+    const events = await result;
+    expect(dispatched).toEqual(calls.map(call => call.id));
+    expect(onToolLimitReached).toHaveBeenCalledTimes(1);
+    const finalHistory = stream.mock.calls.at(-1)?.[1]?.conversationHistory;
+    expect(finalHistory?.filter(message => message.role === 'tool')).toHaveLength(30);
+    expect(events.at(-1)).toEqual({ type: 'turn.completed' });
+  });
+
+  it.each([false, true])('discards the unexecuted batch tail on fallback or terminal handoff (terminal: %s)', async (terminal) => {
+    const calls = Array.from({ length: 30 }, (_, index) => ({
+      id: `call-${index}`, type: 'function' as const,
+      function: { name: terminal && index === 24 ? 'prompt_subagent' : 'content_read', arguments: '{}' },
+    }));
+    const executed: string[] = [];
+    const executeToolCalls: IToolExecutor['executeToolCalls'] = batch => {
+      executed.push(...batch.map(call => call.id));
+      return Promise.resolve(batch.map(call => ({
+        id: call.id, name: call.function.name, success: true,
+        result: terminal && call.id === 'call-24' ? { success: true, data: { branchId: 'branch-1' } } : {},
+      })));
+    };
+    const onToolLimitReached = jest.fn(() => Promise.resolve(true));
+    const events = await collectWithOptions(new StreamingOrchestrator(
+      registryWith(adapterWithResponses([[{ content: '', complete: true, toolCallsReady: true, toolCalls: calls }]])),
+      settings(), { executeToolCalls }
+    ), {
+      onToolLimitReached: terminal ? onToolLimitReached : undefined,
+      tools: [{ type: 'function', function: { name: 'content_read', description: 'Read', parameters: { type: 'object' } } }],
+    });
+    expect(executed).toEqual(calls.slice(0, 25).map(call => call.id));
+    expect(onToolLimitReached).not.toHaveBeenCalled();
+    const state = events.reduce(reduceChatTurn, createInitialChatTurnState());
+    expect(state.toolCalls).toHaveLength(25);
+    expect(state.toolCalls.every(call => call.success === true)).toBe(true);
+    expect(state.phase).toBe('complete');
+    expect(state.content).toContain(terminal ? 'Subagent Started' : "I've paused after 25 tool calls.");
   });
 });
 

@@ -102,11 +102,11 @@ describe('Anthropic malformed tool argument recovery', () => {
     ]));
   });
 
-  it('bounds repeated malformed recursive calls at the existing 15-response limit', async () => {
+  it('bounds repeated malformed recursive calls at the 25-response limit', async () => {
     const executor = realExecutor();
     const executeTool = jest.spyOn(executor, 'executeTool');
     const histories: unknown[] = [];
-    const responses = Array.from({ length: 15 }, (_, index): StreamChunk[] => [{
+    const responses = Array.from({ length: 25 }, (_, index): StreamChunk[] => [{
       content: '',
       complete: true,
       toolCalls: [call(`bad-${index + 1}`, malformedArguments)],
@@ -120,10 +120,10 @@ describe('Anthropic malformed tool argument recovery', () => {
     ]);
 
     expect(executeTool).not.toHaveBeenCalled();
-    expect(events.filter(event => event.type === 'tool.execution.completed')).toHaveLength(15);
+    expect(events.filter(event => event.type === 'tool.execution.completed')).toHaveLength(25);
     expect(events).toContainEqual(expect.objectContaining({
       type: 'assistant.delta',
-      text: expect.stringContaining('TOOL_LIMIT_REACHED'),
+      text: expect.stringContaining("I've paused after 25 tool calls."),
     }));
     expect(events.at(-1)).toEqual({ type: 'turn.completed' });
   });

@@ -9,7 +9,7 @@
 
 import { App, ButtonComponent, Modal, Notice } from 'obsidian';
 
-export type ConfirmVariant = 'delete' | 'remove' | 'archive';
+export type ConfirmVariant = 'delete' | 'remove' | 'archive' | 'continue';
 
 export interface ConfirmModalConfig {
     variant: ConfirmVariant;
@@ -17,6 +17,10 @@ export interface ConfirmModalConfig {
     body: string;
     /** Optional CTA label override. Defaults from variant. */
     ctaLabel?: string;
+    /** Optional label for the dismiss button. */
+    cancelLabel?: string;
+    /** Closing a pending prompt on abort resolves its choice as false. */
+    abortSignal?: AbortSignal;
     /**
      * Optional side-effect callback invoked on CTA click. May return a Promise.
      * The boolean Promise returned by `ConfirmModal.confirm()` reflects which
@@ -35,12 +39,14 @@ export interface ConfirmModalConfig {
 const DEFAULT_CTA: Record<ConfirmVariant, string> = {
     delete: 'Delete',
     remove: 'Remove',
-    archive: 'Archive'
+    archive: 'Archive',
+    continue: 'Continue'
 };
 
 export class ConfirmModal extends Modal {
     private readonly config: ConfirmModalConfig;
     private confirmed = false;
+    private didClose = false;
 
     constructor(app: App, config: ConfirmModalConfig) {
         super(app);
@@ -54,10 +60,20 @@ export class ConfirmModal extends Modal {
      */
     static confirm(app: App, config: ConfirmModalConfig): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
+            if (config.abortSignal?.aborted) {
+                resolve(false);
+                return;
+            }
+
+            const onAbort = () => modal.close();
             const modal = new ConfirmModal(app, {
                 ...config,
-                onResolve: resolve
+                onResolve: (confirmed) => {
+                    config.abortSignal?.removeEventListener('abort', onAbort);
+                    resolve(confirmed && !config.abortSignal?.aborted);
+                }
             });
+            config.abortSignal?.addEventListener('abort', onAbort, { once: true });
             modal.open();
         });
     }
@@ -74,7 +90,7 @@ export class ConfirmModal extends Modal {
         const buttons = contentEl.createDiv('modal-button-container');
 
         new ButtonComponent(buttons)
-            .setButtonText('Cancel')
+            .setButtonText(this.config.cancelLabel ?? 'Cancel')
             .onClick(() => this.close());
 
         const ctaLabel = this.config.ctaLabel ?? DEFAULT_CTA[this.config.variant];
@@ -88,14 +104,20 @@ export class ConfirmModal extends Modal {
         }
 
         cta.onClick(() => {
+            if (this.config.abortSignal?.aborted) {
+                this.close();
+                return;
+            }
             void Promise.resolve(this.config.onConfirm?.())
-                .then(() => { this.confirmed = true; })
+                .then(() => { this.confirmed = !this.config.abortSignal?.aborted; })
                 .catch((err) => this.handleConfirmError(err))
                 .finally(() => this.close());
         });
     }
 
     onClose(): void {
+        if (this.didClose) return;
+        this.didClose = true;
         this.contentEl.empty();
         this.config.onResolve?.(this.confirmed);
     }
