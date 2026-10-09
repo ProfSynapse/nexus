@@ -44,7 +44,7 @@ export class ChatInput {
       message: string,
       enhancement?: MessageEnhancement,
       metadata?: ReferenceMetadata
-    ) => void,
+    ) => Promise<boolean>,
     private getLoadingState: () => boolean,
     private app?: App,
     private onStopGeneration?: () => void,
@@ -140,7 +140,7 @@ export class ChatInput {
 
         if (!anySuggesterActive) {
           e.preventDefault();
-          this.handleSendMessage();
+          void this.handleSendMessage().catch(error => console.error('[ChatInput] Send failed:', error));
         }
       }
     };
@@ -250,14 +250,14 @@ export class ChatInput {
       void this.voiceInputController?.startRecording();
     } else {
       // Send message
-      this.handleSendMessage();
+      void this.handleSendMessage().catch(error => console.error('[ChatInput] Send failed:', error));
     }
   }
 
   /**
    * Handle sending a message
    */
-  private handleSendMessage(): void {
+  private async handleSendMessage(): Promise<void> {
     if (!this.inputElement) return;
 
     // Check if a conversation is active
@@ -283,12 +283,31 @@ export class ChatInput {
           }
         : undefined;
 
+    // Keep a DOM snapshot so rejected pre-send compaction can restore reference
+    // badges and text without replacing anything the user typed meanwhile.
+    const originalInput = this.inputElement;
+    const draftNodes = Array.from(originalInput.childNodes, node => node.cloneNode(true));
+
     // Clear the input
     ContentEditableHelper.clear(this.inputElement);
     this.autoResizeInput();
 
     // Send the message with enhancement
-    this.onSendMessage(message, enhancement, metadata);
+    try {
+      const sent = await this.onSendMessage(message, enhancement, metadata);
+      if (!sent && this.inputElement === originalInput && !this.getValue().trim()) {
+        originalInput.replaceChildren(...draftNodes);
+        this.autoResizeInput();
+        this.updateUI();
+      }
+    } catch (error) {
+      if (this.inputElement === originalInput && !this.getValue().trim()) {
+        originalInput.replaceChildren(...draftNodes);
+        this.autoResizeInput();
+        this.updateUI();
+      }
+      throw error;
+    }
   }
 
   /**

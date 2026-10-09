@@ -39,6 +39,35 @@ describe('GoogleAdapter', () => {
     jest.useRealTimers();
   });
 
+  it.each([false, true])('uses Google Search and keeps candidate grounding sources (stream=%s)', async stream => {
+    const requests: CapturedRequest[] = [];
+    const grounded = { candidates: [{ content: { parts: [{ text: 'Answer' }] }, finishReason: 'STOP',
+      groundingMetadata: { groundingChunks: [{ web: { uri: 'https://example.com/source', title: 'Example' } }] } }] };
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return stream ? sseResponse(sse(grounded)) : jsonResponse(200, grounded);
+    });
+    const adapter = new GoogleAdapter('gk-test');
+    const result = stream
+      ? (await collect(adapter.generateStreamAsync('search', { webSearch: true }))).at(-1)?.metadata?.webSearchResults
+      : (await adapter.generateUncached('search', { webSearch: true })).webSearchResults;
+    expect(JSON.parse(requests[0].body ?? '{}').tools).toContainEqual({ googleSearch: {} });
+    expect(result).toEqual([{ title: 'Example', url: 'https://example.com/source', date: undefined }]);
+  });
+
+  it.each([false, true])('includes Gemini thoughts and cache reads in usage (stream=%s)', async stream => {
+    const response = { candidates: [{ content: { parts: [{ text: 'Answer' }] }, finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 2,
+        cachedContentTokenCount: 4, totalTokenCount: 17 } };
+    __setRequestUrlMock(async () => stream ? sseResponse(sse(response)) : jsonResponse(200, response));
+    const adapter = new GoogleAdapter('gk-test');
+    const usage = stream
+      ? (await collect(adapter.generateStreamAsync('hi'))).at(-1)?.usage
+      : (await adapter.generateUncached('hi')).usage;
+    expect(usage).toMatchObject({ promptTokens: 10, completionTokens: 7, totalTokens: 17,
+      cacheReadTokens: 4, reasoningTokens: 2 });
+  });
+
   describe('non-streaming generate', () => {
     it('parses candidate parts, usageMetadata, and maps STOP', async () => {
       const requests: CapturedRequest[] = [];

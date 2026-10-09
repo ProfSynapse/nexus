@@ -8,6 +8,16 @@
 import { ReasoningSegmentSplitter } from '../../src/ui/chat/components/helpers/ReasoningSegmentSplitter';
 
 describe('ReasoningSegmentSplitter', () => {
+  it('collapses excess blank display lines within and between tool rounds without modifying stored text', () => {
+    const segments = [
+      { text: 'First thought.\r\n\r\n\r\n  \r\nNext paragraph.\n\n', contentOffset: 0 },
+      { text: '\n\nSecond round.', contentOffset: 5 }
+    ];
+    const original = JSON.stringify(segments);
+    expect(ReasoningSegmentSplitter.combine(segments, undefined)).toBe('First thought.\n\nNext paragraph.\n\nSecond round.');
+    expect(JSON.stringify(segments)).toBe(original);
+    expect(ReasoningSegmentSplitter.split('Answer', undefined, 'One\n\n\n\nTwo')[0].reasoning?.text).toBe('One\n\nTwo');
+  });
   it('renders a lone text run when the turn never reasoned', () => {
     expect(ReasoningSegmentSplitter.split('Just an answer.', undefined, undefined)).toEqual([
       { text: 'Just an answer.' }

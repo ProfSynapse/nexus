@@ -182,4 +182,14 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 
 - 2026-10-08 | Stop-reason tests exercised real SSE parsing, runtime mapping, reduction and both message-save paths, with mock storage serialization. Removing response-stop recording made the history assertion fail; the production source was restored before broad checks. No Obsidian CLI was available on PATH, so those tests do not establish an in-app storage round-trip. | No protocol change; existing mutation-proof and live-loop guidance covered the verification limits.
 
+- 2026-10-09 | Thinking regressions reproduce response-boundary collapse, redraw state loss, and a token arriving before the native details toggle event. Tests failed against the prior implementation before the fix. | No procedure change; DOM mocks only store browser state and do not decide the disclosure policy. In-app verification remains separate from these tests.
+- 2026-10-09 | A compaction test returned false for the recursive hidden continuation, masking repeated compaction when a smaller model still could not fit the prompt. | Added a regression with consecutive over-budget checks and asserted one compaction plus zero sends; automatic compaction now resumes only its pending user send, while manual compaction retains one continuation. Existing mock-honesty guidance applies.
+
+## 2026-10-09 — Real context budgets
+- Observation: mocked preparation alone could not establish that a smaller model receives a fitting prompt or that new messages survive full compaction.
+- Change: followed mock-honesty with real handoff/budget/manager integration and persistence reload checks. No protocol change needed. In-app verification remains unavailable.
+
+## 2026-10-09 — Repeated compaction regression
+- Observation: first-handoff tests passed while the next compaction could resurrect old history.
+- Change: added failing-first regressions through real frontier merging, persisted metadata, active-history filtering and provider replay. Existing mock-honesty guidance applies; no protocol change needed.
 - 2026-10-09 | Tool-limit tests failed against the original 15-call threshold, then exercised exact 25-call batch boundaries, confirmation/resume, abort, and preservation of completed tool-only progress. Empty-message fixtures needed explicit empty tool history because the helper supplies completed calls by default. No Obsidian CLI was available for UI verification. | No protocol change; the existing mock-honesty and live-loop guidance covered these limits.

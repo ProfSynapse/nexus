@@ -210,3 +210,44 @@ describe('ContextPreservationService — attemptStateSave transcript wrapping', 
     expect(capturedMessages[0].content).toContain('[Assistant]: Answer');
   });
 });
+
+describe('ContextPreservationService — handoff summary', () => {
+  it('summarizes tool outcomes in bounded chunks without executing tools', async () => {
+    const calls: Array<{ text: string; options: Record<string, unknown> }> = [];
+    const executeToolCalls = jest.fn();
+    const svc = new ContextPreservationService({
+      llmService: {
+        generateResponseStream: jest.fn().mockImplementation(async function* (messages: ConversationMessage[], options: Record<string, unknown>) {
+          calls.push({ text: messages[0].content, options });
+          yield { chunk: 'Preserved tool outcome.\nHANDOFF_SUMMARY_COMPLETE', complete: true };
+        })
+      },
+      getAgent: jest.fn().mockReturnValue(null),
+      executeToolCalls
+    } as any);
+    const result = await svc.summarizeForHandoff([
+      makeMsg({ id: 'u', role: 'user', content: 'Find the report' }),
+      makeMsg({ id: 'a', role: 'assistant', content: 'Found it', toolCalls: [{
+        id: 't', type: 'function', function: { name: 'search', arguments: '{}' }, result: 'Found report.md: ' + 'r'.repeat(8000)
+      }] })
+    ], { provider: 'openai', model: 'source', maxTokens: 100, sourceContextWindow: 2048 });
+    expect(result).toBe('Preserved tool outcome.');
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.some(call => call.text.includes('Outcome: Found report.md'))).toBe(true);
+    expect(calls.every(call => Array.isArray(call.options.tools) && (call.options.tools as unknown[]).length === 0 && call.options.maxTokens === 100)).toBe(true);
+    expect(executeToolCalls).not.toHaveBeenCalled();
+  });
+
+  it('rejects a truncated response that never reaches the completion marker', async () => {
+    const svc = new ContextPreservationService({
+      llmService: { generateResponseStream: jest.fn().mockImplementation(async function* () {
+        yield { chunk: 'Partial summary', complete: true, finishReason: 'length' };
+      }) },
+      getAgent: jest.fn().mockReturnValue(null),
+      executeToolCalls: jest.fn()
+    } as any);
+    await expect(svc.summarizeForHandoff([makeMsg({ id: 'u', role: 'user', content: 'Goal' })], {
+      provider: 'openai', model: 'source', maxTokens: 100, sourceContextWindow: 2048
+    })).rejects.toThrow('stopped');
+  });
+});

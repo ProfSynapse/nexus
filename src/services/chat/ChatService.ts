@@ -9,6 +9,7 @@
 import { ConversationData, ChatMessage, ToolCall } from '../../types/chat/ChatTypes';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { ToolCallService } from './ToolCallService';
+import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
 import type { ToolEventCallback } from './ToolCallService';
 import { CostTrackingService } from './CostTrackingService';
 import { ConversationQueryService } from './ConversationQueryService';
@@ -393,6 +394,7 @@ export class ChatService {
       onToolLimitReached?: (completedIterations: number, abortSignal?: AbortSignal) => Promise<boolean>;
       excludeFromMessageId?: string;
       enableThinking?: boolean;
+      webSearch?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       temperature?: number;
       imageProvider?: 'google' | 'openrouter' | 'openai';
@@ -531,6 +533,11 @@ export class ChatService {
    */
   getLLMService(): LLMService {
     return this.dependencies.llmService;
+  }
+
+  /** Use the same tool schemas as streaming when budgeting a model handoff. */
+  getContextTools(provider: string) {
+    return shouldPassToolSchemasToProvider(provider) ? this.toolCallService.getAvailableTools() : [];
   }
 
   /**

@@ -27,6 +27,7 @@ import {
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
   onToolCallsDetected: (messageId: string, toolCalls: ConversationToolCall[]) => void;
+  onCostUpdate?: () => void;
   onToolLimitReached?: (completedToolCalls: number, abortSignal?: AbortSignal) => Promise<boolean>;
   onReasoningUpdate?: (
     messageId: string,
@@ -49,6 +50,7 @@ export interface StreamOptions {
   abortSignal?: AbortSignal;
   onToolLimitReached?: (completedToolCalls: number, abortSignal?: AbortSignal) => Promise<boolean>;
   enableThinking?: boolean;
+  webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   temperature?: number;
   imageProvider?: 'google' | 'openrouter' | 'openai';
@@ -91,8 +93,11 @@ export class MessageStreamHandler {
     conversation: ConversationData,
     userMessageContent: string,
     aiMessageId: string,
-    options: StreamOptions
+    options: StreamOptions,
+    onTerminalEvent?: () => void
   ): Promise<StreamResult> {
+    const initialConversationCost = conversation.cost?.totalCost ?? 0;
+    const initialMessageCost = conversation.messages.find(msg => msg.id === aiMessageId)?.cost?.totalCost ?? 0;
     let streamedContent = '';
     let toolCalls: ConversationToolCall[] | undefined = undefined;
     let hasStartedStreaming = false;
@@ -133,6 +138,16 @@ export class MessageStreamHandler {
       resolvedProvider = turnState.provider;
       resolvedModel = turnState.model;
       finalCost = turnState.cost;
+
+      if (event.type === 'cost.updated') {
+        const message = conversation.messages.find(msg => msg.id === aiMessageId);
+        if (message) message.cost = event.cost;
+        conversation.cost = {
+          totalCost: initialConversationCost - initialMessageCost + event.cost.totalCost,
+          currency: event.cost.currency,
+        };
+        this.events.onCostUpdate?.();
+      }
 
       // Handle token events
       if (event.type === 'assistant.delta') {
@@ -201,6 +216,7 @@ export class MessageStreamHandler {
 
         this.events.onStreamingUpdate(aiMessageId, streamedContent, true, false);
         sawTerminalEvent = true;
+        onTerminalEvent?.();
         break;
       }
 
@@ -223,6 +239,7 @@ export class MessageStreamHandler {
           };
         }
         sawTerminalEvent = true;
+        onTerminalEvent?.();
       }
     }
 
@@ -275,15 +292,21 @@ export class MessageStreamHandler {
     aiMessageId: string,
     options: StreamOptions
   ): Promise<StreamResult> {
+    let sawTerminalEvent = false;
     try {
-      const result = await this.streamResponse(conversation, userMessageContent, aiMessageId, options);
-      await this.chatService.updateConversation(conversation);
+      const result = await this.streamResponse(conversation, userMessageContent, aiMessageId, options, () => {
+        sawTerminalEvent = true;
+      });
+      // StreamingResponseService persists the terminal message before yielding
+      // it. Saving this UI snapshot again can overwrite a provider charge that
+      // arrived just after the stream closed (OpenRouter generation fallback).
       return result;
     } catch (error) {
-      // Terminal abort/failure events update the in-memory placeholder before
-      // the producer rethrows. Persist that partial state as part of the same
-      // stream contract so callers cannot lose it by handling the exception.
-      await this.chatService.updateConversation(conversation);
+      // Terminal abort/failure events were also persisted by the producer.
+      // Only errors before a terminal event need this UI snapshot saved.
+      if (!sawTerminalEvent) {
+        await this.chatService.updateConversation(conversation);
+      }
       throw error;
     }
   }

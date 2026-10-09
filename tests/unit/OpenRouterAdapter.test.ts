@@ -37,6 +37,42 @@ describe('OpenRouterAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([false, true])('sends the OpenRouter web search server tool and returns citations (stream=%s)', async stream => {
+    const requests: CapturedRequest[] = [];
+    const cited = { choices: [{ message: { content: 'Answer', annotations: [
+      { type: 'url_citation', url_citation: { title: 'Example', url: 'https://example.com/source' } }
+    ] }, finish_reason: 'stop' }] };
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return stream ? sseResponse(sse({ choices: [{ delta: { content: 'Answer', annotations: cited.choices[0].message.annotations }, finish_reason: 'stop' }] }))
+        : jsonResponse(200, cited);
+    });
+    const adapter = new OpenRouterAdapter('or-test');
+    const result = stream
+      ? (await collect(adapter.generateStreamAsync('search', { webSearch: true }))).at(-1)?.metadata?.webSearchResults
+      : (await adapter.generateUncached('search', { webSearch: true })).webSearchResults;
+    const body = JSON.parse(requests[0].body ?? '{}');
+    expect(body.model).toBe('openai/gpt-5.6-sol');
+    expect(body.tools).toContainEqual({ type: 'openrouter:web_search' });
+    expect(result).toEqual([{ title: 'Example', url: 'https://example.com/source', date: undefined }]);
+  });
+
+  it('does not fetch fallback usage after the final inline usage frame', async () => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return sseResponse(sse(
+        { id: 'gen-inline', choices: [{ delta: { content: 'Answer' } }] },
+        { id: 'gen-inline', choices: [{ delta: {}, finish_reason: 'stop' }] },
+        { id: 'gen-inline', choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } }
+      ));
+    });
+    const onUsageAvailable = jest.fn();
+    await collect(new OpenRouterAdapter('or-test').generateStreamAsync('hi', { onUsageAvailable }));
+    expect(requests).toHaveLength(1);
+    expect(onUsageAvailable).not.toHaveBeenCalled();
+  });
+
   describe('non-streaming generate', () => {
     it('parses chat completion text and usage, sending OpenRouter attribution headers', async () => {
       const requests: CapturedRequest[] = [];

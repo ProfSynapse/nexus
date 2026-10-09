@@ -57,6 +57,7 @@ import { ChatEventBinder } from './utils/ChatEventBinder';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { generateUUID } from '../../utils/uuid';
+import { getContextWindowOverrideKey } from './utils/ContextWindowSettings';
 
 // Nexus Lifecycle
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
@@ -161,6 +162,7 @@ export class ChatView extends ItemView {
       getMessageDisplay: () => this.messageDisplay ?? null,
       getStreamingController: () => this.streamingController ?? null,
       getPreservationService: () => this.preservationService,
+      ensurePreservationService: () => this.ensurePreservationService(),
       getStorageAdapter: () =>
         getNexusPlugin<NexusPlugin>(this.app)?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter') ?? null,
       onUpdateContextProgress: () => {
@@ -469,6 +471,7 @@ export class ChatView extends ItemView {
   async onClose(): Promise<void> {
     // Signal polling loops to stop before any cleanup runs
     this.isClosing = true;
+    this.modelAgentManager?.cancelContextHandoff();
 
     // Notify Nexus lifecycle manager that ChatView is closing
     // This starts the idle timer for potential model unloading
@@ -591,7 +594,8 @@ export class ChatView extends ItemView {
       onMessageIdUpdated: (oldId, newId, updatedMessage) => this.handleMessageIdUpdated(oldId, newId, updatedMessage),
       onGenerationAborted: (messageId, _partialContent) => this.sendCoordinator.handleGenerationAborted(messageId),
       // Token usage tracking for local models with limited context
-      onUsageAvailable: (usage) => this.modelAgentManager.recordTokenUsage(usage.promptTokens, usage.completionTokens)
+      onUsageAvailable: (usage) => this.modelAgentManager.recordTokenUsage(usage.promptTokens, usage.completionTokens),
+      onCostUpdate: () => this.toolStatusBar?.updateCost()
     };
     this.messageManager = new MessageManager(this.chatService, this.branchManager, messageEvents);
 
@@ -608,6 +612,27 @@ export class ChatView extends ItemView {
       modelAgentEvents,
       this.chatService.getConversationService() as unknown as ConstructorParameters<typeof ModelAgentManager>[2]
     );
+    this.modelAgentManager.configureContextHandoff({
+      prepare: request => this.sendCoordinator.prepareContextHandoff(request),
+      onCommitted: (metadata, candidate, conversationId) => {
+        const conversation = this.conversationManager.getCurrentConversation();
+        if (conversation?.id !== conversationId) return;
+        const settings = metadata.chatSettings;
+        if (conversation) conversation.metadata = {
+          ...metadata,
+          chatSettings: settings ? {
+            ...settings,
+            workspaceId: settings.workspaceId ?? undefined,
+            sessionId: settings.sessionId ?? undefined,
+            promptId: settings.promptId ?? undefined,
+            agentProvider: settings.agentProvider ?? undefined,
+            agentModel: settings.agentModel ?? undefined
+          } : undefined
+        };
+        if (candidate) this.messageDisplay?.showCompactionDivider(candidate.messagesRemoved);
+        void this.updateContextProgress();
+      }
+    });
 
     // Context tracking
     this.contextTracker = new ContextTracker(
@@ -716,9 +741,7 @@ export class ChatView extends ItemView {
 
     this.chatInput = new ChatInput(
       this.layoutElements.inputContainer,
-      (message, enhancement, metadata) => {
-        void this.sendCoordinator.handleSendMessage(message, enhancement, metadata);
-      },
+      (message, enhancement, metadata) => this.sendCoordinator.handleSendMessage(message, enhancement, metadata),
       () => this.messageManager.getIsLoading(),
       this.app,
       () => {
@@ -1120,7 +1143,25 @@ export class ChatView extends ItemView {
     }, this).open();
   }
 
+  /** Apply a changed default only to this active chat, through the normal handoff. */
+  async applyContextWindowDefault(overrides: Record<string, number>, changedKeys: ReadonlySet<string>): Promise<boolean> {
+    const model = this.modelAgentManager?.getSelectedModel();
+    if (!model) return true;
+    const key = getContextWindowOverrideKey(model.providerId, model.modelId);
+    if (!changedKeys.has(key)) return true;
+    return this.modelAgentManager.requestContextChange({
+      providerId: model.providerId,
+      modelId: model.modelId,
+      contextWindowOverride: overrides[key]
+    });
+  }
+
   private async ensurePreservationServiceAndCompact(): Promise<void> {
+    await this.ensurePreservationService();
+    await this.sendCoordinator.compactCurrentConversation();
+  }
+
+  private async ensurePreservationService(): Promise<void> {
     // Lazy-init preservationService if subagent infrastructure hasn't loaded yet.
     // This decouples compaction from the subagent init path so the compact button
     // always works, even before subagent setup completes.
@@ -1156,7 +1197,6 @@ export class ChatView extends ItemView {
         console.warn('[ChatView] Failed to lazy-init preservationService:', error);
       }
     }
-    await this.sendCoordinator.compactCurrentConversation();
   }
 
   private async handleOpenAgentStatus(): Promise<void> {

@@ -322,6 +322,48 @@ describe('MessageManager interrupt flow', () => {
     };
   }
 
+  it.each(['send', 'retry'])(
+    'reports the latest response context usage instead of aggregate billing on %s',
+    async (path) => {
+      const user = {
+        id: 'msg_user', role: 'user' as const, content: 'Question', timestamp: Date.now(),
+        conversationId: 'conv_1', state: 'complete' as const
+      };
+      const conversation = createConversation({ messages: path === 'retry' ? [user] : [] });
+      const mockChatService = createMockChatService({ conversation });
+      mockChatService.getConversation.mockImplementation(async () => conversation);
+      mockChatService.generateResponseStreaming.mockImplementation(
+        (_conversationId: string, _message: string, options?: { messageId?: string }) => {
+          async function* stream() {
+            const messageId = options?.messageId || 'msg_ai';
+            yield envelope(messageId, { type: 'response.metadata', metadata: {
+              latestResponseUsage: { promptTokens: 140, completionTokens: 10, totalTokens: 150 }
+            } });
+            yield envelope(messageId, { type: 'usage.updated', usage: {
+              promptTokens: 530, completionTokens: 20, totalTokens: 550
+            } });
+            yield envelope(messageId, { type: 'turn.completed' });
+          }
+          return stream();
+        }
+      );
+      const events = createGenerationEvents();
+      const manager = new MessageManager(
+        mockChatService as unknown as ChatService,
+        createMockBranchManager() as unknown as BranchManager,
+        events
+      );
+
+      if (path === 'retry') await manager.handleRetryMessage(conversation, user.id);
+      else await manager.sendMessage(conversation, 'Question');
+
+      expect(events.onUsageAvailable).toHaveBeenCalledWith({
+        promptTokens: 140, completionTokens: 10, totalTokens: 150
+      });
+      expect(events.onError).not.toHaveBeenCalled();
+    }
+  );
+
   it('clears the placeholder spinner on a non-abort send error before the first token', async () => {
     const conversation = createConversation({ messages: [] });
     const mockChatService = createMockChatService({ conversation });

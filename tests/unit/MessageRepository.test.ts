@@ -19,10 +19,12 @@ import {
   createIncompleteToolCall
 } from '../fixtures/chatBugs';
 import type { AlternativeMessageEvent } from '../../src/database/interfaces/StorageEvents';
-import type { MessageEvent } from '../../src/database/interfaces/StorageEvents';
+import type { MessageEvent, MessageUpdatedEvent } from '../../src/database/interfaces/StorageEvents';
 import { MessageRepository } from '../../src/database/repositories/MessageRepository';
 import type { RepositoryDependencies } from '../../src/database/repositories/base/BaseRepository';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
+import { convertToLegacyConversation } from '../../src/services/helpers/ConversationTypeConverters';
+import { AnthropicContextBuilder } from '../../src/services/chat/builders/AnthropicContextBuilder';
 
 type TestToolCall = {
   id: string;
@@ -40,7 +42,7 @@ type TestToolCall = {
 // the real applier replays it. Rows come from emitted SQL, never preset metadata.
 function createMessagePersistenceHarness() {
   const rows = new Map<string, Record<string, unknown>>();
-  const events: MessageEvent[] = [];
+  const events: Array<MessageEvent | MessageUpdatedEvent> = [];
   const sqliteCache = {
     queryOne: jest.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('MAX(sequenceNumber)')) return { maxSeq: -1 };
@@ -48,7 +50,17 @@ function createMessagePersistenceHarness() {
     }),
     run: jest.fn(async (sql: string, params: unknown[]) => {
       const insert = /INSERT(?: OR REPLACE)? INTO messages\s*\(([^)]+)\)/.exec(sql);
-      if (!insert) return;
+      if (!insert) {
+        const update = /UPDATE messages SET ([\s\S]+) WHERE id = \?/.exec(sql);
+        if (!update) return;
+        const row = rows.get(String(params[params.length - 1]));
+        if (!row) return;
+        update[1].split(',').forEach((clause, index) => {
+          const column = clause.trim().split(' = ')[0];
+          row[column] = params[index];
+        });
+        return;
+      }
       const columns = insert[1].split(',').map(column => column.trim());
       expect(params).toHaveLength(columns.length);
       const row = Object.fromEntries(columns.map((column, index) => [column, params[index]]));
@@ -58,8 +70,8 @@ function createMessagePersistenceHarness() {
   const deps = {
     sqliteCache,
     jsonlWriter: {
-      appendEvent: jest.fn(async (_path: string, event: Omit<MessageEvent, 'id' | 'timestamp' | 'deviceId'>) => {
-        const stored: MessageEvent = JSON.parse(JSON.stringify({
+      appendEvent: jest.fn(async (_path: string, event: Omit<MessageEvent | MessageUpdatedEvent, 'id' | 'timestamp' | 'deviceId'>) => {
+        const stored: MessageEvent | MessageUpdatedEvent = JSON.parse(JSON.stringify({
           ...event, id: 'event-1', timestamp: 123456, deviceId: 'device-1'
         }));
         events.push(stored);
@@ -113,6 +125,49 @@ describe('MessageRepository message metadata persistence', () => {
     });
     expect(rows.get('ordinary-1')?.metadataJson).toBeNull();
     expect((await repo.getById('ordinary-1'))?.metadata).toBeUndefined();
+  });
+
+  it('persists a metadata-only update and replays it after cache rebuild', async () => {
+    const original = createMessagePersistenceHarness();
+    await original.repo.addMessage('parent-1', {
+      id: 'assistant-1', role: 'assistant', content: 'Reply', timestamp: 123456
+    });
+    const usageMetadata = { latestResponseUsage: { promptTokens: 40, completionTokens: 5 },
+      providerData: { raw: ['preserve', 1] } };
+    await original.repo.update('assistant-1', { metadata: usageMetadata });
+
+    expect((await original.repo.getById('assistant-1'))?.metadata).toEqual(usageMetadata);
+    expect(original.events[1]).toMatchObject({ type: 'message_updated', data: { metadata: usageMetadata } });
+
+    const rebuilt = createMessagePersistenceHarness();
+    const applier = new ConversationEventApplier(rebuilt.sqliteCache);
+    for (const event of original.events) await applier.apply(event);
+    expect((await rebuilt.repo.getById('assistant-1'))?.metadata).toEqual(usageMetadata);
+  });
+
+  it('leaves metadata untouched when omitted and clears old Anthropic replay on explicit null after rebuild', async () => {
+    const original = createMessagePersistenceHarness();
+    await original.repo.addMessage('parent-1', {
+      id: 'assistant-1', role: 'assistant', content: 'OLD ANSWER', timestamp: 123456,
+      metadata: { anthropicResponses: [{ content: [{ type: 'text', text: 'OLD ANSWER' }], toolCallIds: [], contentEndOffset: 10 }] }
+    });
+    await original.repo.update('assistant-1', { content: 'NEW ANSWER is longer' });
+    expect((await original.repo.getById('assistant-1'))?.metadata)
+      .toEqual({ anthropicResponses: [{ content: [{ type: 'text', text: 'OLD ANSWER' }], toolCallIds: [], contentEndOffset: 10 }] });
+    await original.repo.update('assistant-1', { metadata: null });
+    expect((await original.repo.getById('assistant-1'))?.metadata).toBeUndefined();
+
+    const rebuilt = createMessagePersistenceHarness();
+    const applier = new ConversationEventApplier(rebuilt.sqliteCache);
+    for (const event of original.events) await applier.apply(event);
+    const reloaded = await rebuilt.repo.getById('assistant-1');
+    expect(reloaded?.metadata).toBeUndefined();
+    const conversation = convertToLegacyConversation({
+      id: 'parent-1', title: 'Test', created: 1, updated: 1, vaultName: 'test', messageCount: 1,
+    }, [reloaded!]);
+    const replay = new AnthropicContextBuilder().buildContext(conversation);
+    expect(replay).toEqual([{ role: 'assistant', content: 'NEW ANSWER is longer' }]);
+    expect(JSON.stringify(replay)).not.toContain('OLD ANSWER');
   });
 });
 

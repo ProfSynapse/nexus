@@ -33,6 +33,7 @@ export interface ModelAgentPromptContextSnapshot {
   messageEnhancement: MessageEnhancement | null;
   currentSystemPrompt: string | null;
   thinkingSettings: ThinkingSettings;
+  webSearch: boolean;
   temperature: number;
   imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
@@ -50,6 +51,7 @@ export interface ModelAgentMessageOptions {
   workspaceId?: string;
   sessionId?: string;
   enableThinking?: boolean;
+  webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   temperature?: number;
   imageProvider?: 'google' | 'openrouter' | 'openai';
@@ -116,6 +118,11 @@ export class ModelAgentPromptContextAssembler {
       workspaceId: snapshot.selectedWorkspaceId || undefined,
       sessionId,
       enableThinking: snapshot.thinkingSettings.enabled,
+      webSearch: snapshot.webSearch && (
+        ['anthropic', 'openai', 'openrouter'].includes(snapshot.selectedModel?.providerId || '')
+        || (snapshot.selectedModel?.providerId === 'google'
+          && snapshot.selectedModel.modelId.startsWith('gemini-3'))
+      ),
       thinkingEffort: snapshot.thinkingSettings.effort,
       temperature: snapshot.temperature,
       imageProvider: snapshot.imageProvider,

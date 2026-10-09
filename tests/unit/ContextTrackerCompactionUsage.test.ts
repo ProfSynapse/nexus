@@ -10,6 +10,7 @@ type ConversationManagerLike = {
 type ModelAgentManagerLike = {
   getSelectedModelOrDefault: jest.Mock<Promise<{ providerId: string; providerName: string; modelId: string; modelName: string; contextWindow: number }>, []>;
   getCurrentSystemPrompt: jest.Mock<Promise<string>, []>;
+  getEffectiveContextWindow: jest.Mock<number, []>;
 };
 
 function createLongMessage(
@@ -83,7 +84,8 @@ describe('ContextTracker compaction usage regression', () => {
     };
     const modelAgentManager = {
       getSelectedModelOrDefault: jest.fn().mockResolvedValue(model),
-      getCurrentSystemPrompt: jest.fn().mockResolvedValue(beforeSystemPrompt)
+      getCurrentSystemPrompt: jest.fn().mockResolvedValue(beforeSystemPrompt),
+      getEffectiveContextWindow: jest.fn().mockReturnValue(model.contextWindow)
     };
 
     const tracker = new ContextTracker(

@@ -21,6 +21,12 @@ import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm
 import type { MessageQueueService } from '../../../services/chat/MessageQueueService';
 import type { QueuedMessage } from '../../../types/branch/BranchTypes';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
+import type { StreamResult } from './MessageStreamHandler';
+
+function contextUsage(result: StreamResult): StreamResult['usage'] {
+  return ContextBudgetService.normalizeUsage(result.metadata?.latestResponseUsage) ?? result.usage;
+}
 
 interface StreamToolCallLike {
   id: string;
@@ -63,6 +69,7 @@ export interface MessageManagerEvents {
   onGenerationAborted: (messageId: string, partialContent: string) => void;
   // Token usage for context tracking (optional - for local models)
   onUsageAvailable?: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
+  onCostUpdate?: () => void;
 }
 
 export class MessageManager {
@@ -90,7 +97,8 @@ export class MessageManager {
       onStreamingUpdate: events.onStreamingUpdate,
       onToolCallsDetected: events.onToolCallsDetected,
       onToolLimitReached: events.onToolLimitReached,
-      onReasoningUpdate: events.onReasoningUpdate
+      onReasoningUpdate: events.onReasoningUpdate,
+      onCostUpdate: events.onCostUpdate
     });
 
     this.abortHandler = new AbortHandler(chatService, {
@@ -206,8 +214,9 @@ export class MessageManager {
         );
 
         // Report usage for context tracking (e.g., for local models with limited context)
-        if (streamResult.usage && this.events.onUsageAvailable) {
-          this.events.onUsageAvailable(streamResult.usage);
+        const usage = contextUsage(streamResult);
+        if (usage && this.events.onUsageAvailable) {
+          this.events.onUsageAvailable(usage);
         }
 
         // Reload conversation from storage to sync
@@ -362,8 +371,9 @@ export class MessageManager {
       );
 
       // Report usage for context tracking
-      if (streamResult.usage && this.events.onUsageAvailable) {
-        this.events.onUsageAvailable(streamResult.usage);
+      const usage = contextUsage(streamResult);
+      if (usage && this.events.onUsageAvailable) {
+        this.events.onUsageAvailable(usage);
       }
 
       // Reload conversation from storage

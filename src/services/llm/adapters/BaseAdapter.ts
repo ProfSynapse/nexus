@@ -330,7 +330,13 @@ export abstract class BaseAdapter {
 
         if (options.extractUsage) {
           const extractedUsage = options.extractUsage(parsed);
-          if (extractedUsage) usage = extractedUsage;
+          if (extractedUsage) {
+            usage = extractedUsage;
+            if (options.yieldUsageUpdates) {
+              const snapshot = this.formatStreamUsage(usage);
+              if (snapshot) eventQueue.push({ content: '', complete: false, usage: snapshot });
+            }
+          }
         }
 
         const finishReason = options.extractFinishReason(parsed);
@@ -558,8 +564,9 @@ export abstract class BaseAdapter {
 
   // Cached generate method
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Skip cache if explicitly disabled or for streaming
-    if (options?.disableCache) {
+    // Search requests need fresh provider results; a cached ordinary answer can
+    // neither perform the requested search nor report its current citations.
+    if (options?.disableCache || options?.webSearch) {
       return this.generateUncached(prompt, options);
     }
 

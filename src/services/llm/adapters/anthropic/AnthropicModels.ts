@@ -262,7 +262,8 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 2.00,
     outputCostPerMillion: 10.00,
-    cacheReadCostPerMillion: 0.2,
+    // https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+    cacheReadCostPerMillion: 0.1,
     cacheWriteCostPerMillion: 2.5,
     supportsSamplingParams: false,
     capabilities: {

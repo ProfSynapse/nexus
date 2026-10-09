@@ -24,7 +24,10 @@ export class ReasoningSegmentSplitter {
   /** Combine display text only; signed provider thinking blocks remain untouched. */
   static combine(segments: ReasoningSegment[] | undefined, reasoning: string | undefined): string {
     const text = segments?.filter(segment => segment?.text?.trim()).map(segment => segment.text).join('\n\n');
-    return text || reasoning || '';
+    // Display-only normalization: pre-wrap would otherwise render every blank
+    // line supplied by the model plus the separators between tool rounds.
+    // Never alter the stored/signed provider reasoning blocks.
+    return (text || reasoning || '').replace(/\r\n?/g, '\n').replace(/\n(?:[\t ]*\n){2,}/g, '\n\n');
   }
 
   /** Put one Thinking section at the first reasoning offset, preserving text order. */
@@ -37,7 +40,7 @@ export class ReasoningSegmentSplitter {
 
     if (usable.length === 0) {
       return reasoning && reasoning.trim()
-        ? [{ reasoning: { text: reasoning, contentOffset: 0 }, reasoningIndex: 0, text: content }]
+        ? [{ reasoning: { text: this.combine(undefined, reasoning), contentOffset: 0 }, reasoningIndex: 0, text: content }]
         : [{ text: content }];
     }
 

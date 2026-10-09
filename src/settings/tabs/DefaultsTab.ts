@@ -51,6 +51,7 @@ import {
 } from '../../services/llm/types/VideoTypes';
 import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
+import { ChatView } from '../../ui/chat/ChatView';
 
 export interface DefaultsTabServices {
   app: App;
@@ -65,6 +66,7 @@ export class DefaultsTab {
   private container: HTMLElement;
   private services: DefaultsTabServices;
   private renderer: ChatSettingsRenderer | null = null;
+  private settingsSaveQueue: Promise<void> = Promise.resolve();
 
   constructor(
     container: HTMLElement,
@@ -118,6 +120,7 @@ export class DefaultsTab {
     const result = {
       provider: llmSettings?.defaultModel?.provider || '',
       model: llmSettings?.defaultModel?.model || '',
+      contextWindowOverrides: { ...(llmSettings?.contextWindowOverrides ?? {}) },
       agentProvider: llmSettings?.agentModel?.provider || undefined,
       agentModel: llmSettings?.agentModel?.model || undefined,
       thinking: {
@@ -148,10 +151,19 @@ export class DefaultsTab {
     const pluginSettings = this.services.settings.settings;
 
     if (llmSettings) {
+      const previousOverrides = llmSettings.contextWindowOverrides ?? {};
+      const nextOverrides = settings.contextWindowOverrides ?? {};
+      const changedKeys = new Set([...Object.keys(previousOverrides), ...Object.keys(nextOverrides)]
+        .filter(key => previousOverrides[key] !== nextOverrides[key]));
+      if (changedKeys.size > 0) {
+        const activeChat = this.services.app.workspace.getActiveViewOfType(ChatView);
+        if (activeChat && !await activeChat.applyContextWindowDefault(nextOverrides, changedKeys)) return;
+      }
       llmSettings.defaultModel = {
         provider: settings.provider,
         model: settings.model
       };
+      llmSettings.contextWindowOverrides = { ...(settings.contextWindowOverrides ?? {}) };
       // Save agent model (for executePrompt when using local chat model)
       if (settings.agentProvider) {
         llmSettings.agentModel = {
@@ -226,13 +238,18 @@ export class DefaultsTab {
       options: { workspaces, prompts },
       showVoiceSection: false,
       showTranscriptionSection: false,
+      showWebSearch: false,
       renderAfterImageSection: (parent) => {
         this.renderVideoSection(parent);
         void this.renderVoiceSection(parent);
       },
       callbacks: {
         onSettingsChange: (settings) => {
-          void this.saveSettings(settings);
+          // Serialize committed slider changes; input previews never enqueue a save.
+          const snapshot = { ...settings, contextWindowOverrides: { ...settings.contextWindowOverrides } };
+          this.settingsSaveQueue = this.settingsSaveQueue.then(() => this.saveSettings(snapshot)).catch(error => {
+            new Notice(error instanceof Error ? error.message : 'Defaults could not be saved');
+          });
         }
       }
     });

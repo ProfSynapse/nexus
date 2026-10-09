@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL } from './GoogleModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
+import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper, clampThinkingEffortToHigh } from '../../utils/ThinkingEffortMapper';
@@ -115,6 +116,16 @@ interface GoogleUsage {
   totalTokens?: number;
 }
 
+interface GoogleGroundingMetadata {
+  webSearchQueries?: string[];
+  groundingChunks?: Array<{
+    title?: string;
+    web?: { uri?: string; title?: string };
+    uri?: string;
+    publishedDate?: string;
+  }>;
+}
+
 interface GoogleResponse {
   /** Present instead of candidates when the prompt itself was blocked. */
   promptFeedback?: {
@@ -122,6 +133,7 @@ interface GoogleResponse {
   };
   candidates?: Array<{
     finishReason?: string;
+    groundingMetadata?: GoogleGroundingMetadata;
     content?: {
       parts?: GooglePart[];
     };
@@ -160,17 +172,7 @@ interface GoogleResponse {
     outputTokens?: number;
     totalTokens?: number;
   };
-  groundingMetadata?: {
-    webSearchQueries?: unknown[];
-    groundingChunks?: Array<{
-      title?: string;
-      web?: {
-        uri?: string;
-      };
-      uri?: string;
-      publishedDate?: string;
-    }>;
-  };
+  groundingMetadata?: GoogleGroundingMetadata;
   functionCalls?: Array<{
     name?: string;
     response?: {
@@ -328,8 +330,19 @@ export class GoogleAdapter extends BaseAdapter {
         timeoutMs: 120_000
       });
 
+      const webSources = new Map<string, SearchResult>();
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Google',
+        yieldMetadataUpdates: true,
+        extractMetadata: (chunk) => {
+          if (!options?.webSearch) return null;
+          const response = chunk as GoogleResponse;
+          for (const source of this.extractGoogleSources(response)) webSources.set(source.url, source);
+          const webSearchQueries = response.candidates?.[0]?.groundingMetadata?.webSearchQueries;
+          return webSources.size > 0 || webSearchQueries?.length
+            ? { webSearchResults: Array.from(webSources.values()), ...(webSearchQueries?.length ? { webSearchQueries } : {}) }
+            : null;
+        },
         // generateContent?alt=sse answers HTTP 200 and then emits a google.rpc.Status
         // frame -- {"error":{"code":400,"message":"...","status":"INVALID_ARGUMENT"}} --
         // when the request is rejected after the connection is established. A prompt
@@ -423,19 +436,7 @@ export class GoogleAdapter extends BaseAdapter {
         extractUsage: (chunk) => {
           const response = chunk as GoogleResponse;
           const usage = response.usageMetadata || response.usage;
-          if (!usage) {
-            return undefined;
-          }
-
-          // Hand the raw metadata to the normalizer: it knows Google's
-          // cachedContentTokenCount / thoughtsTokenCount field names.
-          return {
-            prompt_tokens: usage.promptTokenCount ?? usage.inputTokens,
-            completion_tokens: usage.candidatesTokenCount ?? usage.outputTokens,
-            total_tokens: usage.totalTokenCount ?? usage.totalTokens,
-            prompt_tokens_details: usage.cachedContentTokenCount ? { cached_tokens: usage.cachedContentTokenCount } : undefined,
-            completion_tokens_details: usage.thoughtsTokenCount ? { reasoning_tokens: usage.thoughtsTokenCount } : undefined
-          };
+          return usage;
         },
         extractReasoning: (chunk) => {
           const response = chunk as GoogleResponse;
@@ -825,12 +826,14 @@ export class GoogleAdapter extends BaseAdapter {
     try {
       const sources: SearchResult[] = [];
 
-      // Check for grounding metadata (Google's web search citations)
-      if (response.groundingMetadata?.webSearchQueries) {
-        const groundingChunks = response.groundingMetadata.groundingChunks || [];
+      // Google places grounding metadata on each candidate, and may return
+      // chunks without a webSearchQueries list.
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata || response.groundingMetadata;
+      if (groundingMetadata?.groundingChunks) {
+        const groundingChunks = groundingMetadata.groundingChunks;
         for (const chunk of groundingChunks) {
           const result = WebSearchUtils.validateSearchResult({
-            title: chunk.title || 'Unknown Source',
+            title: chunk.web?.title || chunk.title || 'Unknown Source',
             url: chunk.web?.uri || chunk.uri,
             date: chunk.publishedDate
           });
@@ -872,14 +875,7 @@ export class GoogleAdapter extends BaseAdapter {
 
   protected extractUsage(response: GoogleResponse): TokenUsage | undefined {
     const usage: GoogleUsage | undefined = response.usageMetadata || response.usage;
-    if (usage) {
-      return {
-        promptTokens: usage.promptTokenCount || usage.inputTokens || 0,
-        completionTokens: usage.candidatesTokenCount || usage.outputTokens || 0,
-        totalTokens: usage.totalTokenCount || usage.totalTokens || 0
-      };
-    }
-    return undefined;
+    return TokenUsageExtractor.normalize(usage);
   }
 
   getModelPricing(modelId: string): Promise<ModelPricing | null> {

@@ -130,6 +130,8 @@ export interface LLMProviderSettings {
     [providerId: string]: LLMProviderConfig;
   };
   defaultModel: DefaultModelSettings;
+  /** User-chosen context limits, keyed by JSON-encoded [provider, model]. */
+  contextWindowOverrides?: Record<string, number>;
   agentModel?: DefaultModelSettings; // Model for executePrompt (API-only, used when chat model is local)
   agentThinking?: DefaultThinkingSettings; // Thinking settings for agent model (separate from chat model)
   defaultImageModel?: DefaultImageModelSettings; // Default image generation model

@@ -78,6 +78,10 @@ describe('MessageAlternativeService', () => {
     mockChatService = createMockChatService();
     mockBranchManager = createMockBranchManager();
     mockStreamHandler = createMockStreamHandler();
+    Object.defineProperty(mockStreamHandler, 'streamAndSave', {
+      configurable: true,
+      get: () => mockStreamHandler.streamResponse
+    });
     mockAbortHandler = createMockAbortHandler();
     mockEvents = {
       onStreamingUpdate: jest.fn(),
@@ -163,6 +167,41 @@ describe('MessageAlternativeService', () => {
 
       expect(callOrder).toEqual(['createBranch', 'streamResponse']);
     });
+
+    it('moves the old response accounting into the branch and adds new cost to history', async () => {
+      const oldMetadata = { anthropicResponses: [{ content: [{ type: 'text', text: 'old' }] }] };
+      const oldUsage = { promptTokens: 10, completionTokens: 5, totalTokens: 15 };
+      const oldCost = { totalCost: 0.04, currency: 'USD' };
+      const ai = createAssistantMessage({
+        id: 'msg_ai', content: 'Old answer', metadata: oldMetadata,
+        usage: oldUsage, cost: oldCost, provider: 'anthropic', model: 'claude-test'
+      });
+      const conversation = createConversation({
+        messages: [createUserMessage({ id: 'msg_user' }), ai]
+      });
+      conversation.cost = { totalCost: 0.1, currency: 'USD' };
+      const originalTotal = conversation.cost.totalCost;
+      mockStreamHandler.streamResponse = jest.fn(async () => {
+        expect(ai.metadata).toBeUndefined();
+        expect(ai.replaceMetadata).toBe(true);
+        expect(ai.usage).toBeUndefined();
+        expect(ai.cost).toBeUndefined();
+        expect(ai.provider).toBeUndefined();
+        expect(ai.model).toBeUndefined();
+        expect(conversation.cost?.totalCost).toBe(originalTotal);
+        return { streamedContent: 'New answer' };
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      expect(mockBranchManager.createHumanBranch).toHaveBeenCalledWith(
+        conversation, 'msg_ai', expect.objectContaining({
+          metadata: oldMetadata, usage: oldUsage, cost: oldCost,
+          provider: 'anthropic', model: 'claude-test'
+        })
+      );
+      expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
+    });
   });
 
   // ==========================================================================
@@ -193,7 +232,12 @@ describe('MessageAlternativeService', () => {
             id: 'msg_ai',
             content: 'Original content',
             toolCalls: TOOL_CALLS.allCompleted,
-            reasoning: 'Original reasoning'
+            reasoning: 'Original reasoning',
+            metadata: { rawResponse: 'old' },
+            usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+            cost: { totalCost: 0.04, currency: 'USD' },
+            provider: 'anthropic',
+            model: 'claude-test'
           })
         ]
       });
@@ -300,8 +344,13 @@ describe('MessageAlternativeService', () => {
   describe('concurrent retry guard', () => {
     it('should block second concurrent retry on the same message', async () => {
       let resolveStream: ((value: StreamResponseResult) => void) | undefined;
+      let markStreamStarted: (() => void) | undefined;
+      const streamStarted = new Promise<void>(resolve => { markStreamStarted = resolve; });
       mockStreamHandler.streamResponse = jest.fn(
-        () => new Promise<StreamResponseResult>(resolve => { resolveStream = resolve; })
+        () => {
+          markStreamStarted?.();
+          return new Promise<StreamResponseResult>(resolve => { resolveStream = resolve; });
+        }
       );
 
       const conversation = createConversation({
@@ -316,6 +365,7 @@ describe('MessageAlternativeService', () => {
 
       // Immediately try second retry on same message
       await service.createAlternativeResponse(conversation, 'msg_ai');
+      await streamStarted;
 
       // Only one streamResponse call should have been made
       expect(mockStreamHandler.streamResponse).toHaveBeenCalledTimes(1);
@@ -363,7 +413,7 @@ describe('MessageAlternativeService', () => {
       expect(ai.branches?.[0].messages).not.toContain(remote);
     });
 
-    it('should save conversation after streaming completes', async () => {
+    it('persists the cleared snapshot before streaming without a stale final save', async () => {
       const conversation = createConversation({
         messages: [
           createUserMessage({ id: 'msg_user' }),
@@ -373,6 +423,7 @@ describe('MessageAlternativeService', () => {
 
       await service.createAlternativeResponse(conversation, 'msg_ai');
 
+      expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
       expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
     });
 
@@ -425,6 +476,27 @@ describe('MessageAlternativeService', () => {
   // ==========================================================================
 
   describe('error handling', () => {
+    it('does not stream when the cleared response could not be persisted', async () => {
+      mockChatService.updateConversation
+        .mockResolvedValueOnce({ success: false, error: 'Storage unavailable' })
+        .mockResolvedValueOnce({ success: true });
+      const oldMetadata = { anthropicResponses: [{ content: [{ type: 'text', text: 'Old answer' }] }] };
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai', content: 'Old answer', metadata: oldMetadata })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      expect(mockStreamHandler.streamResponse).not.toHaveBeenCalled();
+      expect(conversation.messages[1]).toEqual(expect.objectContaining({
+        content: 'Old answer', metadata: oldMetadata, replaceMetadata: true
+      }));
+      expect(mockEvents.onError).toHaveBeenCalledWith('Failed to generate alternative response');
+    });
+
     it('should fire onError for non-abort errors', async () => {
       mockStreamHandler.streamResponse.mockRejectedValue(new Error('Network failure'));
 
@@ -467,7 +539,12 @@ describe('MessageAlternativeService', () => {
             id: 'msg_ai',
             content: 'Original content',
             toolCalls: TOOL_CALLS.allCompleted,
-            reasoning: 'Original reasoning'
+            reasoning: 'Original reasoning',
+            metadata: { rawResponse: 'old' },
+            usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+            cost: { totalCost: 0.04, currency: 'USD' },
+            provider: 'anthropic',
+            model: 'claude-test'
           })
         ]
       });
@@ -478,6 +555,11 @@ describe('MessageAlternativeService', () => {
       expect(aiMsg.content).toBe('Original content');
       expect(aiMsg.toolCalls).toEqual(TOOL_CALLS.allCompleted);
       expect(aiMsg.reasoning).toBe('Original reasoning');
+      expect(aiMsg.metadata).toEqual({ rawResponse: 'old' });
+      expect(aiMsg.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
+      expect(aiMsg.cost).toEqual({ totalCost: 0.04, currency: 'USD' });
+      expect(aiMsg.provider).toBe('anthropic');
+      expect(aiMsg.model).toBe('claude-test');
       expect(aiMsg.state).toBe('complete');
       expect(aiMsg.isLoading).toBe(false);
       expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
@@ -494,6 +576,8 @@ describe('MessageAlternativeService', () => {
         if (aiMsg) {
           aiMsg.content = 'Partial streamed content';
           aiMsg.state = 'streaming';
+          aiMsg.cost = { totalCost: 0.02, currency: 'USD' };
+          aiMsg.usage = { promptTokens: 4, completionTokens: 3, totalTokens: 7 };
         }
         throw abortError;
       });
@@ -511,6 +595,8 @@ describe('MessageAlternativeService', () => {
       const aiMsg = conversation.messages[1];
       expect(aiMsg.state).toBe('aborted');
       expect(aiMsg.isLoading).toBe(false);
+      expect(aiMsg.cost?.totalCost).toBe(0.02);
+      expect(aiMsg.usage?.totalTokens).toBe(7);
 
       // Conversation should be saved
       expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);

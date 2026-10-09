@@ -38,6 +38,65 @@ describe('AnthropicAdapter', () => {
     jest.useRealTimers();
   });
 
+  it('streams server search sources without treating server JSON as a client tool call', async () => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return sseResponse(sse(
+        { type: 'message_start', message: { usage: { input_tokens: 12, output_tokens: 0 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"query":"news"}' } },
+        { type: 'content_block_stop', index: 0 },
+        { type: 'content_block_start', index: 1, content_block: { type: 'web_search_tool_result', content: [
+          { type: 'web_search_result', title: 'Example', url: 'https://example.com/source', encrypted_content: 'opaque-token' }
+        ] } },
+        { type: 'content_block_start', index: 2, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 2, delta: { type: 'text_delta', text: 'Answer' } },
+        { type: 'content_block_delta', index: 2, delta: { type: 'citations_delta', citation: {
+          type: 'web_search_result_location', title: 'Example', url: 'https://example.com/source', encrypted_index: 'cite-token'
+        } } },
+        { type: 'content_block_stop', index: 2 },
+        { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5, server_tool_use: { web_search_requests: 1 } } },
+        { type: 'message_stop' }
+      ));
+    });
+    const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('search', { webSearch: true }));
+    expect(JSON.parse(requests[0].body ?? '{}').tools).toContainEqual(expect.objectContaining({ type: 'web_search_20250305' }));
+    expect(chunks.at(-1)?.toolCalls).toBeUndefined();
+    expect(chunks.at(-1)?.metadata?.webSearchResults).toEqual([
+      { title: 'Example', url: 'https://example.com/source', date: undefined }
+    ]);
+    expect(chunks.at(-1)?.metadata?.anthropicResponseContent).toEqual([
+      { type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: { query: 'news' } },
+      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', title: 'Example',
+        url: 'https://example.com/source', encrypted_content: 'opaque-token' }] },
+      { type: 'text', text: 'Answer', citations: [{ type: 'web_search_result_location',
+        title: 'Example', url: 'https://example.com/source', encrypted_index: 'cite-token' }] }
+    ]);
+  });
+
+  it('keeps non-streaming server search citations and billed search count', async () => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return jsonResponse(200, { content: [
+        { type: 'web_search_tool_result', content: [
+          { type: 'web_search_result', title: 'Example', url: 'https://example.com/source', encrypted_content: 'opaque-token' }
+        ] },
+        { type: 'text', text: 'Answer', citations: [
+          { type: 'web_search_result_location', title: 'Example', url: 'https://example.com/source' }
+        ] }
+      ], stop_reason: 'end_turn', usage: {
+        input_tokens: 10, output_tokens: 5, server_tool_use: { web_search_requests: 1 }
+      } });
+    });
+    const response = await new AnthropicAdapter('ak-test').generateUncached('search', { webSearch: true });
+    expect(JSON.parse(requests[0].body ?? '{}').tools).toContainEqual(expect.objectContaining({ type: 'web_search_20250305' }));
+    expect(response.webSearchResults).toEqual([{ title: 'Example', url: 'https://example.com/source', date: undefined }]);
+    expect(response.usage).toMatchObject({ webSearchRequests: 1, webSearchCost: 0.01 });
+    expect(response.metadata?.anthropicResponseContent).toHaveLength(2);
+  });
+
   describe('non-streaming generate', () => {
     it('parses text and thinking blocks, maps end_turn, and derives totalTokens', async () => {
       const requests: CapturedRequest[] = [];
@@ -543,7 +602,9 @@ describe('AnthropicAdapter', () => {
       expect(error.code).toBe('PROVIDER_STREAM_ERROR');
       expect(error.provider).toBe('anthropic');
       expect(error.message).toContain('Overloaded');
-      expect(chunks).toHaveLength(0);
+      // A cumulative usage snapshot may precede a later provider error, but
+      // the failed stream must never emit a successful completion chunk.
+      expect(chunks).not.toContainEqual(expect.objectContaining({ complete: true }));
     });
 
     it('rethrows streaming HTTP errors as raw ProviderHttpError (not LLMProviderError)', async () => {

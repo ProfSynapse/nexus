@@ -66,6 +66,12 @@ export interface SSEParsedUsage {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  server_tool_use?: { web_search_requests?: number };
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
   prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number; audio_tokens?: number };
   completion_tokens_details?: { reasoning_tokens?: number; audio_tokens?: number };
   cost?: number;
@@ -100,6 +106,8 @@ export interface SSEStreamOptions {
   extractMetadata?: (parsed: SSEParsedEvent) => Record<string, unknown> | null;
   /** Emit nonterminal metadata chunks as updates arrive (Node SSE path only). */
   yieldMetadataUpdates?: boolean;
+  /** Emit cumulative per-response usage snapshots before completion. */
+  yieldUsageUpdates?: boolean;
   // Reasoning/thinking extraction for models that support it
   extractReasoning?: (parsed: SSEParsedEvent) => { text: string; complete: boolean } | null;
   // Some providers deliver a fatal error as an in-stream event (HTTP 200, then an
@@ -313,6 +321,10 @@ export class SSEStreamProcessor {
           const extractedUsage = options.extractUsage(parsed);
           if (extractedUsage) {
             usage = extractedUsage;
+            if (options.yieldUsageUpdates) {
+              const snapshot = TokenUsageExtractor.normalize(usage);
+              if (snapshot) eventQueue.push({ content: '', complete: false, usage: snapshot });
+            }
           }
         }
 

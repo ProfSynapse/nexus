@@ -14,7 +14,14 @@ the bubble. Adapters put text on it; nothing else has to be built.
 `onReasoningUpdate(messageId, accumulatedText, isComplete)`
 → `ChatView` forwards to `MessageDisplay.updateMessageReasoning`
 → `MessageBubble.updateReasoning` writes into a collapsible "Thinking" block,
-open while the model is still thinking and closed once complete.
+open through the assistant turn (including tool gaps) and closed when the turn
+ends, unless the reader has chosen its open/closed state. A provider's reasoning
+completion signal ends one response segment, not necessarily the assistant turn.
+
+Keep that disclosure state and its DOM node across message redraws. Native
+`details` toggle events are queued: read an unapplied open-state change before
+writing the next streaming update, or a token arriving before the toggle event
+can undo the reader's click. Ignore queued events from replaced disclosures.
 
 Two properties worth knowing:
 

@@ -165,6 +165,7 @@ function createElement(tag = 'div'): MockElement {
   });
   element.hasClass = jest.fn((cls: string) => element._classes.has(cls));
   element.empty = jest.fn(() => {
+    element.children.forEach(child => { child.parentElement = null; });
     element.children = [];
   });
   element.createEl = jest.fn((childTag: string, opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => {
@@ -414,6 +415,54 @@ describe('MessageBubble', () => {
     expect(findBySelector(blocks[0], '.message-reasoning-content')?.textContent).toBe(
       'Check the first tool.\n\nCheck the second tool.'
     );
+  });
+
+  // These drive the real bubble's state transitions; the DOM mock only stores
+  // properties. If a response boundary or repaint collapses thinking, they fail.
+  it('keeps thinking open across tool rounds and redraws until the turn ends', () => {
+    const message = createAssistantMessage({ content: '', state: 'streaming', reasoning: 'First thought' });
+    const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
+    activeBubble = bubble;
+    const root = bubble.createElement() as MockElement;
+    const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
+    const initial = block();
+    expect(initial.open).toBe(true);
+
+    bubble.updateReasoning('First thought', true);
+    expect(block().open).toBe(true);
+    bubble.updateWithNewMessage({ ...message, content: 'Checking a tool.' });
+    expect(block().open).toBe(true);
+    expect(block()).toBe(initial);
+    bubble.updateReasoning('First thought\nNext thought', false);
+    expect(block().open).toBe(true);
+    bubble.updateWithNewMessage({ ...message, content: 'Done.', state: 'complete', isLoading: false });
+    expect(block().open).toBe(false);
+  });
+
+  it('preserves a manual collapse even when a token arrives before the native toggle event', () => {
+    const message = createAssistantMessage({ content: '', state: 'streaming', reasoning: 'First thought' });
+    const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
+    activeBubble = bubble;
+    const root = bubble.createElement() as MockElement;
+    const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
+    block().open = false; // Browser default action happens before its queued toggle event.
+    bubble.updateReasoning('First thought grows', false);
+    expect(block().open).toBe(false);
+    bubble.updateWithNewMessage({ ...message, content: 'Working.', reasoning: 'First thought grows' });
+    expect(block().open).toBe(false);
+  });
+
+  it('preserves a manual expansion through completion and clears it for another alternative', () => {
+    const message = createAssistantMessage({ content: 'Answer', state: 'complete', reasoning: 'Thought' });
+    const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
+    activeBubble = bubble;
+    const root = bubble.createElement() as MockElement;
+    const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
+    block().open = true;
+    bubble.updateWithNewMessage({ ...message, content: 'Answer updated' });
+    expect(block().open).toBe(true);
+    bubble.updateWithNewMessage({ ...message, activeAlternativeIndex: 1 });
+    expect(block().open).toBe(false);
   });
 
   it('renders source links from assistant metadata', async () => {

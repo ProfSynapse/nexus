@@ -11,6 +11,8 @@ import {
   convertToLegacyConversation,
   convertToConversationBranch,
   populateMessageBranches,
+  readPersistedMessageAccounting,
+  withPersistedMessageAccounting,
 } from '../../src/services/helpers/ConversationTypeConverters';
 import type { ConversationMetadata, MessageData } from '../../src/types/storage/HybridStorageTypes';
 import type { IndividualConversation, ConversationMessage } from '../../src/types/storage/StorageTypes';
@@ -92,6 +94,44 @@ describe('convertToLegacyMetadata', () => {
 // ============================================================================
 
 describe('convertToLegacyConversation', () => {
+  it('round-trips message accounting and provider identity through hybrid metadata', () => {
+    const usage = {
+      promptTokens: 1000, completionTokens: 100, totalTokens: 1100,
+      cacheReadTokens: 800, cacheWriteTokens: 100, webSearchRequests: 1, webSearchCost: 0.01,
+    };
+    const cost = { totalCost: 0.012, currency: 'USD' };
+    const metadata = withPersistedMessageAccounting({
+      metadata: { latestResponseUsage: { promptTokens: 900, completionTokens: 100, totalTokens: 1000 } },
+      usage, cost, provider: 'anthropic', model: 'claude-sonnet-4-6',
+    });
+    const restored = convertToLegacyConversation(makeMetadata(), [makeMessage({ role: 'assistant', metadata })]);
+
+    expect(restored.messages[0]).toEqual(expect.objectContaining({ usage, cost, provider: 'anthropic', model: 'claude-sonnet-4-6' }));
+    expect(restored.messages[0].metadata?.latestResponseUsage).toEqual(expect.objectContaining({ promptTokens: 900 }));
+    expect(readPersistedMessageAccounting(metadata)).toEqual({ usage, cost, provider: 'anthropic', model: 'claude-sonnet-4-6' });
+  });
+
+  it('restores accounting on persisted alternatives and branch messages', () => {
+    const accounting = {
+      usage: { promptTokens: 250, completionTokens: 25, totalTokens: 275 },
+      cost: { totalCost: 0.004, currency: 'USD' },
+      provider: 'anthropic', model: 'claude-sonnet-4-6',
+    };
+    const metadata = withPersistedMessageAccounting({
+      ...accounting,
+      metadata: { anthropicResponses: [{ content: [{ type: 'text', text: 'old' }], toolCallIds: [], contentEndOffset: 3 }] },
+    });
+    const restored = convertToLegacyConversation(makeMetadata(), [makeMessage({
+      role: 'assistant',
+      metadata,
+      alternatives: [{ id: 'alternative', content: 'old', timestamp: 2, state: 'complete', metadata }],
+    })]);
+    expect(restored.messages[0].alternatives?.[0]).toEqual(expect.objectContaining(accounting));
+    const branch = convertToConversationBranch({ ...restored, metadata: { branchType: 'alternative' } });
+    expect(branch.messages[0]).toEqual(expect.objectContaining(accounting));
+    expect(branch.messages[0].metadata?.anthropicResponses).toEqual(expect.any(Array));
+  });
+
   it('converts empty messages array', () => {
     const result = convertToLegacyConversation(makeMetadata(), []);
     expect(result.messages).toEqual([]);

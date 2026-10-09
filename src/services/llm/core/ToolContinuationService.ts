@@ -12,7 +12,7 @@ import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { MCPToolExecution, IToolExecutor, ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { ProviderHttpError } from '../adapters/shared/ProviderHttpClient';
-import { SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions, LLMProviderError } from '../adapters/types';
+import { SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions, LLMProviderError, StreamChunk } from '../adapters/types';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import { checkForTerminalTool } from './TerminalToolHandler';
 import {
@@ -28,6 +28,13 @@ import { mapProviderStreamChunk } from '../runtime/ProviderStreamEventMapper';
 type ToolCallUnion = AdapterToolCall | ChatToolCall;
 
 export type StreamYield = ChatRuntimeEvent;
+
+function preserveAnthropicResponseContent(chunk: StreamChunk, provider: string): void {
+  if (provider !== 'anthropic' || !chunk.complete || !chunk.toolCalls
+    || !Array.isArray(chunk.metadata?.anthropicResponseContent)) return;
+  const content = chunk.metadata.anthropicResponseContent as Array<Record<string, unknown>>;
+  chunk.toolCalls = chunk.toolCalls.map(call => ({ ...call, anthropic_response_content: content }));
+}
 
 export class ToolContinuationService {
   // Number of individual tool calls allowed before asking the user to continue.
@@ -121,6 +128,7 @@ export class ToolContinuationService {
       let assistantResponseText = '';
 
       for await (const chunk of adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions)) {
+        preserveAnthropicResponseContent(chunk, provider);
         assistantResponseText += chunk.content;
         for (const event of mapProviderStreamChunk(chunk)) {
           yield event;
@@ -258,6 +266,7 @@ export class ToolContinuationService {
     let assistantResponseText = '';
 
     for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
+      preserveAnthropicResponseContent(recursiveChunk, provider);
       assistantResponseText += recursiveChunk.content;
       for (const event of mapProviderStreamChunk(recursiveChunk)) {
         yield event;

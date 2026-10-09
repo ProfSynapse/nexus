@@ -40,7 +40,8 @@ export class WebSearchUtils {
 
     // Validate URL format
     try {
-      new URL(String(candidate.url));
+      const url = new URL(String(candidate.url));
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
     } catch {
       return null;
     }
@@ -88,9 +89,7 @@ export class WebSearchUtils {
       'openrouter',
       'openai',
       'google',
-      'anthropic',
-      'groq',
-      'mistral'
+      'anthropic'
     ];
 
     return supportedProviders.includes(provider.toLowerCase());
@@ -103,7 +102,7 @@ export class WebSearchUtils {
     if (webSearchRequested && !this.isWebSearchSupported(provider)) {
       const supportedProviders = [
         'perplexity', 'openrouter', 'openai',
-        'google', 'anthropic', 'groq', 'mistral'
+        'google', 'anthropic'
       ];
 
       throw new Error(

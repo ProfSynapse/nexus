@@ -491,7 +491,7 @@ export interface IStorageAdapter {
   updateMessage(
     conversationId: string,
     messageId: string,
-    updates: Partial<MessageData>
+    updates: Omit<Partial<MessageData>, 'metadata'> & { metadata?: MessageData['metadata'] | null }
   ): Promise<void>;
 
   /**

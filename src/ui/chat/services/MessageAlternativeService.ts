@@ -104,6 +104,13 @@ export class MessageAlternativeService {
     const originalReasoning = aiMessage.reasoning;
     const originalReasoningSegments = aiMessage.reasoningSegments;
     const originalState = aiMessage.state || 'complete';
+    const originalAccounting = {
+      metadata: aiMessage.metadata,
+      usage: aiMessage.usage,
+      cost: aiMessage.cost,
+      provider: aiMessage.provider,
+      model: aiMessage.model
+    };
 
     try {
       this.events.onLoadingStateChanged(true);
@@ -118,7 +125,8 @@ export class MessageAlternativeService {
         state: aiMessage.state || 'complete',
         toolCalls: originalToolCalls,
         reasoning: originalReasoning,
-        reasoningSegments: originalReasoningSegments
+        reasoningSegments: originalReasoningSegments,
+        ...originalAccounting
       };
 
       const branchId = await this.branchManager.createHumanBranch(
@@ -152,12 +160,26 @@ export class MessageAlternativeService {
       aiMessage.reasoning = undefined;
       // Offsets point into the old content, so they must go with it
       aiMessage.reasoningSegments = undefined;
+      aiMessage.metadata = undefined;
+      aiMessage.replaceMetadata = true;
+      aiMessage.usage = undefined;
+      aiMessage.cost = undefined;
+      aiMessage.provider = undefined;
+      aiMessage.model = undefined;
       aiMessage.isLoading = true;
       aiMessage.state = 'draft';
 
       // Set activeAlternativeIndex to 0 so the UI shows the current message
       // (the original content is now in the branch, navigable via branch arrows)
       aiMessage.activeAlternativeIndex = 0;
+
+      // Keep the historical conversation charge; the old response now lives in
+      // the branch. Persist the cleared active charge before streaming so a new
+      // cost update adds to that history rather than replacing the old charge.
+      const resetResult = await this.chatService.updateConversation(conversation);
+      if (resetResult?.success === false) {
+        throw new Error(resetResult.error || 'Failed to save cleared response before retry');
+      }
 
       // 3. Fire UI update so the user sees the cleared message with loading state
       this.events.onConversationUpdated(conversation);
@@ -172,7 +194,7 @@ export class MessageAlternativeService {
       // 6. Stream new response directly into the live conversation
       // The stream handler mutates conversation.messages[aiMessageIndex] in-place,
       // fires onStreamingUpdate events for live UI updates, and handles tool calls.
-      await this.streamHandler.streamResponse(
+      await this.streamHandler.streamAndSave(
         conversation,
         userMessageContent,
         aiMessageId,
@@ -183,10 +205,8 @@ export class MessageAlternativeService {
         }
       );
 
-      // 7. After streaming completes, save the updated conversation
-      await this.chatService.updateConversation(conversation);
-
-      // 8. Fire final UI update
+      // 7. The stream producer persists its terminal snapshot. A second save
+      // here could overwrite a provider cost that arrives just after streaming.
       this.events.onConversationUpdated(conversation);
 
     } catch (error) {
@@ -214,7 +234,8 @@ export class MessageAlternativeService {
               originalToolCalls,
               originalReasoning,
               originalState,
-              originalReasoningSegments
+              originalReasoningSegments,
+              originalAccounting
             );
 
             await this.chatService.updateConversation(conversation);
@@ -231,7 +252,8 @@ export class MessageAlternativeService {
             originalToolCalls,
             originalReasoning,
             originalState,
-            originalReasoningSegments
+            originalReasoningSegments,
+            originalAccounting
           );
           await this.chatService.updateConversation(conversation);
           this.events.onConversationUpdated(conversation);
@@ -274,12 +296,21 @@ export class MessageAlternativeService {
     originalToolCalls: ConversationMessage['toolCalls'],
     originalReasoning: string | undefined,
     originalState: NonNullable<ConversationMessage['state']>,
-    originalReasoningSegments?: ConversationMessage['reasoningSegments']
+    originalReasoningSegments?: ConversationMessage['reasoningSegments'],
+    originalAccounting?: Pick<ConversationMessage, 'metadata' | 'usage' | 'cost' | 'provider' | 'model'>
   ): void {
     message.content = originalContent;
     message.toolCalls = originalToolCalls;
     message.reasoning = originalReasoning;
     message.reasoningSegments = originalReasoningSegments;
+    message.metadata = originalAccounting?.metadata;
+    // The failed retry may already have cleared durable metadata. Restore the
+    // original provider block as a full snapshot on the next save.
+    message.replaceMetadata = true;
+    message.usage = originalAccounting?.usage;
+    message.cost = originalAccounting?.cost;
+    message.provider = originalAccounting?.provider;
+    message.model = originalAccounting?.model;
     message.state = originalState;
     message.isLoading = false;
     message.activeAlternativeIndex = 0;

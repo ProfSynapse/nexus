@@ -13,6 +13,8 @@ import type { MessageEnhancement } from '../components/suggesters/base/Suggester
 import type { ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { isTextOnlyProvider } from '../../../services/llm/utils/ToolSchemaSupport';
+import { ContextHandoffService, type HandoffModelConfig } from '../../../services/chat/ContextHandoffService';
+import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
 
 export interface MessageExecutionOptions {
   provider?: string;
@@ -21,6 +23,7 @@ export interface MessageExecutionOptions {
   workspaceId?: string;
   sessionId?: string;
   enableThinking?: boolean;
+  webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   temperature?: number;
   imageProvider?: 'google' | 'openrouter' | 'openai';
@@ -57,9 +60,14 @@ interface MessageManagerLike {
 }
 
 interface ModelAgentManagerLike {
+  waitForContextHandoff?(): Promise<void>;
+  isContextHandoffPending?(): boolean;
+  getHandoffSystemPrompt?(): Promise<string | null>;
+  cancelContextHandoff?(): void;
   setMessageEnhancement(enhancement: MessageEnhancement): void;
   clearMessageEnhancement(): void;
   getMessageOptions(): Promise<MessageExecutionOptions>;
+  getEffectiveContextWindow?(): number;
   shouldCompactBeforeSending(
     conversation: ConversationData,
     message: string,
@@ -116,6 +124,7 @@ interface ChatSendCoordinatorDependencies {
   getMessageDisplay: () => MessageDisplayLike | null;
   getStreamingController: () => StreamingControllerLike | null;
   getPreservationService: () => ContextPreservationService | null;
+  ensurePreservationService?: () => Promise<void>;
   getStorageAdapter: () => StorageAdapterLike | null;
   onUpdateContextProgress: () => void;
   compactionService?: {
@@ -124,6 +133,10 @@ interface ChatSendCoordinatorDependencies {
 }
 
 export class ChatSendCoordinator {
+  private pendingSend: symbol | null = null;
+  private sendGeneration = 0;
+  private preparingHandoffs = 0;
+  private compactionOperation: Promise<boolean> | null = null;
   private readonly compactionService: {
     compact(conversation: ConversationData, options?: CompactionOptions): CompactedContext;
   };
@@ -136,30 +149,37 @@ export class ChatSendCoordinator {
     message: string,
     enhancement?: MessageEnhancement,
     metadata?: ReferenceMetadata
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (this.pendingSend) return false;
     const messageManager = this.deps.getMessageManager();
     const conversationManager = this.deps.getConversationManager();
     const modelAgentManager = this.deps.getModelAgentManager();
     const chatInput = this.deps.getChatInput();
     if (!messageManager || !conversationManager || !modelAgentManager) {
-      return;
+      return false;
     }
 
+    const currentConversation = conversationManager.getCurrentConversation();
+    if (!currentConversation) return false;
+    let sent = false;
+    const token = Symbol('pending send');
+    const generation = ++this.sendGeneration;
+    this.pendingSend = token;
     try {
+      await modelAgentManager.waitForContextHandoff?.();
       if (messageManager.getIsLoading()) {
         await messageManager.interruptCurrentGeneration();
       }
 
-      const currentConversation = conversationManager.getCurrentConversation();
-      if (!currentConversation) {
-        return;
+      if (conversationManager.getCurrentConversation()?.id !== currentConversation.id) {
+        return false;
       }
 
       if (enhancement) {
         modelAgentManager.setMessageEnhancement(enhancement);
       }
 
-      let messageOptions = await modelAgentManager.getMessageOptions();
+      let messageOptions = await this.getReadyMessageOptions(modelAgentManager);
 
       // Runtime guard: a text-completion-only provider (e.g. Antigravity) cannot
       // execute Nexus tools/agents. If the user invoked tools/prompt-actions for
@@ -173,20 +193,104 @@ export class ChatSendCoordinator {
         messageOptions.systemPrompt || null,
         messageOptions.provider
       )) {
+        if (enhancement) modelAgentManager.clearMessageEnhancement();
         await this.runContextCompaction(currentConversation);
-        messageOptions = await modelAgentManager.getMessageOptions();
+        if (enhancement) modelAgentManager.setMessageEnhancement(enhancement);
+        messageOptions = await this.getReadyMessageOptions(modelAgentManager);
+        if (modelAgentManager.shouldCompactBeforeSending(
+          currentConversation,
+          message,
+          messageOptions.systemPrompt || null,
+          messageOptions.provider
+        )) {
+          new Notice('This message is still too large for the selected context budget after compaction. Increase context window in chat settings or shorten the message and added content.', 6000);
+          return false;
+        }
       }
 
+      // A model change can begin while prompt assembly or compaction is awaited.
+      if (modelAgentManager.isContextHandoffPending?.()) {
+        messageOptions = await this.getReadyMessageOptions(modelAgentManager);
+        if (modelAgentManager.shouldCompactBeforeSending(currentConversation, message, messageOptions.systemPrompt || null, messageOptions.provider)) {
+          new Notice('The pending message exceeds the new context budget. Shorten it or increase the context window.');
+          return false;
+        }
+      }
+      if (conversationManager.getCurrentConversation()?.id !== currentConversation.id) return false;
+      // Only preparation is coalesced. A later send may interrupt an active response.
+      if (this.pendingSend === token) this.pendingSend = null;
       await messageManager.sendMessage(
         currentConversation,
         message,
         messageOptions,
         metadata
       );
+      sent = true;
+      return true;
     } finally {
-      this.setPreSendCompactionState(false);
-      modelAgentManager.clearMessageEnhancement();
-      chatInput?.clearMessageEnhancer();
+      if (this.pendingSend === token) this.pendingSend = null;
+      if (this.preparingHandoffs === 0 && generation === this.sendGeneration) this.setPreSendCompactionState(false);
+      if (sent && generation === this.sendGeneration && !(metadata && 'hidden' in metadata && metadata.hidden === true)) {
+        modelAgentManager.clearMessageEnhancement();
+        chatInput?.clearMessageEnhancer();
+      }
+    }
+  }
+
+  private async getReadyMessageOptions(manager: ModelAgentManagerLike): Promise<MessageExecutionOptions> {
+    while (true) {
+      await manager.waitForContextHandoff?.();
+      const options = await manager.getMessageOptions();
+      if (!manager.isContextHandoffPending?.()) return options;
+    }
+  }
+
+  /** Prepare against the old model; the manager owns durable commit and selection. */
+  async prepareContextHandoff(request: {
+    conversationId: string | null;
+    source: HandoffModelConfig;
+    destination: HandoffModelConfig;
+    signal: AbortSignal;
+  }): Promise<CompactedContext | undefined> {
+    this.preparingHandoffs++;
+    this.setPreSendCompactionState(true);
+    try {
+      await this.compactionOperation;
+      const messageManager = this.deps.getMessageManager();
+      if (messageManager?.getIsLoading()) await messageManager.interruptCurrentGeneration();
+      const conversation = this.deps.getConversationManager()?.getCurrentConversation();
+      if (!conversation || conversation.id !== request.conversationId) {
+        throw new Error('The chat changed before context could be prepared');
+      }
+      const manager = this.deps.getModelAgentManager();
+      const systemPrompt = manager?.getHandoffSystemPrompt
+        ? await manager.getHandoffSystemPrompt()
+        : (await manager?.getMessageOptions())?.systemPrompt;
+      const tools = this.deps.getChatService()?.getContextTools(request.destination.providerId) ?? [];
+      const candidate = await new ContextHandoffService().prepare({
+        ...request,
+        conversation,
+        systemPrompt: systemPrompt ?? '',
+        toolTokens: ContextBudgetService.estimateTextTokens(JSON.stringify(tools)),
+        summarizer: async (messages, summaryOptions) => {
+          await this.deps.ensurePreservationService?.();
+          const preservation = this.deps.getPreservationService();
+          if (!preservation) throw new Error('Context summarization is unavailable. The current model has been kept.');
+          return preservation.summarizeForHandoff(messages, summaryOptions);
+        }
+      });
+      if (candidate) {
+        const keptMessages = ContextCompactionService.getMessagesAfterBoundary(conversation.messages, {
+          compaction: { frontier: [candidate] }
+        });
+        candidate.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
+          conversation.id, conversation.messages, keptMessages
+        ) ?? undefined;
+      }
+      return candidate;
+    } finally {
+      this.preparingHandoffs--;
+      if (this.preparingHandoffs === 0) this.setPreSendCompactionState(false);
     }
   }
 
@@ -217,6 +321,7 @@ export class ChatSendCoordinator {
   }
 
   async compactCurrentConversation(): Promise<void> {
+    await this.deps.getModelAgentManager()?.waitForContextHandoff?.();
     const messageManager = this.deps.getMessageManager();
     const conversationManager = this.deps.getConversationManager();
     if (!messageManager || !conversationManager) {
@@ -232,30 +337,51 @@ export class ChatSendCoordinator {
       return;
     }
 
-    await this.runContextCompaction(currentConversation, true);
+    const compacted = await this.runContextCompaction(currentConversation, true);
+    if (!compacted) return;
+    // Continue outside the compaction operation so a simultaneous handoff can
+    // finish preparation before this send waits for its committed selection.
+    if (conversationManager.getCurrentConversation()?.id !== currentConversation.id) return;
+    try {
+      await this.handleSendMessage(
+        'Continue where you left off — either continue the current work or align with the user on next steps.',
+        undefined,
+        { hidden: true } as unknown as ReferenceMetadata
+      );
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : 'Could not continue after compaction');
+    }
   }
 
   async handleRetryMessage(messageId: string): Promise<void> {
+    await this.deps.getModelAgentManager()?.waitForContextHandoff?.();
     const currentConversation = this.deps.getConversationManager()?.getCurrentConversation();
     const messageManager = this.deps.getMessageManager();
     const modelAgentManager = this.deps.getModelAgentManager();
     if (!currentConversation || !messageManager || !modelAgentManager) {
       return;
     }
+    if (!this.canEditActiveMessage(currentConversation, messageId)) return;
 
-    const messageOptions = await modelAgentManager.getMessageOptions();
+    const messageOptions = await this.getReadyMessageOptions(modelAgentManager);
+    if (this.deps.getConversationManager()?.getCurrentConversation()?.id !== currentConversation.id
+      || !this.canEditActiveMessage(currentConversation, messageId)) return;
     await messageManager.handleRetryMessage(currentConversation, messageId, messageOptions);
   }
 
   async handleEditMessage(messageId: string, newContent: string): Promise<void> {
+    await this.deps.getModelAgentManager()?.waitForContextHandoff?.();
     const currentConversation = this.deps.getConversationManager()?.getCurrentConversation();
     const messageManager = this.deps.getMessageManager();
     const modelAgentManager = this.deps.getModelAgentManager();
     if (!currentConversation || !messageManager || !modelAgentManager) {
       return;
     }
+    if (!this.canEditActiveMessage(currentConversation, messageId)) return;
 
-    const messageOptions = await modelAgentManager.getMessageOptions();
+    const messageOptions = await this.getReadyMessageOptions(modelAgentManager);
+    if (this.deps.getConversationManager()?.getCurrentConversation()?.id !== currentConversation.id
+      || !this.canEditActiveMessage(currentConversation, messageId)) return;
     await messageManager.handleEditMessage(
       currentConversation,
       messageId,
@@ -264,7 +390,15 @@ export class ChatSendCoordinator {
     );
   }
 
+  private canEditActiveMessage(conversation: ConversationData, messageId: string): boolean {
+    const active = ContextCompactionService.getMessagesAfterBoundary(conversation.messages, conversation.metadata);
+    if (active.some(message => message.id === messageId)) return true;
+    new Notice('This message is in summarized history. Send a new message to continue with the current context.');
+    return false;
+  }
+
   handleStopGeneration(): void {
+    this.deps.getModelAgentManager()?.cancelContextHandoff?.();
     void this.deps.getMessageManager()?.cancelCurrentGeneration();
   }
 
@@ -292,15 +426,32 @@ export class ChatSendCoordinator {
     }
   }
 
-  private async performContextCompaction(conversation: ConversationData, manual = false): Promise<void> {
+  private async performContextCompaction(conversation: ConversationData, manual = false): Promise<boolean> {
     const originalMessages = [...conversation.messages];
-    const preservationService = this.deps.getPreservationService();
     const modelAgentManager = this.deps.getModelAgentManager();
     if (!modelAgentManager) {
-      return;
+      return false;
     }
 
-    let stateContent: string | undefined;
+    const activeMessages = ContextCompactionService.getMessagesAfterBoundary(
+      originalMessages, conversation.metadata
+    );
+    const compactedContext = this.compactionService.compact(conversation, {
+      exchangesToKeep: 2,
+      maxSummaryLength: 500,
+      includeFileReferences: true,
+      // Automatic compaction is invoked only after the actual prompt exceeds
+      // its budget. A single oversized exchange must be eligible for summary.
+      compactAllIfNoRemovableUnits: !manual
+    });
+    if (compactedContext.messagesRemoved <= 0) {
+      new Notice('Nothing to compact — conversation is short enough', 2500);
+      return false;
+    }
+
+    const removedMessages = activeMessages.slice(0, compactedContext.messagesRemoved);
+    await this.deps.ensurePreservationService?.();
+    const preservationService = this.deps.getPreservationService();
     let usedLLM = false;
 
     if (preservationService) {
@@ -308,80 +459,75 @@ export class ChatSendCoordinator {
 
       try {
         const messageOptions = await modelAgentManager.getMessageOptions();
-        const result = await preservationService.forceStateSave(
-          conversation.messages,
-          {
-            provider: messageOptions.provider,
-            model: messageOptions.model,
-          },
-          {
-            workspaceId: modelAgentManager.getSelectedWorkspaceId() || GLOBAL_WORKSPACE_ID,
-            sessionId: conversation.metadata?.chatSettings?.sessionId,
-          }
+        if (!messageOptions.provider || !messageOptions.model) throw new Error('No model selected for context summary');
+        const sourceContextWindow = modelAgentManager.getEffectiveContextWindow?.() || 128_000;
+        const maxTokens = Math.max(128, Math.min(1000, Math.floor(sourceContextWindow * 0.08)));
+        // Earlier summaries remain in the frontier. Summarize only the newly
+        // removed active suffix so the next record does not duplicate history.
+        compactedContext.summary = await preservationService.summarizeForHandoff(
+          removedMessages,
+          { provider: messageOptions.provider, model: messageOptions.model, maxTokens, sourceContextWindow }
         );
-
-        if (result.success && result.stateContent) {
-          stateContent = result.stateContent;
-          usedLLM = true;
-        }
+        usedLLM = true;
+        // Keep the existing createState archival side effect, using the bounded
+        // summary so a prior large transcript is never sent to the smaller model.
+        await preservationService.forceStateSave(
+          [{ ...removedMessages[0], content: compactedContext.summary }],
+          { provider: messageOptions.provider, model: messageOptions.model },
+          { workspaceId: modelAgentManager.getSelectedWorkspaceId() || GLOBAL_WORKSPACE_ID,
+            sessionId: conversation.metadata?.chatSettings?.sessionId }
+        );
       } catch (error) {
-        console.error('[Compaction] LLM-driven saveState failed, using programmatic fallback:', error);
+        console.error('[Compaction] Context preservation failed:', error);
+        new Notice('Context could not be safely compacted. The current context was kept.', 5000);
+        return false;
       } finally {
         savingNotice.hide();
       }
     }
-
-    const compactedContext = this.compactionService.compact(conversation, {
-      exchangesToKeep: 2,
-      maxSummaryLength: 500,
-      includeFileReferences: true
-    });
-
-    if (compactedContext.messagesRemoved <= 0 && !manual) {
-      new Notice('Nothing to compact — conversation is short enough', 2500);
-      return;
-    }
-
-    if (stateContent) {
-      compactedContext.summary = stateContent;
+    if (!usedLLM && compactedContext.messagesKept === 0) {
+      new Notice('Context summarization is unavailable. The current context was kept.', 5000);
+      return false;
     }
 
     // Compute transcript coverage from compaction boundary.
     // Messages before the boundary are "compacted" (summarized, not sent to LLM).
-    const boundaryId = compactedContext.boundaryMessageId;
-    if (boundaryId) {
-      const boundaryIndex = originalMessages.findIndex(m => m.id === boundaryId);
-      if (boundaryIndex > 0) {
-        const keptMessages = originalMessages.slice(boundaryIndex);
-        compactedContext.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
-          conversation.id,
-          originalMessages,
-          keptMessages
-        ) ?? undefined;
-      }
-    }
+    const keptMessages = activeMessages.slice(compactedContext.messagesRemoved);
+    compactedContext.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
+      conversation.id, activeMessages, keptMessages
+    ) ?? undefined;
 
-    modelAgentManager.appendCompactionRecord(compactedContext);
-    conversation.metadata = modelAgentManager.buildMetadataWithCompactionRecord(
+    if (this.deps.getConversationManager()?.getCurrentConversation()?.id !== conversation.id) return false;
+    const nextMetadata = modelAgentManager.buildMetadataWithCompactionRecord(
       conversation.metadata,
       compactedContext
     );
-    modelAgentManager.resetTokenTracker();
+    if (!nextMetadata) throw new Error('Context boundary metadata is unavailable');
 
-    // Save conversation with ALL messages intact — compaction is view-layer only.
-    // The boundaryMessageId in metadata.compaction.frontier tells the LLM prompt
-    // assembly layer which messages to include.
+    // Commit the boundary durably before changing live prompt state. A failed
+    // write must leave the previous summary and active suffix usable.
     const chatService = this.deps.getChatService();
     const conversationService = chatService?.getConversationService();
-    if (conversationService?.updateConversation) {
-      await conversationService.updateConversation(conversation.id, {
-        title: conversation.title,
-        messages: conversation.messages,
-        metadata: conversation.metadata
-      });
-    } else if (chatService) {
-      await chatService.updateConversation(conversation);
+    try {
+      if (conversationService?.updateConversationMetadata) {
+        await conversationService.updateConversationMetadata(conversation.id, nextMetadata);
+      } else if (conversationService?.updateConversation) {
+        await conversationService.updateConversation(conversation.id, { metadata: nextMetadata });
+      } else if (chatService) {
+        const result = await chatService.updateConversation({ ...conversation, metadata: nextMetadata });
+        if (!result.success) throw new Error(result.error || 'Could not save context boundary');
+      } else {
+        throw new Error('Conversation storage is unavailable');
+      }
+    } catch (error) {
+      console.error('[Compaction] Failed to persist context boundary:', error);
+      new Notice('Context could not be saved. The current context was kept.', 5000);
+      return false;
     }
+    if (this.deps.getConversationManager()?.getCurrentConversation()?.id !== conversation.id) return false;
+    conversation.metadata = nextMetadata;
+    modelAgentManager.appendCompactionRecord(compactedContext);
+    modelAgentManager.resetTokenTracker();
 
     this.deps.onUpdateContextProgress();
 
@@ -395,26 +541,19 @@ export class ChatSendCoordinator {
     // reconcile() may reorder message bubbles but leaves non-bubble DOM elements
     // at their insertion point — placing it here ensures correct visual order.
     this.deps.getMessageDisplay()?.showCompactionDivider(compactedContext.messagesRemoved);
-
-    // Auto-continue: send a hidden follow-up so the LLM resumes the conversation.
-    // The hidden metadata prevents the user message from rendering as a visible bubble.
-    try {
-      await this.handleSendMessage(
-        'Continue where you left off \u2014 either continue the current work or align with the user on next steps.',
-        undefined,
-        { hidden: true } as unknown as ReferenceMetadata
-      );
-    } catch (error) {
-      console.warn('[ChatSendCoordinator] Auto-continue after compaction failed:', error);
-    }
+    return true;
   }
 
-  private async runContextCompaction(conversation: ConversationData, manual = false): Promise<void> {
+  private async runContextCompaction(conversation: ConversationData, manual = false): Promise<boolean> {
+    if (this.compactionOperation) return this.compactionOperation;
     this.setPreSendCompactionState(true);
+    const operation = this.performContextCompaction(conversation, manual);
+    this.compactionOperation = operation;
     try {
-      await this.performContextCompaction(conversation, manual);
+      return await operation;
     } finally {
-      this.setPreSendCompactionState(false);
+      if (this.compactionOperation === operation) this.compactionOperation = null;
+      if (this.preparingHandoffs === 0) this.setPreSendCompactionState(false);
     }
   }
 

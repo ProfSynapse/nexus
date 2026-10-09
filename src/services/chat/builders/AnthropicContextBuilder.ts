@@ -25,8 +25,9 @@ export class AnthropicContextBuilder implements IContextBuilder {
     if (msg.role === 'assistant') {
       const hasContent = msg.content && msg.content.trim();
       const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+      const hasResponseBlocks = this.getStoredResponseRecords(msg).length > 0;
 
-      if (!hasContent && !hasToolCalls && !isLastMessage) return false;
+      if (!hasContent && !hasToolCalls && !hasResponseBlocks && !isLastMessage) return false;
 
       if (hasToolCalls && msg.toolCalls) {
         const allHaveResults = msg.toolCalls.every((tc: ToolCall) =>
@@ -61,6 +62,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
           messages.push({ role: 'user', content: msg.content });
         }
       } else if (msg.role === 'assistant') {
+        if (this.appendStoredResponses(messages, msg)) return;
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Assistant message contains both text AND tool_use blocks
           const content: LLMContentBlock[] = [
@@ -144,7 +146,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
     }
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks: LLMContentBlock[] = [
+    const toolUseBlocks: LLMContentBlock[] = this.getPreservedResponseContent(toolCalls) ?? [
       ...this.getPreservedThinkingBlocks(toolCalls),
       ...toolCalls.map(tc => ({
       type: 'tool_use' as const,
@@ -182,7 +184,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
     const messages: AnthropicMessage[] = [...(previousMessages as AnthropicMessage[])];
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks: LLMContentBlock[] = [
+    const toolUseBlocks: LLMContentBlock[] = this.getPreservedResponseContent(toolCalls) ?? [
       ...this.getPreservedThinkingBlocks(toolCalls),
       ...toolCalls.map(tc => ({
       type: 'tool_use' as const,
@@ -207,6 +209,85 @@ export class AnthropicContextBuilder implements IContextBuilder {
     messages.push({ role: 'user', content: toolResultBlocks });
 
     return messages;
+  }
+
+  private getPreservedResponseContent(
+    toolCalls: Array<Pick<LLMToolCall, 'anthropic_response_content'>>
+  ): LLMContentBlock[] | null {
+    const raw = toolCalls.find(call => call.anthropic_response_content?.length)?.anthropic_response_content;
+    return this.isReplayableContent(raw) ? raw as unknown as LLMContentBlock[] : null;
+  }
+
+  private isReplayableContent(raw: unknown): raw is Array<Record<string, unknown>> {
+    const allowed = new Set(['text', 'thinking', 'redacted_thinking', 'server_tool_use', 'web_search_tool_result', 'tool_use']);
+    return Array.isArray(raw) && raw.length > 0 && raw.every(block =>
+      block !== null && typeof block === 'object' && !Array.isArray(block)
+      && allowed.has((block as Record<string, unknown>).type as string)
+    );
+  }
+
+  private getStoredResponseRecords(msg: ChatMessage): Array<{
+    content: LLMContentBlock[];
+    toolCallIds: string[];
+    contentEndOffset: number;
+  }> {
+    const raw = msg.metadata?.anthropicResponses;
+    if (!Array.isArray(raw)) return [];
+    const records: Array<{ content: LLMContentBlock[]; toolCallIds: string[]; contentEndOffset: number }> = [];
+    let previousOffset = 0;
+    for (const candidate of raw) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+      const record = candidate as Record<string, unknown>;
+      if (!this.isReplayableContent(record.content)
+        || !Array.isArray(record.toolCallIds)
+        || !record.toolCallIds.every(id => typeof id === 'string')
+        || typeof record.contentEndOffset !== 'number'
+        || record.contentEndOffset < previousOffset
+        || record.contentEndOffset > msg.content.length) return [];
+      previousOffset = record.contentEndOffset;
+      records.push({
+        content: record.content as unknown as LLMContentBlock[],
+        toolCallIds: record.toolCallIds,
+        contentEndOffset: record.contentEndOffset,
+      });
+    }
+    return records;
+  }
+
+  private appendStoredResponses(messages: AnthropicMessage[], msg: ChatMessage): boolean {
+    const records = this.getStoredResponseRecords(msg);
+    if (records.length === 0) return false;
+    const toolCalls = msg.toolCalls ?? [];
+    if (records.some(record => record.toolCallIds.some(id => !toolCalls.some(call => call.id === id)))) return false;
+
+    for (const record of records) {
+      messages.push({ role: 'assistant', content: record.content });
+      const calls = record.toolCallIds.map(id => toolCalls.find(call => call.id === id)!);
+      if (calls.length > 0) {
+        messages.push({ role: 'user', content: calls.map(call => ({
+          type: 'tool_result',
+          tool_use_id: call.id,
+          ...(call.success ? {} : { is_error: true }),
+          content: call.success
+            ? JSON.stringify(call.result || {})
+            : `Error: ${call.error || 'Tool execution failed'}`,
+        })) });
+      }
+    }
+
+    // A terminal tool or failed continuation can append visible text after the
+    // last provider response. Keep that tail without inventing a response ID.
+    const lastOffset = records[records.length - 1].contentEndOffset;
+    if (lastOffset < msg.content.length) {
+      const tail = msg.content.slice(lastOffset);
+      const last = messages[messages.length - 1];
+      if (last?.role === 'assistant' && Array.isArray(last.content)) {
+        last.content = [...last.content, { type: 'text', text: tail }];
+      } else {
+        messages.push({ role: 'assistant', content: tail });
+      }
+    }
+    return true;
   }
 
   private parseToolInput(argumentsJson: string | undefined): Record<string, unknown> {

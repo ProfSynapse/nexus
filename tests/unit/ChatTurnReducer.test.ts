@@ -30,6 +30,23 @@ function toolCall(overrides: Partial<ToolCall> = {}): ToolCall {
 }
 
 describe('ChatTurnReducer', () => {
+  it('records each Anthropic response boundary with exact native content', () => {
+    const first = [{ type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'x' } }, { type: 'tool_use', id: 'toolu_1', name: 'read', input: {} }];
+    const final = [{ type: 'text', text: 'Answer' }];
+    const state = reduceAll([
+      { type: 'response.metadata', metadata: { anthropicResponseContent: first } },
+      { type: 'response.completed', finishReason: 'tool_calls' },
+      { type: 'assistant.delta', text: 'Answer' },
+      { type: 'response.metadata', metadata: { anthropicResponseContent: final } },
+      { type: 'response.completed' },
+      { type: 'turn.completed' },
+    ]);
+    expect(state.metadata.anthropicResponses).toEqual([
+      { content: first, toolCallIds: ['toolu_1'], contentEndOffset: 0 },
+      { content: final, toolCallIds: [], contentEndOffset: 6 },
+    ]);
+    expect(state.metadata.anthropicResponseContent).toBeUndefined();
+  });
   it('reduces incremental and buffered text to equivalent terminal state', () => {
     const incremental = reduceAll([
       ...mapProviderStreamChunk({ content: 'Hel', complete: false }),

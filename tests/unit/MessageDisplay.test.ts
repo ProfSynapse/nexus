@@ -531,5 +531,94 @@ describe('MessageDisplay', () => {
 
       expect(frames).toHaveLength(1);
     });
+
+    it('keeps following when a nested thinking block scrolls', () => {
+      scrollTo(0);
+      const thinkingContent = createDeepMockElement('div');
+      thinkingContent.scrollHeight = 800;
+      thinkingContent.scrollTop = 0;
+      (thinkingContent as unknown as { clientHeight: number }).clientHeight = 100;
+
+      // A capture listener on the display also sees a scroll inside <details>.
+      scrollHandler({ target: thinkingContent } as unknown as Event);
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+    });
+
+    it('keeps following when output grows before the next scroll frame', () => {
+      scrollTo(0);
+      // Rendering a large reasoning chunk changes scrollHeight without any
+      // reader movement. A subsequent scroll event must not disable follow.
+      messagesContainer.scrollHeight += 200;
+      scrollHandler({ target: messagesContainer } as unknown as Event);
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+    });
+
+    it('keeps following when layout anchoring moves the transcript downward', () => {
+      scrollTo(0);
+      messagesContainer.scrollHeight = 1400;
+      // Browser scroll anchoring may advance scrollTop by less than the new
+      // content height; that is not an upward reader scroll.
+      messagesContainer.scrollTop = 650;
+      scrollHandler({ target: messagesContainer } as unknown as Event);
+      stickyDisplay.followNewOutput();
+      flushFrames();
+
+      expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+    });
+
+    it('follows a late message resize after the streaming frame has finished', () => {
+      let notifyResize: (() => void) | undefined;
+      const observe = jest.fn();
+      const disconnect = jest.fn();
+      const resizeObserver = jest.fn().mockImplementation((callback: () => void) => {
+        notifyResize = callback;
+        return { observe, disconnect };
+      });
+      (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = resizeObserver;
+      try {
+        const lateDisplay = new MessageDisplay(
+          container,
+          mockApp,
+          mockBranchManager,
+          undefined,
+          undefined,
+          undefined,
+          { registerDomEvent: jest.fn() } as never
+        );
+        lateDisplay.setConversation(createConversation({
+          messages: [createAssistantMessage({ id: 'late' })]
+        }));
+        expect(observe).toHaveBeenCalled();
+
+        messagesContainer.scrollHeight = 1000;
+        messagesContainer.scrollTop = 600;
+        (messagesContainer as unknown as { clientHeight: number }).clientHeight = 400;
+        lateDisplay.followNewOutput();
+        flushFrames();
+
+        // Markdown/image rendering can finish after the earlier follow frame.
+        messagesContainer.scrollHeight = 1250;
+        notifyResize?.();
+        flushFrames();
+
+        expect(messagesContainer.scrollTop).toBe(messagesContainer.scrollHeight);
+        lateDisplay.setScrollPosition(100);
+        messagesContainer.scrollHeight = 1400;
+        notifyResize?.();
+        flushFrames();
+        expect(messagesContainer.scrollTop).toBe(100);
+
+        lateDisplay.cleanup();
+        expect(disconnect).toHaveBeenCalled();
+      } finally {
+        delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
+      }
+    });
   });
 });

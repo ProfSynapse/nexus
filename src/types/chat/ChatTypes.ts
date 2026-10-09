@@ -21,6 +21,8 @@ export interface MessageUsage {
   audioTokens?: number;
   /** Price the provider reported for this response, when it did. */
   providerCost?: { totalCost: number; currency: string };
+  webSearchRequests?: number;
+  webSearchCost?: number;
 }
 
 /** Cost data for a message */
@@ -58,6 +60,8 @@ export interface ChatMessage {
   tokens?: number;
   isLoading?: boolean;
   metadata?: Record<string, unknown>;
+  /** Transient instruction to persist a regenerated message's metadata as a full replacement. */
+  replaceMetadata?: boolean;
   // Reasoning/thinking content from LLMs that support it (Claude, GPT-5, Gemini)
   reasoning?: string;
   /**
@@ -111,6 +115,8 @@ export interface ToolCall {
   providerExecuted?: boolean;
   /** Exact Anthropic thinking state; never derive this from the visible reasoning summary. */
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /** Complete Claude assistant blocks for exact server-tool replay in a client-tool continuation. */
+  anthropic_response_content?: Array<Record<string, unknown>>;
   /** Mistral Large 4 assistant chunks (including ThinkChunk) for exact continuation replay. */
   mistral_assistant_content?: Array<Record<string, unknown>>;
   /**
@@ -153,6 +159,8 @@ export interface Conversation {
     chatSettings?: {
       providerId?: string;
       modelId?: string;
+      /** Budget committed together with this chat's model and compaction boundary. */
+      effectiveContextWindow?: number;
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;

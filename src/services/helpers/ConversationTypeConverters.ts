@@ -10,6 +10,46 @@ import type { ToolCall as ChatToolCall } from '../../types/chat/ChatTypes';
 
 type LegacyToolCallParameters = import('../../types/storage/StorageTypes').ToolCall['parameters'];
 
+const ACCOUNTING_KEY = 'nexusMessageAccounting';
+
+/** The hybrid message schema stores extensible fields in metadataJson, which is
+ * written to JSONL and replayed into SQLite by the conversation event applier. */
+export function withPersistedMessageAccounting(message: Pick<ConversationMessage, 'metadata' | 'usage' | 'cost' | 'provider' | 'model'>): Record<string, unknown> | undefined {
+  const metadata = { ...message.metadata };
+  if (message.usage || message.cost || message.provider || message.model) {
+    metadata[ACCOUNTING_KEY] = {
+      usage: message.usage,
+      cost: message.cost,
+      provider: message.provider,
+      model: message.model,
+    };
+  } else {
+    delete metadata[ACCOUNTING_KEY];
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+export function readPersistedMessageAccounting(metadata: MessageData['metadata']): Pick<ConversationMessage, 'usage' | 'cost' | 'provider' | 'model'> {
+  const stored = metadata?.[ACCOUNTING_KEY];
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+  const accounting = stored as Record<string, unknown>;
+  const usage = accounting.usage;
+  const cost = accounting.cost;
+  const validUsage = usage && typeof usage === 'object' && !Array.isArray(usage)
+    && Number.isFinite((usage as Record<string, unknown>).promptTokens)
+    && Number.isFinite((usage as Record<string, unknown>).completionTokens)
+    && Number.isFinite((usage as Record<string, unknown>).totalTokens);
+  const validCost = cost && typeof cost === 'object' && !Array.isArray(cost)
+    && Number.isFinite((cost as Record<string, unknown>).totalCost)
+    && typeof (cost as Record<string, unknown>).currency === 'string';
+  return {
+    ...(validUsage ? { usage: usage as ConversationMessage['usage'] } : {}),
+    ...(validCost ? { cost: cost as ConversationMessage['cost'] } : {}),
+    ...(typeof accounting.provider === 'string' ? { provider: accounting.provider } : {}),
+    ...(typeof accounting.model === 'string' ? { model: accounting.model } : {}),
+  };
+}
+
 /**
  * Convert new ConversationMetadata to legacy format
  */
@@ -49,6 +89,11 @@ export function convertToConversationBranch(branchConversation: IndividualConver
       toolCalls: m.toolCalls as unknown as ChatToolCall[] | undefined, // Storage ToolCall type differs only in narrower type field
       reasoning: m.reasoning,
       reasoningSegments: m.reasoningSegments,
+      metadata: m.metadata,
+      usage: m.usage,
+      cost: m.cost,
+      provider: m.provider,
+      model: m.model,
     })),
     created: branchConversation.created,
     updated: branchConversation.updated,
@@ -119,8 +164,19 @@ export function convertToLegacyConversation(
       reasoning: msg.reasoning,
       reasoningSegments: msg.reasoningSegments,
       metadata: msg.metadata,
-      // Branching support - cast needed due to AlternativeMessage vs ConversationMessage type differences
-      alternatives: msg.alternatives as unknown as import('../../types/storage/StorageTypes').ConversationMessage[] | undefined,
+      ...readPersistedMessageAccounting(msg.metadata),
+      alternatives: msg.alternatives?.map(alt => ({
+        id: alt.id,
+        role: 'assistant' as const,
+        content: alt.content ?? '',
+        timestamp: alt.timestamp,
+        state: alt.state,
+        toolCalls: alt.toolCalls as unknown as ConversationMessage['toolCalls'],
+        reasoning: alt.reasoning,
+        reasoningSegments: alt.reasoningSegments,
+        metadata: alt.metadata,
+        ...readPersistedMessageAccounting(alt.metadata),
+      })),
       activeAlternativeIndex: msg.activeAlternativeIndex
     })),
     // Preserve ALL metadata from storage (parentConversationId, branchType, subagent, etc.)

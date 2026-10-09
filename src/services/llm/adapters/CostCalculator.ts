@@ -91,6 +91,8 @@ export interface CostBreakdown {
   currency: string;
   model: string;
   provider: string;
+  webSearchRequests?: number;
+  webSearchCost?: number;
   tokenUsage: DetailedTokenUsage;
   costPerInputToken: number;
   costPerOutputToken: number;
@@ -195,11 +197,13 @@ export class CostCalculator {
     source: DetailedTokenUsage['source'] = 'provider_api'
   ): CostBreakdown | null {
     const modelSpec = ModelRegistry.findModel(provider, model);
-    if (!modelSpec) {
+    if (!modelSpec && !usage.providerCost) {
       return null;
     }
 
-    const details = LLMCostCalculator.calculateCost(usage, model, LLMCostCalculator.pricingFromSpec(modelSpec));
+    const details = LLMCostCalculator.calculateCost(usage, model, modelSpec
+      ? LLMCostCalculator.pricingFromSpec(modelSpec)
+      : { rateInputPerMillion: 0, rateOutputPerMillion: 0, currency: usage.providerCost?.currency || 'USD' });
     if (!details) {
       return null;
     }
@@ -225,6 +229,8 @@ export class CostCalculator {
       currency: details.currency,
       model,
       provider,
+      webSearchRequests: details.webSearchRequests,
+      webSearchCost: details.webSearchCost,
       tokenUsage,
       costPerInputToken: details.rateInputPerMillion / 1_000_000,
       costPerOutputToken: details.rateOutputPerMillion / 1_000_000,

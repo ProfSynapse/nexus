@@ -94,6 +94,12 @@ export class StreamingOrchestrator {
     for await (const chunk of adapter.generateStreamAsync(prompt, generateOptions)) {
       state.assistantText += chunk.content;
       if (chunk.toolCalls && chunk.complete) {
+        const responseContent = provider === 'anthropic' && Array.isArray(chunk.metadata?.anthropicResponseContent)
+          ? chunk.metadata.anthropicResponseContent as Array<Record<string, unknown>>
+          : undefined;
+        if (responseContent) {
+          chunk.toolCalls = chunk.toolCalls.map(toolCall => ({ ...toolCall, anthropic_response_content: responseContent }));
+        }
         state.detectedToolCalls = chunk.toolCalls.map(toolCall => ({
           ...toolCall,
           type: 'function',

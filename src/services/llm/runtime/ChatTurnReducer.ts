@@ -174,7 +174,10 @@ export function reduceChatTurn(
           ? 'waiting-for-tool'
           : activePhase(state.phase),
         reasoning: closeReasoningSegment(state.reasoning),
-        metadata: recordMistralResponse(recordResponseStop(state, event), state.content.length),
+        metadata: recordAnthropicResponse(
+          recordMistralResponse(recordResponseStop(state, event), state.content.length),
+          state.content.length
+        ),
       };
     case 'turn.completed':
       return settle(state, event, 'complete');
@@ -186,6 +189,24 @@ export function reduceChatTurn(
         error: event.error,
       };
   }
+}
+
+/** Keep each Anthropic assistant response alongside the client tools it requested. */
+function recordAnthropicResponse(metadata: Record<string, unknown>, contentEndOffset: number): Record<string, unknown> {
+  const next = { ...metadata };
+  const raw = next.anthropicResponseContent;
+  delete next.anthropicResponseContent;
+  if (!Array.isArray(raw) || !raw.every(block => block && typeof block === 'object'
+    && !Array.isArray(block) && typeof (block as Record<string, unknown>).type === 'string')) return next;
+  const content = raw as Array<Record<string, unknown>>;
+  const toolCallIds = content
+    .filter(block => block.type === 'tool_use' && typeof block.id === 'string')
+    .map(block => block.id as string);
+  const previous: unknown[] = Array.isArray(next.anthropicResponses) ? next.anthropicResponses : [];
+  return {
+    ...next,
+    anthropicResponses: [...previous, { content, toolCallIds, contentEndOffset }],
+  };
 }
 
 /** Persist one complete Mistral assistant response per provider boundary. */

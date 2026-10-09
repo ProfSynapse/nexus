@@ -51,10 +51,36 @@ function conversation(): ConversationData {
   ] });
 }
 
-function streamOf(events: ChatRuntimeEvent[]) {
-  return async function* () {
-    for (const event of events) yield { messageId: 'assistant-1', event };
-  };
+function integratedStream(events: ChatRuntimeEvent[]) {
+  const current = conversation();
+  let stored = structuredClone(current);
+  const updateConversation = jest.fn(async (_id: string, updates: Partial<ConversationData>) => {
+    stored = { ...stored, ...structuredClone(updates) };
+  });
+  const service = new StreamingResponseService({
+    llmService: {
+      getDefaultModel: () => ({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
+      async *generateResponseStream() { for (const event of events) yield event; },
+    },
+    conversationService: {
+      getConversation: jest.fn(async () => structuredClone(stored)),
+      addMessage: jest.fn(async () => undefined),
+      updateConversation,
+    },
+    toolCallService: {
+      getAvailableTools: jest.fn(() => []), resetDetectedTools: jest.fn(),
+      handleToolCallDetection: jest.fn(), fireToolEvent: jest.fn(),
+    },
+    costTrackingService: { createUsageCallback: jest.fn(() => jest.fn()) },
+  } as unknown as ConstructorParameters<typeof StreamingResponseService>[0]);
+  const chatService = createMockChatService();
+  chatService.generateResponseStreaming.mockImplementation((id, userMessage, options) =>
+    service.generateResponse(id, userMessage, options)
+  );
+  const handler = new MessageStreamHandler(chatService as unknown as ChatService, {
+    onStreamingUpdate: jest.fn(), onToolCallsDetected: jest.fn(),
+  });
+  return { current, handler, readStored: () => stored, updateConversation, chatService };
 }
 
 describe('response stop reason persistence', () => {
@@ -99,18 +125,13 @@ describe('response stop reason persistence', () => {
   });
 
   it('retains raw stop metadata if an error arrives before the response completes', async () => {
-    const chatService = createMockChatService();
-    chatService.generateResponseStreaming.mockImplementation(streamOf([
+    const { current, handler, readStored, updateConversation, chatService } = integratedStream([
       ...mapProviderStreamChunk({ content: '', complete: true, finishReason: 'tool_calls',
         metadata: { stopReason: 'tool_use', stopSequence: null } }),
       ...mapProviderStreamChunk({ content: '', complete: false,
         metadata: { stopReason: 'max_tokens', stopSequence: null } }),
       { type: 'turn.failed', error: { message: 'Provider stream error' } },
-    ]));
-    const handler = new MessageStreamHandler(chatService as unknown as ChatService, {
-      onStreamingUpdate: jest.fn(), onToolCallsDetected: jest.fn(),
-    });
-    const current = conversation();
+    ]);
 
     await expect(handler.streamAndSave(current, 'Read and summarize', 'assistant-1', {}))
       .rejects.toThrow('Provider stream error');
@@ -122,27 +143,25 @@ describe('response stop reason persistence', () => {
     ]);
     expect(assistant?.metadata).not.toHaveProperty('finishReason');
     expect(assistant?.state).toBe('invalid');
-    expect(chatService.updateConversation).toHaveBeenCalledTimes(1);
+    expect(readStored().messages.find(message => message.id === 'assistant-1')?.metadata).toEqual(expect.objectContaining({
+      stopReason: 'max_tokens', stopSequence: null,
+      responseStops: [{ stopReason: 'tool_use', stopSequence: null, finishReason: 'tool_calls' }],
+      runtimeError: expect.objectContaining({ message: 'Provider stream error' }),
+    }));
+    expect(updateConversation).toHaveBeenCalledTimes(1);
+    expect(chatService.updateConversation).not.toHaveBeenCalled();
   });
 
   it('saves the full stop history on the assistant message through streamAndSave', async () => {
-    const chatService = createMockChatService();
-    chatService.generateResponseStreaming.mockImplementation(streamOf([
+    const { current, handler, readStored, updateConversation, chatService } = integratedStream([
       ...responseEvents(), { type: 'turn.completed' },
-    ]));
-    let serializedSave = '';
-    chatService.updateConversation.mockImplementation(async saved => {
-      serializedSave = JSON.stringify(saved);
-    });
-    const handler = new MessageStreamHandler(chatService as unknown as ChatService, {
-      onStreamingUpdate: jest.fn(), onToolCallsDetected: jest.fn(),
-    });
+    ]);
 
-    const result = await handler.streamAndSave(conversation(), 'Read and summarize', 'assistant-1', {});
-    const saved = JSON.parse(serializedSave) as ConversationData;
-    const assistant = saved.messages.find(message => message.id === 'assistant-1');
+    const result = await handler.streamAndSave(current, 'Read and summarize', 'assistant-1', {});
+    const assistant = readStored().messages.find(message => message.id === 'assistant-1');
 
-    expect(chatService.updateConversation).toHaveBeenCalledTimes(1);
+    expect(updateConversation).toHaveBeenCalledTimes(1);
+    expect(chatService.updateConversation).not.toHaveBeenCalled();
     expect(result.metadata?.responseStops).toEqual(expectedStops);
     expect(assistant?.state).toBe('complete');
     expect(assistant?.metadata?.responseStops).toEqual(expectedStops);
@@ -154,29 +173,21 @@ describe('response stop reason persistence', () => {
     ['aborted', { type: 'turn.aborted', reason: 'user stopped' } as ChatRuntimeEvent],
     ['failed', { type: 'turn.failed', error: { message: 'network error' } } as ChatRuntimeEvent],
   ])('saves captured response stops when the turn is %s', async (terminalState, terminalEvent) => {
-    const chatService = createMockChatService();
-    chatService.generateResponseStreaming.mockImplementation(streamOf([
+    const { current, handler, readStored, updateConversation, chatService } = integratedStream([
       { type: 'response.resolved', provider: 'anthropic', model: 'claude-haiku-5-5' },
       ...mapProviderStreamChunk({
         content: 'Partial', complete: true, finishReason: 'length',
         metadata: { stopReason: 'max_tokens', stopSequence: null },
       }),
       terminalEvent,
-    ]));
-    let serializedSave = '';
-    chatService.updateConversation.mockImplementation(async saved => {
-      serializedSave = JSON.stringify(saved);
-    });
-    const handler = new MessageStreamHandler(chatService as unknown as ChatService, {
-      onStreamingUpdate: jest.fn(), onToolCallsDetected: jest.fn(),
-    });
+    ]);
 
-    await expect(handler.streamAndSave(conversation(), 'Read and summarize', 'assistant-1', {}))
+    await expect(handler.streamAndSave(current, 'Read and summarize', 'assistant-1', {}))
       .rejects.toThrow();
 
-    const saved = JSON.parse(serializedSave) as ConversationData;
-    const assistant = saved.messages.find(message => message.id === 'assistant-1');
-    expect(chatService.updateConversation).toHaveBeenCalledTimes(1);
+    const assistant = readStored().messages.find(message => message.id === 'assistant-1');
+    expect(updateConversation).toHaveBeenCalledTimes(1);
+    expect(chatService.updateConversation).not.toHaveBeenCalled();
     expect(assistant?.state).toBe(terminalState === 'aborted' ? 'aborted' : 'invalid');
     expect(assistant?.metadata?.responseStops).toEqual([{
       provider: 'anthropic', model: 'claude-haiku-5-5',

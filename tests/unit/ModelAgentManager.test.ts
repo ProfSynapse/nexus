@@ -127,6 +127,33 @@ describe('ModelAgentManager', () => {
     expect(shouldCompact).toBe(true);
   });
 
+  it('tracks the selected model window when changing models within one provider', () => {
+    const manager = new ModelAgentManager({}, createEvents());
+    manager.handleModelChange(createModel('openai-codex', 'gpt-6.1-sol', 1_050_000));
+    expect(manager.getContextTokenTracker()?.getStatus().maxTokens).toBe(1_050_000);
+
+    manager.handleModelChange(createModel('openai-codex', 'small-model', 128_000));
+    expect(manager.getContextTokenTracker()?.getStatus().maxTokens).toBe(128_000);
+  });
+
+  it('does not let an older model lookup overwrite a newer selection', async () => {
+    const manager = new ModelAgentManager({}, createEvents());
+    const access = asManager(manager);
+    let finishOlder!: (model: ModelOption) => void;
+    const older = new Promise<ModelOption>(resolve => { finishOlder = resolve; });
+    access.defaultsResolver.resolveModelOption = jest.fn((providerId: string, modelId: string) =>
+      modelId === 'older' ? older : Promise.resolve(createModel(providerId, modelId, 128_000))
+    );
+
+    const pendingOlder = manager.setSelectedModelById('openai-codex', 'older');
+    await manager.setSelectedModelById('openai-codex', 'newer');
+    finishOlder(createModel('openai-codex', 'older', 1_050_000));
+    await pendingOlder;
+
+    expect(manager.getSelectedModel()?.modelId).toBe('newer');
+    expect(manager.getContextTokenTracker()?.getStatus().maxTokens).toBe(128_000);
+  });
+
   it('uses the configured current conversation id when resolving the session id', async () => {
     const conversationService = {
       getConversation: jest.fn().mockImplementation(async (conversationId: string) => ({
@@ -174,6 +201,7 @@ describe('ModelAgentManager', () => {
             sessionId: 'session_abc',
             contextNotes: ['Note A.md'],
             thinking: { enabled: true, effort: 'high' },
+            webSearch: true,
             temperature: 0.8,
             agentProvider: 'anthropic',
             agentModel: 'claude-sonnet',
@@ -215,6 +243,7 @@ describe('ModelAgentManager', () => {
     expect(manager.getWorkspaceContext()).toEqual(workspaceData.context);
     expect(manager.getContextNotes()).toEqual(['Note A.md']);
     expect(manager.getThinkingSettings()).toEqual({ enabled: true, effort: 'high' });
+    expect(manager.getWebSearch()).toBe(true);
     expect(manager.getTemperature()).toBe(0.8);
     expect(manager.getAgentProvider()).toBe('anthropic');
     expect(manager.getAgentModel()).toBe('claude-sonnet');
@@ -250,6 +279,7 @@ describe('ModelAgentManager', () => {
     access.selectedWorkspaceId = 'workspace_2';
     access.contextNotesManager.setNotes(['Spec.md']);
     manager.setThinkingSettings({ enabled: true, effort: 'medium' });
+    manager.setWebSearch(true);
     manager.setTemperature(0.35);
     manager.setAgentModel('openai', 'gpt-5');
     manager.setAgentThinkingSettings({ enabled: false, effort: 'medium' });
@@ -268,6 +298,7 @@ describe('ModelAgentManager', () => {
         contextNotes: ['Spec.md'],
         sessionId: 'session_existing',
         thinking: { enabled: true, effort: 'medium' },
+        webSearch: true,
         temperature: 0.35,
         agentProvider: 'openai',
         agentModel: 'gpt-5',

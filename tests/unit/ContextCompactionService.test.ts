@@ -153,6 +153,43 @@ describe('ContextCompactionService — empty / too-few messages', () => {
   });
 });
 
+describe('ContextCompactionService — existing handoff boundary', () => {
+  const messages = ['u1', 'a1', 'u2', 'a2', 'u3', 'a3', 'u4', 'a4']
+    .map((id, index) => makeMsg({ id, role: index % 2 === 0 ? 'user' : 'assistant', content: id }));
+
+  it('never reopens summarized transcript when fewer than two fresh exchanges exist', () => {
+    const conversation = makeConversation(messages);
+    conversation.metadata = { compaction: { frontier: [{ boundaryMessageId: 'a3', boundaryMode: 'after', summary: 'Earlier goal' }] } };
+    const result = new ContextCompactionService().compact(conversation);
+    expect(result.messagesRemoved).toBe(0);
+    expect(result.messagesKept).toBe(2);
+    expect(ContextCompactionService.getMessagesAfterBoundary(messages, conversation.metadata).map(message => message.id)).toEqual(['u4', 'a4']);
+  });
+
+  it('advances only through active exchanges and leaves the complete transcript intact', () => {
+    const conversation = makeConversation(messages);
+    conversation.metadata = { compaction: { frontier: [{ boundaryMessageId: 'a1', boundaryMode: 'after', summary: 'Earlier goal' }] } };
+    const original = conversation.messages;
+    const result = new ContextCompactionService().compact(conversation);
+    expect(result.messagesRemoved).toBe(2);
+    expect(result.messagesKept).toBe(4);
+    expect(result.boundaryMessageId).toBe('u3');
+    expect(result.summary).toContain('u2');
+    expect(result.summary).not.toContain('u1');
+    expect(conversation.messages).toBe(original);
+  });
+
+  it('can summarize one oversized active exchange with an exclusive boundary', () => {
+    const conversation = makeConversation(messages.slice(0, 2));
+    const result = new ContextCompactionService().compact(conversation, { compactAllIfNoRemovableUnits: true });
+    expect(result.messagesRemoved).toBe(2);
+    expect(result.messagesKept).toBe(0);
+    expect(result.boundaryMessageId).toBe('a1');
+    expect(result.boundaryMode).toBe('after');
+    expect(ContextCompactionService.getMessagesAfterBoundary(messages.slice(0, 2), { compaction: { frontier: [result] } })).toEqual([]);
+  });
+});
+
 describe('ContextCompactionService — atomic unit identification', () => {
   let svc: ContextCompactionService;
 

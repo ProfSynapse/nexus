@@ -12,7 +12,7 @@
  * The difference is only WHERE data is saved (via callbacks).
  */
 
-import { App, Setting, EventRef } from 'obsidian';
+import { App, Component, Setting, EventRef } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
 import { ImageGenerationService } from '../../services/llm/ImageGenerationService';
@@ -51,6 +51,7 @@ import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelC
 import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
+import { getContextWindowOverrideKey, resolveContextWindowLimit } from '../../ui/chat/utils/ContextWindowSettings';
 
 /**
  * Current settings state
@@ -58,6 +59,8 @@ import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 export interface ChatSettings {
   provider: string;
   model: string;
+  contextWindowOverrides?: Record<string, number>;
+  webSearch?: boolean;
   // Subagent model - used for executePrompt when chat model is local
   agentProvider?: string;
   agentModel?: string;
@@ -129,6 +132,7 @@ export interface ChatSettingsRendererConfig {
   showWorkflowSelection?: boolean;
   showVoiceSection?: boolean;
   showTranscriptionSection?: boolean;
+  showWebSearch?: boolean;
   renderAfterImageSection?: (parent: HTMLElement) => void;
 }
 
@@ -161,6 +165,7 @@ export class ChatSettingsRenderer {
   private agentEffortSection?: HTMLElement;
   private contextNotesListEl?: HTMLElement;
   private settingsEventRef?: EventRef;
+  private sliderEvents?: Component;
   // Maps dropdown option value -> actual { provider, modelId } for merged model lists
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
@@ -169,7 +174,10 @@ export class ChatSettingsRenderer {
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
     this.config = config;
-    this.settings = { ...config.initialSettings };
+    this.settings = {
+      ...config.initialSettings,
+      contextWindowOverrides: { ...(config.initialSettings.contextWindowOverrides ?? config.llmProviderSettings.contextWindowOverrides ?? {}) }
+    };
     this.staticModelsService = StaticModelsService.getInstance();
 
     this.providerManager = new LLMProviderManager(
@@ -188,6 +196,8 @@ export class ChatSettingsRenderer {
   }
 
   destroy(): void {
+    this.sliderEvents?.unload();
+    this.sliderEvents = undefined;
     if (this.settingsEventRef) {
       LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
       this.settingsEventRef = undefined;
@@ -195,6 +205,8 @@ export class ChatSettingsRenderer {
   }
 
   render(): void {
+    this.sliderEvents?.unload();
+    this.sliderEvents = undefined;
     this.container.empty();
     this.container.addClass('chat-settings-renderer');
 
@@ -320,6 +332,8 @@ export class ChatSettingsRenderer {
       reRender: () => this.render(),
       onAfterRender: (content) => {
         this.renderReasoningControls(content);
+        this.renderContextWindowControl(content);
+        this.renderWebSearchControl(content);
         this.renderTextOnlyProviderWarning(content, 'chat');
       },
     });
@@ -398,8 +412,94 @@ export class ChatSettingsRenderer {
           valueDisplay.setText(EFFORT_LABELS[getThinking().effort]);
           this.notifyChange();
         });
+      this.registerLiveSliderInput(slider.sliderEl, () => {
+        const index = Number(slider.sliderEl.value);
+        const effort = EFFORT_LEVELS[index];
+        if (effort) valueDisplay.setText(EFFORT_LABELS[effort]);
+      });
       return slider;
     });
+  }
+
+  private registerLiveSliderInput(element: HTMLInputElement, update: () => void): void {
+    if (!this.sliderEvents) {
+      this.sliderEvents = new Component();
+      this.sliderEvents.load();
+    }
+    this.sliderEvents.registerDomEvent(element, 'input', update);
+  }
+
+  private renderContextWindowControl(content: HTMLElement): void {
+    const provider = this.settings.provider;
+    const model = this.settings.model;
+    if (!provider || !model) return;
+
+    const staticWindow = this.staticModelsService.findModel(provider, model)?.contextWindow;
+    if (staticWindow && staticWindow > 0) {
+      this.addContextWindowSlider(content, provider, model, staticWindow);
+      return;
+    }
+
+    void this.providerManager.getModelsForProvider(provider).then(models => {
+      if (content.isConnected === false || provider !== this.settings.provider || model !== this.settings.model) return;
+      const discoveredWindow = models.find(candidate => candidate.id === model)?.contextWindow;
+      if (discoveredWindow && discoveredWindow > 0) {
+        this.addContextWindowSlider(content, provider, model, discoveredWindow);
+      }
+    }).catch(() => {
+      // An unavailable provider has no reliable advertised limit to adjust.
+    });
+  }
+
+  private addContextWindowSlider(content: HTMLElement, provider: string, model: string, advertised: number): void {
+    const maximum = resolveContextWindowLimit(advertised);
+    if (maximum <= 0) return;
+    const key = getContextWindowOverrideKey(provider, model);
+    const selected = resolveContextWindowLimit(maximum, this.settings.contextWindowOverrides?.[key]);
+    const setting = new Setting(content)
+      .setName('Context window')
+      .setDesc('Set the conversation budget used by the context meter and automatic compaction.');
+    const valueDisplay = setting.controlEl.createSpan({ cls: 'csr-context-window-value' });
+    valueDisplay.setText(`${selected.toLocaleString()} tokens`);
+
+    setting.addSlider(slider => {
+      slider
+        .setLimits(Math.min(1024, maximum), maximum, 1)
+        .setValue(selected)
+        .onChange(value => {
+          const limit = resolveContextWindowLimit(maximum, value);
+          if (!this.settings.contextWindowOverrides) this.settings.contextWindowOverrides = {};
+          if (limit === maximum) delete this.settings.contextWindowOverrides[key];
+          else this.settings.contextWindowOverrides[key] = limit;
+          valueDisplay.setText(`${limit.toLocaleString()} tokens`);
+          this.notifyChange();
+        });
+      this.registerLiveSliderInput(slider.sliderEl, () => {
+        const limit = resolveContextWindowLimit(maximum, Number(slider.sliderEl.value));
+        valueDisplay.setText(`${limit.toLocaleString()} tokens`);
+      });
+      return slider;
+    });
+  }
+
+  private renderWebSearchControl(content: HTMLElement): void {
+    if (this.config.showWebSearch === false) return;
+    if (!['anthropic', 'openai', 'google', 'openrouter'].includes(this.settings.provider)) return;
+    if (this.settings.provider === 'google' && !this.settings.model.startsWith('gemini-3')) {
+      new Setting(content)
+        .setName('Web search')
+        .setDesc('Available with Gemini 3 or newer when Nexus tools are enabled.');
+      return;
+    }
+    new Setting(content)
+      .setName('Web search')
+      .setDesc('Allow this chat model to search the web when needed.')
+      .addToggle(toggle => toggle
+        .setValue(this.settings.webSearch ?? false)
+        .onChange(value => {
+          this.settings.webSearch = value;
+          this.notifyChange();
+        }));
   }
 
   // ========== SUBAGENT MODEL SECTION ==========

@@ -16,11 +16,13 @@
 
 import { ConversationMessage, ConversationData } from '../../types/chat/ChatTypes';
 
+
 /**
  * A single entry in the compaction frontier array stored in conversation metadata.
  */
 export interface CompactionFrontierEntry {
   boundaryMessageId?: string;
+  boundaryMode?: 'at' | 'after';
   [key: string]: unknown;
 }
 
@@ -61,6 +63,8 @@ export interface CompactedContext {
   transcriptCoverage?: CompactedTranscriptCoverageRef;
   /** ID of the first message in the "kept" window — messages before this are compacted context */
   boundaryMessageId?: string;
+  /** Use 'after' when every current message was summarized. */
+  boundaryMode?: 'at' | 'after';
 }
 
 /**
@@ -73,12 +77,15 @@ export interface CompactionOptions {
   maxSummaryLength?: number;
   /** Include file references in summary (default: true) */
   includeFileReferences?: boolean;
+  /** When the active context has too few units to trim, summarize all of it. */
+  compactAllIfNoRemovableUnits?: boolean;
 }
 
 const DEFAULT_OPTIONS: Required<CompactionOptions> = {
   exchangesToKeep: 2,
   maxSummaryLength: 500,
   includeFileReferences: true,
+  compactAllIfNoRemovableUnits: false,
 };
 
 /**
@@ -104,7 +111,11 @@ export class ContextCompactionService {
     options: CompactionOptions = {}
   ): CompactedContext {
     const opts = { ...DEFAULT_OPTIONS, ...options };
-    const messages = conversation.messages;
+    // Stored messages include the complete transcript. Only the suffix after
+    // the current frontier is eligible for another compaction.
+    const messages = ContextCompactionService.getMessagesAfterBoundary(
+      conversation.messages, conversation.metadata
+    );
 
     if (messages.length === 0) {
       return {
@@ -122,7 +133,10 @@ export class ContextCompactionService {
 
     // 2. Calculate how many units to keep (from the end)
     const unitsToKeep = Math.min(opts.exchangesToKeep * 2, units.length); // 2 units per exchange (user + assistant)
-    const unitsToRemove = Math.max(0, units.length - unitsToKeep);
+    let unitsToRemove = Math.max(0, units.length - unitsToKeep);
+    if (unitsToRemove === 0 && opts.compactAllIfNoRemovableUnits && units.length > 0) {
+      unitsToRemove = units.length;
+    }
 
     if (unitsToRemove === 0) {
       return {
@@ -160,7 +174,9 @@ export class ContextCompactionService {
     // The boundary marks the first kept message; messages before it are
     // summarized context. The caller stores this in metadata and the LLM
     // prompt assembly layer filters messages based on this boundary.
-    const boundaryMessageId = keptMessages.length > 0 ? keptMessages[0].id : undefined;
+    const boundaryMessageId = keptMessages.length > 0
+      ? keptMessages[0].id
+      : removedMessages[removedMessages.length - 1]?.id;
 
     return {
       summary,
@@ -170,6 +186,7 @@ export class ContextCompactionService {
       topics,
       compactedAt: Date.now(),
       boundaryMessageId,
+      boundaryMode: keptMessages.length > 0 ? 'at' : 'after',
     };
   }
 
@@ -396,10 +413,10 @@ export class ContextCompactionService {
     }
 
     const boundaryIndex = messages.findIndex(m => m.id === boundaryId);
-    if (boundaryIndex <= 0) {
+    if (boundaryIndex < 0 || (boundaryIndex === 0 && latestRecord.boundaryMode !== 'after')) {
       return messages;
     }
 
-    return messages.slice(boundaryIndex);
+    return messages.slice(boundaryIndex + (latestRecord.boundaryMode === 'after' ? 1 : 0));
   }
 }

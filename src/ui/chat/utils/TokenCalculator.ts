@@ -14,7 +14,8 @@ export class TokenCalculator {
   static getContextUsage(
     selectedModel: ModelOption | null,
     currentConversation: ConversationData | null,
-    currentSystemPrompt: string | null
+    currentSystemPrompt: string | null,
+    effectiveContextWindow?: number
   ): ContextUsage {
     try {
       if (!selectedModel || !currentConversation) {
@@ -22,7 +23,8 @@ export class TokenCalculator {
       }
 
       const totalTokens = this.estimateTokenCount(currentConversation, currentSystemPrompt);
-      const contextWindow = selectedModel.contextWindow;
+      const contextWindow = typeof effectiveContextWindow === 'number' && Number.isFinite(effectiveContextWindow) && effectiveContextWindow > 0
+        ? effectiveContextWindow : selectedModel.contextWindow;
       const percentage = (totalTokens / contextWindow) * 100;
 
       return {
