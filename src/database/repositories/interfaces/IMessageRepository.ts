@@ -37,6 +37,8 @@ export interface CreateMessageData extends Omit<MessageData, 'id' | 'conversatio
  * Only content, state, reasoning, tool call data, and alternatives can be updated
  */
 export interface UpdateMessageData {
+  /** Undefined leaves metadata unchanged; null clears it. */
+  metadata?: MessageData['metadata'] | null;
   content?: string | null;
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   reasoning?: string;

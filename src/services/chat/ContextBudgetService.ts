@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../llm/adapters/types';
 import { TokenUsageExtractor } from '../llm/utils/TokenUsageExtractor';
-import { ConversationData } from '../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
 import { ContextCompactionService } from './ContextCompactionService';
 
 /**
@@ -53,9 +53,13 @@ const PROVIDER_POLICIES: Record<string, ContextBudgetPolicy> = {
 };
 
 export class ContextBudgetService {
-  static getPolicy(providerId?: string | null): ContextBudgetPolicy | null {
+  static getPolicy(providerId?: string | null, modelContextWindow?: number | null): ContextBudgetPolicy | null {
     if (!providerId) {
       return null;
+    }
+
+    if (typeof modelContextWindow === 'number' && Number.isFinite(modelContextWindow) && modelContextWindow > 0) {
+      return { maxTokens: modelContextWindow, ...DEFAULT_THRESHOLDS };
     }
 
     return PROVIDER_POLICIES[providerId] || null;
@@ -116,6 +120,8 @@ export class ContextBudgetService {
     if (extra?.reasoningTokens) normalized.reasoningTokens = extra.reasoningTokens;
     if (extra?.audioTokens) normalized.audioTokens = extra.audioTokens;
     if (extra?.providerCost) normalized.providerCost = extra.providerCost;
+    if (extra?.webSearchRequests !== undefined) normalized.webSearchRequests = extra.webSearchRequests;
+    if (extra?.webSearchCost !== undefined) normalized.webSearchCost = extra.webSearchCost;
 
     return normalized;
   }
@@ -128,24 +134,49 @@ export class ContextBudgetService {
     return Math.ceil(text.length / 4);
   }
 
+  /** Estimate the full serialized message, including tool requests and outcomes. */
+  static estimateMessageTokens(message: ConversationMessage): number {
+    let tokens = this.estimateTextTokens(message.content) + 8;
+    for (const call of message.toolCalls ?? []) {
+      tokens += this.estimateTextTokens(call.function?.name);
+      tokens += this.estimateTextTokens(call.function?.arguments);
+      if (call.parameters) tokens += this.estimateTextTokens(JSON.stringify(call.parameters));
+      if (call.result !== undefined) {
+        tokens += this.estimateTextTokens(typeof call.result === 'string' ? call.result : JSON.stringify(call.result));
+      }
+    }
+    return tokens;
+  }
+
   static estimateConversationTokens(
     conversation: ConversationData,
     systemPrompt?: string | null
   ): number {
-    let totalTokens = this.estimateTextTokens(systemPrompt);
-
     // Respect compaction boundary: only count messages that will be sent to the LLM.
     // Messages before the boundary are summarized in the compaction frontier (system prompt).
     const messages = this.getMessagesAfterCompactionBoundary(conversation);
-
-    for (const message of messages) {
-      const normalizedUsage = this.normalizeUsage((message as { usage?: unknown }).usage);
-
-      if (normalizedUsage) {
-        totalTokens += normalizedUsage.totalTokens;
-        continue;
+    const compaction = conversation.metadata?.compaction as { frontier?: Array<{ compactedAt?: number }> } | undefined;
+    const latestCompactedAt = compaction?.frontier?.[compaction.frontier.length - 1]?.compactedAt;
+    // The latest provider response reports the prompt it actually received,
+    // including prior messages and system prompt. Earlier response usage is
+    // billing history, so summing it again inflates current context occupancy.
+    let anchorIndex = -1;
+    let totalTokens = 0;
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message.role !== 'assistant'
+        || (typeof latestCompactedAt === 'number' && message.timestamp <= latestCompactedAt)) continue;
+      const usage = this.normalizeUsage(message.metadata?.latestResponseUsage
+        ?? (message.metadata?.billingUsageAggregated ? undefined : message.usage));
+      if (usage) {
+        anchorIndex = index;
+        totalTokens = usage.totalTokens;
+        break;
       }
+    }
+    if (anchorIndex < 0) totalTokens = this.estimateTextTokens(systemPrompt);
 
+    for (const message of messages.slice(anchorIndex + 1)) {
       totalTokens += this.estimateTextTokens(message.content);
 
       if (message.toolCalls) {
@@ -171,9 +202,10 @@ export class ContextBudgetService {
     providerId: string | null | undefined,
     conversation: ConversationData,
     systemPrompt?: string | null,
-    newMessage?: string
+    newMessage?: string,
+    modelContextWindow?: number | null
   ): ContextBudgetEstimate {
-    const policy = this.getPolicy(providerId);
+    const policy = this.getPolicy(providerId, modelContextWindow);
     const currentTokens = this.estimateConversationTokens(conversation, systemPrompt);
     const projectedTokens = currentTokens + this.estimateTextTokens(newMessage);
 

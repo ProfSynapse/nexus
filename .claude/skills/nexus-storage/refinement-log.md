@@ -132,3 +132,13 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-10-07 | Live SQLite rejected metadataJson although the TypeScript row interface declared it. Source DDL had no message metadata column. | Added schema v18 and fresh/upgrade/replay checks in implementation; no skill procedure change, since change-schema already requires both actual runtime paths.
 
 - 2026-10-07 | OpenClaw persists a prepared native session and submission marker before network dispatch; ambiguous acknowledgements recover by identity without replay. Same-adapter claims and terminal-state merges have race regressions. | No change to procedure; existing source-of-truth and replay guidance applied.
+
+- 2026-10-09 | Accounting and Anthropic search history use message metadata, but metadata-only updates were omitted by repository dirty checks, update events, and replay. | Added create-versus-update guidance to persist-new-data; implementation now carries metadata changes without a new schema. Repository/applier regressions cover reload and replay with simulated I/O; a real Obsidian cache rebuild was unavailable because the CLI is not installed.
+
+## 2026-10-09 — Conversation context handoff
+- Observation: model, effective context window and frontier fit existing conversation metadata and can use one event-backed metadata update.
+- Change: no protocol change; followed persist-new-data. Live cache rebuild remains unverified because the Obsidian CLI is unavailable in this environment.
+
+## 2026-10-09 — Retry metadata replacement
+- Observation: preserving omitted metadata for accounting patches also retained stale provider replay blocks when regenerating an answer.
+- Change: verified omission/patch separately from explicit regeneration replacement, using the existing metadata persistence contract. No protocol change needed.

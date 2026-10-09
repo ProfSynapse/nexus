@@ -70,7 +70,11 @@ export class TokenUsageExtractor {
     );
 
     let promptTokens = first(u.promptTokens, u.prompt_tokens, u.input_tokens, u.promptTokenCount);
-    const completionTokens = first(u.completionTokens, u.completion_tokens, u.output_tokens, u.candidatesTokenCount);
+    // Gemini reports visible candidates and billed thoughts separately. OpenAI
+    // and Anthropic already include reasoning in their output totals.
+    const googleOutput = first(u.candidatesTokenCount, u.thoughtsTokenCount) === undefined
+      ? undefined : (num(u.candidatesTokenCount) ?? 0) + (num(u.thoughtsTokenCount) ?? 0);
+    const completionTokens = first(u.completionTokens, u.completion_tokens, u.output_tokens, googleOutput);
 
     if (promptTokens === undefined && completionTokens === undefined) {
       return undefined;
@@ -112,6 +116,17 @@ export class TokenUsageExtractor {
     if (audioTokens) {
       usage.audioTokens = audioTokens;
     }
+
+    // Claude reports billed native searches separately from tokens. The public
+    // API rate is $10 / 1,000 searches; failed searches are excluded by Anthropic.
+    // https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool
+    const serverTools = isRecord(u.server_tool_use) ? u.server_tool_use : undefined;
+    const anthropicSearches = num(serverTools?.web_search_requests);
+    const searches = first(u.webSearchRequests, anthropicSearches);
+    const searchCost = first(u.webSearchCost,
+      anthropicSearches !== undefined ? Math.max(0, anthropicSearches) * 0.01 : undefined);
+    if (searches !== undefined && searches >= 0) usage.webSearchRequests = searches;
+    if (searchCost !== undefined && searchCost >= 0) usage.webSearchCost = searchCost;
 
     // Provider-reported price. OpenRouter puts `cost` (USD) on the final usage
     // object when the request asked for it (`usage: { include: true }`). On a

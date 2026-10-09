@@ -30,6 +30,10 @@ survives a rebuild.
    Their `switch` has no default branch, so an unhandled type is silently dropped
    during replay — the data lives in JSONL and never reaches the cache again.
 5. If the data needs new columns or tables, run `change-schema.md` now.
+   Existing metadata columns still need both create and update paths checked:
+   service conversion, repository dirty detection, emitted update events, and
+   replay appliers must all carry metadata-only changes. Test omission (keep
+   existing metadata) separately from an explicit null (clear it).
 6. Guard the reads. Any read that can run during startup MUST await
    `waitForQueryReady()` when the adapter exposes it, or a cold cache renders as
    "no data". Copy the guard used by TaskBoardDataController or DualBackendExecutor.

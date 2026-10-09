@@ -1059,7 +1059,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   updateMessage = async (
     conversationId: string,
     messageId: string,
-    updates: Partial<MessageData>
+    updates: Omit<Partial<MessageData>, 'metadata'> & { metadata?: MessageData['metadata'] | null }
   ): Promise<void> => {
     await this.ensureInitialized();
     return this.messageRepo.update(messageId, updates, conversationId);

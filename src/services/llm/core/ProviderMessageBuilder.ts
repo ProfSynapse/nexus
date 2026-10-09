@@ -84,6 +84,7 @@ export interface GenerateOptionsInternal {
   onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
   onUsageAvailable?: (usage: unknown, cost?: unknown) => void;
   enableThinking?: boolean;
+  webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   previousResponseId?: string; // OpenAI Responses API
 }
@@ -113,6 +114,7 @@ export interface StreamingOptions {
   transcriptionProvider?: string;
   transcriptionModel?: string;
   enableThinking?: boolean;
+  webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   // Responses API (OpenAI/LM Studio): ID from first response, reused for all continuations
   responsesApiId?: string;
@@ -395,6 +397,7 @@ export class ProviderMessageBuilder {
       onToolEvent: options?.onToolEvent,
       onUsageAvailable: options?.onUsageAvailable,
       enableThinking: options?.enableThinking,
+      webSearch: options?.webSearch,
       thinkingEffort: options?.thinkingEffort
     };
 

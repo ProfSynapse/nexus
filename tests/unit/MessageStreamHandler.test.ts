@@ -163,4 +163,89 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     expect(events.onStreamingUpdate).toHaveBeenCalledWith('msg_ai', 'Done', false, true);
     expect(events.onStreamingUpdate).toHaveBeenLastCalledWith('msg_ai', 'Done', true, false);
   });
+
+  it('updates the visible conversation total on each cost event before tool execution ends', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    conversation.cost = { totalCost: 0.1, currency: 'USD' };
+    const visibleTotals: number[] = [];
+    events.onCostUpdate = () => visibleTotals.push(conversation.cost?.totalCost ?? 0);
+    mockChatService.generateResponseStreaming.mockImplementation(streamOf([
+      { type: 'cost.updated', cost: { totalCost: 0.02, currency: 'USD' } },
+      { type: 'tool.execution.started', operationId: 'tool', call: { id: 'tool', type: 'function', function: { name: 'test', arguments: '{}' } } },
+      { type: 'cost.updated', cost: { totalCost: 0.03, currency: 'USD' } },
+      { type: 'turn.completed' },
+    ]));
+
+    await handler.streamResponse(conversation, 'hi', 'msg_ai', {});
+
+    expect(visibleTotals[0]).toBeCloseTo(0.12);
+    expect(visibleTotals[1]).toBeCloseTo(0.13);
+    expect(conversation.messages.find(m => m.id === 'msg_ai')?.cost?.totalCost).toBeCloseTo(0.03);
+  });
+
+  it('does not overwrite a delayed provider charge with its stale final UI snapshot', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    const persisted = conversationWithLoadingPlaceholder();
+    const persistedMessage = persisted.messages.find(message => message.id === 'msg_ai')!;
+    mockChatService.generateResponseStreaming.mockImplementation(async function* () {
+      yield { messageId: 'msg_ai', event: { type: 'usage.updated' as const, usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110 } } };
+      yield { messageId: 'msg_ai', event: { type: 'cost.updated' as const, cost: { totalCost: 0.02, currency: 'USD' } } };
+      yield { messageId: 'msg_ai', event: { type: 'assistant.delta' as const, text: 'done' } };
+      persistedMessage.content = 'done';
+      persistedMessage.state = 'complete';
+      persistedMessage.usage = { promptTokens: 100, completionTokens: 10, totalTokens: 110 };
+      persistedMessage.cost = { totalCost: 0.02, currency: 'USD' };
+      persisted.cost = { totalCost: 0.02, currency: 'USD' };
+      yield { messageId: 'msg_ai', event: { type: 'turn.completed' as const } };
+    });
+    mockChatService.updateConversation.mockImplementation(async (next: ConversationData) => {
+      persisted.messages = structuredClone(next.messages);
+      return { success: true };
+    });
+
+    // The provider's charge arrives after its generator closes, before the UI
+    // caller returns. A second save of the earlier UI snapshot loses it.
+    const originalStream = mockChatService.generateResponseStreaming.getMockImplementation()!;
+    mockChatService.generateResponseStreaming.mockImplementation(async function* (...args) {
+      try {
+        yield* originalStream(...args);
+      } finally {
+        persistedMessage.cost = { totalCost: 0.05, currency: 'USD' };
+        persistedMessage.usage = { promptTokens: 300, completionTokens: 30, totalTokens: 330 };
+        persisted.cost = { totalCost: 0.05, currency: 'USD' };
+      }
+    });
+
+    await handler.streamAndSave(conversation, 'hi', 'msg_ai', {});
+
+    expect(persisted.messages.find(message => message.id === 'msg_ai')?.cost?.totalCost).toBeCloseTo(0.05);
+    expect(persisted.messages.find(message => message.id === 'msg_ai')?.usage?.promptTokens).toBe(300);
+    expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+  });
+
+  it('saves a partial message only when the stream fails before a persisted terminal event', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    mockChatService.generateResponseStreaming.mockImplementation(async function* () {
+      yield { messageId: 'msg_ai', event: { type: 'assistant.delta' as const, text: 'partial' } };
+      throw new Error('connection lost');
+    });
+
+    await expect(handler.streamAndSave(conversation, 'hi', 'msg_ai', {})).rejects.toThrow('connection lost');
+
+    expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
+    expect(conversation.messages.find(message => message.id === 'msg_ai')?.content).toBe('partial');
+  });
+
+  it('does not save a stale UI snapshot after a persisted failed terminal event', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    mockChatService.generateResponseStreaming.mockImplementation(streamOf([
+      { type: 'assistant.delta', text: 'partial' },
+      { type: 'turn.failed', error: { message: 'provider failed' } },
+    ]));
+
+    await expect(handler.streamAndSave(conversation, 'hi', 'msg_ai', {})).rejects.toThrow('provider failed');
+
+    expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+    expect(conversation.messages.find(message => message.id === 'msg_ai')?.state).toBe('invalid');
+  });
 });

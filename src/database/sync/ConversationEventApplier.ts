@@ -185,6 +185,10 @@ export class ConversationEventApplier {
       updates.push('reasoningSegmentsJson = ?');
       values.push(event.data.reasoning_segments ? JSON.stringify(event.data.reasoning_segments) : null);
     }
+    if (event.data.metadata !== undefined) {
+      updates.push('metadataJson = ?');
+      values.push(event.data.metadata === null ? null : JSON.stringify(event.data.metadata));
+    }
     if (event.data.tool_calls !== undefined) {
       updates.push('toolCallsJson = ?');
       values.push(event.data.tool_calls ? JSON.stringify(event.data.tool_calls) : null);

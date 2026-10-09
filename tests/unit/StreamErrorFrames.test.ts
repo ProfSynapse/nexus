@@ -46,6 +46,39 @@ const openAiCompatOptions: SSEStreamOptions = {
   extractError: (parsed) => extractStreamErrorMessage(parsed, 'Test streaming error')
 };
 
+describe('early cumulative usage snapshots', () => {
+  it.each(['node', 'web'] as const)('%s emits usage before completion, without summing snapshots', async (path) => {
+    const adapter = new TestAdapter();
+    const options: SSEStreamOptions = {
+      ...openAiCompatOptions, yieldUsageUpdates: true, extractUsage: parsed => parsed.usage
+    };
+    const frames = sseText(
+      { usage: { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 90 } },
+      { usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 90 } },
+      '[DONE]'
+    );
+    const chunks = await collect(path === 'node' ? adapter.runNodeStream(frames, options) : adapter.runSSEResponse(frames, options));
+    expect(chunks.filter(chunk => !chunk.complete && chunk.usage).map(chunk => chunk.usage)).toEqual([
+      { promptTokens: 100, completionTokens: 1, totalTokens: 101, cacheReadTokens: 90, cachedTokens: 90 },
+      { promptTokens: 100, completionTokens: 20, totalTokens: 120, cacheReadTokens: 90, cachedTokens: 90 }
+    ]);
+    expect(chunks.at(-1)?.usage?.totalTokens).toBe(120);
+  });
+
+  it('retains observed usage when a later provider frame fails', async () => {
+    const adapter = new TestAdapter();
+    const chunks: StreamChunk[] = [];
+    await expect((async () => {
+      for await (const chunk of adapter.runNodeStream(sseText(
+        { usage: { input_tokens: 50, output_tokens: 1 } },
+        { error: { message: 'Overloaded' } }
+      ), { ...openAiCompatOptions, yieldUsageUpdates: true, extractUsage: parsed => parsed.usage })) chunks.push(chunk);
+    })()).rejects.toThrow('Overloaded');
+    expect(chunks.some(chunk => !chunk.complete && chunk.usage?.promptTokens === 50)).toBe(true);
+    expect(chunks.some(chunk => chunk.complete)).toBe(false);
+  });
+});
+
 function sseText(...frames: unknown[]): string {
   return frames
     .map(frame => `data: ${typeof frame === 'string' ? frame : JSON.stringify(frame)}\n\n`)

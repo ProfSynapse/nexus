@@ -83,11 +83,14 @@ export class LLMCostCalculator {
     const costDetails: CostDetails = {
       inputCost,
       outputCost,
-      totalCost: inputCost + outputCost,
+      totalCost: inputCost + outputCost + (usage.webSearchCost ?? 0),
       currency: modelPricing.currency || 'USD',
       rateInputPerMillion: inputRate,
       rateOutputPerMillion: outputRate
     };
+
+    if (usage.webSearchRequests !== undefined) costDetails.webSearchRequests = usage.webSearchRequests;
+    if (usage.webSearchCost !== undefined) costDetails.webSearchCost = usage.webSearchCost;
 
     if (cacheReadTokens > 0) {
       costDetails.cacheRead = { tokens: cacheReadTokens, cost: cacheReadCost, ratePerMillion: readRate };

@@ -2,6 +2,9 @@ import {
   CompactionFrontierRecord,
   CompactionFrontierService
 } from '../../src/services/chat/CompactionFrontierService';
+import { ContextCompactionService } from '../../src/services/chat/ContextCompactionService';
+import { ModelAgentCompactionState } from '../../src/ui/chat/services/ModelAgentCompactionState';
+import type { ConversationData } from '../../src/types/chat/ChatTypes';
 
 function createRecord(
   summary: string,
@@ -24,6 +27,30 @@ function createRecord(
 }
 
 describe('CompactionFrontierService', () => {
+  it.each(['at', 'after'] as const)('keeps the newest %s boundary through budget merging and metadata reload', mode => {
+    const state = new ModelAgentCompactionState();
+    state.updatePolicy(128_000);
+    const messages: ConversationData['messages'] = Array.from({ length: 10 }, (_, index) => ({
+      id: `m${index}`, role: index % 2 ? 'assistant' : 'user',
+      content: `Message ${index}`, timestamp: index, conversationId: 'conv_1'
+    }));
+    const old = { ...createRecord('old', 1000, 0), summary: 'x'.repeat(40_000), boundaryMessageId: 'm8', boundaryMode: 'at' as const };
+    const newest = { ...createRecord('new', 1001, 10), boundaryMessageId: 'm9', boundaryMode: mode };
+    const metadata = state.buildMetadataWithCompactionRecord({ compaction: { frontier: [old] } }, newest);
+    // Exercise the persisted shape, not just the private merging implementation.
+    const reloaded = JSON.parse(JSON.stringify(metadata)) as ConversationData['metadata'];
+    expect(ContextCompactionService.getMessagesAfterBoundary(messages, reloaded)).toEqual(mode === 'at' ? [messages[9]] : []);
+    const future = { ...messages[0], id: 'future', content: 'Next request' };
+    expect(ContextCompactionService.getMessagesAfterBoundary([...messages, future], reloaded)).toEqual(mode === 'at' ? [messages[9], future] : [future]);
+  });
+
+  it('preserves a known boundary when merging an older legacy record without one', () => {
+    const service = new CompactionFrontierService({ maxRecords: 1, maxEstimatedTokens: 100, metaCompactOldestCount: 2 });
+    const first = { ...createRecord('first', 1000, 0), boundaryMessageId: 'm3', boundaryMode: 'after' as const };
+    const merged = service.appendRecord([first], createRecord('legacy', 1001, 4));
+    expect(merged[0]).toMatchObject({ boundaryMessageId: 'm3', boundaryMode: 'after' });
+  });
+
   it('derives a tight frontier budget for small-context models and a much larger one for 200k caps', () => {
     const webllmPolicy = CompactionFrontierService.createPolicyForContextWindow(4096);
     const softCapPolicy = CompactionFrontierService.createPolicyForContextWindow(200000);

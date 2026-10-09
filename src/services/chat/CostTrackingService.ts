@@ -79,23 +79,28 @@ export class CostTrackingService {
         return;
       }
 
-      // Check if message already has cost (to prevent double-counting)
-      const hadCost = !!message.cost;
+      // The streaming caller supplies the cumulative message charge. Replace
+      // its prior snapshot; only the difference belongs in the conversation total.
+      const previousCost = message.cost?.totalCost ?? 0;
 
       // Update message with usage and cost
       message.usage = usage;
+      message.metadata = { ...message.metadata, billingUsageAggregated: true };
       if (cost) {
         message.cost = cost;
       }
 
-      // Save updated conversation
-      await this.conversationService.updateConversation(conversation.id, { messages: conversation.messages });
-
-      // Update conversation-level cost aggregation
-      // Only add to conversation cost if we didn't already count this message
-      if (!hadCost && cost) {
-        await this.updateConversationCost(conversationId, cost);
+      if (cost) {
+        conversation.cost = {
+          totalCost: (conversation.cost?.totalCost ?? 0) + cost.totalCost - previousCost,
+          currency: cost.currency,
+        };
       }
+
+      await this.conversationService.updateConversation(conversation.id, {
+        messages: conversation.messages,
+        ...(cost ? { cost: conversation.cost } : {}),
+      });
 
     } catch (error) {
       console.error('[CostTrackingService] Failed to update message with async usage:', error);
@@ -137,8 +142,31 @@ export class CostTrackingService {
    * Returns a callback function that can be passed to LLM streaming options
    */
   createUsageCallback(conversationId: string, messageId: string): (usage: UsageData, cost: CostData | null) => Promise<void> {
+    let pending = Promise.resolve();
     return async (usage: UsageData, cost: CostData | null) => {
-      await this.updateMessageCost(conversationId, messageId, usage, cost);
+      // A provider callback is used only when its response omitted inline
+      // usage. Each callback is another response, so append it to the message
+      // after the streaming turn has saved its own cumulative snapshots.
+      pending = pending.then(async () => {
+        const conversation = await this.conversationService.getConversation(conversationId);
+        const previous = conversation?.messages.find(message => message.id === messageId);
+        if (!previous) return;
+        const prior = TokenUsageExtractor.normalize(previous.usage);
+        const aggregate: UsageData = {
+          promptTokens: (prior?.promptTokens ?? 0) + usage.promptTokens,
+          completionTokens: (prior?.completionTokens ?? 0) + usage.completionTokens,
+          totalTokens: (prior?.totalTokens ?? 0) + usage.totalTokens,
+          cacheReadTokens: (prior?.cacheReadTokens ?? 0) + (usage.cacheReadTokens ?? 0),
+          cacheWriteTokens: (prior?.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0),
+          webSearchRequests: (prior?.webSearchRequests ?? 0) + (usage.webSearchRequests ?? 0),
+          webSearchCost: (prior?.webSearchCost ?? 0) + (usage.webSearchCost ?? 0),
+        };
+        const totalCost = cost
+          ? { totalCost: (previous.cost?.totalCost ?? 0) + cost.totalCost, currency: cost.currency }
+          : null;
+        await this.updateMessageCost(conversationId, messageId, aggregate, totalCost);
+      });
+      await pending;
     };
   }
 
@@ -159,8 +187,7 @@ export class CostTrackingService {
       return null;
     }
 
-    // Update conversation-level cost
-    await this.updateConversationCost(conversationId, cost);
+    await this.updateMessageCost(conversationId, messageId, usage, cost);
 
     return cost;
   }

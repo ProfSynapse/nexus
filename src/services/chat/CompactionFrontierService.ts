@@ -94,6 +94,9 @@ export class CompactionFrontierService {
       .map(record => record.mergedRecordCount ?? 1)
       .reduce((total, count) => total + count, 0);
     const nextLevel = Math.max(...normalizedRecords.map(record => record.level ?? 0)) + 1;
+    // Summaries may shrink, but their transcript boundary must survive merging.
+    // Older records may predate boundaries; retain the newest known one.
+    const boundaryRecord = [...normalizedRecords].reverse().find(record => record.boundaryMessageId);
 
     return {
       summary: this.buildMetaSummary(normalizedRecords),
@@ -102,6 +105,8 @@ export class CompactionFrontierService {
       filesReferenced: uniqueFiles,
       topics: uniqueTopics,
       compactedAt: normalizedRecords[normalizedRecords.length - 1].compactedAt,
+      boundaryMessageId: boundaryRecord?.boundaryMessageId,
+      boundaryMode: boundaryRecord?.boundaryMode,
       level: nextLevel,
       mergedRecordCount,
       transcriptCoverageAncestry,

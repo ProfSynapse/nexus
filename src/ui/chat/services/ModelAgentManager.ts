@@ -15,6 +15,7 @@ import type { IAgent } from '../../../agents/interfaces/IAgent';
 import { ContextNotesManager } from './ContextNotesManager';
 import {
   ModelAgentConversationSettingsStore,
+  ContextHandoffRecoveryError,
   type ConversationMetadataWithCompaction,
   type ConversationServiceLike,
   type ConversationSettingsMetadata,
@@ -28,6 +29,7 @@ import {
   type ModelAgentPromptContextSnapshot,
 } from './ModelAgentPromptContextAssembler';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
+import { getContextWindowOverrideKey, resolveContextWindowLimit } from '../utils/ContextWindowSettings';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { StaticModelsService } from '../../../services/StaticModelsService';
@@ -46,7 +48,11 @@ import {
   CompactionFrontierService
 } from '../../../services/chat/CompactionFrontierService';
 import { ConversationData } from '../../../types/chat/ChatTypes';
-import type { App } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
+
+interface NexusPluginWithLLMSettings extends Plugin {
+  settings?: { settings?: { llmProviders?: LLMProviderSettings } };
+}
 
 export interface ModelAgentManagerEvents {
   onModelChanged: (model: ModelOption | null) => void;
@@ -54,10 +60,37 @@ export interface ModelAgentManagerEvents {
   onSystemPromptChanged: (systemPrompt: string | null) => void;
 }
 
+export interface ContextHandoffTarget {
+  providerId: string;
+  modelId: string;
+  contextWindow: number;
+}
+
+export interface ContextHandoffHooks {
+  prepare: (request: {
+    conversationId: string;
+    source: ContextHandoffTarget;
+    destination: ContextHandoffTarget;
+    signal: AbortSignal;
+  }) => Promise<CompactedContext | undefined>;
+  onCommitted?: (
+    metadata: ConversationMetadataWithCompaction,
+    candidate: CompactedContext | undefined,
+    conversationId: string
+  ) => void;
+}
+
 export class ModelAgentManager {
   static readonly COMPACTION_FRONTIER_CAP = CompactionFrontierService.DEFAULT_POLICY.maxRecords;
   private staticModelsService = StaticModelsService.getInstance();
   private selectedModel: ModelOption | null = null;
+  private modelSelectionGeneration = 0;
+  private committedContextWindow: number | null = null;
+  private contextHandoffHooks: ContextHandoffHooks | null = null;
+  private contextHandoffAbort: AbortController | null = null;
+  private contextHandoffPromise: Promise<boolean> | null = null;
+  private contextHandoffCommitting = false;
+  private contextHandoffRecovery: { conversationId: string; error: ContextHandoffRecoveryError } | null = null;
   private selectedPrompt: PromptOption | null = null;
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
@@ -89,6 +122,7 @@ export class ModelAgentManager {
   private transcriptionProvider: string | null = null;
   private transcriptionModel: string | null = null;
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
+  private webSearch = false;
   private temperature = 0.5;
   private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
   private compactionFrontier: CompactionFrontierRecord[] = []; // Active bounded compaction frontier
@@ -160,7 +194,11 @@ export class ModelAgentManager {
    * Set the current conversation ID used for session lookups and persistence.
    */
   setCurrentConversationId(conversationId: string | null): void {
-    if (this.currentConversationId !== conversationId) this.workspaceLoadGeneration++;
+    if (this.currentConversationId !== conversationId) {
+      this.workspaceLoadGeneration++;
+      this.cancelContextHandoff();
+      this.committedContextWindow = null;
+    }
     if (this.currentConversationId && this.currentConversationId !== conversationId) this.pendingSessionId = generateSessionId();
     this.currentConversationId = conversationId;
   }
@@ -180,6 +218,7 @@ export class ModelAgentManager {
       if (this.hasStoredChatSettings(chatSettings)) {
         await this.restoreFromConversationMetadata(chatSettings);
       }
+      if (this.contextHandoffRecovery?.conversationId === conversationId) this.contextHandoffRecovery = null;
     } catch {
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
@@ -208,7 +247,11 @@ export class ModelAgentManager {
 
         if (model) {
           this.selectedModel = model;
+          this.committedContextWindow = typeof settings.effectiveContextWindow === 'number'
+            ? resolveContextWindowLimit(model.contextWindow, settings.effectiveContextWindow)
+            : this.resolveConfiguredContextWindow(model);
           this.updateCompactionFrontierPolicy(model);
+          this.updateContextTokenTracker(model.providerId);
           this.events.onModelChanged(model);
         } else {
           await this.initializeDefaultModel();
@@ -305,6 +348,7 @@ export class ModelAgentManager {
         effort: settings.thinking.effort ?? 'medium'
       };
     }
+    this.webSearch = settings.webSearch === true;
 
     // Restore temperature
     if (typeof settings.temperature === 'number') {
@@ -326,11 +370,17 @@ export class ModelAgentManager {
    * Initialize from plugin settings defaults (model, workspace, prompt, thinking)
    */
   private async initializeDefaultModel(): Promise<void> {
+    this.selectedModel = null;
+    this.committedContextWindow = null;
+    this.compactionState.updateContextTokenTracker('');
     try {
       const defaultState = await this.defaultsResolver.resolveDefaultState();
 
       this.selectedModel = defaultState.selectedModel;
+      this.committedContextWindow = defaultState.selectedModel
+        ? this.resolveConfiguredContextWindow(defaultState.selectedModel) : null;
       this.updateCompactionFrontierPolicy(defaultState.selectedModel);
+      this.updateContextTokenTracker(defaultState.selectedModel?.providerId || '');
       this.events.onModelChanged(defaultState.selectedModel);
 
       this.selectedPrompt = defaultState.selectedPrompt;
@@ -341,6 +391,7 @@ export class ModelAgentManager {
       this.contextNotesManager.clear();
       this.contextNotesManager.setNotes(defaultState.contextNotes);
       this.thinkingSettings = { ...defaultState.thinkingSettings };
+      this.webSearch = false;
       this.agentProvider = defaultState.agentProvider;
       this.agentModel = defaultState.agentModel;
       this.agentThinkingSettings = { ...defaultState.agentThinkingSettings };
@@ -367,6 +418,7 @@ export class ModelAgentManager {
    * Save current selections to conversation metadata
    */
   async saveToConversation(conversationId: string): Promise<void> {
+    await this.waitForContextHandoff();
     try {
       await this.conversationSettingsStore.save(
         conversationId,
@@ -404,8 +456,147 @@ export class ModelAgentManager {
    * Resolve and apply a provider/model selection.
    */
   async setSelectedModelById(providerId: string, modelId: string): Promise<void> {
-    const model = await this.resolveModelOption(providerId, modelId);
-    this.handleModelChange(model);
+    await this.requestContextChange({ providerId, modelId });
+  }
+
+  configureContextHandoff(hooks: ContextHandoffHooks | null): void {
+    this.contextHandoffHooks = hooks;
+  }
+
+  isContextHandoffPending(): boolean {
+    return this.contextHandoffPromise !== null;
+  }
+
+  async waitForContextHandoff(): Promise<void> {
+    this.throwIfContextRecoveryRequired();
+    while (this.contextHandoffPromise) {
+      const pending = this.contextHandoffPromise;
+      let applied: boolean;
+      try {
+        applied = await pending;
+      } catch (error) {
+        const next = this.getPendingContextHandoff();
+        if (next !== pending && next !== null) continue;
+        throw error;
+      }
+      const next = this.getPendingContextHandoff();
+      if (next !== pending && next !== null) continue;
+      if (!applied) throw new Error('Context handoff was cancelled');
+      this.throwIfContextRecoveryRequired();
+      return;
+    }
+    this.throwIfContextRecoveryRequired();
+  }
+
+  private throwIfContextRecoveryRequired(): void {
+    if (this.contextHandoffRecovery?.conversationId === this.currentConversationId) {
+      throw this.contextHandoffRecovery.error;
+    }
+  }
+
+  private getPendingContextHandoff(): Promise<boolean> | null {
+    return this.contextHandoffPromise;
+  }
+
+  cancelContextHandoff(): void {
+    if (!this.contextHandoffCommitting) {
+      ++this.modelSelectionGeneration;
+      this.contextHandoffAbort?.abort();
+    }
+  }
+
+  async requestContextChange(request: {
+    providerId: string;
+    modelId: string;
+    contextWindowOverride?: number;
+  }): Promise<boolean> {
+    this.throwIfContextRecoveryRequired();
+    if (this.contextHandoffCommitting && this.contextHandoffPromise) {
+      await this.contextHandoffPromise;
+    } else {
+      this.cancelContextHandoff();
+    }
+    const generation = ++this.modelSelectionGeneration;
+    const controller = new AbortController();
+    this.contextHandoffAbort = controller;
+    const operation = this.performContextChange(request, generation, controller.signal);
+    this.contextHandoffPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.contextHandoffPromise === operation) {
+        this.contextHandoffPromise = null;
+        this.contextHandoffAbort = null;
+      }
+    }
+  }
+
+  private async performContextChange(
+    request: { providerId: string; modelId: string; contextWindowOverride?: number },
+    generation: number,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    const conversationId = this.currentConversationId;
+    const model = await this.resolveModelOption(request.providerId, request.modelId);
+    if (signal.aborted || generation !== this.modelSelectionGeneration) return false;
+    if (!model) throw new Error(`Model ${request.providerId}/${request.modelId} is unavailable`);
+    const sameModel = this.selectedModel?.providerId === model.providerId
+      && this.selectedModel?.modelId === model.modelId;
+    const window = 'contextWindowOverride' in request
+      ? resolveContextWindowLimit(model.contextWindow, request.contextWindowOverride)
+      : sameModel ? this.getEffectiveContextWindow() : this.resolveConfiguredContextWindow(model);
+    if (sameModel && window === this.getEffectiveContextWindow()) return true;
+    const sourceModel = this.selectedModel;
+    const source = sourceModel ? {
+      providerId: sourceModel.providerId,
+      modelId: sourceModel.modelId,
+      contextWindow: this.getEffectiveContextWindow()
+    } : null;
+    const destination = { providerId: model.providerId, modelId: model.modelId, contextWindow: window };
+    let candidate: CompactedContext | undefined;
+    if (conversationId && source) {
+      if (!this.contextHandoffHooks) throw new Error('Context handoff is not configured');
+      try {
+        candidate = await this.contextHandoffHooks.prepare({ conversationId, source, destination, signal });
+      } catch (error) {
+        if (signal.aborted || generation !== this.modelSelectionGeneration) return false;
+        throw error;
+      }
+    }
+    if (signal.aborted || generation !== this.modelSelectionGeneration || conversationId !== this.currentConversationId) return false;
+    let metadata: ConversationMetadataWithCompaction | undefined;
+    if (conversationId) {
+      const frontier = candidate ? [candidate] : this.compactionState.getCompactionFrontier();
+      this.contextHandoffCommitting = true;
+      try {
+        metadata = await this.conversationSettingsStore.commitHandoff(
+          conversationId,
+          { providerId: model.providerId, modelId: model.modelId, effectiveContextWindow: window, sessionId: this.pendingSessionId },
+          frontier,
+          { providerId: source?.providerId, modelId: source?.modelId, effectiveContextWindow: source?.contextWindow, sessionId: this.pendingSessionId }
+        );
+      } catch (error) {
+        if (error instanceof ContextHandoffRecoveryError) {
+          this.contextHandoffRecovery = { conversationId, error };
+        }
+        throw error;
+      } finally {
+        this.contextHandoffCommitting = false;
+      }
+    }
+    // A durable commit cannot be cancelled halfway through. Apply it to the
+    // active conversation only if the user has not navigated away meanwhile.
+    if (conversationId !== this.currentConversationId) return false;
+    if (candidate && metadata) this.restoreCompactionFrontierFromMetadata(metadata);
+    this.handleModelChange(model, window);
+    if (metadata && conversationId) {
+      try {
+        this.contextHandoffHooks?.onCommitted?.(metadata, candidate, conversationId);
+      } catch (error) {
+        console.error('[ModelAgentManager] Context handoff committed but local metadata refresh failed:', error);
+      }
+    }
+    return true;
   }
 
   /**
@@ -420,6 +611,15 @@ export class ModelAgentManager {
    */
   async getCurrentSystemPrompt(): Promise<string | null> {
     return await this.promptContextAssembler.buildSystemPrompt(this.getPromptContextSnapshot());
+  }
+
+  /** System and tool instructions without the active frontier, for handoff sizing. */
+  async getHandoffSystemPrompt(): Promise<string | null> {
+    return await this.promptContextAssembler.buildSystemPrompt({
+      ...this.getPromptContextSnapshot(),
+      compactionFrontier: [],
+      latestCompactionRecord: null
+    });
   }
 
   /**
@@ -447,11 +647,20 @@ export class ModelAgentManager {
   /**
    * Handle model selection change
    */
-  handleModelChange(model: ModelOption | null): void {
+  handleModelChange(model: ModelOption | null, effectiveWindow?: number): void {
+    ++this.modelSelectionGeneration;
     const previousProvider = this.selectedModel?.providerId || '';
     const newProvider = model?.providerId || '';
+    if (effectiveWindow !== undefined) {
+      this.committedContextWindow = effectiveWindow;
+    } else if (this.selectedModel?.providerId !== model?.providerId || this.selectedModel?.modelId !== model?.modelId) {
+      this.committedContextWindow = model ? this.resolveConfiguredContextWindow(model) : null;
+    }
 
     this.selectedModel = model;
+    if (!this.committedContextWindow || !model) {
+      this.committedContextWindow = model ? this.resolveConfiguredContextWindow(model) : null;
+    }
     this.updateCompactionFrontierPolicy(model);
     this.events.onModelChanged(model);
 
@@ -472,7 +681,29 @@ export class ModelAgentManager {
    * Only local providers with limited context windows need tracking
    */
   private updateContextTokenTracker(provider: string): void {
-    this.compactionState.updateContextTokenTracker(provider);
+    this.compactionState.updateContextTokenTracker(provider, this.getEffectiveContextWindow());
+  }
+
+  getEffectiveContextWindow(): number {
+    const model = this.selectedModel;
+    if (!model) return 0;
+    if (this.committedContextWindow !== null) return this.committedContextWindow;
+    return this.resolveConfiguredContextWindow(model);
+  }
+
+  private resolveConfiguredContextWindow(model: ModelOption): number {
+    const overrides = getNexusPlugin<NexusPluginWithLLMSettings>(this.app)
+      ?.settings?.settings?.llmProviders?.contextWindowOverrides;
+    const override = overrides?.[getContextWindowOverrideKey(model.providerId, model.modelId)];
+    return resolveContextWindowLimit(model.contextWindow, override);
+  }
+
+  refreshContextWindowLimit(): void {
+    // Global settings are defaults for future conversations. An active budget
+    // changes only through requestContextChange and its durable handoff.
+    this.updateCompactionFrontierPolicy(this.selectedModel);
+    this.updateContextTokenTracker(this.selectedModel?.providerId || '');
+    this.events.onModelChanged(this.selectedModel);
   }
 
   /**
@@ -498,7 +729,7 @@ export class ModelAgentManager {
     const baseline = await this.systemPromptBuilder.build({ sessionId, customPrompt: this.currentSystemPrompt, contextNotes: this.contextNotesManager.getNotes(), skipToolsSection: this.selectedModel?.providerId === 'webllm' });
     if (generation !== this.workspaceLoadGeneration) throw new Error('Workspace selection was superseded');
     const used = this.compactionState.getContextTokenTracker()?.getStatus().usedTokens ?? 0;
-    const workspaceState = await this.workspaceContextService.loadSelectedWorkspace(workspaceId, sessionId, workflow, { maxTokens: Math.max(0, (this.selectedModel?.contextWindow ?? 128000) - used - 2048 - Math.ceil((baseline?.length ?? 0) / 4)) }, async (bundle, briefing) => {
+    const workspaceState = await this.workspaceContextService.loadSelectedWorkspace(workspaceId, sessionId, workflow, { maxTokens: Math.max(0, (this.getEffectiveContextWindow() || 128000) - used - 2048 - Math.ceil((baseline?.length ?? 0) / 4)) }, async (bundle, briefing) => {
       try {
         if (generation !== this.workspaceLoadGeneration || await this.getCurrentSessionId() !== sessionId) return { ok: false, error: { code: 'superseded', message: 'Conversation changed before workspace selection could be activated' } };
         await this.promptContextAssembler.buildSystemPrompt({ ...this.getPromptContextSnapshot(), selectedWorkspaceId: briefing.workspaceContext?.workspaceId ?? workspaceId,
@@ -579,6 +810,10 @@ export class ModelAgentManager {
   setThinkingSettings(settings: ThinkingSettings): void {
     this.thinkingSettings = { ...settings };
   }
+
+  getWebSearch(): boolean { return this.webSearch; }
+
+  setWebSearch(enabled: boolean): void { this.webSearch = enabled; }
 
   /**
    * Get agent provider
@@ -772,7 +1007,16 @@ export class ModelAgentManager {
    * Get current context status (for UI display or compaction checks)
    */
   getContextStatus(): ContextStatus | null {
+    this.syncSelectedContextWindow();
     return this.compactionState.getContextStatus();
+  }
+
+  private syncSelectedContextWindow(): void {
+    const effectiveWindow = this.getEffectiveContextWindow();
+    const tracker = this.compactionState.getContextTokenTracker();
+    if (tracker && effectiveWindow && tracker.getStatus().maxTokens !== effectiveWindow) {
+      tracker.setMaxTokens(effectiveWindow);
+    }
   }
 
   /**
@@ -784,11 +1028,14 @@ export class ModelAgentManager {
     systemPrompt?: string | null,
     providerOverride?: string
   ): boolean {
+    this.syncSelectedContextWindow();
     return this.compactionState.shouldCompactBeforeSending(
       conversationOrMessage,
       message,
       systemPrompt,
-      providerOverride || this.selectedModel?.providerId || null
+      providerOverride || this.selectedModel?.providerId || null,
+      !providerOverride || providerOverride === this.selectedModel?.providerId
+        ? this.getEffectiveContextWindow() : undefined
     );
   }
 
@@ -823,11 +1070,11 @@ export class ModelAgentManager {
   }
 
   private updateCompactionFrontierPolicy(model: ModelOption | null): void {
-    this.compactionState.updatePolicy(model?.contextWindow);
+    this.compactionState.updatePolicy(model ? this.getEffectiveContextWindow() : undefined);
   }
 
   getCompactionFrontierBudgetPolicy(): CompactionFrontierBudgetPolicy {
-    return this.compactionState.getCompactionFrontierBudgetPolicy(this.selectedModel?.contextWindow);
+    return this.compactionState.getCompactionFrontierBudgetPolicy(this.getEffectiveContextWindow());
   }
 
   /**
@@ -984,11 +1231,13 @@ export class ModelAgentManager {
     return {
       providerId: this.selectedModel?.providerId,
       modelId: this.selectedModel?.modelId,
+      effectiveContextWindow: this.getEffectiveContextWindow(),
       promptId: this.selectedPrompt?.id ?? null,
       workspaceId: this.selectedWorkspaceId,
       sessionId: this.pendingSessionId,
       contextNotes: this.contextNotesManager.getNotes(),
       thinking: this.thinkingSettings,
+      webSearch: this.webSearch,
       temperature: this.temperature,
       agentProvider: this.agentProvider,
       agentModel: this.agentModel,
@@ -1016,6 +1265,7 @@ export class ModelAgentManager {
       messageEnhancement: this.messageEnhancement,
       currentSystemPrompt: this.currentSystemPrompt,
       thinkingSettings: this.thinkingSettings,
+      webSearch: this.webSearch,
       temperature: this.temperature,
       imageProvider: this.imageProvider,
       imageModel: this.imageModel,

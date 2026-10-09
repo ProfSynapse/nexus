@@ -11,6 +11,7 @@ import { ModelAgentManager } from '../services/ModelAgentManager';
 import { ChatSettingsRenderer, ChatSettings, ChatSettingsOptions } from '../../../components/shared/ChatSettingsRenderer';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { Settings } from '../../../settings';
+import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
 
 /**
  * Type for the NexusPlugin with settings property
@@ -26,6 +27,12 @@ export class ChatSettingsModal extends Modal {
   private conversationId: string | null;
   private renderer: ChatSettingsRenderer | null = null;
   private pendingSettings: ChatSettings | null = null;
+  private displayedContextWindowOverrides: Record<string, number> | null = null;
+  private saveButton: ButtonComponent | null = null;
+  private saveStatus: HTMLElement | null = null;
+  private saving = false;
+  private ownsContextHandoff = false;
+  private closed = false;
 
   constructor(
     app: App,
@@ -40,6 +47,7 @@ export class ChatSettingsModal extends Modal {
   }
 
   onOpen(): void {
+    this.closed = false;
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('chat-settings-modal');
@@ -53,12 +61,15 @@ export class ChatSettingsModal extends Modal {
       .setButtonText('Cancel')
       .onClick(() => this.close());
 
-    new ButtonComponent(buttonContainer)
+    this.saveButton = new ButtonComponent(buttonContainer)
       .setButtonText('Save')
       .setCta()
       .onClick(() => {
         void this.handleSave();
       });
+    this.saveStatus = buttonContainer.createEl('p', { text: '' });
+    this.saveStatus.setAttribute('role', 'status');
+    this.saveStatus.setAttribute('aria-live', 'polite');
 
     // Load data and render
     void this.loadAndRender(contentEl);
@@ -76,9 +87,11 @@ export class ChatSettingsModal extends Modal {
     // Load workspaces and prompts
     const workspaces = await this.loadWorkspaces();
     const prompts = await this.loadPrompts();
+    if (this.closed) return;
 
     // Get current settings from ModelAgentManager
     const workflowId = await this.modelAgentManager.getSelectedWorkflowId();
+    if (this.closed) return;
     const initialSettings = this.getCurrentSettings();
     initialSettings.workflowId = workflowId;
 
@@ -130,6 +143,12 @@ export class ChatSettingsModal extends Modal {
     // Get plugin defaults for image and agent model fallback
     const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
     const llmSettings = plugin?.settings?.settings?.llmProviders;
+    const contextWindowOverrides = { ...(llmSettings?.contextWindowOverrides || {}) };
+    if (model) {
+      const key = getContextWindowOverrideKey(model.providerId, model.modelId);
+      contextWindowOverrides[key] = this.modelAgentManager.getEffectiveContextWindow();
+    }
+    this.displayedContextWindowOverrides = { ...contextWindowOverrides };
 
     return {
       provider: model?.providerId || llmSettings?.defaultModel?.provider || '',
@@ -140,6 +159,8 @@ export class ChatSettingsModal extends Modal {
         enabled: thinking?.enabled ?? false,
         effort: thinking?.effort ?? 'medium'
       },
+      webSearch: this.modelAgentManager.getWebSearch(),
+      contextWindowOverrides,
       agentThinking: {
         enabled: agentThinking?.enabled ?? false,
         effort: agentThinking?.effort ?? 'medium'
@@ -162,6 +183,7 @@ export class ChatSettingsModal extends Modal {
   }
 
   private async handleSave(): Promise<void> {
+    if (this.saving || this.closed) return;
     if (!this.pendingSettings) {
       this.pendingSettings = this.renderer?.getSettings() || null;
     }
@@ -171,17 +193,75 @@ export class ChatSettingsModal extends Modal {
       return;
     }
 
+    this.saving = true;
+    this.saveButton?.setDisabled(true);
+    this.saveStatus?.setText('Preparing context…');
     try {
-      const settings = this.pendingSettings;
+      const settings = {
+        ...this.pendingSettings,
+        contextWindowOverrides: this.pendingSettings.contextWindowOverrides
+          ? { ...this.pendingSettings.contextWindowOverrides } : undefined
+      };
 
-      // Update model
+      // Commit the model and active context budget together before other settings.
       if (settings.provider && settings.model) {
-        await this.modelAgentManager.setSelectedModelById(settings.provider, settings.model);
+        const key = getContextWindowOverrideKey(settings.provider, settings.model);
+        const override = settings.contextWindowOverrides?.[key];
+        const selectedModel = this.modelAgentManager.getSelectedModel();
+        const advertisedWindow = selectedModel?.providerId === settings.provider && selectedModel.modelId === settings.model
+          ? selectedModel.contextWindow
+          : (await this.modelAgentManager.getAvailableModels()).find(model =>
+            model.providerId === settings.provider && model.modelId === settings.model)?.contextWindow;
+        if (this.closed) return;
+        this.ownsContextHandoff = true;
+        let committed: boolean;
+        try {
+          committed = await this.modelAgentManager.requestContextChange({
+            providerId: settings.provider,
+            modelId: settings.model,
+            contextWindowOverride: override ?? advertisedWindow
+          });
+        } finally {
+          this.ownsContextHandoff = false;
+        }
+        if (this.closed) {
+          if (committed) new Notice('Context change was already being saved and has been applied.');
+          return;
+        }
+        if (!committed) return;
       }
+
+      const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
+      const llmProviders = plugin?.settings?.settings?.llmProviders;
+      if (llmProviders && settings.contextWindowOverrides) {
+        const displayed = this.displayedContextWindowOverrides ?? {};
+        const changedKeys = new Set([...Object.keys(displayed), ...Object.keys(settings.contextWindowOverrides)]);
+        const oldOverrides = llmProviders.contextWindowOverrides;
+        const nextOverrides = { ...oldOverrides };
+        let changed = false;
+        for (const key of changedKeys) {
+          if (displayed[key] === settings.contextWindowOverrides[key]) continue;
+          changed = true;
+          if (settings.contextWindowOverrides[key] === undefined) delete nextOverrides[key];
+          else nextOverrides[key] = settings.contextWindowOverrides[key];
+        }
+        if (changed) {
+          llmProviders.contextWindowOverrides = nextOverrides;
+          try {
+            await plugin?.settings?.saveSettings();
+          } catch (error) {
+            llmProviders.contextWindowOverrides = oldOverrides;
+            const reason = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Context change was saved, but default context settings could not be saved: ${reason}`);
+          }
+        }
+      }
+      if (this.closed) return;
 
       // Update prompt
       if (settings.promptId) {
         const availablePrompts = await this.modelAgentManager.getAvailablePrompts();
+        if (this.closed) return;
         const prompt = availablePrompts.find(p => p.id === settings.promptId || p.name === settings.promptId);
         await this.modelAgentManager.handlePromptChange(prompt || null);
       } else {
@@ -190,6 +270,7 @@ export class ChatSettingsModal extends Modal {
 
       // Update workspace
       const currentWorkflow = await this.modelAgentManager.getSelectedWorkflowId();
+      if (this.closed) return;
       if (settings.workspaceId) {
         if (settings.workspaceId !== this.modelAgentManager.getSelectedWorkspaceId() || (settings.workflowId ?? null) !== currentWorkflow) await this.modelAgentManager.setWorkspaceContext(settings.workspaceId, settings.workflowId || undefined);
       } else {
@@ -198,6 +279,7 @@ export class ChatSettingsModal extends Modal {
 
       // Update thinking
       this.modelAgentManager.setThinkingSettings(settings.thinking);
+      this.modelAgentManager.setWebSearch(settings.webSearch === true);
 
       // Update agent model
       this.modelAgentManager.setAgentModel(
@@ -215,6 +297,7 @@ export class ChatSettingsModal extends Modal {
 
       // Update context notes
       await this.modelAgentManager.setContextNotes(settings.contextNotes);
+      if (this.closed) return;
 
       // Update image model
       this.modelAgentManager.setImageModel(settings.imageProvider, settings.imageModel);
@@ -244,17 +327,26 @@ export class ChatSettingsModal extends Modal {
         await this.modelAgentManager.saveToConversation(this.conversationId);
       }
 
-      this.close();
+      if (!this.closed) this.close();
     } catch (error) {
       console.error('[ChatSettingsModal] Error saving settings:', error);
-      new Notice(error instanceof Error ? error.message : 'Chat settings could not be saved');
+      if (!this.closed) new Notice(error instanceof Error ? error.message : 'Chat settings could not be saved');
+    } finally {
+      this.saving = false;
+      if (!this.closed) {
+        this.saveButton?.setDisabled(false);
+        this.saveStatus?.setText('');
+      }
     }
   }
 
   onClose(): void {
+    this.closed = true;
+    if (this.ownsContextHandoff) this.modelAgentManager.cancelContextHandoff();
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;
+    this.displayedContextWindowOverrides = null;
     this.contentEl.empty();
   }
 }

@@ -22,7 +22,7 @@ import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import type { ToolCallMessageHistoryOptions } from '../database/repositories/interfaces/IMessageRepository';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
-import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
+import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches, withPersistedMessageAccounting } from './helpers/ConversationTypeConverters';
 
 type ConversationMessageResult = MessageData;
 
@@ -87,7 +87,7 @@ function toAlternativeMessage(message: LegacyConversationMessage): AlternativeMe
     content: message.content ?? null,
     timestamp: message.timestamp,
     toolCalls: message.toolCalls?.map(toHybridToolCall),
-    metadata: message.metadata,
+    metadata: withPersistedMessageAccounting(message),
     reasoning: message.reasoning,
     reasoningSegments: message.reasoningSegments,
     state: message.state ?? 'complete'
@@ -107,7 +107,7 @@ function toMessageData(message: LegacyConversationMessage, conversationId: strin
     toolCallId: message.toolCallId,
     reasoning: message.reasoning,
     reasoningSegments: message.reasoningSegments,
-    metadata: message.metadata,
+    metadata: withPersistedMessageAccounting(message),
     alternatives: message.alternatives?.map(toAlternativeMessage),
     activeAlternativeIndex: message.activeAlternativeIndex
   };
@@ -168,7 +168,8 @@ export class ConversationService {
   /**
    * Get full conversation with messages (loads individual file or queries from adapter)
    *
-   * KEY IMPROVEMENT: With adapter, messages are paginated from SQLite instead of loading all
+   * Explicit pagination loads one SQLite page; callers without pagination receive
+   * the complete transcript, including messages beyond the first 1000.
    *
    * @param id - Conversation ID
    * @param paginationOptions - Optional pagination parameters for message loading
@@ -190,8 +191,27 @@ export class ConversationService {
           page: paginationOptions?.page ?? 0,
           pageSize: paginationOptions?.pageSize ?? 1000
         });
+        const messages = [...messagesResult.items];
+        if (!paginationOptions) {
+          if (messagesResult.hasNextPage && messages.length === 0) {
+            throw new Error(`[ConversationService] Message pagination made no progress for ${id} at page 0`);
+          }
+          const seenIds = new Set(messages.map(message => message.id));
+          let page = 1;
+          let hasNextPage = messagesResult.hasNextPage;
+          while (hasNextPage) {
+            const next = await adapter.getMessages(id, { page, pageSize: 1000 });
+            if (next.items.length === 0 || next.items.every(message => seenIds.has(message.id))) {
+              throw new Error(`[ConversationService] Message pagination made no progress for ${id} at page ${page}`);
+            }
+            for (const message of next.items) seenIds.add(message.id);
+            messages.push(...next.items);
+            hasNextPage = next.hasNextPage;
+            page += 1;
+          }
+        }
 
-        const conversation = convertToLegacyConversation(metadata, messagesResult.items);
+        const conversation = convertToLegacyConversation(metadata, messages);
         const allBranches = await this.getBranchConversations(id);
         populateMessageBranches(allBranches, conversation.messages);
 
@@ -523,13 +543,19 @@ export class ConversationService {
             // Complex fields (toolCalls, alternatives) are caught by the
             // safety-net dirty-check in MessageRepository.update().
             const prev = existingById.get(msg.id);
+            const persistedMetadata = withPersistedMessageAccounting({
+              ...msg,
+              metadata: msg.replaceMetadata ? msg.metadata : { ...prev?.metadata, ...msg.metadata },
+            });
             if (prev
                 && (msg.content ?? null) === prev.content
                 && (msg.state ?? 'complete') === prev.state
                 && (msg.reasoning ?? undefined) === (prev.reasoning ?? undefined)
                 && serializeReasoningSegments(msg.reasoningSegments) === prev.reasoningSegments
                 && (msg.toolCallId ?? undefined) === (prev.toolCallId ?? undefined)
-                && (msg.activeAlternativeIndex ?? 0) === (prev.activeAlternativeIndex ?? 0)) {
+                && (msg.activeAlternativeIndex ?? 0) === (prev.activeAlternativeIndex ?? 0)
+                && JSON.stringify(persistedMetadata ?? null) === JSON.stringify(prev.metadata ?? null)) {
+              delete msg.replaceMetadata;
               continue;
             }
 
@@ -553,10 +579,11 @@ export class ConversationService {
               reasoningSegments: msg.reasoningSegments,
               toolCalls: convertedToolCalls,
               toolCallId: msg.toolCallId,
-              metadata: msg.metadata,
+              metadata: persistedMetadata ?? null,
               alternatives: msg.alternatives?.map(toAlternativeMessage),
               activeAlternativeIndex: msg.activeAlternativeIndex
             });
+            delete msg.replaceMetadata;
           }
         }
 
@@ -586,8 +613,17 @@ export class ConversationService {
           message_count: updates.messages?.length ?? conversation.message_count
         };
 
+        // The replacement flag only controls this save. Legacy JSON stores
+        // messages directly, so remove it from the serialized snapshot.
+        updatedConversation.messages = updatedConversation.messages.map(message => {
+          const persistedMessage = { ...message };
+          delete persistedMessage.replaceMetadata;
+          return persistedMessage;
+        });
+
         await this.fileSystem.writeConversation(id, updatedConversation);
         await this.indexManager.updateConversationInIndex(updatedConversation);
+        updates.messages?.forEach(message => { delete message.replaceMetadata; });
       }
     );
   }
@@ -699,7 +735,7 @@ export class ConversationService {
             timestamp: Date.now(),
             state: initialState,
             toolCalls: params.toolCalls,
-            metadata: params.metadata
+            metadata: withPersistedMessageAccounting(params)
           });
 
           return { success: true, messageId };

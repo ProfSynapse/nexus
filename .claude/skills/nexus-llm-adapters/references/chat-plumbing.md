@@ -53,3 +53,19 @@ gap.
   `reasoning-rendering.md`.
 - Conversation persistence, migrations, and storage shape belong to the
   `nexus-storage` skill.
+
+## Context handoffs
+
+A model or budget change must prepare with the previous model, then commit the
+new model, effective window and compaction frontier together. Test through the
+real budget and prompt-building code; a mocked successful compaction can hide
+an oversized prompt. If all current messages are summarized, persist an
+exclusive boundary tied to the last summarized message so future messages still
+reach the model. Cover retries whose target predates that boundary, too.
+
+When testing a handoff, compact the result again. Frontier merges must carry
+forward the newest known boundary and its inclusive/exclusive mode. Ordinary
+compaction must summarize only the active suffix, and a no-op must leave the
+previous boundary intact. Separately, retry regeneration must replace provider
+replay metadata: merging a previous Anthropic response into a new answer can
+make the next prompt differ from the answer visible in chat.

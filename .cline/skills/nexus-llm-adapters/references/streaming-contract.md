@@ -98,6 +98,20 @@ has not requested one. Elevated manual-thinking budgets must fit that allowance
 and leave room for the reply, rather than inheriting a fixed lower-tier budget.
 
 ## Tool call accumulation
+
+Usage updates are cumulative within one provider response. Replace that
+response's snapshot; sum only across completed responses in a tool loop. Emit
+available usage before turn completion (`yieldUsageUpdates` for SSE adapters),
+and preserve received usage on failure. Billing totals across calls are not
+context occupancy: retain the latest response's usage separately for the
+context meter. A provider-reported cost takes precedence over local estimates.
+
+Provider token classes also differ. Anthropic's input count excludes cache
+reads and writes; Gemini's output candidate count excludes billed thoughts.
+Normalize once before pricing, and include reported native search charges
+separately from tokens. Verify cache rates from the provider's current table,
+including per-model exceptions rather than assuming one discount ratio.
+
 When `accumulateToolCalls` is on, the processor assembles streamed fragments by
 index, concatenating argument deltas, and yields progress on an interval. It
 synthesizes an id when the provider omits one, because downstream APIs reject a

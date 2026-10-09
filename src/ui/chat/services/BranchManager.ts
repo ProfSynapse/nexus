@@ -36,6 +36,10 @@ interface BranchMessageCreateParams {
   id?: string;
   toolCalls?: ToolCall[];
   metadata?: Record<string, unknown>;
+  usage?: ConversationMessage['usage'];
+  cost?: ConversationMessage['cost'];
+  provider?: string;
+  model?: string;
 }
 
 interface BranchMessageUpdateParams {
@@ -218,6 +222,10 @@ export class BranchManager {
       content: message.content || '',
       toolCalls: message.toolCalls,
       metadata: message.metadata,
+      usage: message.usage,
+      cost: message.cost,
+      provider: message.provider,
+      model: message.model,
     });
 
     if (result && !result.success) {

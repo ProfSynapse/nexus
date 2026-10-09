@@ -75,7 +75,9 @@ describe('TokenCalculator usage normalization', () => {
       ]
     });
 
-    expect(tokens).toBe(190);
+    // The last provider response reports the current prompt, which already
+    // includes earlier conversation turns; summing both would count them twice.
+    expect(tokens).toBe(90);
   });
 
   it('falls back to estimated message content when usage shape is not recognized', () => {
@@ -115,6 +117,20 @@ function createConversation(usage?: unknown): ConversationData {
 }
 
 describe('TokenCalculator', () => {
+  it('uses the saved effective model limit for the context meter', () => {
+    const model = {
+      providerId: 'openai-codex', providerName: 'ChatGPT',
+      modelId: 'gpt-6.1-sol', modelName: 'GPT-6.1 Sol', contextWindow: 1_050_000
+    };
+    const conversation = createConversation({ promptTokens: 80_000, completionTokens: 20_000, totalTokens: 100_000 });
+
+    const usage = TokenCalculator.getContextUsage(model, conversation, null, 200_000);
+
+    expect(usage.total).toBe(200_000);
+    expect(usage.used).toBe(100_000);
+    expect(usage.percentage).toBe(50);
+  });
+
   it('uses normalized usage data when camelCase usage is present', () => {
     const conversation = createConversation({
       promptTokens: 21,

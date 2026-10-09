@@ -26,6 +26,7 @@ const PRE_SEND_ESTIMATE_MULTIPLIERS: Record<string, number> = {
 
 export class ModelAgentCompactionState {
   private contextTokenTracker: ContextTokenTracker | null = null;
+  private trackedProvider: string | null = null;
   private compactionFrontier: CompactionFrontierRecord[] = [];
   private compactionFrontierService = new CompactionFrontierService();
 
@@ -41,14 +42,19 @@ export class ModelAgentCompactionState {
     conversationOrMessage: ConversationData | string,
     message: string | undefined,
     systemPrompt: string | null | undefined,
-    providerOverride: string | null
+    providerOverride: string | null,
+    modelContextWindow?: number
   ): boolean {
     const messageText = typeof conversationOrMessage === 'string'
       ? conversationOrMessage
       : (message || '');
 
-    if (this.contextTokenTracker) {
-      return this.contextTokenTracker.shouldCompactBeforeSending(messageText);
+    if (this.contextTokenTracker && (providerOverride === this.trackedProvider
+      || (typeof conversationOrMessage === 'string' && !providerOverride))) {
+      if (this.contextTokenTracker.shouldCompactBeforeSending(messageText)) return true;
+      // Resetting the tracker after compaction does not make retained messages
+      // or the replacement system prompt disappear. Check the actual snapshot
+      // too when the caller supplied it.
     }
 
     if (typeof conversationOrMessage === 'string') {
@@ -59,7 +65,8 @@ export class ModelAgentCompactionState {
       providerOverride,
       conversationOrMessage,
       systemPrompt,
-      messageText
+      messageText,
+      modelContextWindow
     );
 
     return budget.shouldCompact;
@@ -87,11 +94,14 @@ export class ModelAgentCompactionState {
     this.compactionFrontier = this.compactionFrontierService.normalizeFrontier(this.compactionFrontier);
   }
 
-  updateContextTokenTracker(provider: string): void {
-    const contextWindow = LOCAL_PROVIDER_CONTEXT_WINDOWS[provider];
+  updateContextTokenTracker(provider: string, modelContextWindow?: number): void {
+    const providerFallback = LOCAL_PROVIDER_CONTEXT_WINDOWS[provider];
+    const contextWindow = typeof modelContextWindow === 'number' && Number.isFinite(modelContextWindow) && modelContextWindow > 0
+      ? modelContextWindow : providerFallback;
     const preSendEstimateMultiplier = PRE_SEND_ESTIMATE_MULTIPLIERS[provider] ?? 1;
 
-    if (contextWindow) {
+    if (providerFallback && contextWindow) {
+      this.trackedProvider = provider;
       if (!this.contextTokenTracker) {
         this.contextTokenTracker = new ContextTokenTracker(contextWindow, preSendEstimateMultiplier);
       } else {
@@ -101,6 +111,7 @@ export class ModelAgentCompactionState {
       }
     } else {
       this.contextTokenTracker = null;
+      this.trackedProvider = null;
     }
   }
 

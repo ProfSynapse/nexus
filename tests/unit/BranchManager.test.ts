@@ -279,7 +279,12 @@ describe('BranchManager', () => {
       const altResponse = createAssistantMessage({
         id: 'alt_new',
         content: 'Persisted alternative',
-        reasoning: 'Stored reasoning'
+        reasoning: 'Stored reasoning',
+        metadata: { anthropicResponses: ['provider payload'] },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        cost: { totalCost: 0.04, currency: 'USD' },
+        provider: 'anthropic',
+        model: 'claude-test'
       });
       const unifiedRepo = {
         ...mockRepo,
@@ -307,7 +312,12 @@ describe('BranchManager', () => {
         conversationId: 'branch_unified',
         id: 'alt_new',
         role: 'assistant',
-        content: 'Persisted alternative'
+        content: 'Persisted alternative',
+        metadata: { anthropicResponses: ['provider payload'] },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        cost: { totalCost: 0.04, currency: 'USD' },
+        provider: 'anthropic',
+        model: 'claude-test'
       }));
       expect(unifiedRepo.updateMessage).toHaveBeenCalledWith(
         'branch_unified',

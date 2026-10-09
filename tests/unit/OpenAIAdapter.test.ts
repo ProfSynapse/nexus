@@ -35,6 +35,50 @@ describe('OpenAIAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([false, true])('sends Responses web search and exposes citations (stream=%s)', async stream => {
+    const requests: CapturedRequest[] = [];
+    const output = [{ type: 'web_search_call', action: { type: 'search' } },
+      { type: 'web_search_call', action: { type: 'open_page' } },
+      { type: 'message', content: [{ type: 'output_text', text: 'Answer', annotations: [
+      { type: 'url_citation', title: 'Example', url: 'https://example.com/source' }
+    ] }] }];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return stream
+        ? sseResponse(sse({ type: 'response.output_text.delta', delta: 'Answer' },
+          { type: 'response.completed', response: { id: 'resp_search', output,
+            usage: { input_tokens: 10, output_tokens: 5 } } }))
+        : jsonResponse(200, { id: 'resp_search', output, usage: { input_tokens: 10, output_tokens: 5 } });
+    });
+    const adapter = new OpenAIAdapter('sk-test');
+    const observed = stream
+      ? await (async () => {
+        const chunk = (await collect(adapter.generateStreamAsync('search', { webSearch: true }))).at(-1);
+        return { sources: chunk?.metadata?.webSearchResults, usage: chunk?.usage };
+      })()
+      : await (async () => {
+        const response = await adapter.generateUncached('search', { webSearch: true });
+        return { sources: response.webSearchResults, usage: response.usage };
+      })();
+    expect(JSON.parse(requests[0].body ?? '{}').tools).toContainEqual({ type: 'web_search' });
+    expect(observed.sources)
+      .toEqual([{ title: 'Example', url: 'https://example.com/source', date: undefined }]);
+    expect(observed.usage).toMatchObject({ webSearchRequests: 1, webSearchCost: 0.01 });
+  });
+
+  it('does not return a cached answer when the same prompt enables web search', async () => {
+    const requests: CapturedRequest[] = [];
+    __setRequestUrlMock(async request => {
+      requests.push(request);
+      return jsonResponse(200, { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }] });
+    });
+    const adapter = new OpenAIAdapter('sk-test');
+    await adapter.generate('same prompt', { model: 'gpt-5.6-sol', webSearch: false });
+    await adapter.generate('same prompt', { model: 'gpt-5.6-sol', webSearch: true });
+    expect(requests).toHaveLength(2);
+    expect(JSON.parse(requests[1].body ?? '{}').tools).toContainEqual({ type: 'web_search' });
+  });
+
   it.each([
     ['gpt-6.1-sol', 'max', 'max'],
     ['gpt-5.6-sol', 'max', 'max'],

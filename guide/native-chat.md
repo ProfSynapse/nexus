@@ -41,6 +41,18 @@ Model lists put models with newer published dates first. Your saved model and pr
 
 Thinking shares the provider's output allowance with the visible answer. Nexus uses the model allowance where the API requires a limit, and leaves optional limits unset unless you supply one. Provider limits still apply.
 
+The thinking block stays open while the reply is running, including between tool calls. Expanding or collapsing it manually keeps your choice through updates. Extra blank lines are collapsed for display. Scrolling up pauses automatic scrolling; returning to the bottom resumes it. The effort label updates while you drag its slider.
+
+The **Context window** slider sets the budget Nexus uses to track and compact conversation context. Each provider/model pair remembers its own limit; the default is the model's advertised window. Nexus checks the estimated prompt size before sending and compacts near the selected budget. This does not change the model's thinking effort or output allowance.
+
+Switching to a smaller model applies its budget to the next send. If necessary, Nexus summarizes older context and retains the latest exchanges; the full transcript stays saved. If the prompt still exceeds the budget afterward, the send stops and your draft is restored. Switching back to a larger model does not automatically put compacted messages back into the prompt.
+
+## Web search and costs
+
+Enable **Web search** in chat settings to let supported Anthropic, OpenAI, OpenRouter, or Gemini 3+ models search when needed. Sources appear with the reply. Older direct Gemini models do not expose this option because native chat also uses Nexus tools.
+
+The money counter updates as providers report usage during the reply, including between tool calls. Anthropic cache reads and writes use their separate rates, and Gemini's billed thinking tokens count toward output cost. OpenRouter's reported cost takes precedence when available; other charges are estimates from model pricing. Reported Anthropic and OpenAI search calls are included in the estimate. Google grounding charges and account-specific discounts are not estimated. Very small charges display with extra precision instead of rounding to zero.
+
 ---
 
 ## Voice And Media Defaults
@@ -142,6 +154,12 @@ See [Provider setup](provider-setup.md) for connection instructions for API key,
 ## Model Selection
 
 Switch between any configured provider and model mid-conversation.
+
+When a new model or a lower **Context window** setting cannot fit the current conversation, Nexus prepares a summary with the previous model before applying the change. It reserves room for the system prompt, tools, and the next response, and keeps recent complete exchanges when they fit. The full transcript stays available in chat history.
+
+In chat settings, the slider previews its value while you drag; **Save** applies the model and budget together. If preparation fails or you cancel it, the previous model and budget remain active. A pending message waits for preparation and stays in the composer if the change fails. Increasing the budget does not restore previously summarized messages to the model's active context.
+
+Each chat saves its committed context budget. Changing a model's budget in Defaults also prepares the active chat if it uses that model; other open chats keep their own budgets. The previous provider must be available to generate a handoff summary.
 
 ---
 

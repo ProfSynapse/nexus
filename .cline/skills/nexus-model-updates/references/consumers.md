@@ -30,6 +30,12 @@ appear in one view but not another.
 A registry imported by only one of the two is the failure this asymmetry
 produces, and the gate reports it in the direction it occurred.
 
+The selected model's context window also bounds the remembered per-model budget
+in chat settings. Check the context meter, workspace loading, and pre-send
+compaction together when changing it: provider fallback limits must not override
+the selected model or the user's smaller budget. Token usage summed for billing
+across tool calls is not the current context size.
+
 ## The other places a default is written
 Beyond a provider's `*_DEFAULT_MODEL` export:
 - **the adapter constructor**, where some adapters pass the registry export and
@@ -48,7 +54,7 @@ and checks the shipped default against the registry.
 |---|---|
 | Model missing from the picker | Its array is not wired into the static models service, or the provider is not enabled in settings |
 | Model in the picker, every call costs $0.00 | Cost lookup found no spec: the array is not in the central registry, or the id does not match `apiName` |
-| Cost silently absent rather than wrong | Cost calculation returns null on an unknown model — there is no error path, the number just never appears |
+| Cost silently absent rather than wrong | The model has no registry pricing and its provider supplied no reported cost; the app cannot price it from token counts alone |
 | Reasoning toggle never appears for a reasoning model | `supportsThinking` is false or omitted; the control is skipped when the flag is not set |
 | Model appears under the wrong provider | The entry's `provider` field disagrees with the directory it lives in |
 | Two picker rows behave identically | Duplicate `apiName` in one registry with no adapter rule to disambiguate — lookup returns the first |

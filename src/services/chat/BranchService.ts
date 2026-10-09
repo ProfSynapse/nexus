@@ -123,6 +123,10 @@ export class BranchService {
       content: message.content || '',
       toolCalls: message.toolCalls,
       metadata: message.metadata,
+      usage: message.usage,
+      cost: message.cost,
+      provider: message.provider,
+      model: message.model,
     });
   }
 

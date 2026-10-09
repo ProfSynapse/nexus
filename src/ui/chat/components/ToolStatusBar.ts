@@ -3,6 +3,7 @@ import { ContextBadge } from './ContextBadge';
 import { ContextTracker } from '../services/ContextTracker';
 import { ToolStatusLine } from './toolStatusLine';
 import type { ToolStatusEntry } from '../types/ToolStatus';
+import { formatConversationCost } from '../utils/CostFormatter';
 
 export type { ToolStatusEntry };
 
@@ -89,6 +90,7 @@ export class ToolStatusBar {
     
     // Right group
     this.costEl = this.row2El.createDiv({ cls: 'tool-status-cost' });
+    this.costEl.setAttribute('title', 'Estimated API cost from reported usage and model rates');
     this.contextBadge = new ContextBadge(this.row2El);
   }
 
@@ -133,9 +135,16 @@ export class ToolStatusBar {
     if (this.isDisposed) return;
     this.contextBadge.setPercentage(usage.percentage);
 
+    this.updateCost();
+
+    this.show();
+  }
+
+  public updateCost(): void {
+    if (this.isDisposed) return;
     const cost = this.contextTracker.getConversationCost();
     if (cost && cost.totalCost !== undefined) {
-      this.costEl.textContent = `$${cost.totalCost.toFixed(2)}`;
+      this.costEl.textContent = formatConversationCost(cost.totalCost);
     } else {
       this.costEl.textContent = '$0.00';
     }

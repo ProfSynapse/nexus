@@ -44,6 +44,7 @@ export class MessageBubble extends Component {
   // choice is recorded and wins over auto-collapse, re-renders included.
   private reasoningAutoState = new Map<number, boolean>();
   private reasoningUserState = new Map<number, boolean>();
+  private reasoningBlock: HTMLDetailsElement | null = null;
 
   constructor(
     private message: ConversationMessage,
@@ -219,8 +220,6 @@ export class MessageBubble extends Component {
     const stillThinking = this.message.state === 'streaming' || !!this.message.isLoading;
     const referenceMetadata = ReferenceBadgeRenderer.getReferenceMetadata(this.message.metadata);
 
-    this.reasoningAutoState.clear();
-
     // Build the whole structure synchronously so the DOM order is settled before
     // any markdown render resolves — the streaming parser looks for the trailing
     // run the moment the next token lands.
@@ -230,13 +229,13 @@ export class MessageBubble extends Component {
       const part = parts[index];
 
       if (part.reasoning && part.reasoningIndex !== undefined) {
-        // Keep the single block open while reasoning is still arriving.
-        const isLast = index === parts.length - 1;
+        // A response boundary is not a turn boundary: tools may lead to more
+        // thinking. Keep one stable disclosure through the whole active turn.
         this.syncReasoningBlock(
           container,
           part.reasoningIndex,
           part.reasoning.text,
-          stillThinking && isLast && !part.text.trim()
+          stillThinking
         );
       }
 
@@ -435,7 +434,8 @@ export class MessageBubble extends Component {
       return null;
     }
 
-    let details = this.findReasoningBlock(container, segmentIndex);
+    this.captureReasoningChoice();
+    let details = this.findReasoningBlock(container, segmentIndex) ?? this.reasoningBlock;
 
     if (!details) {
       // Avoid `instanceof HTMLDetailsElement` (unreliable across Obsidian popout
@@ -450,11 +450,12 @@ export class MessageBubble extends Component {
       this.registerDomEvent(details, 'toggle', () => {
         // `toggle` fires for our own auto-collapse too, and asynchronously, so
         // compare against the state we last applied rather than assuming a click.
-        if (block.open !== this.reasoningAutoState.get(segmentIndex)) {
-          this.reasoningUserState.set(segmentIndex, block.open);
-        }
+        if (block === this.reasoningBlock) this.captureReasoningChoice();
       });
+      this.reasoningBlock = block;
+    }
 
+    if (details.parentElement !== container) {
       if (this.workingTickerEl && this.workingTickerEl.parentElement === container) {
         container.insertBefore(details, this.workingTickerEl);
       } else {
@@ -463,7 +464,7 @@ export class MessageBubble extends Component {
     }
 
     const body = details.querySelector('.message-reasoning-content');
-    if (this.isHTMLElement(body)) {
+    if (this.isHTMLElement(body) && body.textContent !== text) {
       body.textContent = text;
     }
 
@@ -472,6 +473,15 @@ export class MessageBubble extends Component {
     details.open = desired;
 
     return details;
+  }
+
+  /** Native details toggles are queued; capture a click before the next token
+   * or repaint can overwrite it, even if its toggle event has not fired yet. */
+  private captureReasoningChoice(): void {
+    const applied = this.reasoningAutoState.get(0);
+    if (this.reasoningBlock && applied !== undefined && this.reasoningBlock.open !== applied) {
+      this.reasoningUserState.set(0, this.reasoningBlock.open);
+    }
   }
 
   private findReasoningBlock(container: HTMLElement, segmentIndex: number): HTMLDetailsElement | null {
@@ -504,7 +514,8 @@ export class MessageBubble extends Component {
 
     const displayText = ReasoningSegmentSplitter.combine(segments, reasoningText);
     const isNewBlock = this.findReasoningBlock(container, 0) === null;
-    const block = this.syncReasoningBlock(container, 0, displayText, !isComplete);
+    const turnActive = this.message.state === 'streaming' || !!this.message.isLoading;
+    const block = this.syncReasoningBlock(container, 0, displayText, turnActive || !isComplete);
 
     // Only report a block that actually rendered: a segment whose first delta is
     // whitespace must not seal the text run above an element that is not there.
@@ -540,6 +551,15 @@ export class MessageBubble extends Component {
    */
   updateWithNewMessage(newMessage: ConversationMessage): void {
     const nextState = MessageBubbleStateResolver.resolve(newMessage);
+    this.captureReasoningChoice();
+    // A retry/alternative is a different disclosure, even when the outer bubble
+    // is reused. Don't apply the previous answer's manual choice to it.
+    if ((newMessage.activeAlternativeIndex ?? 0) !== (this.message.activeAlternativeIndex ?? 0) ||
+        !nextState.activeReasoning?.trim() && !nextState.activeReasoningSegments?.length) {
+      this.reasoningAutoState.clear();
+      this.reasoningUserState.clear();
+      this.reasoningBlock = null;
+    }
 
     // Clear the ticker DOM before re-render but PRESERVE the intent flag, so a
     // mid-stream reconcile (e.g. LM Studio persisting a Responses API id during
@@ -686,6 +706,9 @@ export class MessageBubble extends Component {
     this.imageBubbleElement = null;
 
     // Call Component.unload() to release registerDomEvent and registerInterval handlers.
+    this.reasoningBlock = null;
+    this.reasoningAutoState.clear();
+    this.reasoningUserState.clear();
     // Guard against double-unload since unload() is not idempotent.
     if (!this.isUnloaded) {
       this.isUnloaded = true;

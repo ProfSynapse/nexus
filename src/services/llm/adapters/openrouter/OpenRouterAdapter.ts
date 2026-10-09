@@ -85,6 +85,7 @@ interface OpenRouterChoice extends JsonObject {
   text?: string;
   delta?: {
     content?: string;
+    annotations?: OpenRouterAnnotation[];
     text?: string;
     reasoning?: string;
     reasoning_content?: string;
@@ -192,8 +193,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       const baseModel = options?.model || this.currentModel;
 
-      // Add :online suffix for web search
-      const model = options?.webSearch ? `${baseModel}:online` : baseModel;
+      const model = options?.webSearch ? baseModel.replace(/:online$/, '') : baseModel;
 
       // Handle post-stream tool execution: if detectedToolCalls are provided, execute only tools
       if (options?.detectedToolCalls && options.detectedToolCalls.length > 0) {
@@ -215,7 +215,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         presence_penalty: options?.presencePenalty,
         response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
         stop: options?.stopSequences,
-        tools: options?.tools ? this.convertTools(options.tools) : undefined,
+        tools: this.buildRequestTools(options),
         usage: { include: true }, // Enable token usage and cost tracking
         ...this.getReasoningRequestParams(baseModel, options, false)
       };
@@ -252,7 +252,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       return this.buildLLMResponse(
         text,
-        baseModel, // Use base model name, not :online version
+        baseModel,
         usage,
         {
           webSearchResults,
@@ -278,8 +278,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       const baseModel = options?.model || this.currentModel;
 
-      // Add :online suffix for web search
-      const model = options?.webSearch ? `${baseModel}:online` : baseModel;
+      const model = options?.webSearch ? baseModel.replace(/:online$/, '') : baseModel;
 
       let messages = options?.conversationHistory || this.buildMessages(prompt, options?.systemPrompt);
 
@@ -308,7 +307,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         presence_penalty: options?.presencePenalty,
         response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
         stop: options?.stopSequences,
-        tools: options?.tools ? this.convertTools(options.tools) : undefined,
+        tools: this.buildRequestTools(options),
         stream: true,
         // Enable reasoning for Gemini models to capture thought signatures
         ...this.getReasoningRequestParams(baseModel, options, hasTools || false)
@@ -330,7 +329,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
       // Track generation ID for async usage retrieval
       let generationId: string | null = null;
-      let usageFetchTriggered = false;
+      let hasInlineUsage = false;
       // Track reasoning data for models that need preservation (Gemini via OpenRouter)
       // Gemini requires TWO different fields for tool continuations:
       // - reasoning_details: array of reasoning objects from OpenRouter
@@ -338,8 +337,16 @@ export class OpenRouterAdapter extends BaseAdapter {
       let capturedReasoning: OpenRouterReasoningEntry[] | undefined = undefined;
       let capturedThoughtSignature: string | undefined = undefined;
 
+      const webSources = new Map<string, SearchResult>();
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'OpenRouter',
+        yieldMetadataUpdates: true,
+        extractMetadata: (parsed) => {
+          if (!options?.webSearch) return null;
+          const response = parsed as OpenRouterResponse;
+          for (const source of this.extractOpenRouterSources(response)) webSources.set(source.url, source);
+          return webSources.size > 0 ? { webSearchResults: Array.from(webSources.values()) } : null;
+        },
         // `usage: { include: true }` puts the usage frame (tokens, cached_tokens,
         // cost) after the finish_reason frame; complete on [DONE] so it is on the
         // completion chunk rather than only on the async generation fetch.
@@ -486,13 +493,6 @@ export class OpenRouterAdapter extends BaseAdapter {
 
               }
 
-              // When we detect completion, trigger async usage fetch (only once)
-              if (generationId && options?.onUsageAvailable && !usageFetchTriggered) {
-                usageFetchTriggered = true;
-                // Fire and forget - don't await
-                this.fetchAndNotifyUsage(generationId, baseModel, options.onUsageAvailable).catch(() => undefined);
-              }
-
               return choice.finish_reason;
             }
           }
@@ -502,9 +502,12 @@ export class OpenRouterAdapter extends BaseAdapter {
         extractUsage: (parsed) => {
           // With `usage: { include: true }` OpenRouter appends a final chunk
           // carrying usage (tokens, cached_tokens, cost). It arrives after the
-          // finish_reason chunk, so the authoritative numbers still come from
-          // the async generation fetch; this just captures it when it is early.
-          return (parsed as OpenRouterResponse).usage;
+          // finish_reason chunk; wait for [DONE] and prefer this inline report.
+          // A separate generation fetch is only a fallback when it is absent.
+          const inlineUsage = (parsed as OpenRouterResponse).usage;
+          if (inlineUsage && (typeof inlineUsage.prompt_tokens === 'number'
+            || typeof inlineUsage.completion_tokens === 'number')) hasInlineUsage = true;
+          return inlineUsage;
         },
 
         // Extract reasoning from reasoning_details array (OpenRouter unified format)
@@ -558,6 +561,13 @@ export class OpenRouterAdapter extends BaseAdapter {
           progressInterval: 50
         }
       });
+
+      // The final inline usage frame arrives after finish_reason. Only fetch
+      // separately when that frame was absent; the callback otherwise replaces
+      // the aggregate cost for a multi-response turn.
+      if (!hasInlineUsage && generationId && options?.onUsageAvailable) {
+        this.fetchAndNotifyUsage(generationId, baseModel, options.onUsageAvailable).catch(() => undefined);
+      }
 
     } catch (error) {
       this.handleError(error, 'streaming generation');
@@ -914,7 +924,10 @@ export class OpenRouterAdapter extends BaseAdapter {
    */
   private extractOpenRouterSources(response: OpenRouterResponse): SearchResult[] {
     try {
-      const annotations = response.choices?.[0]?.message?.annotations || [];
+      const annotations = response.choices?.flatMap(choice => [
+        ...(choice.message?.annotations || []),
+        ...(choice.delta?.annotations || [])
+      ]) || [];
       const sources = annotations
         .filter((ann): ann is OpenRouterAnnotation & { type: 'url_citation'; url_citation: NonNullable<OpenRouterAnnotation['url_citation']> } => ann.type === 'url_citation')
         .map((ann) => {
@@ -931,6 +944,14 @@ export class OpenRouterAdapter extends BaseAdapter {
     } catch {
       return [];
     }
+  }
+
+  private buildRequestTools(options?: GenerateOptions): Array<OpenRouterTool | { type: 'openrouter:web_search' }> | undefined {
+    const tools: Array<OpenRouterTool | { type: 'openrouter:web_search' }> = options?.tools
+      ? this.convertTools(options.tools)
+      : [];
+    if (options?.webSearch) tools.push({ type: 'openrouter:web_search' });
+    return tools.length > 0 ? tools : undefined;
   }
 
   /**

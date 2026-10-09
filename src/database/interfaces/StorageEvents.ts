@@ -481,6 +481,7 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
   messageId: string;
   /** Partial update data (only changed fields) */
   data: Partial<{
+    metadata: Record<string, unknown> | null;
     content: string;
     state: string;
     reasoning: string;

@@ -29,7 +29,10 @@ export class MessageDisplay {
    * someone away from what they scrolled back to read.
    */
   private stickToBottom = true;
+  private lastScrollTop: number | null = null;
   private pendingScrollFrame: number | null = null;
+  private messageResizeObserver: ResizeObserver | null = null;
+  private observedMessage: Element | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -40,6 +43,11 @@ export class MessageDisplay {
     private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     private component?: Component
   ) {
+    if (typeof ResizeObserver !== 'undefined') {
+      // Markdown, images, and disclosure layout can finish after the token's
+      // follow frame. Watch the newest bubble for those later size changes.
+      this.messageResizeObserver = new ResizeObserver(() => this.followNewOutput());
+    }
     this.trackScrollPosition();
     this.render();
   }
@@ -60,11 +68,20 @@ export class MessageDisplay {
       'scroll',
       (event: Event) => {
         const target = event.target as HTMLElement | null;
-        if (!target || typeof target.scrollHeight !== 'number') {
+        // Capture also sees scrolls inside message content. Only the transcript
+        // viewport can change whether new output follows the reader.
+        if (!target || target !== this.container.querySelector('.messages-container')) {
           return;
         }
         const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-        this.stickToBottom = distanceFromBottom <= STICKY_BOTTOM_THRESHOLD_PX;
+        const nearBottom = distanceFromBottom <= STICKY_BOTTOM_THRESHOLD_PX;
+        // Growing content can fire a scroll event without moving the reader,
+        // or scroll anchoring can move the viewport downward. Only upward
+        // movement disengages follow; reaching the bottom re-engages it.
+        if (this.lastScrollTop === null || target.scrollTop < this.lastScrollTop || nearBottom) {
+          this.stickToBottom = nearBottom;
+        }
+        this.lastScrollTop = target.scrollTop;
       },
       true
     );
@@ -163,6 +180,7 @@ export class MessageDisplay {
     }
 
     this.ensureTransientEventRowPosition(messagesContainer as HTMLElement);
+    this.observeLatestMessage(previousElement);
   }
 
   /**
@@ -182,6 +200,7 @@ export class MessageDisplay {
     if (messagesContainer) {
       messagesContainer.appendChild(bubble);
     }
+    this.observeLatestMessage(bubble);
     // The reader just sent this: follow it wherever they had scrolled to
     this.stickToBottom = true;
     this.scrollToBottom(true);
@@ -196,6 +215,7 @@ export class MessageDisplay {
     }
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
+    this.observeLatestMessage(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
     this.stickToBottom = true;
     this.scrollToBottom(true);
@@ -207,6 +227,7 @@ export class MessageDisplay {
   addAIMessage(message: ConversationMessage): void {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
+    this.observeLatestMessage(bubble);
     this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
     this.stickToBottom = true;
     this.scrollToBottom(true);
@@ -288,6 +309,7 @@ export class MessageDisplay {
    * Show welcome state
    */
   showWelcome(): void {
+    this.observeLatestMessage(null);
     this.container.empty();
     this.container.addClass('message-display');
 
@@ -309,6 +331,7 @@ export class MessageDisplay {
    * Used for conversation switches and initial load.
    */
   private render(): void {
+    this.observeLatestMessage(null);
     // Cleanup all existing bubbles before clearing the DOM
     for (const bubble of this.messageBubbles.values()) {
       bubble.cleanup();
@@ -330,6 +353,7 @@ export class MessageDisplay {
     const boundaryIds = this.getCompactionBoundaryIds();
 
     // Render all messages (no branch filtering needed for message-level alternatives)
+    let latestMessage: HTMLElement | null = null;
     this.conversation.messages.forEach((message) => {
       if (message.metadata?.hidden) {
         return;
@@ -344,7 +368,10 @@ export class MessageDisplay {
 
       const messageEl = this.createMessageBubble(message);
       messagesContainer.appendChild(messageEl);
+      latestMessage = messageEl;
     });
+
+    this.observeLatestMessage(latestMessage);
 
     this.ensureTransientEventRowPosition(messagesContainer);
 
@@ -615,6 +642,18 @@ export class MessageDisplay {
     const messagesContainer = this.container.querySelector('.messages-container');
     if (messagesContainer) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      this.lastScrollTop = messagesContainer.scrollTop;
+    }
+  }
+
+  private observeLatestMessage(message: Element | null): void {
+    if (!this.messageResizeObserver || this.observedMessage === message) {
+      return;
+    }
+    this.messageResizeObserver.disconnect();
+    this.observedMessage = message;
+    if (message) {
+      this.messageResizeObserver.observe(message);
     }
   }
 
@@ -633,6 +672,8 @@ export class MessageDisplay {
     const messagesContainer = this.container.querySelector('.messages-container');
     if (messagesContainer) {
       messagesContainer.scrollTop = position;
+      this.lastScrollTop = messagesContainer.scrollTop;
+      this.stickToBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight <= STICKY_BOTTOM_THRESHOLD_PX;
     }
   }
 
@@ -650,5 +691,7 @@ export class MessageDisplay {
     this.messageBubbles.clear();
     this.clearTransientEventRow();
     this.currentConversationId = null;
+    this.lastScrollTop = null;
+    this.observeLatestMessage(null);
   }
 }

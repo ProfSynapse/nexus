@@ -13,8 +13,10 @@ import {
   ProviderCapabilities,
   ModelPricing,
   ToolCall,
-  TokenUsage
+  TokenUsage,
+  SearchResult
 } from '../types';
+import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper, mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
@@ -34,6 +36,7 @@ interface AnthropicUsage {
   total_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  server_tool_use?: { web_search_requests?: number };
 }
 
 interface AnthropicToolDefinition {
@@ -73,6 +76,9 @@ interface AnthropicContentBlock {
   thinking?: string;
   type_name?: string;
   content?: AnthropicContentBlock[];
+  title?: string;
+  url?: string;
+  citations?: Array<{ type?: string; title?: string; url?: string }>;
 }
 
 interface AnthropicResponse {
@@ -95,6 +101,8 @@ interface AnthropicStreamEvent extends AnthropicResponse {
     thinking?: string;
     signature?: string;
     data?: string;
+    content?: AnthropicContentBlock[];
+    citations?: Array<{ type?: string; title?: string; url?: string }>;
   };
   delta?: {
     type?: string;
@@ -104,6 +112,7 @@ interface AnthropicStreamEvent extends AnthropicResponse {
     signature?: string;
     stop_reason?: string | null;
     stop_sequence?: string | null;
+    citation?: { type?: string; title?: string; url?: string };
   };
 }
 
@@ -214,6 +223,9 @@ export class AnthropicAdapter extends BaseAdapter {
       let stopReason: string | null = null;
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
       const thinkingBlocks = new Map<number, AnthropicThinkingBlock>();
+      const clientToolIndices = new Set<number>();
+      const webSources = new Map<string, SearchResult>();
+      const responseBlocks = new Map<number, Record<string, unknown>>();
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/v1/messages`,
         operation: 'streaming generation',
@@ -226,11 +238,23 @@ export class AnthropicAdapter extends BaseAdapter {
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Anthropic',
         yieldMetadataUpdates: true,
+        yieldUsageUpdates: true,
         extractMetadata: (parsed) => {
           this.captureThinkingBlock(parsed, thinkingBlocks);
-          if (parsed.type !== 'message_delta') return null;
           const event = parsed as AnthropicStreamEvent;
+          this.captureResponseBlock(event, responseBlocks);
           const result: Record<string, unknown> = {};
+          if (event.type === 'message_stop') {
+            result.anthropicResponseContent = Array.from(responseBlocks.entries())
+              .sort(([a], [b]) => a - b).map(([, block]) => block);
+          }
+          if (event.type === 'content_block_start' && event.content_block?.type) {
+            this.addAnthropicSources({ ...event.content_block, type: event.content_block.type }, webSources);
+          }
+          if (event.type === 'content_block_delta' && event.delta?.citation) {
+            this.addAnthropicSources({ type: 'text', citations: [event.delta.citation] }, webSources);
+          }
+          if (webSources.size > 0) result.webSearchResults = Array.from(webSources.values());
           if (typeof event.delta?.stop_reason === 'string') {
             stopReason = event.delta.stop_reason;
             result.stopReason = stopReason;
@@ -263,6 +287,7 @@ export class AnthropicAdapter extends BaseAdapter {
             .sort(([left], [right]) => left - right)
             .map(([, block]) => block);
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+            if (event.index !== undefined) clientToolIndices.add(event.index);
             return [{
               index: event.index,
               id: event.content_block.id || `anthropic-tool-${event.index ?? 0}`,
@@ -275,7 +300,8 @@ export class AnthropicAdapter extends BaseAdapter {
             }];
           }
 
-          if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+          if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta'
+            && event.index !== undefined && clientToolIndices.has(event.index)) {
             return [{
               index: event.index,
               id: `anthropic-tool-${event.index ?? 0}`,
@@ -307,7 +333,8 @@ export class AnthropicAdapter extends BaseAdapter {
           const message = extractStreamErrorMessage(event, 'Anthropic streaming error');
           return message ? `Anthropic stream error: ${message}` : 'Anthropic stream error';
         },
-        extractUsage: () => usage,
+        extractUsage: (event: AnthropicStreamEvent) =>
+          event.type === 'message_start' || event.type === 'message_delta' ? usage : undefined,
         extractReasoning: (event: AnthropicStreamEvent) => {
           if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
             return {
@@ -449,7 +476,9 @@ export class AnthropicAdapter extends BaseAdapter {
     const metadata = {
       thinking: this.extractThinking(responseJson),
       stopReason: responseJson.stop_reason,
-      stopSequence: responseJson.stop_sequence
+      stopSequence: responseJson.stop_sequence,
+      anthropicResponseContent: responseJson.content,
+      webSearchResults: this.extractAnthropicSources(responseJson.content)
     };
 
     return await this.buildLLMResponse(
@@ -463,6 +492,59 @@ export class AnthropicAdapter extends BaseAdapter {
   }
 
   // Private methods
+
+  private captureResponseBlock(event: AnthropicStreamEvent, blocks: Map<number, Record<string, unknown>>): void {
+    if (event.index === undefined) return;
+    if (event.type === 'content_block_start' && event.content_block) {
+      blocks.set(event.index, { ...event.content_block });
+      return;
+    }
+    const block = blocks.get(event.index);
+    if (!block) return;
+    if (event.type === 'content_block_stop') {
+      if (typeof block['__partialInput'] === 'string') {
+        try { block.input = JSON.parse(block['__partialInput']); } catch { /* Incomplete tool input remains absent. */ }
+        delete block['__partialInput'];
+      }
+      return;
+    }
+    if (event.type !== 'content_block_delta' || !event.delta) return;
+    const delta = event.delta;
+    if (delta.type === 'text_delta' && typeof delta.text === 'string') {
+      block.text = (typeof block.text === 'string' ? block.text : '') + delta.text;
+    } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+      block.thinking = (typeof block.thinking === 'string' ? block.thinking : '') + delta.thinking;
+    } else if (delta.type === 'signature_delta' && typeof delta.signature === 'string') {
+      block.signature = (typeof block.signature === 'string' ? block.signature : '') + delta.signature;
+    } else if (delta.type === 'citations_delta' && delta.citation) {
+      const existing: unknown[] = Array.isArray(block.citations) ? block.citations as unknown[] : [];
+      block.citations = [...existing, delta.citation];
+    } else if (delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+      const json = (typeof block['__partialInput'] === 'string' ? block['__partialInput'] : '') + delta.partial_json;
+      block['__partialInput'] = json;
+    }
+  }
+
+  private extractAnthropicSources(blocks: AnthropicContentBlock[] | undefined): SearchResult[] {
+    const sources = new Map<string, SearchResult>();
+    for (const block of blocks || []) this.addAnthropicSources(block, sources);
+    return Array.from(sources.values());
+  }
+
+  private addAnthropicSources(block: AnthropicContentBlock, sources: Map<string, SearchResult>): void {
+    if (block.type === 'web_search_result') {
+      const source = WebSearchUtils.validateSearchResult({ title: block.title || block.url, url: block.url });
+      if (source) sources.set(source.url, source);
+    }
+    for (const citation of block.citations || []) {
+      if (citation.type !== 'web_search_result_location') continue;
+      const source = WebSearchUtils.validateSearchResult({ title: citation.title || citation.url, url: citation.url });
+      if (source) sources.set(source.url, source);
+    }
+    if (Array.isArray(block.content)) {
+      for (const child of block.content) this.addAnthropicSources(child, sources);
+    }
+  }
 
   /**
    * Normalize model ID by removing :1m suffix to match against apiName

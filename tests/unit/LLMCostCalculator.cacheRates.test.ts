@@ -92,7 +92,8 @@ describe('model specs carry cache rates', () => {
   // Models whose published cache-read rate departs from the 0.1× structure.
   const PUBLISHED_ANTHROPIC_CACHE_READ: Record<string, number> = {
     'claude-fable-5-1': 0.25,
-    'claude-opus-5-5': 0.2
+    'claude-opus-5-5': 0.2,
+    'claude-sonnet-5-5': 0.1
   };
 
   it('every Anthropic model: read 0.1× input (unless published otherwise), write 1.25× input', () => {
@@ -151,6 +152,21 @@ describe('CostCalculator (chat path) uses the same arithmetic and the registry r
 });
 
 describe('TokenUsageExtractor.normalize — one shape for every provider', () => {
+  it('adds Anthropic billed searches to token cost without overriding a provider total', () => {
+    const usage = TokenUsageExtractor.normalize({
+      input_tokens: 100, output_tokens: 50,
+      cache_read_input_tokens: 900,
+      server_tool_use: { web_search_requests: 2 }
+    })!;
+    expect(usage.webSearchRequests).toBe(2);
+    expect(usage.webSearchCost).toBeCloseTo(0.02);
+    const cost = LLMCostCalculator.calculateCost(usage, 'claude-test', PRICING)!;
+    expect(cost.totalCost).toBeCloseTo(cost.inputCost + cost.outputCost + 0.02);
+    expect(cost.webSearchCost).toBeCloseTo(0.02);
+    expect(LLMCostCalculator.calculateCost({ ...usage, providerCost: { totalCost: 0.07, currency: 'USD' } }, 'claude-test', PRICING)?.totalCost).toBe(0.07);
+    expect(TokenUsageExtractor.normalize(usage)).toEqual(usage);
+  });
+
   it('OpenAI Responses: input_tokens_details.cached_tokens', () => {
     expect(TokenUsageExtractor.normalize({
       input_tokens: 1000, output_tokens: 50, total_tokens: 1050,
@@ -206,7 +222,15 @@ describe('TokenUsageExtractor.normalize — one shape for every provider', () =>
   it('Google: promptTokenCount is gross; cachedContentTokenCount and thoughtsTokenCount map', () => {
     expect(TokenUsageExtractor.normalize({
       promptTokenCount: 1000, candidatesTokenCount: 50, totalTokenCount: 1100, cachedContentTokenCount: 700, thoughtsTokenCount: 50
-    })).toEqual({ promptTokens: 1000, completionTokens: 50, totalTokens: 1100, cacheReadTokens: 700, cachedTokens: 700, reasoningTokens: 50 });
+    })).toEqual({ promptTokens: 1000, completionTokens: 100, totalTokens: 1100, cacheReadTokens: 700, cachedTokens: 700, reasoningTokens: 50 });
+  });
+
+  it('prices Google thinking as output exactly once, including after normalization', () => {
+    const usage = TokenUsageExtractor.normalize({ promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 80 })!;
+    expect(usage.completionTokens).toBe(100);
+    expect(usage.totalTokens).toBe(200);
+    expect(TokenUsageExtractor.normalize(usage)).toEqual(usage);
+    expect(LLMCostCalculator.calculateCost(usage, 'gemini-test', PRICING)?.outputCost).toBeCloseTo(100 / 1e6 * 50);
   });
 
   it('already-normalized camelCase passes through unchanged', () => {

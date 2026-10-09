@@ -1,4 +1,6 @@
 import { ModelAgentManager } from '../../src/ui/chat/services/ModelAgentManager';
+import { ModelAgentCompactionState } from '../../src/ui/chat/services/ModelAgentCompactionState';
+import type { ConversationData } from '../../src/types/chat/ChatTypes';
 type ManagerWithUpdate = {
   updateContextTokenTracker(providerId: string): void;
 };
@@ -20,6 +22,18 @@ function createManager() {
 }
 
 describe('ModelAgentManager context gating rollout', () => {
+  it('checks retained context after a local tracker resets during compaction', () => {
+    const state = new ModelAgentCompactionState();
+    state.updateContextTokenTracker('openai-codex', 1024);
+    state.resetTokenTracker();
+    const conversation = {
+      id: 'conversation',
+      messages: [{ id: 'retained', role: 'user', content: 'x'.repeat(5000), timestamp: 1 }],
+    } as ConversationData;
+
+    expect(state.shouldCompactBeforeSending(conversation, 'continue', 'summary', 'openai-codex', 1024)).toBe(true);
+  });
+
   const softCapProviders = [
     'anthropic-claude-code',
     'google-gemini-cli',

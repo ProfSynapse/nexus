@@ -34,6 +34,8 @@ export interface LLMToolCall {
   sourceFormat?: 'bracket' | 'xml' | 'native';
   /** Provider-issued blocks that must be replayed exactly before Anthropic tool_use. */
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /** Original Anthropic assistant content, including native server tool blocks. */
+  anthropic_response_content?: Array<Record<string, unknown>>;
   mistral_assistant_content?: Array<Record<string, unknown>>;
 }
 

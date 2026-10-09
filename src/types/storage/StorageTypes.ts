@@ -8,6 +8,7 @@ import { WorkspaceState } from '../../database/types/session/SessionTypes';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 import { PaginatedResult } from '../pagination/PaginationTypes';
 import type { ConversationBranch } from '../branch/BranchTypes';
+import type { MessageUsage } from '../chat/ChatTypes';
 
 /**
  * Individual conversation file structure (conversations/{id}.json)
@@ -96,6 +97,8 @@ export interface ConversationMessage {
 
   // Provider-specific message metadata (citations, references, etc.)
   metadata?: Record<string, unknown>;
+  // Transient save instruction for regenerated responses. Omitted from stored messages.
+  replaceMetadata?: boolean;
 
   // Message branching support (legacy - being migrated to branches)
   alternatives?: ConversationMessage[];
@@ -105,11 +108,7 @@ export interface ConversationMessage {
   branches?: ConversationBranch[];
 
   // Cost tracking (primarily for assistant messages)
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage?: MessageUsage;
   cost?: {
     totalCost: number;
     currency: string;

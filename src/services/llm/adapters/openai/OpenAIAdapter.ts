@@ -61,10 +61,12 @@ interface OpenAIResponsesUsage {
 interface OpenAIResponsesContentPart {
   type?: string;
   text?: string;
+  annotations?: Array<{ type?: string; title?: string; url?: string }>;
 }
 
 interface OpenAIResponsesItem {
   type?: string;
+  action?: { type?: string };
   id?: string;
   call_id?: string;
   name?: string;
@@ -89,6 +91,7 @@ interface OpenAIResponsesEvent {
   response?: {
     id?: string;
     usage?: OpenAIResponsesUsage;
+    output?: OpenAIResponsesItem[];
   };
   output_index?: number;
   text?: string;
@@ -247,6 +250,10 @@ export class OpenAIAdapter extends BaseAdapter {
             // Already in Responses API format
             return tool;
           });
+        }
+        if (options?.webSearch) {
+          WebSearchUtils.validateWebSearchRequest('openai', true);
+          responseParams.tools = [...(responseParams.tools || []), { type: 'web_search' }];
         }
 
         // Add optional parameters
@@ -565,7 +572,12 @@ export class OpenAIAdapter extends BaseAdapter {
           if (event.response?.usage) {
             usage = TokenUsageExtractor.normalize(event.response.usage);
           }
-          const metadata = currentResponseId ? { responseId: currentResponseId } : undefined;
+          usage = this.withSearchUsage(usage, event.response?.output);
+          const webSearchResults = this.extractResponsesSources(event.response?.output);
+          const metadata = {
+            ...(currentResponseId ? { responseId: currentResponseId } : {}),
+            ...(webSearchResults.length > 0 ? { webSearchResults } : {})
+          };
           const toolCallsArray = Array.from(toolCallsMap.values());
           eventQueue.push({
             content: '', complete: true, usage,
@@ -612,6 +624,9 @@ export class OpenAIAdapter extends BaseAdapter {
     // Add instructions (replaces system message)
     if (options?.systemPrompt) {
       responseParams.instructions = options.systemPrompt;
+    }
+    if (options?.webSearch) {
+      responseParams.tools = [{ type: 'web_search' }];
     }
 
     // Add optional parameters
@@ -671,14 +686,45 @@ export class OpenAIAdapter extends BaseAdapter {
     return this.buildLLMResponse(
       text,
       model,
-      usage,
-      { responseId: responseJson.id, thinking: thinking || undefined },
+      this.withSearchUsage(usage, responseJson.output),
+      { responseId: responseJson.id, thinking: thinking || undefined,
+        webSearchResults: this.extractResponsesSources(responseJson.output) },
       'stop'
     );
   }
 
   private buildOpenAIHeaders(): Record<string, string> {
     return buildBearerJsonHeaders(this.apiKey);
+  }
+
+  private extractResponsesSources(output: OpenAIResponsesItem[] | undefined): SearchResult[] {
+    const sources: SearchResult[] = [];
+    const seen = new Set<string>();
+    for (const item of output || []) {
+      if (item.type !== 'message') continue;
+      for (const part of item.content || []) {
+        for (const annotation of part.annotations || []) {
+          if (annotation.type !== 'url_citation') continue;
+          const source = WebSearchUtils.validateSearchResult({
+            title: annotation.title || annotation.url,
+            url: annotation.url
+          });
+          if (source && !seen.has(source.url)) {
+            seen.add(source.url);
+            sources.push(source);
+          }
+        }
+      }
+    }
+    return sources;
+  }
+
+  private withSearchUsage(usage: TokenUsage | undefined, output: OpenAIResponsesItem[] | undefined): TokenUsage | undefined {
+    const searches = (output || []).filter(item =>
+      item.type === 'web_search_call' && item.action?.type === 'search').length;
+    return searches > 0 ? { ...usage, promptTokens: usage?.promptTokens || 0,
+      completionTokens: usage?.completionTokens || 0, totalTokens: usage?.totalTokens || 0,
+      webSearchRequests: searches, webSearchCost: searches * 0.01 } : usage;
   }
 
   /**

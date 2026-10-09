@@ -96,6 +96,10 @@ export interface TokenUsage {
   cachedTokens?: number;
   reasoningTokens?: number; // Hidden reasoning tokens
   audioTokens?: number; // Audio input/output tokens
+  /** Billed native web searches, when the provider reports a count. */
+  webSearchRequests?: number;
+  /** Estimated native search fees in USD, additional to token charges. */
+  webSearchCost?: number;
   /** Price the provider itself reported for this response (OpenRouter, Requesty). Wins over any local rate table. */
   providerCost?: {
     totalCost: number;
@@ -110,6 +114,8 @@ export interface CostDetails {
   currency: string;
   rateInputPerMillion: number;
   rateOutputPerMillion: number;
+  webSearchRequests?: number;
+  webSearchCost?: number;
   /** Cache-read share of inputCost. */
   cacheRead?: {
     tokens: number;
@@ -197,6 +203,8 @@ export interface ToolCall {
   thought_signature?: string;
   // Anthropic: exact signed/redacted blocks required for tool continuations.
   anthropic_thinking_blocks?: AnthropicThinkingBlock[];
+  /** Complete Claude assistant blocks for exact server-tool replay in a client-tool continuation. */
+  anthropic_response_content?: Array<Record<string, unknown>>;
   /** Mistral Large 4 assistant chunks (including ThinkChunk) for exact continuation replay. */
   mistral_assistant_content?: Array<Record<string, unknown>>;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */

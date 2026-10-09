@@ -149,6 +149,36 @@ describe('StreamingOrchestrator canonical runtime events', () => {
     expect(events.some(event => event.type === 'assistant.delta' && event.text === 'Done')).toBe(true);
   });
 
+  it('passes exact Anthropic native search blocks into the client tool continuation', async () => {
+    const raw = [
+      { type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'x' } },
+      { type: 'web_search_tool_result', tool_use_id: 'srv_1', content: [{ type: 'web_search_result', encrypted_content: 'opaque' }] },
+      { type: 'tool_use', id: 'toolu_1', name: 'content_read', input: { path: 'note.md' } },
+    ];
+    const optionsSeen: unknown[] = [];
+    const adapter = {
+      async *generateStreamAsync(_prompt: string, options: unknown) {
+        optionsSeen.push(options);
+        if (optionsSeen.length === 1) {
+          yield { content: '', complete: true, toolCalls: [{ id: 'toolu_1', type: 'function' as const, function: { name: 'content_read', arguments: '{"path":"note.md"}' } }], metadata: { anthropicResponseContent: raw } };
+        } else {
+          yield { content: 'Done', complete: true, metadata: { anthropicResponseContent: [{ type: 'text', text: 'Done' }] } };
+        }
+      },
+    } as BaseAdapter;
+    const orchestrator = new StreamingOrchestrator(
+      registryWith(adapter),
+      { providers: {}, defaultModel: { provider: 'anthropic', model: 'claude-sonnet-4-6' } },
+      { executeToolCalls: jest.fn(async () => [{ id: 'toolu_1', name: 'content_read', success: true, result: { content: 'note' } }]) }
+    );
+    const events = await collectWithOptions(orchestrator, {
+      tools: [{ type: 'function', function: { name: 'content_read', description: 'Read a note.', parameters: { type: 'object' } } }],
+    });
+    expect(optionsSeen).toHaveLength(2);
+    expect((optionsSeen[1] as { conversationHistory: Array<{ role: string; content: unknown }> }).conversationHistory).toContainEqual({ role: 'assistant', content: raw });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool.snapshot', calls: [expect.objectContaining({ anthropic_response_content: raw })] }));
+  });
+
   it('increments operation sequence when a provider reuses a synthesized tool id', async () => {
     const repeatedCall = {
       id: 'google-tool_0',

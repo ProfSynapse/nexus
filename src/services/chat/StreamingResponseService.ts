@@ -38,6 +38,25 @@ import {
 } from '../llm/runtime/ChatTurnReducer';
 import type { ToolExecutionOrigin } from '../../types/tools/ToolOperationTypes';
 
+function addUsage(previous: NormalizedTokenUsage | undefined, current: NormalizedTokenUsage): NormalizedTokenUsage {
+  if (!previous) return { ...current };
+  const sum = (key: keyof NormalizedTokenUsage): number =>
+    ((previous[key] as number | undefined) ?? 0) + ((current[key] as number | undefined) ?? 0);
+  return {
+    promptTokens: sum('promptTokens'),
+    completionTokens: sum('completionTokens'),
+    totalTokens: sum('totalTokens'),
+    ...(previous.cacheReadTokens || current.cacheReadTokens ? { cacheReadTokens: sum('cacheReadTokens'), cachedTokens: sum('cacheReadTokens') } : {}),
+    ...(previous.cacheWriteTokens || current.cacheWriteTokens ? { cacheWriteTokens: sum('cacheWriteTokens') } : {}),
+    ...(previous.reasoningTokens || current.reasoningTokens ? { reasoningTokens: sum('reasoningTokens') } : {}),
+    ...(previous.audioTokens || current.audioTokens ? { audioTokens: sum('audioTokens') } : {}),
+    ...(previous.webSearchRequests !== undefined || current.webSearchRequests !== undefined
+      ? { webSearchRequests: sum('webSearchRequests') } : {}),
+    ...(previous.webSearchCost !== undefined || current.webSearchCost !== undefined
+      ? { webSearchCost: sum('webSearchCost') } : {}),
+  };
+}
+
 export interface StreamingOptions {
   provider?: string;
   model?: string;
@@ -52,6 +71,7 @@ export interface StreamingOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   temperature?: number; // 0.0-1.0, controls randomness
+  webSearch?: boolean;
   imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   transcriptionProvider?: string;
@@ -111,6 +131,8 @@ export class StreamingResponseService {
     let turnState = createInitialChatTurnState();
     let persistedProvider = options?.provider ?? 'unknown';
     let persistedModel = options?.model ?? 'unknown';
+    let releaseGeneration: () => void = () => undefined;
+    const generationFinished = new Promise<void>(resolve => { releaseGeneration = resolve; });
 
     try {
       // Get defaults from LLMService if user didn't select provider/model
@@ -143,6 +165,19 @@ export class StreamingResponseService {
       if (conversation && options?.excludeFromMessageId) {
         const excludeIndex = conversation.messages.findIndex((m) => m.id === options.excludeFromMessageId);
         if (excludeIndex >= 0) {
+          const compaction = conversation.metadata?.compaction as {
+            frontier?: Array<{ boundaryMessageId?: string }>
+          } | undefined;
+          const frontier = compaction?.frontier;
+          const boundaryId = frontier?.[frontier.length - 1]?.boundaryMessageId;
+          const boundaryIndex = boundaryId
+            ? conversation.messages.findIndex(message => message.id === boundaryId) : -1;
+          // Retrying a summarized turn would remove the boundary marker from
+          // this slice. The normal boundary filter would then send the old full
+          // transcript beside its summary, potentially exceeding the new model.
+          if (boundaryIndex >= 0 && excludeIndex <= boundaryIndex) {
+            throw new Error('This message was summarized during context compaction and cannot be retried');
+          }
           filteredConversation = {
             ...conversation,
             messages: conversation.messages.slice(0, excludeIndex)
@@ -196,6 +231,7 @@ export class StreamingResponseService {
         enableThinking: options?.enableThinking,
         thinkingEffort: options?.thinkingEffort,
         temperature: options?.temperature,
+        webSearch: options?.webSearch,
         imageProvider: options?.imageProvider,
         imageModel: options?.imageModel,
         transcriptionProvider: options?.transcriptionProvider,
@@ -210,7 +246,11 @@ export class StreamingResponseService {
       };
 
       // Add usage callback for async cost calculation (e.g., OpenRouter streaming)
-      llmOptions.onUsageAvailable = this.dependencies.costTrackingService.createUsageCallback(conversationId, messageId);
+      const onFallbackUsage = this.dependencies.costTrackingService.createUsageCallback(conversationId, messageId);
+      llmOptions.onUsageAvailable = async (usage: Parameters<typeof onFallbackUsage>[0], cost: Parameters<typeof onFallbackUsage>[1]) => {
+        await generationFinished;
+        await onFallbackUsage(usage, cost);
+      };
 
       // Responses API: Persist ID when first captured (for conversation continuity across restarts)
       llmOptions.onResponsesApiId = async (id: string) => {
@@ -230,8 +270,10 @@ export class StreamingResponseService {
       this.dependencies.toolCallService.resetDetectedTools(); // Reset tool detection state for new message
 
       // Track usage and cost for conversation tracking
-      let finalUsage: NormalizedTokenUsage | undefined = undefined;
-      let finalCost: MessageCost | undefined = undefined;
+      let completedUsage: NormalizedTokenUsage | undefined;
+      let currentResponseUsage: NormalizedTokenUsage | undefined;
+      let completedCost = 0;
+      let finalCost: MessageCost | undefined;
       const selectedModel = typeof llmOptions.model === 'string' ? llmOptions.model : defaultModel.model;
       persistedModel = selectedModel;
 
@@ -244,8 +286,38 @@ export class StreamingResponseService {
         if (event.type === 'usage.updated') {
           const normalizedUsage = ContextBudgetService.normalizeUsage(event.usage);
           if (normalizedUsage) {
-            finalUsage = normalizedUsage;
+            // Provider updates within a response are cumulative snapshots.
+            // The next response starts a new snapshot after response.completed.
+            currentResponseUsage = normalizedUsage;
+            // Billing usage below accumulates every provider call. Context
+            // occupancy needs only the latest call's input and output.
+            const contextUsageEvent: ChatRuntimeEvent = {
+              type: 'response.metadata',
+              metadata: { latestResponseUsage: { ...normalizedUsage } },
+            };
+            turnState = reduceChatTurn(turnState, contextUsageEvent);
+            yield { messageId, event: contextUsageEvent };
+            const aggregateUsage = addUsage(completedUsage, normalizedUsage);
+            const usageEvent: ChatRuntimeEvent = { type: 'usage.updated', usage: aggregateUsage };
+            turnState = reduceChatTurn(turnState, usageEvent);
+            yield { messageId, event: usageEvent };
+
+            const responseCost = this.dependencies.costTrackingService.calculateCost(
+              turnState.provider || provider,
+              turnState.model || selectedModel,
+              normalizedUsage
+            );
+            if (responseCost) {
+              finalCost = { totalCost: completedCost + responseCost.totalCost, currency: responseCost.currency };
+              await this.dependencies.costTrackingService.updateMessageCost(
+                conversationId, messageId, aggregateUsage, finalCost
+              );
+              const costEvent: ChatRuntimeEvent = { type: 'cost.updated', cost: finalCost };
+              turnState = reduceChatTurn(turnState, costEvent);
+              yield { messageId, event: costEvent };
+            }
           }
+          continue;
         }
 
         // Extract tool calls when available and handle progressive display
@@ -265,27 +337,15 @@ export class StreamingResponseService {
           }
         }
 
-        // Cost is a runtime event too, and must precede the terminal event so
-        // the reducer can reject every late mutation after terminal state.
-        if (event.type === 'turn.completed') {
-          if (finalUsage) {
-            const usageData = this.dependencies.costTrackingService.extractUsage(finalUsage);
-            if (usageData) {
-              finalCost = await this.dependencies.costTrackingService.trackMessageUsage(
-                conversationId,
-                messageId,
-                turnState.provider || provider,
-                turnState.model || selectedModel,
-                usageData
-              ) ?? undefined;
-            }
-          }
-
-          if (finalCost) {
-            const costEvent: ChatRuntimeEvent = { type: 'cost.updated', cost: finalCost };
-            turnState = reduceChatTurn(turnState, costEvent);
-            yield { messageId, event: costEvent };
-          }
+        if (event.type === 'response.completed' && currentResponseUsage) {
+          const responseCost = this.dependencies.costTrackingService.calculateCost(
+            turnState.provider || provider,
+            turnState.model || selectedModel,
+            currentResponseUsage
+          );
+          if (responseCost) completedCost += responseCost.totalCost;
+          completedUsage = addUsage(completedUsage, currentResponseUsage);
+          currentResponseUsage = undefined;
         }
 
         turnState = reduceChatTurn(turnState, event);
@@ -342,6 +402,7 @@ export class StreamingResponseService {
       console.error('Error in generateResponse:', error, extra ? JSON.stringify(extra) : '');
       throw error;
     } finally {
+      releaseGeneration();
       // Notify queue service that generation is complete (resumes processing)
       void this.dependencies.messageQueueService?.onGenerationComplete?.();
     }

@@ -481,6 +481,7 @@ export class MessageRepository
             state: data.state,
             reasoning: data.reasoning,
             reasoning_segments: data.reasoningSegments,
+            metadata: data.metadata,
             // Persist full tool call data including results so tool bubbles can be reconstructed
             tool_calls: data.toolCalls?.map(tc => ({
               id: tc.id,
@@ -519,6 +520,10 @@ export class MessageRepository
       if (data.reasoningSegments !== undefined) {
         setClauses.push('reasoningSegmentsJson = ?');
         params.push(data.reasoningSegments ? JSON.stringify(data.reasoningSegments) : null);
+      }
+      if (data.metadata !== undefined) {
+        setClauses.push('metadataJson = ?');
+        params.push(data.metadata === null ? null : JSON.stringify(data.metadata));
       }
       if (data.toolCalls !== undefined) {
         setClauses.push('toolCallsJson = ?');
@@ -567,6 +572,11 @@ export class MessageRepository
    * Only checks fields present in the update (undefined = not being updated).
    */
   private hasChanges(current: MessageData, updates: UpdateMessageData): boolean {
+    if (updates.metadata !== undefined) {
+      const currentJson = current.metadata == null ? null : JSON.stringify(current.metadata);
+      const incomingJson = updates.metadata === null ? null : JSON.stringify(updates.metadata);
+      if (currentJson !== incomingJson) return true;
+    }
     if (updates.content !== undefined) {
       // Normalise null → '' for comparison since SQLite stores empty strings
       const incoming = updates.content ?? '';
