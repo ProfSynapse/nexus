@@ -50,6 +50,7 @@ export interface MessageManagerEvents {
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
   onToolCallsDetected: (messageId: string, toolCalls: StreamToolCallLike[]) => void;
+  onToolLimitReached?: (completedToolCalls: number, abortSignal?: AbortSignal) => Promise<boolean>;
   onReasoningUpdate?: (
     messageId: string,
     reasoningText: string,
@@ -88,6 +89,7 @@ export class MessageManager {
     this.streamHandler = new MessageStreamHandler(chatService, {
       onStreamingUpdate: events.onStreamingUpdate,
       onToolCallsDetected: events.onToolCallsDetected,
+      onToolLimitReached: events.onToolLimitReached,
       onReasoningUpdate: events.onReasoningUpdate
     });
 

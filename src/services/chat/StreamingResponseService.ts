@@ -48,6 +48,7 @@ export interface StreamingOptions {
   operationOrigin?: ToolExecutionOrigin;
   operationScopeId?: string;
   abortSignal?: AbortSignal;
+  onToolLimitReached?: (completedIterations: number, abortSignal?: AbortSignal) => Promise<boolean>;
   excludeFromMessageId?: string; // Exclude this message and everything after from context (for retry)
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -193,6 +194,7 @@ export class StreamingResponseService {
         turnId: messageId,
         operationOrigin: options?.operationOrigin ?? 'native-chat',
         operationScopeId: options?.operationScopeId,
+        onToolLimitReached: options?.onToolLimitReached,
         enableThinking: options?.enableThinking,
         thinkingEffort: options?.thinkingEffort,
         temperature: options?.temperature,

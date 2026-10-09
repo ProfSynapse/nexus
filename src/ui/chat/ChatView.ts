@@ -13,6 +13,7 @@ import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
 import { ChatSettingsModal } from './components/ChatSettingsModal';
+import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { ChatService } from '../../services/chat/ChatService';
 import { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
 import type NexusPlugin from '../../main';
@@ -465,7 +466,6 @@ export class ChatView extends ItemView {
     errorDiv.createDiv({ cls: 'chat-service-error-text', text: 'Chat service unavailable. Please reload Obsidian.' });
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async onClose(): Promise<void> {
     // Signal polling loops to stop before any cleanup runs
     this.isClosing = true;
@@ -475,7 +475,24 @@ export class ChatView extends ItemView {
     const lifecycleManager = getWebLLMLifecycleManager();
     lifecycleManager.handleChatViewClosed();
 
+    // A tool-limit prompt waits inside the active stream. Aborting first closes
+    // that prompt and prevents its answer from resuming a disposed view.
+    await this.messageManager?.interruptCurrentGeneration();
     this.cleanup();
+  }
+
+  private confirmToolContinuation(completedToolCalls: number, abortSignal?: AbortSignal): Promise<boolean> {
+    if (this.isClosing || abortSignal?.aborted) {
+      return Promise.resolve(false);
+    }
+
+    return ConfirmModal.confirm(this.app, {
+      variant: 'continue',
+      title: 'Continue using tools?',
+      body: `The assistant has completed ${completedToolCalls} tool calls. Continue to allow 25 more calls, or stop here.`,
+      cancelLabel: 'Stop',
+      abortSignal
+    });
   }
 
   /**
@@ -549,6 +566,8 @@ export class ChatView extends ItemView {
           toolCalls as unknown as DetectedToolCalls
         );
       },
+      onToolLimitReached: (completedToolCalls, abortSignal) =>
+        this.confirmToolContinuation(completedToolCalls, abortSignal),
       onReasoningUpdate: (messageId, reasoningText, isComplete, segments) => {
         this.workingIndicatorController.noteToolActivity(messageId);
         const openedNewBlock = this.messageDisplay.updateMessageReasoning(
@@ -1021,12 +1040,15 @@ export class ChatView extends ItemView {
   }
 
   private handleConversationUpdated(conversation: ConversationData | null): void {
+    if (this.isClosing) return;
     if (!conversation) {
       // Null signals a forced UI refresh (e.g., subagent completion)
       this.updateChatTitle();
       void this.updateContextProgress();
       return;
     }
+    // Abort cleanup from the previous chat must not switch the reader back.
+    if (this.conversationManager.getCurrentConversation()?.id !== conversation.id) return;
     this.conversationManager.updateCurrentConversation(conversation);
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();

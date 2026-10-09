@@ -113,7 +113,9 @@ export function reduceChatTurn(
         },
       };
     case 'tool.snapshot': {
-      const toolCalls = mergeToolCallSnapshots(state.toolCalls, event.calls);
+      // A settled execution snapshot can discard provider calls that the user
+      // declined to run. Discovery snapshots still merge streaming fragments.
+      const toolCalls = mergeToolCallSnapshots(event.replace ? [] : state.toolCalls, event.calls);
       const hasUnsettledCall = toolCalls.some(call =>
         call.result === undefined
         && call.success === undefined

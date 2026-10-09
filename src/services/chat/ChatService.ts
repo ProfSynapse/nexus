@@ -390,6 +390,7 @@ export class ChatService {
       operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
       operationScopeId?: string;
       abortSignal?: AbortSignal;
+      onToolLimitReached?: (completedIterations: number, abortSignal?: AbortSignal) => Promise<boolean>;
       excludeFromMessageId?: string;
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';

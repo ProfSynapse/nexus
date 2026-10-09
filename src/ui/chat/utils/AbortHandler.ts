@@ -45,7 +45,8 @@ export class AbortHandler {
     if (aiMessageIndex < 0) return;
 
     const aiMessage = conversation.messages[aiMessageIndex];
-    const hasContent = aiMessage.content && aiMessage.content.trim();
+    const completedToolCalls = filterCompletedToolCalls(aiMessage.toolCalls);
+    const hasContent = !!(aiMessage.content?.trim() || completedToolCalls?.length || aiMessage.reasoning?.trim());
 
     // Use custom handler if provided
     if (customHandler) {
@@ -56,7 +57,7 @@ export class AbortHandler {
     // Default abort handling
     if (hasContent) {
       // Keep partial response - clean up incomplete tool calls
-      aiMessage.toolCalls = filterCompletedToolCalls(aiMessage.toolCalls);
+      aiMessage.toolCalls = completedToolCalls;
       aiMessage.isLoading = false;
       aiMessage.state = 'aborted'; // Mark as aborted (will be included in context)
 
@@ -88,7 +89,7 @@ export class AbortHandler {
    * Check if an error is an abort error
    */
   isAbortError(error: unknown): boolean {
-    return error instanceof Error && error.name === 'AbortError';
+    return (error instanceof Error || error instanceof DOMException) && error.name === 'AbortError';
   }
 
   /**

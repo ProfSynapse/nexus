@@ -20,7 +20,7 @@ export type ChatRuntimeEvent =
       encryptedContent?: string;
     }
   | { type: 'reasoning.completed'; blockId?: string }
-  | { type: 'tool.snapshot'; calls: ToolCall[]; ready: boolean }
+  | { type: 'tool.snapshot'; calls: ToolCall[]; ready: boolean; replace?: boolean }
   | { type: 'tool.execution.started'; operationId: string; call: ToolCall }
   | {
       type: 'tool.execution.completed';
