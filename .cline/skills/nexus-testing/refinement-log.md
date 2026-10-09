@@ -192,3 +192,4 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 ## 2026-10-09 — Repeated compaction regression
 - Observation: first-handoff tests passed while the next compaction could resurrect old history.
 - Change: added failing-first regressions through real frontier merging, persisted metadata, active-history filtering and provider replay. Existing mock-honesty guidance applies; no protocol change needed.
+- 2026-10-09 | Tool-limit tests failed against the original 15-call threshold, then exercised exact 25-call batch boundaries, confirmation/resume, abort, and preservation of completed tool-only progress. Empty-message fixtures needed explicit empty tool history because the helper supplies completed calls by default. No Obsidian CLI was available for UI verification. | No protocol change; the existing mock-honesty and live-loop guidance covered these limits.

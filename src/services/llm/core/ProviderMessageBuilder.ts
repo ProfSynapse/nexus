@@ -91,6 +91,8 @@ export interface GenerateOptionsInternal {
 
 export interface StreamingOptions {
   abortSignal?: AbortSignal;
+  /** Pause before the next tool iteration and ask whether to continue. */
+  onToolLimitReached?: (completedIterations: number, abortSignal?: AbortSignal) => Promise<boolean>;
   provider?: string;
   model?: string;
   systemPrompt?: string;

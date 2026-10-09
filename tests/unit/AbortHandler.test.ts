@@ -139,6 +139,32 @@ describe('AbortHandler', () => {
   // ==========================================================================
 
   describe('handleAbort - message without content', () => {
+    it('preserves completed tool-only progress when Stop is chosen at the limit', async () => {
+      const conversation = createConversation({ messages: [createUserMessage(), createAssistantMessage({
+        id: 'msg_tools', content: '\n\n', toolCalls: TOOL_CALLS.mixed, isLoading: true,
+      })] });
+
+      await handler.handleAbort(conversation, 'msg_tools');
+
+      const message = conversation.messages.find(item => item.id === 'msg_tools');
+      expect(message).toBeDefined();
+      expect(message?.toolCalls).toEqual(TOOL_CALLS.mixed.filter(call => call.result !== undefined || call.success !== undefined));
+      expect(message?.state).toBe('aborted');
+      expect(message?.isLoading).toBe(false);
+      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+    });
+
+    it('preserves reasoning-only progress and recognizes DOM abort errors', async () => {
+      const conversation = createConversation({ messages: [createUserMessage(), createAssistantMessage({
+        id: 'msg_reasoning', content: '', reasoning: 'Checking the next step', isLoading: true,
+      })] });
+
+      const handled = await handler.handleIfAbortError(new DOMException('Stopped by user', 'AbortError'), conversation, 'msg_reasoning');
+
+      expect(handled).toBe(true);
+      expect(conversation.messages.find(item => item.id === 'msg_reasoning')?.state).toBe('aborted');
+    });
+
     it('should delete empty message from conversation', async () => {
       const conversation = createConversation({
         messages: [
@@ -146,6 +172,7 @@ describe('AbortHandler', () => {
           createAssistantMessage({
             id: 'msg_empty',
             content: '',
+            toolCalls: undefined,
             isLoading: true,
             state: 'streaming'
           })
@@ -166,6 +193,7 @@ describe('AbortHandler', () => {
           createAssistantMessage({
             id: 'msg_whitespace',
             content: '   \n  ',
+            toolCalls: undefined,
             isLoading: true
           })
         ]
@@ -183,6 +211,7 @@ describe('AbortHandler', () => {
           createAssistantMessage({
             id: 'msg_empty',
             content: '',
+            toolCalls: undefined,
             isLoading: true
           })
         ]

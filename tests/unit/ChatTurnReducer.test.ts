@@ -148,6 +148,17 @@ describe('ChatTurnReducer', () => {
       .toBe(completed);
   });
 
+  it('removes declined pending calls when execution supplies a replacement snapshot', () => {
+    const executed = toolCall({ success: true, result: { content: 'Saved result' } });
+    const state = reduceAll([
+      { type: 'tool.snapshot', calls: [toolCall(), toolCall({ id: 'declined' })], ready: true },
+      { type: 'tool.snapshot', calls: [executed], ready: false, replace: true },
+      { type: 'turn.aborted', reason: 'Stopped by user' },
+    ]);
+    expect(state.toolCalls).toEqual([executed]);
+    expect(state.phase).toBe('aborted');
+  });
+
   it('treats an identical terminal event as idempotent', () => {
     const completed = reduceChatTurn(
       createInitialChatTurnState(),

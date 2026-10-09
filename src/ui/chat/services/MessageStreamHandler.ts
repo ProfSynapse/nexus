@@ -28,6 +28,7 @@ export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
   onToolCallsDetected: (messageId: string, toolCalls: ConversationToolCall[]) => void;
   onCostUpdate?: () => void;
+  onToolLimitReached?: (completedToolCalls: number, abortSignal?: AbortSignal) => Promise<boolean>;
   onReasoningUpdate?: (
     messageId: string,
     reasoningText: string,
@@ -47,6 +48,7 @@ export interface StreamOptions {
   operationScopeId?: string;
   excludeFromMessageId?: string;
   abortSignal?: AbortSignal;
+  onToolLimitReached?: (completedToolCalls: number, abortSignal?: AbortSignal) => Promise<boolean>;
   enableThinking?: boolean;
   webSearch?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -116,6 +118,7 @@ export class MessageStreamHandler {
       userMessageContent,
       {
         ...options,
+        onToolLimitReached: options.onToolLimitReached ?? this.events.onToolLimitReached,
         messageId: aiMessageId
       }
     )) {

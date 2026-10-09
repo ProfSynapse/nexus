@@ -56,6 +56,30 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     handler = new MessageStreamHandler(mockChatService as unknown as ChatService, events);
   });
 
+  it('passes the live dialog callback and abort signal into the stream', async () => {
+    const conversation = conversationWithLoadingPlaceholder();
+    const controller = new AbortController();
+    const onToolLimitReached = jest.fn(async () => true);
+    events.onToolLimitReached = onToolLimitReached;
+    mockChatService.generateResponseStreaming.mockImplementation(
+      streamOf([{ type: 'turn.completed' }])
+    );
+
+    await handler.streamResponse(conversation, 'hi', 'msg_ai', {
+      abortSignal: controller.signal
+    });
+
+    expect(mockChatService.generateResponseStreaming).toHaveBeenCalledWith(
+      conversation.id,
+      'hi',
+      expect.objectContaining({
+        messageId: 'msg_ai',
+        abortSignal: controller.signal,
+        onToolLimitReached
+      })
+    );
+  });
+
   it('clears isLoading on an empty-complete stream (no token ever streamed)', async () => {
     const conversation = conversationWithLoadingPlaceholder();
     mockChatService.generateResponseStreaming.mockImplementation(

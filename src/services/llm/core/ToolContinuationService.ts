@@ -37,8 +37,8 @@ function preserveAnthropicResponseContent(chunk: StreamChunk, provider: string):
 }
 
 export class ToolContinuationService {
-  // Safety limit for recursive tool calls
-  private readonly TOOL_ITERATION_LIMIT = 15;
+  // Number of individual tool calls allowed before asking the user to continue.
+  private readonly TOOL_CALL_LIMIT = 25;
 
   constructor(
     private toolExecutor: IToolExecutor | undefined,
@@ -82,82 +82,23 @@ export class ToolContinuationService {
     generateOptions: GenerateOptionsInternal,
     options: StreamingOptions | undefined
   ): AsyncGenerator<StreamYield, void, unknown> {
-    let completeToolCallsWithResults: ChatToolCall[] = [];
+    const completeToolCallsWithResults: ChatToolCall[] = [];
 
     try {
-      for (const toolCall of detectedToolCalls) {
-        yield {
-          type: 'tool.execution.started',
-          operationId: toolCall.id,
-          call: toolCall,
-        };
-      }
-
-      // Step 1: Execute tools via MCP to get results
-      const mcpToolCalls = detectedToolCalls.map((tc) => ({
-        id: tc.id,
-        function: {
-          name: tc.function?.name || tc.name || '',
-          arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
-        }
-      }));
-
-      const toolResults = await MCPToolExecution.executeToolCalls(
-        this.toolExecutor,
-        mcpToolCalls,
-        provider as SupportedProvider,
-        generateOptions.onToolEvent,
-        {
-          sessionId: options?.sessionId,
-          workspaceId: options?.workspaceId,
-          imageProvider: options?.imageProvider,
-          imageModel: options?.imageModel,
-          transcriptionProvider: options?.transcriptionProvider,
-          transcriptionModel: options?.transcriptionModel,
-          operationOrigin: options?.operationOrigin,
-          operationScopeId: options?.operationScopeId,
-          operationSequence: 0,
-          conversationId: options?.conversationId,
-          messageId: options?.messageId,
-          turnId: options?.turnId,
-        }
+      const toolResults = yield* this.executeToolBatch(
+        provider, detectedToolCalls, generateOptions, options, completeToolCallsWithResults, 0
       );
-
-      // Small delay to allow file system operations to complete (prevents race conditions)
-      await new Promise(resolve => window.setTimeout(resolve, 100));
-
-      // Build complete tool calls with execution results
-	      completeToolCallsWithResults = detectedToolCalls.map(originalCall => {
-	        const result = toolResults.find(r => r.id === originalCall.id);
-	        return {
-	          id: originalCall.id,
-	          type: originalCall.type || 'function',
-	          name: originalCall.function?.name || originalCall.name,
-	          parameters: this.parseToolArguments(originalCall.function?.arguments),
-	          result: result?.result,
-	          success: result?.success || false,
-	          error: result?.error,
-	          executionTime: result?.executionTime,
-	          function: originalCall.function,
-              anthropic_response_content: originalCall.anthropic_response_content,
-              mistral_assistant_content: originalCall.mistral_assistant_content
-        };
-	      });
-
-      for (const toolCall of completeToolCallsWithResults) {
-        yield {
-          type: 'tool.execution.completed',
-          operationId: toolCall.id,
-          call: toolCall,
-          success: toolCall.success === true,
-        };
+      if (!toolResults) {
+        yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false, replace: true };
+        yield { type: 'turn.completed' };
+        return;
       }
 
       // Step 1.5: Check for terminal tools (like subagent) that should stop the pingpong loop
       const terminalToolResult = checkForTerminalTool(completeToolCallsWithResults);
       if (terminalToolResult) {
         yield { type: 'assistant.delta', text: terminalToolResult.message };
-        yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+        yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false, replace: true };
         yield { type: 'turn.completed' };
         return;
       }
@@ -236,6 +177,11 @@ export class ToolContinuationService {
       }
 
     } catch (toolError) {
+      if ((toolError instanceof Error || toolError instanceof DOMException) && toolError.name === 'AbortError') {
+        yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false, replace: true };
+        yield { type: 'turn.aborted', reason: toolError.message };
+        return;
+      }
       console.error('Streaming tool execution error:', {
         error: toolError,
         message: toolError instanceof Error ? toolError.message : String(toolError),
@@ -263,7 +209,7 @@ export class ToolContinuationService {
     }
 
     if (completeToolCallsWithResults.length > 0) {
-      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false, replace: true };
     }
     yield { type: 'turn.completed' };
   }
@@ -282,87 +228,17 @@ export class ToolContinuationService {
     completeToolCallsWithResults: ChatToolCall[],
     operationSequence: number
   ): AsyncGenerator<StreamYield, void, unknown> {
-    // Sequence zero is the initial tool response. Refuse sequence 15 before
-    // dispatch so at most 15 tool-bearing provider responses can execute.
-    if (operationSequence >= this.TOOL_ITERATION_LIMIT) {
-      yield* this.yieldToolLimitMessage();
-      return;
-    }
-
-    for (const toolCall of recursiveToolCalls) {
-      yield {
-        type: 'tool.execution.started',
-        operationId: toolCall.id,
-        call: toolCall,
-      };
-    }
-
-    const recursiveMcpToolCalls = recursiveToolCalls.map((tc) => {
-      let argumentsStr = '';
-
-      if (tc.function?.arguments) {
-        argumentsStr = tc.function.arguments;
-      } else if (tc.parameters) {
-        argumentsStr = JSON.stringify(tc.parameters);
-      } else {
-        argumentsStr = '{}';
-      }
-
-      return {
-        id: tc.id,
-        function: {
-          name: tc.function?.name || tc.name || '',
-          arguments: argumentsStr
-        }
-      };
-    });
-
-    const recursiveToolResults = await MCPToolExecution.executeToolCalls(
-      this.toolExecutor,
-      recursiveMcpToolCalls,
-      provider as SupportedProvider,
-      generateOptions.onToolEvent,
-      {
-        sessionId: options?.sessionId,
-        workspaceId: options?.workspaceId,
-        imageProvider: options?.imageProvider,
-        imageModel: options?.imageModel,
-        transcriptionProvider: options?.transcriptionProvider,
-        transcriptionModel: options?.transcriptionModel,
-        operationOrigin: options?.operationOrigin,
-        operationScopeId: options?.operationScopeId,
-        operationSequence,
-        conversationId: options?.conversationId,
-        messageId: options?.messageId,
-        turnId: options?.turnId,
-      }
+    const batchStart = completeToolCallsWithResults.length;
+    const recursiveToolResults = yield* this.executeToolBatch(
+      provider, recursiveToolCalls, generateOptions, options, completeToolCallsWithResults, operationSequence
     );
-
-    await new Promise(resolve => window.setTimeout(resolve, 100));
-
-    const recursiveCompleteToolCalls: ChatToolCall[] = recursiveToolCalls.map((tc, index) => ({
-      ...tc,
-      result: recursiveToolResults[index]?.result,
-      success: recursiveToolResults[index]?.success || false,
-      error: recursiveToolResults[index]?.error,
-      executionTime: recursiveToolResults[index]?.executionTime
-    }));
-
-    completeToolCallsWithResults.push(...recursiveCompleteToolCalls);
-
-    for (const toolCall of recursiveCompleteToolCalls) {
-      yield {
-        type: 'tool.execution.completed',
-        operationId: toolCall.id,
-        call: toolCall,
-        success: toolCall.success === true,
-      };
-    }
+    if (!recursiveToolResults) return;
+    const recursiveCompleteToolCalls = completeToolCallsWithResults.slice(batchStart);
 
     const terminalToolResult = checkForTerminalTool(recursiveCompleteToolCalls);
     if (terminalToolResult) {
       yield { type: 'assistant.delta', text: terminalToolResult.message };
-      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false };
+      yield { type: 'tool.snapshot', calls: completeToolCallsWithResults, ready: false, replace: true };
       return;
     }
 
@@ -434,6 +310,88 @@ export class ToolContinuationService {
     }
   }
 
+  /** Execute only the approved part of a batch, retaining remaining calls while paused. */
+  private async* executeToolBatch(
+    provider: string,
+    calls: ChatToolCall[],
+    generateOptions: GenerateOptionsInternal,
+    options: StreamingOptions | undefined,
+    completedCalls: ChatToolCall[],
+    operationSequence: number
+  ): AsyncGenerator<StreamYield, ToolResult[] | undefined, unknown> {
+    const results: ToolResult[] = [];
+    let offset = 0;
+    while (offset < calls.length) {
+      if (options?.abortSignal?.aborted) {
+        throw new DOMException('Generation aborted by user', 'AbortError');
+      }
+      if (completedCalls.length > 0 && completedCalls.length % this.TOOL_CALL_LIMIT === 0) {
+        if (!options?.onToolLimitReached) {
+          yield* this.yieldToolLimitMessage();
+          return undefined;
+        }
+        if (!await this.requestToolContinuation(completedCalls.length, options) || options.abortSignal?.aborted) {
+          throw new DOMException('Stopped by user', 'AbortError');
+        }
+      }
+
+      const remainingAllowance = this.TOOL_CALL_LIMIT - completedCalls.length % this.TOOL_CALL_LIMIT;
+      const batch = calls.slice(offset, offset + remainingAllowance);
+      const batchStart = completedCalls.length;
+      for (const call of batch) {
+        yield { type: 'tool.execution.started', operationId: call.id, call };
+      }
+      const batchResults = await MCPToolExecution.executeToolCalls(
+        this.toolExecutor,
+        batch.map(call => ({
+          id: call.id,
+          function: {
+            name: call.function?.name || call.name || '',
+            arguments: call.function?.arguments || JSON.stringify(call.parameters || {}),
+          },
+        })),
+        provider as SupportedProvider,
+        generateOptions.onToolEvent,
+        {
+          sessionId: options?.sessionId,
+          workspaceId: options?.workspaceId,
+          imageProvider: options?.imageProvider,
+          imageModel: options?.imageModel,
+          transcriptionProvider: options?.transcriptionProvider,
+          transcriptionModel: options?.transcriptionModel,
+          operationOrigin: options?.operationOrigin,
+          operationScopeId: options?.operationScopeId,
+          operationSequence,
+          conversationId: options?.conversationId,
+          messageId: options?.messageId,
+          turnId: options?.turnId,
+        }
+      );
+      results.push(...batchResults);
+      for (const call of batch) {
+        const result = batchResults.find(candidate => candidate.id === call.id);
+        const completed: ChatToolCall = {
+          ...call,
+          type: call.type || 'function',
+          name: call.function?.name || call.name,
+          parameters: call.parameters || this.parseToolArguments(call.function?.arguments),
+          result: result?.result,
+          success: result?.success || false,
+          error: result?.error,
+          executionTime: result?.executionTime,
+        };
+        completedCalls.push(completed);
+        yield { type: 'tool.execution.completed', operationId: completed.id, call: completed, success: completed.success === true };
+      }
+      offset += batch.length;
+      // A terminal result ends the parent turn before another slice or prompt.
+      if (checkForTerminalTool(completedCalls.slice(batchStart))) return results;
+      // Allow file operations to settle before the next provider continuation.
+      await new Promise(resolve => window.setTimeout(resolve, 100));
+    }
+    return results;
+  }
+
   private parseToolArguments(argumentsJson: string | undefined): Record<string, unknown> {
     if (!argumentsJson) {
       return {};
@@ -448,6 +406,25 @@ export class ToolContinuationService {
       // The executor already rejected this call. Keep its error and raw
       // function.arguments so the model can correct it in the continuation.
       return {};
+    }
+  }
+
+  private async requestToolContinuation(completedIterations: number, options: StreamingOptions): Promise<boolean> {
+    const signal = options.abortSignal;
+    if (signal?.aborted) return false;
+
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<boolean>(resolve => {
+      onAbort = () => resolve(false);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([
+        options.onToolLimitReached?.(completedIterations, signal) ?? Promise.resolve(false),
+        aborted,
+      ]);
+    } finally {
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
     }
   }
 
@@ -479,7 +456,7 @@ export class ToolContinuationService {
    */
   private async* yieldToolLimitMessage(): AsyncGenerator<StreamYield, void, unknown> {
     await Promise.resolve();
-    const limitMessage = `\n\nTOOL_LIMIT_REACHED: You have used ${this.TOOL_ITERATION_LIMIT} tool iterations. You must now ask the user if they want to continue with more tool calls. Explain what you've accomplished so far and what you still need to do.`;
+    const limitMessage = `\n\nI've paused after ${this.TOOL_CALL_LIMIT} tool calls. Your progress is saved. Send a message when you'd like me to keep going.`;
     yield { type: 'assistant.delta', text: limitMessage };
   }
 }
