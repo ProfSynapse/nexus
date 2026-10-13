@@ -35,5 +35,7 @@ fails on the selector-blind `getTools` trap. | every file in this skill.
   keeps the target-name freedom) and added a scenario-contract rule: expected
   param names must be schema names, not normalizer aliases — identical failure
   across models is the tell. Verified: glm-5.3-flash passes first attempt, 0
-  retries. | Files: `tests/eval/scenarios/multi-turn.eval.yaml`,
+  retries. | Files: `../../tests/eval/scenarios/multi-turn.eval.yaml`,
   `references/scenario-contract.md`.
+
+- 2026-10-13: Budget-sensitive runs need enforced per-request output and tool-round caps. Added a preflight reminder in protocols/configure-a-run.md; harness now accepts bounded configuration and records transport usage.

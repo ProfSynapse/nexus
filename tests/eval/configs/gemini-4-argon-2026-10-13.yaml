@@ -1,0 +1,36 @@
+# Small direct-API smoke grade. Five single-exchange scenarios, no retries.
+# At most 5 requests per exchange × 2048 generated tokens × 5 scenarios = 51,200.
+# Includes thinking tokens; input tokens are billed separately. Avoid env overrides
+# when relying on this ceiling. Run serially with EVAL_CONCURRENCY=1.
+mode: mock
+providers:
+  google:
+    apiKeyEnv: GEMINI_API_KEY
+    models:
+      - gemini-4-argon
+    enabled: true
+
+defaults:
+  temperature: 0
+  maxTokens: 2048
+  maxToolIterations: 4
+  enableThinking: true
+  thinkingEffort: low
+  maxRetries: 0
+  retryDelayMs: 0
+  timeout: 120000
+  systemPrompt: default
+
+capture:
+  enabled: true
+  dumpOnFailure: true
+  artifactsDir: test-artifacts/gemini-4-argon/
+
+scenarios: tests/eval/scenarios/**/*.eval.yaml
+scenarioToolSet: meta
+scenarioNames:
+  - simple-read
+  - create-new-note
+  - search-then-read-chain
+  - recover-context-on-read
+  - recover-from-tool-error

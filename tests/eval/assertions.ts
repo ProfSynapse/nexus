@@ -163,11 +163,20 @@ function assertCliMetaArgs(
   }
 
   const requiredStrings: Array<[keyof typeof actualArgs | string, string]> = [
-    ['workspaceId', 'workspace ID'],
-    ['sessionId', 'session ID'],
     ['memory', 'memory summary'],
     ['goal', 'goal statement'],
   ];
+
+  // These are raw model arguments in the Nexus chat path. Production
+  // DirectToolExecutor.mergeToolManagerContext injects session/workspace IDs,
+  // and both meta-tool schemas deliberately make them optional (#214).
+  // Fresh, unbound external MCP sessions have a separate stateful first-call
+  // requirement; this assertion does not claim to grade that transport.
+  for (const key of ['workspaceId', 'sessionId']) {
+    if (actualArgs[key] !== undefined && typeof actualArgs[key] !== 'string') {
+      errors.push(`${prefix}tool "${toolName}": expected optional args.${key} to be a string when present.`);
+    }
+  }
 
   for (const [key, label] of requiredStrings) {
     const value = actualArgs[key];

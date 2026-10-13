@@ -218,3 +218,5 @@ Exercised the Obsidian CLI against an isolated Linux profile. Synchronous eval a
 ### 2026-10-13 — Restore typing without overwriting settled labels
 
 Used the existing loader suite with a fake clock to check production text updates and settling during both letter and dot phases. Both regressions failed against the previous whole-word implementation, then passed after restoring typing and cancelling the active timer on settle. No protocol change needed.
+
+- 2026-10-13: Bounded live checks must not require a thought summary on every simple prompt. Verified requested controls and any returned summary against transport output; no skill change needed.

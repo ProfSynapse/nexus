@@ -38,6 +38,8 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -121,7 +123,26 @@ def main() -> int:
         print(f"error: {PROMPT_REL} not found", file=sys.stderr)
         return 2
 
-    domain_names = set(NAME_RE.findall(read_const_block((repo / TOOLS_REL).read_text(encoding="utf-8"), "NEXUS_TOOLS")))
+    fixture_source = (repo / TOOLS_REL).read_text(encoding="utf-8")
+    domain_names = set(NAME_RE.findall(read_const_block(fixture_source, "NEXUS_TOOLS")))
+    if "releaseCatalog.nexusTools" in read_const_block(fixture_source, "NEXUS_TOOLS"):
+        # The harness now derives fixtures from the selected release catalog.
+        # Mirror SchemaCatalog's advertised-name selection, not unrelated tools.
+        try:
+            manifest = json.loads((repo / "schemas/manifest.json").read_text())
+            version = os.environ.get("EVAL_SCHEMA_VERSION", "latest")
+            if version == "latest":
+                version = manifest["latest"]
+            catalog = json.loads((repo / "schemas" / manifest["versions"][version]["cli"]).read_text())
+            advertised_names = {
+                f"{agent}_{tool}"
+                for agent, blob in CATALOG_ENTRY_RE.findall(read_const_block(prompt_path.read_text(), "DEFAULT_TOOL_CATALOG"))
+                for tool in QUOTED_RE.findall(blob)
+            }
+            domain_names = {f"{tool['agent']}_{tool['tool']}" for tool in catalog["tools"]} & advertised_names
+        except (OSError, KeyError, ValueError) as error:
+            print(f"error: could not load release tool catalog: {error}", file=sys.stderr)
+            return 2
     if not domain_names:
         print(f"error: could not read NEXUS_TOOLS from {TOOLS_REL}", file=sys.stderr)
         return 2

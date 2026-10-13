@@ -18,6 +18,8 @@ describe('EvalConfigLoader', () => {
     delete process.env.EVAL_RETRY_MAX_DELAY_MS;
     delete process.env.EVAL_TIMEOUT_MS;
     delete process.env.EVAL_SCHEMA_VERSION;
+    delete process.env.EVAL_MAX_TOKENS;
+    delete process.env.EVAL_MAX_TOOL_ITERATIONS;
   });
 
   afterAll(() => {
@@ -103,5 +105,33 @@ describe('EvalConfigLoader', () => {
         models: ['deepseek/deepseek-v4-flash'],
       },
     ]);
+  });
+
+  it('loads the bounded Argon matrix and permits explicit budget overrides', async () => {
+    const { loadConfig } = await import('../eval/ConfigLoader');
+    const config = loadConfig('tests/eval/configs/gemini-4-argon-2026-10-13.yaml');
+    expect(config.providers.google.models).toEqual(['gemini-4-argon']);
+    expect(config.scenarioNames).toHaveLength(5);
+    expect(config.defaults).toMatchObject({ maxTokens: 2048, maxToolIterations: 4, maxRetries: 0,
+      enableThinking: true, thinkingEffort: 'low' });
+    process.env.EVAL_MAX_TOKENS = '1024';
+    process.env.EVAL_MAX_TOOL_ITERATIONS = '2';
+    expect(loadConfig('tests/eval/configs/gemini-4-argon-2026-10-13.yaml').defaults)
+      .toMatchObject({ maxTokens: 1024, maxToolIterations: 2 });
+  });
+
+  it.each(['0', '-1', '1.5', 'NaN', 'Infinity'])('rejects unsafe budget %s instead of silently dropping it', async value => {
+    const { loadConfig } = await import('../eval/ConfigLoader');
+    process.env.EVAL_MAX_TOKENS = value;
+    expect(() => loadConfig()).toThrow('maxTokens must be a positive integer');
+    delete process.env.EVAL_MAX_TOKENS;
+    process.env.EVAL_MAX_TOOL_ITERATIONS = value;
+    expect(() => loadConfig()).toThrow('maxToolIterations must be a positive integer');
+  });
+
+  it('does not change the output or iteration limits of existing configs', async () => {
+    const { loadConfig } = await import('../eval/ConfigLoader');
+    expect(loadConfig().defaults.maxTokens).toBeUndefined();
+    expect(loadConfig().defaults.maxToolIterations).toBeUndefined();
   });
 });

@@ -17,6 +17,7 @@ import { GoogleAdapter } from '../../src/services/llm/adapters/google/GoogleAdap
 import { GOOGLE_DEFAULT_MODEL } from '../../src/services/llm/adapters/google/GoogleModels';
 import { LLMProviderError } from '../../src/services/llm/adapters/types';
 import { ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
+import { loadEvalToolFixtures } from '../eval/fixtures/tools';
 import {
   jsonResponse,
   sseResponse,
@@ -186,6 +187,32 @@ describe('GoogleAdapter', () => {
   });
 
   describe('SSE streaming', () => {
+    it('sends the actual Nexus meta-tool schemas through parametersJsonSchema without stripping constraints', async () => {
+      // The live endpoint rejected useTools.values.additionalProperties when it
+      // was sent through the protobuf `parameters` field. Use the same released
+      // catalog as the live eval, and inspect the production adapter's wire body.
+      const tools = loadEvalToolFixtures().metaTools;
+      const original = JSON.stringify(tools);
+      let body = '';
+      __setRequestUrlMock(async request => {
+        body = request.body ?? '';
+        return sseResponse(sse({ candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] }));
+      });
+      await collect(new GoogleAdapter('gk-test', 'gemini-4-argon').generateStreamAsync('hi', { tools, maxTokens: 128 }));
+      const declarations = JSON.parse(body).tools[0].functionDeclarations;
+      expect(declarations).toEqual(tools.map(tool => ({
+        name: tool.function?.name,
+        description: tool.function?.description,
+        parametersJsonSchema: tool.function?.parameters
+      })));
+      const useTools = declarations.find((declaration: { name: string }) => declaration.name === 'useTools');
+      expect(useTools.parametersJsonSchema.properties.values.additionalProperties).toEqual({ type: 'string' });
+      expect(useTools.parametersJsonSchema.properties.operationId).toMatchObject({
+        minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+      });
+      expect(JSON.stringify(tools)).toBe(original);
+    });
+
     it('yields native thought parts as reasoning without leaking them into content', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
@@ -409,6 +436,131 @@ describe('GoogleAdapter', () => {
 
       expect(models.length).toBeGreaterThan(0);
       expect(models[0].pricing.currency).toBe('USD');
+    });
+  });
+
+  // These tests inspect real adapter requests; the HTTP fixture only supplies
+  // responses. They fail if Argon regresses to Gemini 2 budget/sampling rules,
+  // loses explicit small output caps, or reports long decode as a full answer.
+  describe('Gemini 4 Argon standard generation', () => {
+    const model = 'gemini-4-argon';
+    const completed = { candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] };
+
+    it.each([false, true])('uses thinking levels without sampling parameters (stream=%s)', async stream => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return stream ? sseResponse(sse(completed)) : jsonResponse(200, completed);
+      });
+      const adapter = new GoogleAdapter('gk-test', model);
+      for (const effort of ['low', 'medium', 'high', 'max'] as const) {
+        const options = { enableThinking: true, thinkingEffort: effort, temperature: 0.2, maxTokens: 128 };
+        if (stream) await collect(adapter.generateStreamAsync('hi', options));
+        else await adapter.generateUncached('hi', options);
+        const config = JSON.parse(requests.at(-1)?.body ?? '{}').generationConfig;
+        expect(config).toEqual({
+          maxOutputTokens: 128,
+          thinkingConfig: { includeThoughts: true, thinkingLevel: effort === 'max' ? 'high' : effort }
+        });
+      }
+    });
+
+    it.each([false, true])('defaults to medium when thinking is enabled (stream=%s)', async stream => {
+      let body = '';
+      __setRequestUrlMock(async request => {
+        body = request.body ?? '';
+        return stream ? sseResponse(sse(completed)) : jsonResponse(200, completed);
+      });
+      const adapter = new GoogleAdapter('gk-test', model);
+      if (stream) await collect(adapter.generateStreamAsync('hi', { enableThinking: true }));
+      else await adapter.generateUncached('hi', { enableThinking: true });
+      expect(JSON.parse(body).generationConfig.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: 'medium' });
+    });
+
+    it.each([false, true])('preserves small caps and enforces the standard request ceiling (stream=%s)', async stream => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return stream ? sseResponse(sse(completed)) : jsonResponse(200, completed);
+      });
+      const adapter = new GoogleAdapter('gk-test', model);
+      for (const maxTokens of [undefined, 128, 32768, 60000, 262144]) {
+        if (stream) await collect(adapter.generateStreamAsync('hi', { maxTokens }));
+        else await adapter.generateUncached('hi', { maxTokens });
+      }
+      expect(requests.map(request => JSON.parse(request.body ?? '{}').generationConfig.maxOutputTokens))
+        .toEqual([32768, 128, 32768, stream ? 60000 : 32768, stream ? 65536 : 32768]);
+    });
+
+    it.each([false, true])('allows a response up to the 15-minute deadline (stream=%s)', async stream => {
+      jest.useFakeTimers();
+      let respond!: (response: ReturnType<typeof jsonResponse>) => void;
+      let requestCount = 0;
+      __setRequestUrlMock(() => {
+        requestCount++;
+        return new Promise(resolve => { respond = resolve; });
+      });
+      const adapter = new GoogleAdapter('gk-test', model);
+      let settled = false;
+      const pending = (stream ? collect(adapter.generateStreamAsync('hi')) : adapter.generateUncached('hi'))
+        .then(result => { settled = true; return result; }, error => { settled = true; return error; });
+      await jest.advanceTimersByTimeAsync(899_999);
+      expect(settled).toBe(false);
+      expect(requestCount).toBe(1);
+      respond(stream ? sseResponse(sse(completed)) : jsonResponse(200, completed));
+      expect(await pending).not.toBeInstanceOf(Error);
+    });
+
+    it('marks a buffered CONTINUATION response incomplete without retrying or modifying text', async () => {
+      let calls = 0;
+      __setRequestUrlMock(async () => {
+        calls++;
+        return jsonResponse(200, {
+          candidates: [{ content: { parts: [{ text: 'Partial answer' }] }, finishReason: 'CONTINUATION' }],
+          continuationToken: 'opaque-token'
+        });
+      });
+      const result = await new GoogleAdapter('gk-test', model).generateUncached('hi');
+      expect(result.text).toBe('Partial answer');
+      expect(result.finishReason).toBe('length');
+      expect(result.metadata).toMatchObject({ continuationRequired: true });
+      expect(calls).toBe(1);
+    });
+
+    it('throws a clear error for a streaming CONTINUATION instead of completing normally', async () => {
+      __setRequestUrlMock(async () => sseResponse(sse(
+        { candidates: [{ content: { parts: [{ text: 'Partial answer' }] } }] },
+        { candidates: [{ finishReason: 'CONTINUATION' }], continuationToken: 'opaque-token' }
+      )));
+      await expect(collect(new GoogleAdapter('gk-test', model).generateStreamAsync('hi')))
+        .rejects.toThrow(/incomplete.*continuation/i);
+    });
+
+    it('keeps buffered thinking choices distinct in the response cache', async () => {
+      const efforts: unknown[] = [];
+      __setRequestUrlMock(async request => {
+        efforts.push(JSON.parse(request.body ?? '{}').generationConfig.thinkingConfig?.thinkingLevel);
+        return jsonResponse(200, completed);
+      });
+      const adapter = new GoogleAdapter('gk-test', model);
+      await adapter.clearCache();
+      await adapter.generate('cached Argon prompt', { enableThinking: true, thinkingEffort: 'low' });
+      await adapter.generate('cached Argon prompt', { enableThinking: true, thinkingEffort: 'high' });
+      await adapter.generate('cached Argon prompt', { enableThinking: true, thinkingEffort: 'high' });
+      expect(efforts).toEqual(['low', 'high']);
+      await adapter.clearCache();
+    });
+
+    it('lists the verified standard model without changing the provider default', async () => {
+      const adapter = new GoogleAdapter('gk-test');
+      expect(await adapter.listModels()).toContainEqual(expect.objectContaining({
+        id: model, name: 'Gemini 4 Argon', contextWindow: 1048576, maxOutputTokens: 32768,
+        supportsThinking: true, supportsFunctions: true, supportsStreaming: true
+      }));
+      expect(await adapter.getModelPricing(model)).toMatchObject({
+        rateInputPerMillion: 2, rateOutputPerMillion: 10, rateCacheReadPerMillion: 0.1
+      });
+      expect(GOOGLE_DEFAULT_MODEL).toBe('gemini-3.1-pro-preview');
     });
   });
 });

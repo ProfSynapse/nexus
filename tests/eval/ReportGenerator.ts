@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { EvalRunResult, EvalConfig } from './types';
+import type { EvalRunResult, EvalConfig, TurnResult } from './types';
 
 /** Machine-readable shape of an eval run, emitted alongside the markdown report. */
 export interface EvalReportJson {
@@ -38,6 +38,7 @@ export interface EvalReportJson {
       reasoningContent: string;
       reasoningEventCount: number;
       reasoningBeforeFirstTool: boolean;
+      responseUsage?: TurnResult['responseUsage'];
       toolCalls: Array<{ name: string; args: unknown }>;
     }>;
   }>;
@@ -206,6 +207,7 @@ export function generateReportJson(runResult: EvalRunResult, config: EvalConfig)
         reasoningContent: t.reasoningContent,
         reasoningEventCount: t.reasoningEventCount,
         reasoningBeforeFirstTool: t.reasoningBeforeFirstTool,
+        responseUsage: t.responseUsage,
         toolCalls: t.actualToolCalls.map((c) => ({ name: c.name, args: c.args })),
       })),
     })),

@@ -119,3 +119,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-10-13: An Anthropic continuation failed with an empty Node connection AggregateError after successful generation. Added the separate transport symptom and conservative retry boundary to `references/symptoms.md`; real loopback coverage proves two connection attempts deliver one POST, with abort and post-connect exclusions covered separately.
 
 - 2026-10-13 follow-up | Cross-provider audit reproduced the recursive prompt-order bug in stateless continuation branches: the legacy accumulator excludes the current user turn. Preserve the actual request prefix before appending each tool round. Regression checks cover Google signatures, Codex flat call/output pairs, typed Mistral content and local formats; Google and OpenRouter live sequential-tool checks passed. Numeric enum values are rejected by Gemini tool schemas, so the synthetic smoke tool uses an integer field with a description.
+
+- 2026-10-13: Live tool smoke exposed JSON Schema keywords sent through Google's restricted parameters field. Existing live-path verification caught it; no skill change needed.

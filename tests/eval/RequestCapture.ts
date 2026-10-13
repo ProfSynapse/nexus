@@ -10,7 +10,39 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { __setRequestUrlMock } from 'obsidian';
-import type { CapturedRequest, CaptureConfig } from './types';
+import type { CapturedRequest, CapturedUsage, CaptureConfig } from './types';
+
+/** Google stream usage snapshots are cumulative within one HTTP response. Keep the last one. */
+export function extractGoogleUsage(text: string): CapturedUsage | undefined {
+  let latest: Record<string, unknown> | undefined;
+  const inspect = (value: unknown): void => {
+    if (Array.isArray(value)) { value.forEach(inspect); return; }
+    if (!value || typeof value !== 'object') return;
+    const usage = (value as Record<string, unknown>).usageMetadata;
+    if (usage && typeof usage === 'object') latest = usage as Record<string, unknown>;
+  };
+  try { inspect(JSON.parse(text)); } catch {
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      try { inspect(JSON.parse(line.slice(5).trim())); } catch { /* Incomplete frame or [DONE]. */ }
+    }
+  }
+  if (!latest) return undefined;
+  const count = (key: string): number | undefined => {
+    const value = latest?.[key];
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+  };
+  const candidates = count('candidatesTokenCount');
+  const thoughts = count('thoughtsTokenCount');
+  return {
+    inputTokens: count('promptTokenCount'),
+    outputTokens: candidates === undefined && thoughts === undefined
+      ? undefined : (candidates ?? 0) + (thoughts ?? 0),
+    reasoningTokens: thoughts,
+    cachedInputTokens: count('cachedContentTokenCount'),
+    totalTokens: count('totalTokenCount'),
+  };
+}
 
 export class RequestCapture {
   private requests: CapturedRequest[] = [];
@@ -88,6 +120,8 @@ export class RequestCapture {
           body: text.length > 50_000 ? text.slice(0, 50_000) + '...[truncated]' : text,
         },
         timestamp: startTime,
+        scopeId: this.scopeStorage.getStore() ?? undefined,
+        usage: extractGoogleUsage(text),
       };
 
       this.requests.push(capturedRequest);
@@ -162,6 +196,24 @@ export class RequestCapture {
    */
   getCapturedRequests(): CapturedRequest[] {
     return [...this.requests];
+  }
+
+  /** Save one row per HTTP response, including retries and failures; omit credentials and content. */
+  dumpUsage(artifactsDir: string): string | null {
+    if (this.requests.length === 0) return null;
+    const dir = path.resolve(process.cwd(), artifactsDir);
+    fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, `http-usage-${Date.now()}.json`);
+    const rows = this.requests.map(request => ({
+      scopeId: request.scopeId,
+      endpoint: new URL(request.url).pathname,
+      timestamp: request.timestamp,
+      status: request.response.status,
+      // null means the provider supplied no usable Google usage metadata, not zero tokens.
+      usage: request.usage ?? null,
+    }));
+    fs.writeFileSync(filePath, JSON.stringify(rows, null, 2));
+    return filePath;
   }
 
   /**

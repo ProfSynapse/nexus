@@ -43,6 +43,7 @@ import type {
   ScenarioResult,
 } from './types';
 import { assertThinkingBehavior } from './thinkingAssertions';
+import type { MessageUsage } from '../../src/types/chat/ChatTypes';
 
 interface ProviderEntry {
   id: string;
@@ -611,8 +612,9 @@ async function executeScenario(
       systemPrompt,
       tools,
       temperature,
-      enableThinking: scenario.thinking?.enabled ?? false,
-      thinkingEffort: scenario.thinking?.effort,
+      maxTokens: config.defaults.maxTokens,
+      enableThinking: scenario.thinking?.enabled ?? config.defaults.enableThinking ?? false,
+      thinkingEffort: scenario.thinking?.effort ?? config.defaults.thinkingEffort,
       onToolEvent: (event, data) => {
         trace?.write('tool_event', {
           turnIndex,
@@ -627,6 +629,10 @@ async function executeScenario(
     let reasoningEventCount = 0;
     let reasoningBeforeFirstTool = false;
     let sawToolCall = false;
+    let responseHasTools = false;
+    let toolIterations = 0;
+    const responseUsage: NonNullable<TurnResult['responseUsage']> = [];
+    let pendingUsage: MessageUsage | undefined;
 
     try {
       const stream = orchestrator.generateResponseStream(
@@ -635,37 +641,64 @@ async function executeScenario(
       );
 
       for await (const yield_ of stream) {
-        if (yield_.chunk) {
-          textContent += yield_.chunk;
+        if (yield_.type === 'usage.updated') {
+          // Providers emit cumulative snapshots, not increments. Retain only
+          // the latest until the response boundary, then start a fresh request.
+          pendingUsage = { ...yield_.usage };
+          trace?.write('usage_updated', { turnIndex, usage: pendingUsage });
+        }
+        if (yield_.type === 'turn.failed') {
+          throw new Error(yield_.error.message);
+        }
+        if (yield_.type === 'turn.aborted') {
+          throw new Error(yield_.reason ?? 'Generation aborted');
+        }
+        if (yield_.type === 'assistant.delta') {
+          textContent += yield_.text;
           trace?.write('stream_chunk', {
             turnIndex,
-            chunk: yield_.chunk,
+            chunk: yield_.text,
           });
         }
 
-        if (yield_.reasoning) {
-          reasoningContent += yield_.reasoning;
+        if (yield_.type === 'reasoning.delta' && yield_.text) {
+          reasoningContent += yield_.text;
           reasoningEventCount++;
           if (!sawToolCall) {
             reasoningBeforeFirstTool = true;
           }
           trace?.write('stream_reasoning', {
             turnIndex,
-            reasoning: yield_.reasoning,
-            reasoningComplete: yield_.reasoningComplete,
+            reasoning: yield_.text,
           });
         }
 
-        if (yield_.toolCalls && yield_.toolCalls.length > 0) {
+        if (yield_.type === 'tool.snapshot' && yield_.calls.length > 0) {
           sawToolCall = true;
+          if (yield_.ready) responseHasTools = true;
           trace?.write('stream_tool_calls', {
             turnIndex,
-            toolCalls: yield_.toolCalls,
-            toolCallsReady: yield_.toolCallsReady,
+            toolCalls: yield_.calls,
+            toolCallsReady: yield_.ready,
           });
+        }
+        if (yield_.type === 'response.completed') {
+          responseUsage.push({ completed: true, usage: pendingUsage ?? null });
+          pendingUsage = undefined;
+          if (responseHasTools) {
+            toolIterations++;
+            if (config.defaults.maxToolIterations !== undefined
+              && toolIterations > config.defaults.maxToolIterations) {
+              // Throw while the producer is suspended at the response boundary:
+              // its generator closes before executing tools or requesting more tokens.
+              throw new Error(`Eval tool iteration budget exceeded (${config.defaults.maxToolIterations})`);
+            }
+          }
+          responseHasTools = false;
         }
       }
     } catch (err) {
+      if (pendingUsage) responseUsage.push({ completed: false, usage: pendingUsage });
       // Stream error — record as failed turn
       const errMsg = err instanceof Error ? err.message : String(err);
       trace?.write('stream_error', {
@@ -684,6 +717,7 @@ async function executeScenario(
         reasoningBeforeFirstTool,
         errors: [`Stream error: ${errMsg}`],
         durationMs: Date.now() - exchangeStart,
+        responseUsage,
       });
       continue;
     }
@@ -768,6 +802,7 @@ async function executeScenario(
       reasoningBeforeFirstTool,
       errors,
       durationMs: Date.now() - exchangeStart,
+      responseUsage,
     });
 
     // Append assistant response and tool call/result pairs to conversation

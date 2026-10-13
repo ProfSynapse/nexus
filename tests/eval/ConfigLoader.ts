@@ -106,8 +106,12 @@ function applyEnvOverrides(config: EvalConfig): EvalConfig {
 }
 
 function applyDefaultEnvOverrides(defaults: EvalConfig['defaults']): EvalConfig['defaults'] {
+  const maxTokens = getEnv('EVAL_MAX_TOKENS') ?? defaults.maxTokens;
+  const maxToolIterations = getEnv('EVAL_MAX_TOOL_ITERATIONS') ?? defaults.maxToolIterations;
   return {
     ...defaults,
+    maxTokens: positiveInteger(maxTokens, 'maxTokens'),
+    maxToolIterations: positiveInteger(maxToolIterations, 'maxToolIterations'),
     temperature: getNumberEnv('EVAL_TEMP') ?? defaults.temperature,
     maxRetries: getNumberEnv('EVAL_MAX_RETRIES') ?? defaults.maxRetries,
     retryDelayMs: getNumberEnv('EVAL_RETRY_DELAY_MS') ?? defaults.retryDelayMs,
@@ -116,6 +120,15 @@ function applyDefaultEnvOverrides(defaults: EvalConfig['defaults']): EvalConfig[
     retryMaxDelayMs: getNumberEnv('EVAL_RETRY_MAX_DELAY_MS') ?? defaults.retryMaxDelayMs,
     timeout: getNumberEnv('EVAL_TIMEOUT_MS') ?? defaults.timeout,
   };
+}
+
+function positiveInteger(value: unknown, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  const number = typeof value === 'string' ? Number(value) : value;
+  if (typeof number !== 'number' || !Number.isSafeInteger(number) || number <= 0) {
+    throw new Error(`Eval ${name} must be a positive integer`);
+  }
+  return number;
 }
 
 function getEvalTargets(config: EvalConfig): Record<string, ProviderConfig> | null {

@@ -15,11 +15,10 @@ import {
   TokenUsage,
   Tool
 } from '../types';
-import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL } from './GoogleModels';
+import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL, GOOGLE_ARGON_MODEL } from './GoogleModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
-import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper, clampThinkingEffortToHigh } from '../../utils/ThinkingEffortMapper';
 import type { ThinkingEffort } from '../../../../types/llm/ProviderTypes';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
@@ -64,7 +63,7 @@ interface GoogleToolWrapper {
   functionDeclarations?: Array<{
     name?: string;
     description?: string;
-    parameters?: JsonObject;
+    parametersJsonSchema?: JsonObject;
   }>;
   googleSearch?: JsonObject;
 }
@@ -232,7 +231,7 @@ export class GoogleAdapter extends BaseAdapter {
 
       const model = options?.model || this.currentModel;
 
-      // Gemini 3 uses thinking levels. Keep token budgets only for older custom
+      // Gemini 3 and Argon use thinking levels. Keep token budgets for older custom
       // model IDs that users may still pass through the adapter explicitly.
       const effort = options?.thinkingEffort || 'medium';
       const thinkingConfig = this.getThinkingConfig(
@@ -249,8 +248,7 @@ export class GoogleAdapter extends BaseAdapter {
       const config: GoogleGenerationConfig = {
         generationConfig: {
           ...samplingConfig,
-          // Let the provider use its model allowance unless the caller supplies a cap.
-          maxOutputTokens: options?.maxTokens,
+          maxOutputTokens: this.getMaxOutputTokens(model, true, options?.maxTokens),
           // Enable thinking mode when tools are present or explicitly requested
           ...((options?.enableThinking || (options?.tools && options.tools.length > 0)) && {
             thinkingConfig
@@ -282,27 +280,6 @@ export class GoogleAdapter extends BaseAdapter {
           config.tools = convertedTools;
         }
 
-        // Validate each tool schema before sending to Google
-        let validationFailures = 0;
-        for (const toolWrapper of config.tools || []) {
-          const functionDeclarations = toolWrapper.functionDeclarations;
-          if (functionDeclarations) {
-            for (const tool of functionDeclarations) {
-              const validation = SchemaValidator.validateGoogleSchema(tool.parameters, tool.name);
-              if (!validation.valid) {
-                validationFailures++;
-                console.error(`[Google Adapter] ⚠️ Schema validation failed for tool "${tool.name}":`);
-                console.error(`[Google Adapter]    ${validation.error}`);
-                console.error(`[Google Adapter]    This may cause MALFORMED_FUNCTION_CALL errors`);
-              }
-            }
-          }
-        }
-
-        if (validationFailures > 0) {
-          console.error(`[Google Adapter] ❌ ${validationFailures} tool(s) have schema validation issues`);
-        }
-
         // Add function calling config - let model decide when to use tools
         config.toolConfig = {
           functionCallingConfig: {
@@ -327,7 +304,7 @@ export class GoogleAdapter extends BaseAdapter {
         method: 'POST',
         headers: this.buildGoogleHeaders(),
         body: JSON.stringify(this.buildGenerateContentBody(request)),
-        timeoutMs: 120_000
+        timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 120_000
       });
 
       const webSources = new Map<string, SearchResult>();
@@ -352,6 +329,9 @@ export class GoogleAdapter extends BaseAdapter {
           const direct = extractStreamErrorMessage(chunk, 'Google streaming error');
           if (direct) {
             return direct;
+          }
+          if ((chunk as GoogleResponse).candidates?.[0]?.finishReason === 'CONTINUATION') {
+            return 'Google response is incomplete: long-decode continuation is not supported. Request a shorter answer.';
           }
           const blockReason = (chunk as GoogleResponse).promptFeedback?.blockReason;
           if (typeof blockReason === 'string' && blockReason.length > 0) {
@@ -526,7 +506,10 @@ export class GoogleAdapter extends BaseAdapter {
       config: {
         generationConfig: {
           ...this.getSamplingConfig(model, options?.temperature),
-          maxOutputTokens: options?.maxTokens
+          maxOutputTokens: this.getMaxOutputTokens(model, false, options?.maxTokens),
+          ...(model === GOOGLE_ARGON_MODEL && options?.enableThinking && {
+            thinkingConfig: this.getThinkingConfig(model, options.thinkingEffort || 'medium', true)
+          })
         }
       }
     };
@@ -550,7 +533,7 @@ export class GoogleAdapter extends BaseAdapter {
       method: 'POST',
       headers: this.buildGoogleHeaders(),
       body: JSON.stringify(this.buildGenerateContentBody(request)),
-      timeoutMs: 60_000
+      timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 60_000
     });
     this.assertOk(response, `Google generation failed: HTTP ${response.status}`);
     const responseJson = response.json;
@@ -575,7 +558,10 @@ export class GoogleAdapter extends BaseAdapter {
       extractedUsage,
       {
         webSearchResults,
-        thinking: this.extractThinkingFromParts(responseJson.candidates?.[0]?.content?.parts || []) || undefined
+        thinking: this.extractThinkingFromParts(responseJson.candidates?.[0]?.content?.parts || []) || undefined,
+        // Preserve partial text and mark it incomplete without retrying a paid
+        // generation: long-decode continuation is outside the standard path.
+        ...(responseJson.candidates?.[0]?.finishReason === 'CONTINUATION' && { continuationRequired: true })
       },
       finishReason,
       toolCalls
@@ -594,18 +580,14 @@ export class GoogleAdapter extends BaseAdapter {
           return {
             name: toolDef.name,
             description: toolDef.description,
-            parameters: this.sanitizeSchemaForGoogle(toolDef.parameters || {})
+            // `parameters` is Google's protobuf Schema, not JSON Schema. The
+            // dedicated JSON field preserves maps (additionalProperties), union
+            // types and constraints instead of rejecting or stripping them.
+            // https://ai.google.dev/api/generate-content#FunctionDeclaration
+            parametersJsonSchema: toolDef.parameters || { type: 'object' }
           };
         })
     }];
-  }
-
-  /**
-   * Sanitize JSON Schema for Google's simplified schema format
-   * Delegates to SchemaValidator utility
-   */
-  private sanitizeSchemaForGoogle(schema: JsonObject): JsonObject {
-    return (SchemaValidator.sanitizeSchemaForGoogle(schema) ?? {});
   }
 
   private buildGoogleHeaders(): Record<string, string> {
@@ -641,7 +623,8 @@ export class GoogleAdapter extends BaseAdapter {
     // and topP are not part of the Gemini 3 surface either, so send none of them
     // and let the model self-tune. This includes the tool-calling path, where the
     // older generations relied on temperature 0 for deterministic function calls.
-    if (this.isGemini3Model(model)) {
+    // Argon ignores these controls; omit them as its API guidance recommends.
+    if (this.usesThinkingLevels(model)) {
       return {};
     }
 
@@ -664,7 +647,7 @@ export class GoogleAdapter extends BaseAdapter {
 
     // thinkingLevel and the legacy thinkingBudget are mutually exclusive: sending
     // both in one request is rejected, so each generation gets exactly one.
-    if (this.isGemini3Model(model)) {
+    if (this.usesThinkingLevels(model)) {
       const level = clampThinkingEffortToHigh(effort);
       return { ...thoughts, thinkingLevel: model.startsWith('gemini-3-pro-preview') && level === 'medium' ? 'high' : level };
     }
@@ -673,8 +656,30 @@ export class GoogleAdapter extends BaseAdapter {
     return { ...thoughts, thinkingBudget: params?.thinkingBudget || 8192 };
   }
 
-  private isGemini3Model(model: string): boolean {
-    return model.startsWith('gemini-3');
+  private usesThinkingLevels(model: string): boolean {
+    // Only add confirmed model contracts; future Gemini generations may differ.
+    return model.startsWith('gemini-3') || model === GOOGLE_ARGON_MODEL;
+  }
+
+  private getMaxOutputTokens(model: string, stream: boolean, requested?: number): number | undefined {
+    if (model !== GOOGLE_ARGON_MODEL) return requested;
+    // Standard generateContent is capped at 32K; SSE permits 64K explicitly.
+    // A smaller caller budget always wins, including for reasoning-heavy work.
+    return Math.min(requested ?? 32768, stream ? 65536 : 32768);
+  }
+
+  protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
+    const model = options?.model || this.currentModel;
+    if (model !== GOOGLE_ARGON_MODEL) return super.generateCacheKey(prompt, options);
+    const key = super.generateCacheKey(prompt, {
+      ...options,
+      maxTokens: this.getMaxOutputTokens(model, false, options?.maxTokens)
+    });
+    // Argon's buffered path honors thinking controls, so cached results must too.
+    return `${key}:${JSON.stringify({
+      enableThinking: Boolean(options?.enableThinking),
+      thinkingEffort: options?.thinkingEffort || 'medium'
+    })}`;
   }
 
   private buildStreamingRequestSummary(
@@ -865,6 +870,7 @@ export class GoogleAdapter extends BaseAdapter {
     const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
       'STOP': 'stop',
       'MAX_TOKENS': 'length',
+      'CONTINUATION': 'length',
       'SAFETY': 'content_filter',
       'RECITATION': 'content_filter',
       'MALFORMED_FUNCTION_CALL': 'stop',

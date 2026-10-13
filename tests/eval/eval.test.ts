@@ -405,6 +405,8 @@ describe('LLM Eval Harness', () => {
   }, testTimeoutMs);
 
   afterAll(() => {
+    const usagePath = capture.dumpUsage(config.capture.artifactsDir);
+    if (usagePath) console.log(`[Eval] HTTP usage saved: ${usagePath}`);
     // Generate and save report
     if (allResults.length > 0) {
       const runResult = {

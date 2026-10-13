@@ -19,3 +19,5 @@ and three scripts; re-verified every retained claim against the harness source;
 drew an explicit boundary with `nexus-eval-harness` (it owns the instrument,
 this skill owns the verdict) and dropped the scenario-satisfiability checker in
 favour of that skill's. | whole skill.
+
+- 2026-10-13: Advertised-tool checker still parsed literal NEXUS_TOOLS after fixtures moved to release catalogs. Updated scripts/check_advertised_tools.py to load the selected schema release; verified missing-tool detection with a temporary catalog mutation.

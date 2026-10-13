@@ -129,3 +129,5 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 - 2026-10-08 | User requested recent models at the top of every picker. Catalog order was alphabetical for one gateway and also fed first-model defaults, so reordering the catalog could silently change selections. | Added provider-sourced `releaseDate` metadata and documented immutable sorting at UI boundaries, with stable undated fallbacks. | Files: `references/registry-anatomy.md`, `protocols/add-model.md`, model catalogs, shared picker sorting and regressions.
 
 - 2026-10-09 | Cost audit found a model cache-read rate still using the usual discount ratio despite a published exception. | Corrected the existing model price from the provider table and updated the regression expectation; no workflow change. | Files: AnthropicModels.ts, LLMCostCalculator.cacheRates.test.ts.
+
+- 2026-10-13: Authenticated model metadata can expose a lower output ceiling than streaming documentation. Used the keyed listing and kept transport-specific caps separate; no protocol change needed.

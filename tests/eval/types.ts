@@ -9,6 +9,8 @@
 // Config types
 // ---------------------------------------------------------------------------
 
+import type { MessageUsage } from '../../src/types/chat/ChatTypes';
+
 export interface ProviderConfig {
   apiKeyEnv: string;
   models: string[];
@@ -23,6 +25,12 @@ export interface CaptureConfig {
 
 export interface EvalDefaults {
   temperature: number;
+  /** Optional per-request output limit, including provider thinking tokens. */
+  maxTokens?: number;
+  /** Maximum tool-bearing response rounds per user exchange; no automatic continuation beyond it. */
+  maxToolIterations?: number;
+  enableThinking?: boolean;
+  thinkingEffort?: 'low' | 'medium' | 'high';
   maxRetries: number;
   retryDelayMs: number;
   retryBackoffMultiplier: number;
@@ -178,6 +186,18 @@ export interface CapturedRequest {
     body: string;
   };
   timestamp: number;
+  scopeId?: string;
+  /** Provider-reported HTTP usage, retained before response-body truncation. */
+  usage?: CapturedUsage;
+}
+
+export interface CapturedUsage {
+  inputTokens?: number;
+  /** Candidate output plus billed thinking tokens. */
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+  totalTokens?: number;
 }
 
 export interface TurnResult {
@@ -191,6 +211,8 @@ export interface TurnResult {
   reasoningBeforeFirstTool: boolean;
   errors: string[];
   durationMs: number;
+  /** One latest usage snapshot per provider response, including native desktop streams. */
+  responseUsage?: Array<{ completed: boolean; usage: MessageUsage | null }>;
 }
 
 export interface ScenarioResult {

@@ -42,7 +42,17 @@ that finishes, and numbers nobody has to caveat.
    the schema manifest's `latest`. The resolved version is written to each
    report.
 
-5. Size the run before launching it. Concurrency is full fan-out unless a local
+5. For budget-sensitive runs, set explicit `defaults.maxTokens` and
+   `defaults.maxToolIterations`, disable retries, and count the selected
+   exchanges before launching. The per-exchange request ceiling is one initial
+   request plus the allowed tool rounds; thinking consumes the output allowance.
+   Check per-response usage in the JSON report (or transport usage artifacts)
+   instead of inferring spend from visible answer length. Native desktop streams
+   bypass the buffered HTTP capture; report completion tokens already include
+   reasoning tokens. With retries enabled, the final-attempt report alone is
+   not a whole-run bill.
+
+   Size the run before launching it. Concurrency is full fan-out unless a local
    provider is in the matrix (then serial) or `EVAL_CONCURRENCY` says otherwise,
    and the Jest test timeout has to cover the whole matrix — raise
    `EVAL_TEST_TIMEOUT_MS`, not `defaults.timeout`, when a large matrix runs out

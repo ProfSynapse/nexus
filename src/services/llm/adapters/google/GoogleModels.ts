@@ -1,6 +1,6 @@
 /**
  * Google Model Specifications
- * Updated September 2026 — added Gemini 3.8 Flash and context-caching rates.
+ * Updated October 2026 — added Gemini 4 Argon.
  *
  * Gemini 3.6, 3.7 and 3.8 Flash pricing is Google's introductory rate
  * ($0.75/$3.75 per 1M, cache read $0.075) which holds through December 31,
@@ -17,7 +17,35 @@
 
 import { ModelSpec } from '../modelTypes';
 
+export const GOOGLE_ARGON_MODEL = 'gemini-4-argon';
+
 export const GOOGLE_MODELS: ModelSpec[] = [
+  {
+    provider: 'google',
+    name: 'Gemini 4 Argon',
+    apiName: GOOGLE_ARGON_MODEL,
+    releaseDate: '2026-10-13',
+    // Shared input + thinking + output window. The authenticated models.get
+    // listing publishes 32,768 output tokens; streaming permits an explicit
+    // allowance up to 65,536 without the separate long-decode protocol.
+    contextWindow: 1048576,
+    maxTokens: 32768,
+    // https://ai.google.dev/gemini-api/docs/pricing
+    // Introductory rates through November 30, 2026; double to $4/$20/$0.20
+    // (input/output/implicit cache read) on December 1, 2026. Revisit then.
+    inputCostPerMillion: 2,
+    outputCostPerMillion: 10,
+    cacheReadCostPerMillion: 0.1,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Gemini 3.8 models
   {
     provider: 'google',
