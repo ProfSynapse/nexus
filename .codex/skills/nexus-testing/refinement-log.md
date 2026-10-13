@@ -220,3 +220,6 @@ Exercised the Obsidian CLI against an isolated Linux profile. Synchronous eval a
 Used the existing loader suite with a fake clock to check production text updates and settling during both letter and dot phases. Both regressions failed against the previous whole-word implementation, then passed after restoring typing and cancelling the active timer on settle. No protocol change needed.
 
 - 2026-10-13: Bounded live checks must not require a thought summary on every simple prompt. Verified requested controls and any returned summary against transport output; no skill change needed.
+### 2026-10-13 — Whole-turn header activity
+
+Expanded the actual store/reducer lifecycle test to cover reasoning completion, tool execution and answer streaming before terminal settlement. The existing selector failed the new expectation before the fix. The mock does not decide phases. No protocol change needed.

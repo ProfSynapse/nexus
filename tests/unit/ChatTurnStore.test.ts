@@ -2,17 +2,33 @@ import { ChatTurnStore, selectReasoning } from '../../src/services/chat/ChatTurn
 
 // Real reducer/store; observers and input events do not supply computed phases.
 describe('ChatTurnStore ownership', () => {
-  it('separates reasoning, tool rounds, terminal outcome and save status', () => {
+  it('keeps the header active through reasoning boundaries, tool rounds and answer streaming', () => {
     const store = new ChatTurnStore();
     let turn = store.begin('conversation', 'message');
     expect(selectReasoning(turn).phase).toBe('waiting');
     turn = store.dispatch(turn, { type: 'reasoning.delta', text: 'plan' });
     expect(selectReasoning(turn).phase).toBe('thinking');
+    turn = store.dispatch(turn, { type: 'reasoning.completed' });
+    expect(turn.state.reasoning.complete).toBe(true);
+    expect(selectReasoning(turn).phase).toBe('thinking');
     turn = store.dispatch(turn, { type: 'response.completed', finishReason: 'tool_calls' });
-    expect(selectReasoning(turn).phase).toBe('settled');
+    expect(selectReasoning(turn).phase).toBe('thinking');
+    const call = { id: 'call', type: 'function' as const, function: { name: 'lookup', arguments: '{}' } };
+    turn = store.dispatch(turn, { type: 'tool.snapshot', calls: [call], ready: true });
+    expect(selectReasoning(turn).phase).toBe('thinking');
+    turn = store.dispatch(turn, { type: 'tool.execution.started', operationId: 'operation', call });
+    expect(selectReasoning(turn).phase).toBe('thinking');
+    turn = store.dispatch(turn, { type: 'tool.execution.completed', operationId: 'operation', call, success: true });
+    expect(selectReasoning(turn).phase).toBe('thinking');
     turn = store.dispatch(turn, { type: 'reasoning.delta', text: 'again' });
     expect(selectReasoning(turn).phase).toBe('thinking');
+    turn = store.dispatch(turn, { type: 'assistant.delta', text: 'answer' });
+    expect(selectReasoning(turn).phase).toBe('thinking');
+    turn = store.dispatch(turn, { type: 'response.completed', finishReason: 'stop' });
+    expect(selectReasoning(turn).phase).toBe('thinking');
+    expect(selectReasoning(turn).text).toBe('planagain');
     turn = store.dispatch(turn, { type: 'turn.completed' });
+    expect(selectReasoning(turn).phase).toBe('settled');
     turn = store.setSaveState(turn, 'failed', 'disk unavailable');
     expect(turn.state.phase).toBe('complete');
     expect(selectReasoning(turn).phase).toBe('settled');

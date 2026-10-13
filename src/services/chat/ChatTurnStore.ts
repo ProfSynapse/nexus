@@ -93,8 +93,9 @@ export function selectReasoning(turn: ChatTurnSnapshot): ReasoningDisplayState {
     generationId: turn.generationId,
     phase: state.phase === 'aborted' || state.phase === 'failed' ? 'interrupted'
       : state.terminalEvent ? 'settled'
-      : state.reasoning.openSegmentIndex !== undefined ? 'thinking'
-      : state.phase === 'pending' ? 'waiting' : 'settled',
+      // Header activity follows the whole turn; reasoning segments still close
+      // independently so tools and answer text never enter the disclosure body.
+      : state.phase === 'pending' ? 'waiting' : 'thinking',
     text: state.reasoning.text,
     segments: state.reasoning.segments,
   };
