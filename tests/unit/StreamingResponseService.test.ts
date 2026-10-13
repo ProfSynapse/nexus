@@ -509,3 +509,50 @@ describe('StreamingResponseService cost updates', () => {
     expect(assistant.metadata?.latestResponseUsage).toEqual(expect.objectContaining({ promptTokens: 2000, completionTokens: 50 }));
   });
 });
+
+// If a terminal save fails, the real service must not turn successful execution
+// into a failed turn. The repository fake controls only the write fault.
+describe('StreamingResponseService save outcome', () => {
+  it('keeps generation completed when the first save fails and the retry succeeds', async () => {
+    const svc = createService();
+    const deps = (svc as any).dependencies;
+    const conversation = makeConversation([makeMsg({ id: 'a1', role: 'assistant', state: 'draft' })]);
+    deps.conversationService.getConversation.mockImplementation(async () => structuredClone(conversation));
+    deps.conversationService.updateConversation.mockRejectedValueOnce(new Error('write failed')).mockResolvedValue(undefined);
+    deps.llmService.generateResponseStream.mockImplementation(async function* () {
+      yield { type: 'assistant.delta', text: 'answer' };
+      yield { type: 'turn.completed' };
+    });
+    const events: string[] = [];
+    for await (const chunk of svc.generateResponse('conv-test', 'hello', { messageId: 'a1' })) events.push(chunk.event.type);
+    expect(events).toEqual(['assistant.delta', 'turn.completed']);
+    expect(deps.conversationService.updateConversation).toHaveBeenCalledTimes(2);
+    expect(deps.llmService.generateResponseStream).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('StreamingResponseService unsaved response recovery', () => {
+  it('retains a completed answer after persistent save failure and retries only storage', async () => {
+    const svc = createService();
+    const deps = (svc as any).dependencies;
+    const conversation = makeConversation([makeMsg({ id: 'a1', role: 'assistant', state: 'draft' })]);
+    deps.conversationService.getConversation.mockImplementation(async () => structuredClone(conversation));
+    deps.conversationService.updateConversation.mockRejectedValue(new Error('disk unavailable'));
+    deps.llmService.generateResponseStream.mockImplementation(async function* () {
+      yield { type: 'reasoning.delta', text: 'plan' };
+      yield { type: 'assistant.delta', text: 'answer' };
+      yield { type: 'turn.completed' };
+    });
+    const events: string[] = [];
+    for await (const chunk of svc.generateResponse('conv-test', 'hello', { messageId: 'a1' })) events.push(chunk.event.type);
+    const turn = svc.turnStore.get('conv-test', 'a1')!;
+    expect(events).not.toContain('turn.failed');
+    expect(turn.state.content).toBe('answer');
+    expect(turn.saveState).toBe('failed');
+    deps.conversationService.updateConversation.mockResolvedValue(undefined);
+    await Promise.all([svc.retrySave(turn.generationId), svc.retrySave(turn.generationId)]);
+    expect(svc.turnStore.get('conv-test', 'a1')?.saveState).toBe('saved');
+    expect(deps.conversationService.updateConversation).toHaveBeenCalledTimes(3);
+    expect(deps.llmService.generateResponseStream).toHaveBeenCalledTimes(1);
+  });
+});

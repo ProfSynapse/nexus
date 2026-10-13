@@ -183,6 +183,7 @@ export class MessageManager {
       let aiMessageId: string | null = null;
 
       try {
+        this.chatService.turnStore?.assertConversationSaved(conversation.id);
         this.setLoading(true);
 
         // Record activity for Nexus lifecycle manager (resets idle timer)

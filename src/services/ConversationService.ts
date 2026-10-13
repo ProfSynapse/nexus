@@ -22,7 +22,7 @@ import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import type { ToolCallMessageHistoryOptions } from '../database/repositories/interfaces/IMessageRepository';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
-import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches, withPersistedMessageAccounting } from './helpers/ConversationTypeConverters';
+import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches, readPersistedMessageAccounting, withPersistedMessageAccounting } from './helpers/ConversationTypeConverters';
 
 type ConversationMessageResult = MessageData;
 
@@ -799,6 +799,46 @@ export class ConversationService {
    * Update an existing message in a conversation
    * Used for streaming updates, state changes, and adding tool results
    */
+  private chatWrites = new Map<string, Promise<void>>();
+
+  /** Serialize targeted chat writes; never infer deletions from a caller's snapshot. */
+  async updateChatMessage(conversationId: string, messageId: string, updates: Partial<import('../types/chat/ChatTypes').ConversationMessage>): Promise<void> {
+    const previous = this.chatWrites.get(conversationId) ?? Promise.resolve();
+    const write = previous.catch(() => undefined).then(() => withDualBackend(
+      this.storageAdapterOrGetter,
+      async adapter => {
+        const existing = adapter.getMessage ? await adapter.getMessage(messageId)
+          : (await this.getAllAdapterMessages(adapter, conversationId)).find(message => message.id === messageId);
+        if (!existing || ('conversationId' in existing && existing.conversationId !== conversationId)) throw new Error('Message no longer exists');
+        const accounting = readPersistedMessageAccounting(existing.metadata);
+        const metadata = withPersistedMessageAccounting({
+          ...accounting, ...updates,
+          metadata: updates.replaceMetadata ? updates.metadata : { ...existing.metadata, ...updates.metadata },
+        });
+        await adapter.updateMessage(conversationId, messageId, {
+          content: updates.content, state: updates.state, toolCalls: updates.toolCalls,
+          reasoning: updates.reasoning, reasoningSegments: updates.reasoningSegments,
+          activeAlternativeIndex: updates.activeAlternativeIndex,
+          metadata: metadata ?? null,
+          alternatives: updates.alternatives?.map(message => ({ id: message.id, content: message.content, timestamp: message.timestamp, state: message.state ?? 'complete', toolCalls: message.toolCalls, reasoning: message.reasoning, reasoningSegments: message.reasoningSegments, metadata: withPersistedMessageAccounting(message) })),
+        });
+      },
+      async () => {
+        const conversation = await this.fileSystem.readConversation(conversationId);
+        const message = conversation?.messages.find(candidate => candidate.id === messageId);
+        if (!conversation || !message) throw new Error('Message no longer exists');
+        const metadata = updates.replaceMetadata ? updates.metadata : { ...message.metadata, ...updates.metadata };
+        Object.assign(message, updates, { metadata });
+        delete message.replaceMetadata;
+        conversation.updated = Date.now();
+        await this.fileSystem.writeConversation(conversationId, conversation);
+        await this.indexManager.updateConversationInIndex(conversation);
+      }
+    ));
+    this.chatWrites.set(conversationId, write);
+    try { await write; } finally { if (this.chatWrites.get(conversationId) === write) this.chatWrites.delete(conversationId); }
+  }
+
   async updateMessage(
     conversationId: string,
     messageId: string,

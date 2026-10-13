@@ -50,18 +50,6 @@ export class StreamingController {
   /**
    * Show loading animation for AI response
    */
-  showAILoadingState(messageId: string): void {
-    const contentElement = this.resolveContentElement(messageId);
-    if (!contentElement) {
-      return;
-    }
-
-    contentElement.empty();
-    const loadingSpan = contentElement.createSpan({ cls: 'ai-loading' });
-    loadingSpan.appendText('Thinking');
-    loadingSpan.createSpan({ cls: 'dots', text: '...' });
-    this.startLoadingAnimation(contentElement);
-  }
 
   /**
    * Start streaming for a message (initialize streaming-markdown parser)
@@ -199,7 +187,7 @@ export class StreamingController {
   /**
    * Return the text run to write into: the trailing empty run when one is
    * already waiting, otherwise a fresh run appended after everything the turn
-   * has rendered so far (thinking blocks included) but above the working ticker.
+   * has rendered so far (reasoning disclosure included).
    */
   private openTextRun(contentElement: HTMLElement): HTMLElement | null {
     if (typeof contentElement.createDiv !== 'function') {
@@ -215,12 +203,7 @@ export class StreamingController {
     const run = createDiv();
     run.className = 'message-turn-text';
 
-    const ticker = contentElement.querySelector(':scope > .ai-loading-continuation');
-    if (ticker) {
-      contentElement.insertBefore(run, ticker);
-    } else {
-      contentElement.appendChild(run);
-    }
+    contentElement.appendChild(run);
 
     return run;
   }
@@ -229,9 +212,6 @@ export class StreamingController {
     const children = Array.from(contentElement.children ?? []);
     for (let index = children.length - 1; index >= 0; index--) {
       const child = children[index] as HTMLElement;
-      if (child.classList?.contains('ai-loading-continuation')) {
-        continue;
-      }
       if (child.classList?.contains('message-turn-text') && !child.textContent?.trim()) {
         return child;
       }

@@ -343,7 +343,7 @@ describe('AbortHandler', () => {
       expect(aiMessage?.isLoading).toBe(false);
       expect(aiMessage?.state).toBe('invalid');
       // Persists so a reload cannot resurrect the stuck loading state.
-      expect(mockChatService.updateConversation).toHaveBeenCalled();
+      expect(mockChatService.updateMessage).toHaveBeenCalled();
       expect(events.onStreamingUpdate).toHaveBeenCalledWith('msg_ai', '', true, false);
       expect(events.onConversationUpdated).toHaveBeenCalled();
     });
@@ -394,7 +394,7 @@ describe('AbortHandler', () => {
           })
         ]
       });
-      mockChatService.updateConversation.mockRejectedValueOnce(new Error('Storage unavailable'));
+      mockChatService.updateMessage.mockRejectedValueOnce(new Error('Storage unavailable'));
 
       await expect(handler.finalizeErroredPlaceholder(conversation, 'msg_ai'))
         .rejects.toThrow('Storage unavailable');
@@ -422,7 +422,7 @@ describe('AbortHandler', () => {
       const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
       // Completed message left untouched, no redundant save.
       expect(aiMessage?.state).toBe('complete');
-      expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+      expect(mockChatService.updateMessage).not.toHaveBeenCalled();
     });
 
     it('is a no-op when aiMessageId is null', async () => {
@@ -430,7 +430,7 @@ describe('AbortHandler', () => {
 
       await handler.finalizeErroredPlaceholder(conversation, null);
 
-      expect(mockChatService.updateConversation).not.toHaveBeenCalled();
+      expect(mockChatService.updateMessage).not.toHaveBeenCalled();
     });
   });
 });

@@ -419,14 +419,15 @@ describe('MessageBubble', () => {
 
   // These drive the real bubble's state transitions; the DOM mock only stores
   // properties. If a response boundary or repaint collapses thinking, they fail.
-  it('keeps thinking open across tool rounds and redraws until the turn ends', () => {
+  it('starts collapsed and preserves expansion across tool rounds and completion', () => {
     const message = createAssistantMessage({ content: '', state: 'streaming', reasoning: 'First thought' });
     const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
     activeBubble = bubble;
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
     const initial = block();
-    expect(initial.open).toBe(true);
+    expect(initial.open).toBe(false);
+    initial.open = true;
 
     bubble.updateReasoning('First thought', true);
     expect(block().open).toBe(true);
@@ -436,10 +437,10 @@ describe('MessageBubble', () => {
     bubble.updateReasoning('First thought\nNext thought', false);
     expect(block().open).toBe(true);
     bubble.updateWithNewMessage({ ...message, content: 'Done.', state: 'complete', isLoading: false });
-    expect(block().open).toBe(false);
+    expect(block().open).toBe(true);
   });
 
-  it('closes a partial Thinking block when a failed turn is reconciled', () => {
+  it('preserves expansion of a partial Thinking block when a failed turn is reconciled', () => {
     const message = createAssistantMessage({
       content: 'Partial answer', state: 'streaming', isLoading: false, reasoning: 'Partial thought'
     });
@@ -447,11 +448,12 @@ describe('MessageBubble', () => {
     activeBubble = bubble;
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
-    expect(block().open).toBe(true);
+    expect(block().open).toBe(false);
+    block().open = true;
 
     bubble.updateWithNewMessage({ ...message, state: 'invalid', isLoading: false });
 
-    expect(block().open).toBe(false);
+    expect(block().open).toBe(true);
   });
 
   it('preserves a manual collapse even when a token arrives before the native toggle event', () => {

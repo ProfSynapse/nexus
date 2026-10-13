@@ -302,10 +302,10 @@ function appendReasoningDelta(
 
 /** Close the run currently accepting deltas so the next one starts fresh. */
 function closeReasoningSegment(reasoning: ChatTurnReasoningState): ChatTurnReasoningState {
-  if (reasoning.openSegmentIndex === undefined) {
+  if (reasoning.openSegmentIndex === undefined && reasoning.complete) {
     return reasoning;
   }
-  const next = { ...reasoning };
+  const next = { ...reasoning, complete: true };
   delete next.openSegmentIndex;
   return next;
 }
@@ -325,6 +325,7 @@ function settle(
     ...state,
     phase,
     terminalEvent: event,
+    reasoning: closeReasoningSegment(state.reasoning),
   };
 }
 

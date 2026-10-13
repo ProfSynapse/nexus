@@ -45,6 +45,12 @@ export class AbortHandler {
     if (aiMessageIndex < 0) return;
 
     const aiMessage = conversation.messages[aiMessageIndex];
+    if (this.chatService.turnStore?.get(conversation.id, aiMessageId)?.state.terminalEvent) {
+      this.events.onStreamingUpdate(aiMessageId, aiMessage.content, true, false);
+      this.events.onConversationUpdated(conversation);
+      return;
+    }
+
     const completedToolCalls = filterCompletedToolCalls(aiMessage.toolCalls);
     const hasContent = !!(aiMessage.content?.trim() || completedToolCalls?.length || aiMessage.reasoning?.trim());
 
@@ -62,7 +68,8 @@ export class AbortHandler {
       aiMessage.state = 'aborted'; // Mark as aborted (will be included in context)
 
       // Save conversation with cleaned partial message
-      await this.chatService.updateConversation(conversation);
+      const saved = await this.chatService.updateConversation(conversation);
+      if (!saved.success) throw new Error(saved.error || 'Could not save aborted response');
 
       // Finalize streaming with partial content (stops animation, renders final content)
       this.events.onStreamingUpdate(aiMessageId, aiMessage.content, true, false);
@@ -78,7 +85,8 @@ export class AbortHandler {
       conversation.messages.splice(aiMessageIndex, 1);
 
       // Save conversation without the empty message
-      await this.chatService.updateConversation(conversation);
+      const saved = await this.chatService.updateConversation(conversation);
+      if (!saved.success) throw new Error(saved.error || 'Could not save aborted response');
 
       // Update UI to remove the empty message bubble
       this.events.onConversationUpdated(conversation);
@@ -129,6 +137,12 @@ export class AbortHandler {
     if (aiMessageIndex < 0) return;
 
     const aiMessage = conversation.messages[aiMessageIndex];
+    if (this.chatService.turnStore?.get(conversation.id, aiMessageId)?.state.terminalEvent) {
+      this.events.onStreamingUpdate(aiMessageId, aiMessage.content, true, false);
+      this.events.onConversationUpdated(conversation);
+      return;
+    }
+
 
     // A first token clears isLoading but leaves state='streaming'. That stream
     // still needs terminal UI cleanup. Persisted terminal states need no work.
@@ -144,6 +158,6 @@ export class AbortHandler {
     this.events.onConversationUpdated(conversation);
 
     // Persist so a reload doesn't resurrect the stuck loading state.
-    await this.chatService.updateConversation(conversation);
+    await this.chatService.updateMessage(conversation.id, aiMessageId, { state: 'invalid', content: aiMessage.content });
   }
 }

@@ -96,6 +96,12 @@ export class MessageAlternativeService {
     const userMessage = conversation.messages[aiMessageIndex - 1];
     if (!userMessage || userMessage.role !== 'user') return;
 
+    const previousTurn = this.chatService.turnStore?.get(conversation.id, aiMessageId);
+    if (previousTurn && previousTurn.saveState !== 'saved') {
+      this.events.onError('Save the current response before generating an alternative.');
+      return;
+    }
+
     // Mark retry as in progress
     this.retryInProgress.add(aiMessageId);
 
@@ -176,10 +182,9 @@ export class MessageAlternativeService {
       // Keep the historical conversation charge; the old response now lives in
       // the branch. Persist the cleared active charge before streaming so a new
       // cost update adds to that history rather than replacing the old charge.
-      const resetResult = await this.chatService.updateConversation(conversation);
-      if (resetResult?.success === false) {
-        throw new Error(resetResult.error || 'Failed to save cleared response before retry');
-      }
+      await this.chatService.updateMessage(conversation.id, aiMessageId, {
+        ...aiMessage, reasoning: '', reasoningSegments: [], toolCalls: [],
+      });
 
       // 3. Fire UI update so the user sees the cleared message with loading state
       this.events.onConversationUpdated(conversation);
@@ -210,6 +215,13 @@ export class MessageAlternativeService {
       this.events.onConversationUpdated(conversation);
 
     } catch (error) {
+      const terminal = this.chatService.turnStore?.get(conversation.id, aiMessageId);
+      if (terminal?.state.terminalEvent && terminal.generationId !== previousTurn?.generationId) {
+        this.events.onStreamingUpdate(aiMessageId, terminal.state.content, true, false);
+        this.events.onConversationUpdated(conversation);
+        if (terminal.state.phase === 'failed') this.events.onError(terminal.state.error?.message || 'Failed to generate alternative response');
+        return;
+      }
       if (error instanceof Error && error.name === 'AbortError') {
         // On abort: keep whatever partial content was streamed.
         // The original response is safe in the branch.
@@ -223,7 +235,7 @@ export class MessageAlternativeService {
             abortedMessage.isLoading = false;
             abortedMessage.state = 'aborted';
 
-            await this.chatService.updateConversation(conversation);
+            await this.chatService.updateMessage(conversation.id, aiMessageId, abortedMessage);
             this.events.onStreamingUpdate(aiMessageId, abortedMessage.content, true, false);
           } else {
             // If nothing streamed yet, restore the original visible response
@@ -238,7 +250,7 @@ export class MessageAlternativeService {
               originalAccounting
             );
 
-            await this.chatService.updateConversation(conversation);
+            await this.chatService.updateMessage(conversation.id, aiMessageId, abortedMessage);
           }
         }
 
@@ -255,7 +267,7 @@ export class MessageAlternativeService {
             originalReasoningSegments,
             originalAccounting
           );
-          await this.chatService.updateConversation(conversation);
+          await this.chatService.updateMessage(conversation.id, aiMessageId, failedMessage);
           this.events.onConversationUpdated(conversation);
         }
 

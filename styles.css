@@ -9837,3 +9837,69 @@ body.is-mobile .nexus-task-board-shell {
 body.is-mobile .nexus-instruction-filters .setting-item { flex-basis: 100%; }
 body.is-mobile .nexus-instruction-resource button,
 body.is-mobile .nexus-workflow-attachment button { min-height: 44px; }
+
+/* Unified reasoning disclosure: runtime activity and local reading intent are independent. */
+.message-reasoning {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 0;
+  overflow: hidden;
+}
+.message-reasoning[hidden], .reasoning-catch-up[hidden] { display: none; }
+.message-reasoning-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  min-height: 48px;
+  padding: var(--space-s) var(--space-m);
+  font-style: normal;
+}
+.message-reasoning-summary:hover { background: var(--background-modifier-hover); }
+.message-reasoning-summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -3px; }
+.message-reasoning .thinking-loader { flex: 1; min-width: 0; font-style: normal; align-items: center; }
+.message-reasoning .thinking-loader:not(.is-settled) .thinking-loader-text {
+  background: linear-gradient(110deg, var(--text-muted) 0%, var(--text-muted) 39%, var(--text-normal) 49%, var(--text-muted) 59%, var(--text-muted) 100%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: nexus-reasoning-sweep 3.4s ease-in-out infinite;
+}
+.message-reasoning .thinking-loader:not(.is-settled) .thinking-loader-icon { animation: nexus-reasoning-pulse 2.8s ease-in-out infinite; }
+.reasoning-chevron { display: inline-flex; transition: transform 180ms ease; }
+.reasoning-chevron svg { width: 16px; height: 16px; }
+.message-reasoning[open] .reasoning-chevron { transform: rotate(90deg); }
+.reasoning-panel { position: relative; padding: 0 var(--space-m) var(--space-m); }
+.message-reasoning-content {
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  border-top: 1px solid var(--background-modifier-border);
+  padding: var(--space-m) var(--space-s) 52px 0;
+  line-height: 1.65;
+  opacity: 1;
+  scrollbar-width: thin;
+}
+.reasoning-catch-up {
+  position: absolute;
+  right: var(--space-m);
+  bottom: var(--space-m);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  background: var(--background-primary-alt);
+  color: var(--text-normal);
+}
+@keyframes nexus-reasoning-sweep { 0%, 12% { background-position: 100% 0; } 82%, 100% { background-position: 0% 0; } }
+@keyframes nexus-reasoning-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .message-reasoning .thinking-loader:not(.is-settled) .thinking-loader-text { animation: none; background: none; color: var(--text-muted); -webkit-text-fill-color: currentColor; }
+  .message-reasoning .thinking-loader:not(.is-settled) .thinking-loader-icon { animation: none; }
+  .reasoning-chevron { transition: none; }
+}

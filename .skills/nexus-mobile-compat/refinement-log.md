@@ -98,3 +98,7 @@ skill.
 ## 2026-10-13 — Setup detection
 
 - No change: desktop config detection reused lazy desktopRequire calls behind capability guards. The production build passed the mobile import reachability check.
+
+## 2026-10-13 — thinking disclosure implementation
+
+Runtime store and disclosure introduce no packages or Node imports. Production build reachability gate passed. No protocol correction; no change.

@@ -1,3 +1,5 @@
+import { ReasoningDisclosure } from './ReasoningDisclosure';
+import { selectReasoning, type ChatTurnSnapshot, type ReasoningDisplayState } from '../../../services/chat/ChatTurnStore';
 /**
  * MessageBubble - Individual message bubble component
  * Location: /src/ui/chat/components/MessageBubble.ts
@@ -21,30 +23,20 @@ import { MessageBubbleBranchNavigatorBinder } from './helpers/MessageBubbleBranc
 import { MessageBubbleImageRenderer } from './helpers/MessageBubbleImageRenderer';
 import { MessageBubbleStateResolver } from './helpers/MessageBubbleStateResolver';
 import { ReasoningSegmentSplitter } from './helpers/ReasoningSegmentSplitter';
-import { ThinkingLoader } from './ThinkingLoader';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
   private loadingInterval: number | null = null;
   private copyFeedbackTimeout: number | null = null;
-  private thinkingLoader: ThinkingLoader | null = null;
-  // The in-bubble "working" ticker (pre-text wait, tool-first turns, and the
-  // silent tool-execution gaps mid-stream). `workingTickerActive` is the intent
-  // flag that survives re-renders so a mid-stream reconcile re-applies the
-  // ticker instead of dropping it; `workingTickerEl` is its DOM wrapper.
-  private workingTickerActive = false;
-  private workingTickerEl: HTMLElement | null = null;
   private branchNavigatorBinder: MessageBubbleBranchNavigatorBinder;
   private imageRenderer: MessageBubbleImageRenderer;
   private textBubbleElement: HTMLElement | null = null;
   private imageBubbleElement: HTMLElement | null = null;
-  // Open/closed state we last applied to each thinking block, keyed by segment
-  // index. The toggle handler compares against it to tell a user's click apart
-  // from our own auto-collapse; once they have taken control of a block their
-  // choice is recorded and wins over auto-collapse, re-renders included.
-  private reasoningAutoState = new Map<number, boolean>();
-  private reasoningUserState = new Map<number, boolean>();
-  private reasoningBlock: HTMLDetailsElement | null = null;
+  private disclosure: ReasoningDisclosure | null = null;
+  private reasoningView?: ReasoningDisplayState;
+  getRuntimeSnapshot?: () => ChatTurnSnapshot | undefined;
+  onReasoningReadHold: (hold: boolean) => void = () => undefined;
+
 
   constructor(
     private message: ConversationMessage,
@@ -98,9 +90,6 @@ export class MessageBubble extends Component {
 
       this.element = wrapper;
 
-      if (this.message.isLoading && !activeContent.trim()) {
-        this.ensureWorkingTicker();
-      }
 
       return wrapper;
     }
@@ -121,8 +110,6 @@ export class MessageBubble extends Component {
     // Message body. `.message-content` holds the turn in the order the model
     // produced it: one "Thinking" block for the assistant turn.
     // The "working" ticker for empty assistant streaming is attached by
-    // createElement() via ensureWorkingTicker() so it sits inside this
-    // container (kept attached even when there is no text).
     const content = bubble.createDiv('message-content');
     this.renderBody(content, messageContent).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
@@ -209,6 +196,7 @@ export class MessageBubble extends Component {
     // thinking is the working ticker's job, not this one's.
     const hasReasoning = !!state.activeReasoning?.trim();
     if (this.message.isLoading && this.message.role === 'assistant' && !content.trim() && !hasReasoning) {
+      this.syncReasoningBlock(container, 0, '', false);
       return;
     }
 
@@ -375,151 +363,36 @@ export class MessageBubble extends Component {
       this.loadingInterval = null;
     }
 
-    // Terminal stop: clear the working ticker and its intent flag so it is not
-    // re-applied on subsequent re-renders.
-    this.removeWorkingTicker();
   }
 
-  /**
-   * Show the in-bubble "working" ticker (idempotent). Lives inside the bubble's
-   * `.message-content` so it stays attached to the message — sitting after the
-   * streamed text during a tool gap, or filling an otherwise-empty bubble on a
-   * tool-first turn. Safe to call repeatedly; an already-mounted ticker keeps
-   * its word animation rather than restarting.
-   */
-  ensureWorkingTicker(): void {
-    this.workingTickerActive = true;
-    if (!this.element) return;
-    if (this.workingTickerEl && this.element.contains(this.workingTickerEl)) return;
-
-    const contentElement = this.element.querySelector('.message-content');
-    if (!this.isHTMLElement(contentElement)) return;
-
-    this.workingTickerEl = contentElement.createDiv('ai-loading-continuation');
-    this.startThinkingLoader(this.workingTickerEl);
+  private syncReasoningBlock(container: HTMLElement, _segmentIndex: number, text: string, _open: boolean): HTMLDetailsElement | null {
+    const runtime = (this.message.activeAlternativeIndex ?? 0) === 0 ? this.getRuntimeSnapshot?.() : undefined;
+    const state = runtime ? selectReasoning(runtime) : ((this.message.state === 'streaming' || this.message.isLoading) ? this.reasoningView : undefined) ?? {
+      phase: this.message.isLoading ? 'waiting' as const : 'settled' as const,
+      text, segments: this.message.reasoningSegments ?? [],
+    };
+    if (runtime) text = ReasoningSegmentSplitter.combine(state.segments, state.text);
+    if (!text.trim() && state.phase !== 'waiting' && state.phase !== 'thinking') return null;
+    if (!this.disclosure) this.disclosure = this.addChild(new ReasoningDisclosure(container, hold => this.onReasoningReadHold(hold)));
+    else this.disclosure.attach(container);
+    this.disclosure.update({ ...state, text });
+    return this.disclosure.element;
   }
 
-  /** Hide the in-bubble working ticker and clear its intent flag. */
-  removeWorkingTicker(): void {
-    this.workingTickerActive = false;
-    this.clearWorkingTickerEl();
-  }
-
-  /**
-   * Tear down the ticker DOM + timers WITHOUT clearing the intent flag, so a
-   * re-render can re-apply it (see updateWithNewMessage).
-   */
-  private clearWorkingTickerEl(): void {
-    if (this.thinkingLoader) {
-      this.thinkingLoader.stop();
-      this.thinkingLoader.unload();
-      this.thinkingLoader = null;
-    }
-    if (this.workingTickerEl) {
-      this.workingTickerEl.remove();
-      this.workingTickerEl = null;
-    }
-  }
-
-  /**
-   * Create or update the turn's collapsible "Thinking" block.
-   */
-  private syncReasoningBlock(
-    container: HTMLElement,
-    segmentIndex: number,
-    text: string,
-    open: boolean
-  ): HTMLDetailsElement | null {
-    if (!text || !text.trim()) {
-      return null;
-    }
-
-    this.captureReasoningChoice();
-    let details = this.findReasoningBlock(container, segmentIndex) ?? this.reasoningBlock;
-
-    if (!details) {
-      // Avoid `instanceof HTMLDetailsElement` (unreliable across Obsidian popout
-      // windows, like the file's isHTMLElement helper) — match on tagName instead.
-      details = createEl('details');
-      details.addClass('message-reasoning');
-      details.setAttribute('data-reasoning-index', String(segmentIndex));
-      details.createEl('summary', { cls: 'message-reasoning-summary', text: 'Thinking' });
-      details.createDiv('message-reasoning-content');
-
-      const block = details;
-      this.registerDomEvent(details, 'toggle', () => {
-        // `toggle` fires for our own auto-collapse too, and asynchronously, so
-        // compare against the state we last applied rather than assuming a click.
-        if (block === this.reasoningBlock) this.captureReasoningChoice();
-      });
-      this.reasoningBlock = block;
-    }
-
-    if (details.parentElement !== container) {
-      if (this.workingTickerEl && this.workingTickerEl.parentElement === container) {
-        container.insertBefore(details, this.workingTickerEl);
-      } else {
-        container.appendChild(details);
-      }
-    }
-
-    const body = details.querySelector('.message-reasoning-content');
-    if (this.isHTMLElement(body) && body.textContent !== text) {
-      body.textContent = text;
-    }
-
-    const desired = this.reasoningUserState.get(segmentIndex) ?? open;
-    this.reasoningAutoState.set(segmentIndex, desired);
-    details.open = desired;
-
-    return details;
-  }
-
-  /** Native details toggles are queued; capture a click before the next token
-   * or repaint can overwrite it, even if its toggle event has not fired yet. */
-  private captureReasoningChoice(): void {
-    const applied = this.reasoningAutoState.get(0);
-    if (this.reasoningBlock && applied !== undefined && this.reasoningBlock.open !== applied) {
-      this.reasoningUserState.set(0, this.reasoningBlock.open);
-    }
-  }
-
-  private findReasoningBlock(container: HTMLElement, segmentIndex: number): HTMLDetailsElement | null {
-    const existing = container.querySelector(
-      `:scope > .message-reasoning[data-reasoning-index="${segmentIndex}"]`
-    );
-    return this.isHTMLElement(existing) && existing.tagName === 'DETAILS'
-      ? existing as HTMLDetailsElement
-      : null;
-  }
-
-  /**
-   * Live update during streaming: extend the existing turn-level block.
-   *
-   * Returns true only when the first block opens, which is the caller's cue to
-   * seal any text run above it. Later tool rounds update that same block.
-   */
-  updateReasoning(
-    reasoningText: string,
-    isComplete: boolean,
-    segments?: ReasoningSegment[]
-  ): boolean {
+  updateReasoning(reasoningText: string, isComplete: boolean, segments?: ReasoningSegment[], displayState?: ReasoningDisplayState): boolean {
     if (!this.element) return false;
     const container = this.element.querySelector('.message-bubble .message-content');
     if (!this.isHTMLElement(container)) return false;
-
-    // Reflect the incoming reasoning on the in-memory message so a later
-    // re-render (updateContent, reconcile) rebuilds the same layout.
+    const firstAnchor = !this.message.reasoning?.trim() && !!reasoningText.trim();
     this.message = { ...this.message, reasoning: reasoningText, reasoningSegments: segments };
-
-    const displayText = ReasoningSegmentSplitter.combine(segments, reasoningText);
-    const isNewBlock = this.findReasoningBlock(container, 0) === null;
-    const turnActive = this.message.state === 'streaming' || !!this.message.isLoading;
-    const block = this.syncReasoningBlock(container, 0, displayText, turnActive || !isComplete);
-
-    // Only report a block that actually rendered: a segment whose first delta is
-    // whitespace must not seal the text run above an element that is not there.
-    return isNewBlock && block !== null;
+    this.reasoningView = displayState ?? { phase: isComplete ? 'settled' : 'thinking', text: reasoningText, segments: segments ?? [] };
+    const text = ReasoningSegmentSplitter.combine(segments, reasoningText);
+    const block = this.syncReasoningBlock(container, 0, text, false);
+    // A waiting disclosure may predate answer text. Its first real reasoning
+    // anchor belongs after that text; later rounds retain the same position.
+    if (firstAnchor && block && (segments?.[0]?.contentOffset ?? 0) > 0) container.appendChild(block);
+    if (!block && this.disclosure) this.disclosure.update(this.reasoningView);
+    return firstAnchor && block !== null;
   }
 
   /**
@@ -533,6 +406,7 @@ export class MessageBubble extends Component {
 
     this.stopLoadingAnimation();
 
+    this.disclosure?.prepareDetach();
     contentElement.empty();
     // The message the bubble holds carries the turn's reasoning segments (kept
     // current by updateReasoning), so the rebuild reproduces the interleaving.
@@ -551,24 +425,19 @@ export class MessageBubble extends Component {
    */
   updateWithNewMessage(newMessage: ConversationMessage): void {
     const nextState = MessageBubbleStateResolver.resolve(newMessage);
-    this.captureReasoningChoice();
     // A retry/alternative is a different disclosure, even when the outer bubble
     // is reused. Don't apply the previous answer's manual choice to it.
     if ((newMessage.activeAlternativeIndex ?? 0) !== (this.message.activeAlternativeIndex ?? 0) ||
-        !nextState.activeReasoning?.trim() && !nextState.activeReasoningSegments?.length) {
-      this.reasoningAutoState.clear();
-      this.reasoningUserState.clear();
-      this.reasoningBlock = null;
+        (newMessage.isLoading && !this.message.isLoading)) {
+      if (this.disclosure) this.removeChild(this.disclosure);
+      this.disclosure = null;
+      this.reasoningView = undefined;
     }
 
-    // Clear the ticker DOM before re-render but PRESERVE the intent flag, so a
-    // mid-stream reconcile (e.g. LM Studio persisting a Responses API id during
-    // a tool gap) re-applies the ticker below instead of dropping it.
     if (this.loadingInterval) {
       window.clearInterval(this.loadingInterval);
       this.loadingInterval = null;
     }
-    this.clearWorkingTickerEl();
     this.message = newMessage;
 
     this.imageRenderer.clear();
@@ -587,6 +456,7 @@ export class MessageBubble extends Component {
       return;
     }
 
+    this.disclosure?.prepareDetach();
     contentElement.empty();
 
     // Thinking blocks live inside .message-content, so the rebuild below
@@ -598,17 +468,14 @@ export class MessageBubble extends Component {
 
     if (this.message.role === 'assistant' && this.isHTMLElement(this.element)) {
       this.imageRenderer.renderLoadedToolResults(nextState.activeToolCalls, this.element);
-      if (this.textBubbleElement && this.textBubbleElement.parentElement === this.element) {
+      if (this.textBubbleElement && this.textBubbleElement.parentElement === this.element && this.element.lastElementChild !== this.textBubbleElement) {
+        this.disclosure?.prepareDetach();
         this.element.appendChild(this.textBubbleElement);
+        this.disclosure?.restorePosition();
       }
     }
 
-    // Re-apply the working ticker if the turn is still mid-flight: either the
-    // message is still loading (pre-text / tool-first) or the gap controller had
-    // it showing when this reconcile fired.
-    if (newMessage.role === 'assistant' && (newMessage.isLoading || this.workingTickerActive)) {
-      this.ensureWorkingTicker();
-    }
+
   }
 
   /**
@@ -633,18 +500,6 @@ export class MessageBubble extends Component {
     } else {
       this.element = nextElement;
     }
-  }
-
-  private startThinkingLoader(container: HTMLElement): void {
-    if (this.thinkingLoader) {
-      this.thinkingLoader.stop();
-      this.thinkingLoader.unload();
-    }
-
-    const loader = new ThinkingLoader();
-    this.thinkingLoader = loader;
-    this.addChild(loader);
-    loader.start(container);
   }
 
   private isHTMLElement(value: Element | null | undefined): value is HTMLElement {
@@ -706,9 +561,7 @@ export class MessageBubble extends Component {
     this.imageBubbleElement = null;
 
     // Call Component.unload() to release registerDomEvent and registerInterval handlers.
-    this.reasoningBlock = null;
-    this.reasoningAutoState.clear();
-    this.reasoningUserState.clear();
+    this.disclosure = null;
     // Guard against double-unload since unload() is not idempotent.
     if (!this.isUnloaded) {
       this.isUnloaded = true;

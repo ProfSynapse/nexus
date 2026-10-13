@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus · Thinking disclosure</title>
+  <link rel="stylesheet" href="thinking-disclosure.css">
+  <script src="thinking-disclosure.js" defer></script>
+</head>
+<body class="theme-dark">
+  <main class="mock-page">
+    <header class="mock-intro">
+      <span class="mock-eyebrow">NEXUS / INTERACTION STUDY 02</span>
+      <h1>A little personality.<br>A clear way in.</h1>
+      <p>One animated status. Click anywhere on the row to unfold the thinking.</p>
+    </header>
+    <div class="mock-toolbar" aria-label="Mockup controls">
+      <label>State <select id="mock-state">
+        <option value="live">Thinking in progress</option>
+        <option value="waiting">Waiting for thinking</option>
+        <option value="done">After the response</option>
+        <option value="stopped">Interrupted</option>
+        <option value="unavailable">No shared thinking</option>
+      </select></label>
+      <button id="mock-replay">Replay sample</button>
+      <div class="mock-toolbar-spacer"></div>
+      <button id="mock-phone" aria-pressed="false">Phone width</button>
+      <button id="mock-theme" aria-pressed="false">Light theme</button>
+    </div>
+    <div class="mock-layout">
+      <aside class="mock-context">
+        <h2>Today</h2>
+        <div class="mock-before">
+          <div class="mock-old-reasoning">Thinking</div>
+          <div class="mock-old-loader"><span data-icon="infinity" aria-hidden="true"></span><i>Contemplating...</i></div>
+        </div>
+        <p>Two separate elements.<br>The disclosure arrow is hidden.</p>
+        <h2>Proposed</h2>
+        <ol>
+          <li><strong>Keep the character.</strong> A pulsing icon and a soft silver sweep across rotating words.</li>
+          <li><strong>Keep it simple.</strong> One accordion chevron. Just thinking; tool activity stays in the status bar.</li>
+          <li><strong>Follow your pace.</strong> Stay with the stream at the bottom. Scroll up to read; the down arrow brings you back.</li>
+        </ol>
+        <p class="mock-caption">Proposed behavior, not implemented.<br>All model text and streaming are simulated. Surrounding chat is context only.</p>
+      </aside>
+      <section class="mock-stage" aria-label="Proposed Nexus chat">
+        <div class="mock-window">
+          <div class="mock-window-header"><span data-icon="sparkles" aria-hidden="true"></span><strong>Nexus</strong><span class="mock-window-context">Thinking disclosure</span></div>
+          <div class="mock-chat">
+            <div class="mock-user">Help me connect the ideas in my project notes.</div>
+            <div class="mock-assistant-label">Nexus</div>
+            <div class="message-content">
+              <section class="message-reasoning" data-state="live">
+                <button class="message-reasoning-summary" id="thinking-toggle" aria-expanded="false" aria-controls="thinking-panel" aria-label="Thinking">
+                  <span class="thinking-loader" aria-hidden="true">
+                    <span class="thinking-loader-icon" data-icon="infinity"></span>
+                    <span class="thinking-loader-text">Contemplating<span class="thinking-loader-dots">…</span></span>
+                  </span>
+                  <span class="message-reasoning-chevron" data-icon="chevron-right" aria-hidden="true"></span>
+                </button>
+                <div id="thinking-panel" class="message-reasoning-panel" hidden>
+                  <div class="message-reasoning-content" tabindex="0" aria-label="Thinking text, scroll to read" id="thinking-content"></div>
+                  <button class="message-reasoning-follow" id="thinking-follow" aria-label="Jump to latest thinking" title="Jump to latest thinking" hidden><span data-icon="arrow-down" aria-hidden="true"></span></button>
+                </div>
+              </section>
+              <p class="message-turn-text" id="mock-answer" hidden>The strongest connection is how your project notes turn broad ideas into small, testable next steps.</p>
+            </div>
+          </div>
+          <div class="mock-composer" aria-hidden="true"><span>Message Nexus…</span><span class="mock-stop" data-icon="square"></span></div>
+          <div class="mock-model">Nexus chat · sample conversation</div>
+        </div>
+        <div class="mock-caption mock-state-note" id="mock-note">Starts folded. Open it, then watch sample thinking arrive. The click target stays still as words change.</div>
+      </section>
+    </div>
+    <footer class="mock-footer">DRAFT · 13 OCT 2026 <span>Try the whole row, keyboard Tab + Enter, and phone width.</span></footer>
+  </main>
+</body>
+</html>

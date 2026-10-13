@@ -52,7 +52,7 @@ describe('ChatView — tool ticker turn brackets (source guard)', () => {
     // dies after the first completed turn — see the pipeline integration test
     // "second turn — beginTurn() re-arms the pipeline".
     const loadingBranch = loadingHandler.split(/\belse\b/)[0];
-    expect(loadingBranch).toContain('workingIndicatorController.begin()');
+    expect(source).not.toContain('workingIndicatorController');
     expect(loadingBranch).toContain('toolEventCoordinator.beginTurn()');
   });
 

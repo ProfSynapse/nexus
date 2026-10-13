@@ -1,3 +1,4 @@
+import { ChatTurnStore, selectReasoning, projectTurn, type ReasoningDisplayState } from '../../../services/chat/ChatTurnStore';
 /**
  * MessageDisplay - Main chat message display area
  *
@@ -29,6 +30,17 @@ export class MessageDisplay {
    * someone away from what they scrolled back to read.
    */
   private stickToBottom = true;
+  private reasoningReadHolds = new Set<string>();
+  private turnStore?: ChatTurnStore;
+  connectRuntime(store: ChatTurnStore, onAnchor: (messageId: string) => void): () => void {
+    this.turnStore = store;
+    return store.subscribe(turn => {
+      if (turn.conversationId !== this.currentConversationId) return;
+      const state = selectReasoning(turn);
+      if (this.updateMessageReasoning(turn.messageId, state.text, state.phase === 'settled' || state.phase === 'interrupted', state.segments, state)) onAnchor(turn.messageId);
+    });
+  }
+
   private lastScrollTop: number | null = null;
   private pendingScrollFrame: number | null = null;
   private messageResizeObserver: ResizeObserver | null = null;
@@ -94,6 +106,10 @@ export class MessageDisplay {
    * Falls back to full render when switching to a different conversation.
    */
   setConversation(conversation: ConversationData): void {
+    if (this.turnStore) conversation = { ...conversation, messages: conversation.messages.map(message => {
+      const turn = this.turnStore?.get(conversation.id, message.id);
+      return turn && turn.saveState !== 'saved' && !(message.activeAlternativeIndex ?? 0) ? projectTurn(message, turn) : message;
+    }) };
     const previousConversationId = this.currentConversationId;
     this.conversation = conversation;
     this.currentConversationId = conversation.id;
@@ -254,11 +270,12 @@ export class MessageDisplay {
     messageId: string,
     reasoningText: string,
     isComplete: boolean,
-    segments?: ReasoningSegment[]
+    segments?: ReasoningSegment[],
+    state?: ReasoningDisplayState
   ): boolean {
     const messageBubble = this.messageBubbles.get(messageId);
     const openedNewBlock = messageBubble
-      ? messageBubble.updateReasoning(reasoningText, isComplete, segments)
+      ? messageBubble.updateReasoning(reasoningText, isComplete, segments, state)
       : false;
     this.followNewOutput();
     return openedNewBlock;
@@ -270,7 +287,7 @@ export class MessageDisplay {
    * force a layout read per chunk.
    */
   followNewOutput(): void {
-    if (!this.stickToBottom || this.pendingScrollFrame !== null) {
+    if (!this.stickToBottom || this.reasoningReadHolds.size > 0 || this.pendingScrollFrame !== null) {
       return;
     }
 
@@ -337,6 +354,7 @@ export class MessageDisplay {
       bubble.cleanup();
     }
     this.messageBubbles.clear();
+    this.reasoningReadHolds.clear();
 
     this.container.empty();
     this.container.addClass('message-display');
@@ -404,26 +422,6 @@ export class MessageDisplay {
       this.transientEventRow.remove();
       this.transientEventRow = null;
     }
-  }
-
-  /**
-   * Show the "still working" ticker inside the given message's bubble. Rendered
-   * in-bubble (not a detached row) so it stays visually attached to the message
-   * — after the streamed text during a tool gap, or filling an otherwise-empty
-   * bubble on a tool-first turn. The bubble re-applies it across reconciliation.
-   */
-  showWorkingIndicator(messageId: string): void {
-    const bubble = this.messageBubbles.get(messageId);
-    if (!bubble) {
-      return;
-    }
-    bubble.ensureWorkingTicker();
-    this.scrollToBottom();
-  }
-
-  /** Remove the in-bubble working ticker for the given message. */
-  hideWorkingIndicator(messageId: string): void {
-    this.messageBubbles.get(messageId)?.removeWorkingTicker();
   }
 
   /**
@@ -546,8 +544,17 @@ export class MessageDisplay {
       this.onMessageAlternativeChanged ? (messageId: string, alternativeIndex: number) => this.handleMessageAlternativeChanged(messageId, alternativeIndex) : undefined
     );
 
+    bubble.load();
     this.messageBubbles.set(message.id, bubble);
 
+    bubble.getRuntimeSnapshot = () => {
+      const turn = this.turnStore?.get(message.conversationId, message.id);
+      return turn?.saveState === 'saved' ? undefined : turn;
+    };
+    bubble.onReasoningReadHold = hold => {
+      if (hold) this.reasoningReadHolds.add(message.id);
+      else this.reasoningReadHolds.delete(message.id);
+    };
     const bubbleEl = bubble.createElement();
 
     return bubbleEl;
@@ -636,7 +643,7 @@ export class MessageDisplay {
    * Scroll to bottom of messages
    */
   private scrollToBottom(force = false): void {
-    if (!force && !this.stickToBottom) {
+    if (this.reasoningReadHolds.size > 0 || (!force && !this.stickToBottom)) {
       return;
     }
     const messagesContainer = this.container.querySelector('.messages-container');
@@ -689,6 +696,7 @@ export class MessageDisplay {
       bubble.cleanup();
     }
     this.messageBubbles.clear();
+    this.reasoningReadHolds.clear();
     this.clearTransientEventRow();
     this.currentConversationId = null;
     this.lastScrollTop = null;

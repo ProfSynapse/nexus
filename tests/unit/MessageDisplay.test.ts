@@ -78,6 +78,8 @@ jest.mock('../../src/ui/chat/components/MessageBubble', () => {
   return {
     MessageBubble: jest.fn().mockImplementation((message: MessageLike) => ({
       message,
+      load: jest.fn(),
+      updateReasoning: jest.fn(() => false),
       cleanup: mockCleanup,
       getElement: mockGetElement,
       updateWithNewMessage: mockUpdateWithNewMessage,

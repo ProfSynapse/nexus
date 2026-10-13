@@ -29,6 +29,7 @@ export interface CostData {
 
 /** Conversation service interface for cost tracking */
 interface ConversationServiceLike {
+  updateChatMessage?: (conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>) => Promise<void>;
   getConversation: (id: string) => Promise<ConversationData | null>;
   updateConversation: (id: string, updates: Partial<ConversationData>) => Promise<void>;
 }
@@ -97,10 +98,17 @@ export class CostTrackingService {
         };
       }
 
+      if (this.conversationService.updateChatMessage) {
+        await this.conversationService.updateChatMessage(conversationId, messageId, {
+          usage: message.usage, cost: message.cost, metadata: { billingUsageAggregated: true },
+        });
+        if (cost) await this.conversationService.updateConversation(conversation.id, { cost: conversation.cost });
+      } else {
       await this.conversationService.updateConversation(conversation.id, {
         messages: conversation.messages,
         ...(cost ? { cost: conversation.cost } : {}),
       });
+      }
 
     } catch (error) {
       console.error('[CostTrackingService] Failed to update message with async usage:', error);

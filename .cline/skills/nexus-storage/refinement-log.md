@@ -149,3 +149,7 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-10-13 | A working Anthropic runtime key differed from saved settings with secure storage disabled. Normal save restored equality and HTTP 200, but reload reproduced HTTP 401. Version-only save traces and physical-file watches matched incoming Obsidian Sync downloads; the user confirmed a second computer was open. The workflow scheduler saved its entire stale settings snapshot every minute. | Added settings-specific diagnosis and field-scoped background persistence guidance to failure-modes.md; credentials do not use the JSONL/cache rebuild path.
 
 - 2026-10-13 follow-up: Added native external-settings callback and independent-owner/restart verification guidance. Obsidian forum report https://forum.obsidian.md/t/obsidian-sync-and-plugin-preferences-being-overwritten/46655 describes the same stale-memory overwrite; https://docs.obsidian.md/Reference/Manifest documents the folder/ID requirement for the callback. The patch keeps background checkpoint writes field-scoped and merges only local user edits; it does not claim a cross-device transaction.
+
+## 2026-10-13 — thinking disclosure implementation
+
+Targeted chat message writes continue through the existing adapter/repository event path; no schema or event-type additions. Missing targets fail explicitly. Existing storage guidance applied without a protocol correction; no change.

@@ -33,7 +33,6 @@ import { ContextTracker } from './services/ContextTracker';
 // Controllers
 import { UIStateController, UIStateControllerEvents } from './controllers/UIStateController';
 import { StreamingController } from './controllers/StreamingController';
-import { WorkingIndicatorController } from './controllers/WorkingIndicatorController';
 import { NexusLoadingController } from './controllers/NexusLoadingController';
 import { SubagentController } from './controllers/SubagentController';
 import { ChatLiveVoiceController } from './controllers/ChatLiveVoiceController';
@@ -94,7 +93,6 @@ export class ChatView extends ItemView {
   // Controllers and Coordinators
   private uiStateController!: UIStateController;
   private streamingController!: StreamingController;
-  private workingIndicatorController!: WorkingIndicatorController;
   private nexusLoadingController!: NexusLoadingController;
   private liveVoiceController: ChatLiveVoiceController | null = null;
   private toolCallStateManager!: ToolCallStateManager;
@@ -563,7 +561,6 @@ export class ChatView extends ItemView {
       onLoadingStateChanged: (loading) => this.handleLoadingStateChanged(loading),
       onError: (message) => this.uiStateController.showError(message),
       onToolCallsDetected: (messageId, toolCalls) => {
-        this.workingIndicatorController.noteToolActivity(messageId);
         this.toolEventCoordinator.handleToolCallsDetected(
           messageId,
           toolCalls as unknown as DetectedToolCalls
@@ -572,7 +569,6 @@ export class ChatView extends ItemView {
       onToolLimitReached: (completedToolCalls, abortSignal) =>
         this.confirmToolContinuation(completedToolCalls, abortSignal),
       onReasoningUpdate: (messageId, reasoningText, isComplete, segments) => {
-        this.workingIndicatorController.noteToolActivity(messageId);
         const openedNewBlock = this.messageDisplay.updateMessageReasoning(
           messageId,
           reasoningText,
@@ -586,7 +582,6 @@ export class ChatView extends ItemView {
         }
       },
       onToolExecutionStarted: (messageId, toolCall) => {
-        this.workingIndicatorController.noteToolActivity(messageId);
         this.toolEventCoordinator.handleToolExecutionStarted(messageId, toolCall);
       },
       onToolExecutionCompleted: (messageId, toolId, result, success, error) =>
@@ -694,12 +689,24 @@ export class ChatView extends ItemView {
       this // Component for registerDomEvent (scroll tracking)
     );
 
-    // Drives the "still working" gap ticker during the silent parts of a
-    // streaming turn (e.g. while tools execute, which do not stream).
-    this.workingIndicatorController = new WorkingIndicatorController({
-      show: (messageId) => this.messageDisplay.showWorkingIndicator(messageId),
-      hide: (messageId) => this.messageDisplay.hideWorkingIndicator(messageId),
-    });
+    this.register(this.messageDisplay.connectRuntime(this.chatService.turnStore, messageId => this.streamingController.beginNewTextRun(messageId)));
+    const reportedSaves = new Set<string>();
+    this.register(this.chatService.turnStore.subscribe(turn => {
+      if (turn.saveState !== 'failed' || reportedSaves.has(turn.generationId)) return;
+      reportedSaves.add(turn.generationId);
+      // Leave generated content visible. Retrying this action only repeats storage.
+      const fragment = createFragment();
+      fragment.appendText('Response not saved. ');
+      const retry = fragment.createEl('button', { text: 'Retry save' });
+      const notice = new Notice(fragment, 0);
+      this.registerDomEvent(retry, 'click', () => {
+        retry.disabled = true;
+        void this.chatService.retryResponseSave(turn.generationId).then(() => notice.hide()).catch(error => {
+          retry.disabled = false;
+          new Notice(error instanceof Error ? error.message : 'Could not save response');
+        });
+      });
+    }));
 
     this.toolStatusBar = new ToolStatusBar(
       this.layoutElements.toolStatusBarContainer,
@@ -715,7 +722,7 @@ export class ChatView extends ItemView {
       this
     );
 
-    this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, this.streamingController, this);
+    this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, () => this.chatService.turnStore.activeMessageId(this.conversationManager.getCurrentConversation()?.id), this);
 
     // Wire the colocated tool status label resolver. The resolver routes
     // `technicalName` → owning tool → `getStatusLabel()` override, with a
@@ -1039,15 +1046,10 @@ export class ChatView extends ItemView {
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
     if (isIncremental) {
-      // A streamed text token arrived: tell the gap ticker text is flowing so it
-      // hides and re-arms its debounce (it reappears in-bubble once the stream
-      // goes quiet for a tool round-trip).
-      this.workingIndicatorController.noteText(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
       // Keep the growing answer in view unless the reader has scrolled up
       this.messageDisplay.followNewOutput();
     } else if (isComplete) {
-      this.workingIndicatorController.end();
       this.streamingController.finalizeStreaming(messageId, content);
       this.messageDisplay.updateMessageContent(messageId, content);
       this.toolEventCoordinator.clearToolNameCache();
@@ -1080,11 +1082,8 @@ export class ChatView extends ItemView {
   }
 
   private handleLoadingStateChanged(loading: boolean): void {
-    // Bracket the whole generation: begin() arms the gap ticker, end() tears it
-    // down. setLoading(false) fires from MessageManager's finally block, so this
-    // covers normal completion, aborts, and errors uniformly.
+    // Tool status subscriptions cover every send/retry/abort path.
     if (loading) {
-      this.workingIndicatorController.begin();
       // Re-arm the tool ticker for THIS turn. The previous turn's completion
       // unsubscribed the ToolEventCoordinator from the state machine
       // (clearToolNameCache), and the old re-subscribe lived in a streaming
@@ -1094,7 +1093,6 @@ export class ChatView extends ItemView {
       this.toolEventCoordinator.beginTurn();
     } else {
       this.subagentIntegration.flushPendingRefresh();
-      this.workingIndicatorController.end();
       // Uniform teardown: MessageManager's finally block funnels completion,
       // abort AND error through here, so an errored turn (which never emits
       // isComplete) can no longer leave a stale "Running…" label behind.
@@ -1277,7 +1275,6 @@ export class ChatView extends ItemView {
     this.toolStatusBar?.cleanup();
     this.uiStateController?.cleanup();
     this.streamingController?.cleanup();
-    this.workingIndicatorController?.cleanup();
     this.nexusLoadingController?.unload();
     this.subagentController?.cleanup();
     this.branchViewCoordinator.cleanup();

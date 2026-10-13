@@ -200,7 +200,7 @@ describe('MessageAlternativeService', () => {
           provider: 'anthropic', model: 'claude-test'
         })
       );
-      expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
+      expect(mockChatService.updateMessage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -423,8 +423,8 @@ describe('MessageAlternativeService', () => {
 
       await service.createAlternativeResponse(conversation, 'msg_ai');
 
-      expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
-      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+      expect(mockChatService.updateMessage).toHaveBeenCalledTimes(1);
+      expect(mockChatService.updateMessage).toHaveBeenCalledWith(conversation.id, 'msg_ai', expect.objectContaining({ id: 'msg_ai' }));
     });
 
     it('should fire onConversationUpdated after streaming completes', async () => {
@@ -477,9 +477,9 @@ describe('MessageAlternativeService', () => {
 
   describe('error handling', () => {
     it('does not stream when the cleared response could not be persisted', async () => {
-      mockChatService.updateConversation
-        .mockResolvedValueOnce({ success: false, error: 'Storage unavailable' })
-        .mockResolvedValueOnce({ success: true });
+      mockChatService.updateMessage
+        .mockRejectedValueOnce(new Error('Storage unavailable'))
+        .mockResolvedValueOnce(undefined);
       const oldMetadata = { anthropicResponses: [{ content: [{ type: 'text', text: 'Old answer' }] }] };
       const conversation = createConversation({
         messages: [
@@ -599,7 +599,7 @@ describe('MessageAlternativeService', () => {
       expect(aiMsg.usage?.totalTokens).toBe(7);
 
       // Conversation should be saved
-      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+      expect(mockChatService.updateMessage).toHaveBeenCalledWith(conversation.id, 'msg_ai', expect.objectContaining({ id: 'msg_ai' }));
 
       // UI should be updated
       expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
@@ -628,7 +628,7 @@ describe('MessageAlternativeService', () => {
       expect(aiMsg.reasoning).toBe('Original reasoning');
       expect(aiMsg.state).toBe('complete');
       expect(aiMsg.isLoading).toBe(false);
-      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+      expect(mockChatService.updateMessage).toHaveBeenCalledWith(conversation.id, 'msg_ai', expect.objectContaining({ id: 'msg_ai' }));
       expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
       expect(mockEvents.onError).toHaveBeenCalledWith('Failed to generate alternative response');
     });

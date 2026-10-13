@@ -1,3 +1,4 @@
+import { projectTurn } from './ChatTurnStore';
 /**
  * ChatService - Native chatbot with direct agent integration
  *
@@ -61,6 +62,7 @@ interface MCPConnectorLike {
 }
 
 interface ConversationServiceDependency {
+  updateChatMessage?: (conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>) => Promise<void>;
   getConversation: (id: string, pagination?: { page?: number; pageSize?: number }) => Promise<ConversationData | null>;
   listConversations: (vaultName?: string, limit?: number, page?: number) => Promise<Array<{
     id: string;
@@ -438,12 +440,29 @@ export class ChatService {
     }
   }
 
+  get turnStore() { return this.streamingResponseService.turnStore; }
+
+  retryResponseSave(generationId: string): Promise<void> {
+    return this.streamingResponseService.retrySave(generationId);
+  }
+
+  async updateMessage(conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>): Promise<void> {
+    const update = this.dependencies.conversationService.updateChatMessage;
+    if (!update) throw new Error('Targeted message persistence is unavailable');
+    await update.call(this.dependencies.conversationService, conversationId, messageId, updates);
+  }
+
   /** Get conversation by ID */
   async getConversation(
     id: string,
     paginationOptions?: { page?: number; pageSize?: number }
   ): Promise<ConversationData | null> {
-    return this.conversationQueryService.getConversation(id, paginationOptions);
+    const conversation = await this.conversationQueryService.getConversation(id, paginationOptions);
+    if (conversation) conversation.messages = conversation.messages.map(message => {
+      const turn = this.turnStore.get(id, message.id);
+      return turn && turn.saveState !== 'saved' ? projectTurn(message, turn) : message;
+    });
+    return conversation;
   }
 
   /** Get messages for a conversation (paginated) */

@@ -18,7 +18,8 @@ type ToolCallLike = {
 
 interface MockChatService {
   getConversation: jest.Mock<Promise<ConversationData | null>, [string]>;
-  updateConversation: jest.Mock<Promise<void>, [ConversationData]>;
+  updateConversation: jest.Mock<Promise<{ success: boolean; error?: string }>, [ConversationData]>;
+  updateMessage: jest.Mock<Promise<void>, [string, string, unknown]>;
   addMessage: jest.Mock<Promise<{ success: true; messageId: string }>, [{ id?: string }]>;
   createConversation: jest.Mock<Promise<ConversationData>, []>;
   deleteConversation: jest.Mock<Promise<void>, []>;
@@ -79,10 +80,12 @@ export function createMockChatService(config: MockChatServiceConfig = {}): MockC
       return config.conversation || null;
     }),
 
+    updateMessage: jest.fn().mockResolvedValue(undefined),
     updateConversation: jest.fn(async (_conversation: ConversationData) => {
       if (config.updateSuccess === false) {
-        throw new Error('Update failed');
+        return { success: false, error: 'Update failed' };
       }
+      return { success: true };
     }),
 
     addMessage: jest.fn(async (params: { id?: string }) => ({
@@ -164,6 +167,7 @@ export function createMockAbortHandler(): MockAbortHandler {
  */
 export function createMockConversationRepo(): MockConversationRepo {
   return {
+    updateMessage: jest.fn().mockResolvedValue(undefined),
     updateConversation: jest.fn(noopAsync),
     getConversation: jest.fn(async () => null),
     createConversation: jest.fn(async () => 'conv_new'),

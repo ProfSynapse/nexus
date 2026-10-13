@@ -1,3 +1,4 @@
+import { projectTurn } from '../../../services/chat/ChatTurnStore';
 /**
  * Location: /src/ui/chat/services/MessageStreamHandler.ts
  *
@@ -124,7 +125,14 @@ export class MessageStreamHandler {
       }
     )) {
       const event = chunk.event;
-      turnState = reduceChatTurn(turnState, event);
+      // Production events carry the shared runtime projection. The reducer
+      // fallback supports legacy injected producers during migration.
+      if (chunk.snapshot && this.chatService.turnStore && !this.chatService.turnStore.isCurrent(chunk.snapshot)) continue;
+      turnState = chunk.snapshot?.state ?? reduceChatTurn(turnState, event);
+      const messageIndex = conversation.messages.findIndex(message => message.id === aiMessageId);
+      if (messageIndex >= 0 && chunk.snapshot) {
+        conversation.messages[messageIndex] = projectTurn(conversation.messages[messageIndex], chunk.snapshot);
+      }
 
       streamedContent = turnState.content;
       reasoningAccumulator = turnState.reasoning.text;
@@ -171,7 +179,7 @@ export class MessageStreamHandler {
       }
 
       // Handle reasoning/thinking content (Claude, GPT-5, Gemini)
-      if (event.type === 'reasoning.delta') {
+      if (!chunk.snapshot && event.type === 'reasoning.delta') {
         // Push the accumulated reasoning to the UI for live "Thinking" rendering
         this.events.onReasoningUpdate?.(
           aiMessageId,
@@ -182,7 +190,7 @@ export class MessageStreamHandler {
       }
 
       // Mark reasoning as complete if signaled
-      if (event.type === 'reasoning.completed') {
+      if (!chunk.snapshot && event.type === 'reasoning.completed') {
         this.events.onReasoningUpdate?.(aiMessageId, reasoningAccumulator, true, reasoningSegments);
       }
 
@@ -314,9 +322,10 @@ export class MessageStreamHandler {
     } catch (error) {
       // Terminal abort/failure events were also persisted by the producer.
       // Only errors before a terminal event need this UI snapshot saved.
-      if (!sawTerminalEvent) {
+      if (!sawTerminalEvent && !this.chatService.turnStore) {
         try {
-          await this.chatService.updateConversation(conversation);
+          const saved = await this.chatService.updateConversation(conversation);
+          if (!saved.success) throw new Error(saved.error || 'Could not save partial response');
         } catch (saveError) {
           console.error('[MessageStreamHandler] Failed to save partial response:', saveError);
         }

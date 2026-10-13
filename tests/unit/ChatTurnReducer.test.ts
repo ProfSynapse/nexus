@@ -30,6 +30,18 @@ function toolCall(overrides: Partial<ToolCall> = {}): ToolCall {
 }
 
 describe('ChatTurnReducer', () => {
+  it.each<ChatRuntimeEvent>([
+    { type: 'assistant.delta', text: 'answer' },
+    { type: 'turn.completed' },
+    { type: 'turn.aborted', reason: 'cancelled' },
+    { type: 'turn.failed', error: { message: 'offline' } },
+  ])('closes active reasoning at $type without a provider completion marker', event => {
+    const state = reduceAll([{ type: 'reasoning.delta', text: 'plan' }, event]);
+    expect(state.reasoning.openSegmentIndex).toBeUndefined();
+    expect(state.reasoning.complete).toBe(true);
+    expect(state.reasoning.text).toBe('plan');
+  });
+
   it('records each Anthropic response boundary with exact native content', () => {
     const first = [{ type: 'server_tool_use', id: 'srv_1', name: 'web_search', input: { query: 'x' } }, { type: 'tool_use', id: 'toolu_1', name: 'read', input: {} }];
     const final = [{ type: 'text', text: 'Answer' }];

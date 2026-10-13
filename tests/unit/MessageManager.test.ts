@@ -405,6 +405,7 @@ describe('MessageManager interrupt flow', () => {
       yield undefined;
     });
     mockChatService.updateConversation.mockRejectedValue(new Error('Storage unavailable'));
+    mockChatService.updateMessage.mockRejectedValue(new Error('Storage unavailable'));
     const events = createGenerationEvents();
     const manager = new MessageManager(
       mockChatService as unknown as ChatService,
@@ -420,7 +421,8 @@ describe('MessageManager interrupt flow', () => {
     }
 
     const placeholder = conversation.messages.find(message => message.role === 'assistant');
-    expect(mockChatService.updateConversation).toHaveBeenCalledTimes(2);
+    expect(mockChatService.updateConversation).toHaveBeenCalledTimes(1);
+    expect(mockChatService.updateMessage).toHaveBeenCalledTimes(1);
     expect(placeholder?.state).toBe('invalid');
     expect(placeholder?.isLoading).toBe(false);
     expect(events.onStreamingUpdate).toHaveBeenCalledWith(placeholder?.id, '', true, false);

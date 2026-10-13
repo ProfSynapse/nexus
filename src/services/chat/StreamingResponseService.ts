@@ -1,3 +1,4 @@
+import { ChatTurnStore } from './ChatTurnStore';
 /**
  * StreamingResponseService - Manages streaming response generation
  *
@@ -32,8 +33,6 @@ import type {
   ChatRuntimeEvent,
 } from '../llm/runtime/ChatRuntimeEvent';
 import {
-  createInitialChatTurnState,
-  reduceChatTurn,
   type ChatTurnState,
 } from '../llm/runtime/ChatTurnReducer';
 import type { ToolExecutionOrigin } from '../../types/tools/ToolOperationTypes';
@@ -96,6 +95,7 @@ interface LLMServiceLike {
 }
 
 interface ConversationServiceLike {
+  updateChatMessage?: (conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>) => Promise<void>;
   getConversation(conversationId: string): Promise<ConversationData | null>;
   addMessage(params: { conversationId: string; role: string; content: string; id: string }): Promise<void>;
   updateConversation(conversationId: string, update: { messages?: ConversationMessage[]; metadata?: ConversationData['metadata'] }): Promise<void>;
@@ -111,6 +111,19 @@ export interface StreamingDependencies {
 
 export class StreamingResponseService {
   private currentProvider?: string;
+  readonly turnStore = new ChatTurnStore();
+  private pendingSaves = new Map<string, () => Promise<void>>();
+  private saveAttempts = new Map<string, Promise<void>>();
+
+  async retrySave(generationId: string): Promise<void> {
+    const running = this.saveAttempts.get(generationId);
+    if (running) return running;
+    const save = this.pendingSaves.get(generationId);
+    if (!save) return;
+    const attempt = save().finally(() => this.saveAttempts.delete(generationId));
+    this.saveAttempts.set(generationId, attempt);
+    return attempt;
+  }
 
   constructor(
     private dependencies: StreamingDependencies
@@ -127,9 +140,39 @@ export class StreamingResponseService {
     options?: StreamingOptions
   ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Notify queue service that generation is starting (pauses processing)
-    void this.dependencies.messageQueueService?.onGenerationStart?.();
+
     const messageId = options?.messageId || `msg_${Date.now()}_ai`;
-    let turnState = createInitialChatTurnState();
+    let snapshot = this.turnStore.begin(conversationId, messageId);
+    this.dependencies.messageQueueService?.onGenerationStart?.(snapshot.generationId);
+    let turnState = snapshot.state;
+    const dispatch = (event: ChatRuntimeEvent): void => {
+      snapshot = this.turnStore.dispatch(snapshot, event);
+      turnState = snapshot.state;
+    };
+    const envelope = (event: ChatRuntimeEvent): StreamingChunk => ({ messageId, event, snapshot });
+    let releaseSave: () => void = () => undefined;
+    const saveFinished = new Promise<void>(resolve => { releaseSave = resolve; });
+    const saveTerminal = async (): Promise<void> => {
+      const generationId = snapshot.generationId;
+      this.pendingSaves.set(generationId, async () => {
+        snapshot = this.turnStore.setSaveState(snapshot, 'saving');
+        // Two bounded attempts at storage; never re-run the provider or tools.
+        let failure: unknown;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await this.persistTerminalMessage(conversationId, messageId, turnState, persistedProvider, persistedModel);
+            snapshot = this.turnStore.setSaveState(snapshot, 'saved');
+            releaseSave();
+            this.pendingSaves.delete(generationId);
+            return;
+          } catch (error) { failure = error; }
+        }
+        snapshot = this.turnStore.setSaveState(snapshot, 'failed', failure instanceof Error ? failure.message : String(failure));
+        throw failure;
+      });
+      try { await this.retrySave(generationId); } catch { /* keep failed save separate from execution outcome */ }
+
+    };
     let persistedProvider = options?.provider ?? 'unknown';
     let persistedModel = options?.model ?? 'unknown';
     let releaseGeneration: () => void = () => undefined;
@@ -244,6 +287,7 @@ export class StreamingResponseService {
 
       // Add tool event callback for live UI updates (delegates to ToolCallService)
       llmOptions.onToolEvent = (event: 'started' | 'completed', data: unknown) => {
+        if (!this.turnStore.isCurrent(snapshot)) return;
         this.dependencies.toolCallService.fireToolEvent(messageId, event, data as Parameters<ToolCallService['fireToolEvent']>[2]);
       };
 
@@ -251,14 +295,15 @@ export class StreamingResponseService {
       const onFallbackUsage = this.dependencies.costTrackingService.createUsageCallback(conversationId, messageId);
       llmOptions.onUsageAvailable = async (usage: Parameters<typeof onFallbackUsage>[0], cost: Parameters<typeof onFallbackUsage>[1]) => {
         await generationFinished;
-        await onFallbackUsage(usage, cost);
+        await saveFinished;
+        if (this.turnStore.isCurrent(snapshot)) await onFallbackUsage(usage, cost);
       };
 
       // Responses API: Persist ID when first captured (for conversation continuity across restarts)
       llmOptions.onResponsesApiId = async (id: string) => {
         try {
           const conv = await this.dependencies.conversationService.getConversation(conversationId);
-          if (conv) {
+          if (conv && this.turnStore.isCurrent(snapshot)) {
             await this.dependencies.conversationService.updateConversation(conversationId, {
               metadata: { ...conv.metadata, responsesApiId: id }
             });
@@ -297,12 +342,12 @@ export class StreamingResponseService {
               type: 'response.metadata',
               metadata: { latestResponseUsage: { ...normalizedUsage } },
             };
-            turnState = reduceChatTurn(turnState, contextUsageEvent);
-            yield { messageId, event: contextUsageEvent };
+            dispatch(contextUsageEvent);
+            yield envelope(contextUsageEvent);
             const aggregateUsage = addUsage(completedUsage, normalizedUsage);
             const usageEvent: ChatRuntimeEvent = { type: 'usage.updated', usage: aggregateUsage };
-            turnState = reduceChatTurn(turnState, usageEvent);
-            yield { messageId, event: usageEvent };
+            dispatch(usageEvent);
+            yield envelope(usageEvent);
 
             const responseCost = this.dependencies.costTrackingService.calculateCost(
               turnState.provider || provider,
@@ -315,8 +360,8 @@ export class StreamingResponseService {
                 conversationId, messageId, aggregateUsage, finalCost
               );
               const costEvent: ChatRuntimeEvent = { type: 'cost.updated', cost: finalCost };
-              turnState = reduceChatTurn(turnState, costEvent);
-              yield { messageId, event: costEvent };
+              dispatch(costEvent);
+              yield envelope(costEvent);
             }
           }
           continue;
@@ -350,21 +395,15 @@ export class StreamingResponseService {
           currentResponseUsage = undefined;
         }
 
-        turnState = reduceChatTurn(turnState, event);
+        dispatch(event);
 
         // Persist every terminal state before exposing it to consumers. This
         // prevents failed/aborted turns from surviving as draft placeholders.
         if (event.type === 'turn.completed' || event.type === 'turn.aborted' || event.type === 'turn.failed') {
-          await this.persistTerminalMessage(
-            conversationId,
-            messageId,
-            turnState,
-            provider,
-            selectedModel
-          );
+          await saveTerminal();
         }
 
-        yield { messageId, event };
+        yield envelope(event);
 
         if (event.type === 'turn.completed' || event.type === 'turn.aborted' || event.type === 'turn.failed') {
           return;
@@ -382,20 +421,10 @@ export class StreamingResponseService {
           };
 
       if (!turnState.terminalEvent) {
-        turnState = reduceChatTurn(turnState, terminalEvent);
+        dispatch(terminalEvent);
       }
-      try {
-        await this.persistTerminalMessage(
-          conversationId,
-          messageId,
-          turnState,
-          persistedProvider,
-          persistedModel
-        );
-      } catch (persistenceError) {
-        console.error('[StreamingResponseService] Failed to persist terminal message:', persistenceError);
-      }
-      yield { messageId, event: terminalEvent };
+      await saveTerminal();
+      yield envelope(terminalEvent);
 
       const response = error instanceof Error && 'response' in error
         ? (error as Error & { response?: { data?: unknown; json?: unknown; text?: unknown } }).response
@@ -404,9 +433,13 @@ export class StreamingResponseService {
       console.error('Error in generateResponse:', error, extra ? JSON.stringify(extra) : '');
       throw error;
     } finally {
+      if (!turnState.terminalEvent) {
+        dispatch({ type: 'turn.aborted', reason: 'Stream consumer disconnected' });
+        await saveTerminal();
+      }
       releaseGeneration();
       // Notify queue service that generation is complete (resumes processing)
-      void this.dependencies.messageQueueService?.onGenerationComplete?.();
+      void this.dependencies.messageQueueService?.onGenerationComplete?.(snapshot.generationId);
     }
   }
 
@@ -419,7 +452,7 @@ export class StreamingResponseService {
   ): Promise<void> {
     const conv = await this.dependencies.conversationService.getConversation(conversationId);
     const msg = conv?.messages.find(candidate => candidate.id === messageId);
-    if (!conv || !msg) return;
+    if (!conv || !msg) throw new Error('The response could not be saved because its conversation or message no longer exists.');
 
     msg.content = turnState.content;
     msg.state = turnState.phase === 'complete'
@@ -442,10 +475,17 @@ export class StreamingResponseService {
     msg.provider = turnState.provider || provider;
     msg.model = turnState.model || model;
 
-    await this.dependencies.conversationService.updateConversation(conversationId, {
-      messages: conv.messages,
-      metadata: conv.metadata
-    });
+    if (this.dependencies.conversationService.updateChatMessage) {
+      await this.dependencies.conversationService.updateChatMessage(conversationId, messageId, {
+        content: msg.content, state: msg.state, toolCalls: msg.toolCalls ?? [],
+        reasoning: msg.reasoning ?? '', reasoningSegments: msg.reasoningSegments ?? [],
+        metadata: msg.metadata, replaceMetadata: true,
+        provider: msg.provider, model: msg.model, usage: msg.usage, cost: msg.cost,
+      });
+    } else {
+      // Compatibility for older injected repositories; production supplies targeted writes.
+      await this.dependencies.conversationService.updateConversation(conversationId, { messages: conv.messages, metadata: conv.metadata });
+    }
   }
 
   /**

@@ -11,7 +11,7 @@
  *
  * Constraints:
  *   - Node test env has no `window` — we shim `global.window` with setInterval/clearInterval
- *   - No jest.useFakeTimers() — we use very short real intervals (skipped in most tests)
+ *   - Timer regressions use a fake clock; production code owns text and lifecycle.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -181,5 +181,39 @@ describe('ThinkingLoader — isDisposed guards', () => {
     loader.start(parent);
 
     expect(parent.createDiv).not.toHaveBeenCalled();
+  });
+});
+
+// If typing/dots continue after settling, they overwrite the final Reasoning label.
+describe('ThinkingLoader — typing and settling', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(window, 'setInterval').mockImplementation((handler, delay) => global.setInterval(handler, delay) as unknown as number);
+    jest.spyOn(window, 'clearInterval').mockImplementation(id => global.clearInterval(id));
+  });
+  afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+
+  it.each(['typing', 'dots'])('types words and dots, then stops %s when settled', phase => {
+    const loader = new ThinkingLoader();
+    try {
+      loader.start(createMockElement('div'));
+      const word = (loader as any).wordElement;
+      expect(word.textContent).toBe('');
+      jest.advanceTimersByTime(180);
+      expect(word.textContent).toHaveLength(1);
+      if (phase === 'dots') {
+        // Reach the first dot without crossing the next five-second word cycle.
+        for (let elapsed = 0; elapsed < 4500 && !word.textContent.endsWith('.'); elapsed += 10) jest.advanceTimersByTime(10);
+        expect(word.textContent).toMatch(/\.$/);
+        const firstDot = word.textContent;
+        jest.advanceTimersByTime(500);
+        expect(word.textContent).toBe(firstDot + '.');
+      }
+      loader.setActive(false);
+      expect(word.textContent).toBe('Reasoning');
+      jest.advanceTimersByTime(6000);
+      expect(word.textContent).toBe('Reasoning');
+      expect(jest.getTimerCount()).toBe(0);
+    } finally { loader.stop(); }
   });
 });

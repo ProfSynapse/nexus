@@ -206,3 +206,15 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 - 2026-10-13 | Corrected an adapter characterization test that explicitly expected provider IDs to be overwritten; a new round-trip regression fails on the original implementation. Obsidian CLI required sandbox escalation; vaults worked, but both Seed Vault and Fernbrook-Demo-Vault targeting returned Professor Synapse, so testing there stopped. After the user selected Professor Synapse for installation, in-band name verification succeeded; an atomic bundle replacement with backup, plugin-manager disable/enable, readiness polling and a synthetic Opus 5.5 tool continuation all passed with no captured errors. | Existing mock-honesty and vault-target checks caught both issues; no protocol change.
 
 - 2026-10-13: Settings-sync verification used actual external modification of a non-secret provider preference while Sync was temporarily paused. Obsidian invoked the native callback and Nexus adopted the value; restoration triggered the callback again. This closes the gap left by directly calling onExternalSettingsChange in a test. Clear historical dev:errors separately from dev:console before judging the reload; earlier Sync server errors otherwise survive and look like new plugin failures.
+
+## 2026-10-13 — thinking disclosure implementation
+
+Exercised the Obsidian CLI against an isolated Linux profile. Synchronous eval acknowledgements plus polling were required, as already documented. Native Enter via dev:cdp required a carriage-return text field on keyDown. The new thinking-disclosure live lane records the working calls. Its real DOM check caught an ancestor move resetting scroll after completion; mocked geometry alone did not. No router change.
+
+### 2026-10-13 — Vault selector ordering during authorized installation
+
+`obsidian eval 'vault=Professor Synapse' ...` routed to the focused business renderer; the in-band vault assertion stopped it. Putting `'vault=Professor Synapse'` before `eval`, `vault` and `plugin:reload` targeted the requested renderer. Reload briefly returned empty evaluation output; a subsequent guarded probe confirmed a new plugin instance and initialized shared runtime. Keep identity guards and poll readiness; command exit alone is insufficient.
+
+### 2026-10-13 — Restore typing without overwriting settled labels
+
+Used the existing loader suite with a fake clock to check production text updates and settling during both letter and dot phases. Both regressions failed against the previous whole-word implementation, then passed after restoring typing and cancelling the active timer on settle. No protocol change needed.

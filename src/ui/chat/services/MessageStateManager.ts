@@ -65,6 +65,12 @@ export class MessageStateManager {
       id: userMessage.id // Use same ID as in-memory message to avoid mismatch
     });
 
+    if (!userMessageResult.success) {
+      conversation.messages = conversation.messages.filter(message => message !== userMessage);
+      this.events.onConversationUpdated(conversation);
+      throw new Error(userMessageResult.error || 'Could not save your message');
+    }
+
     // Update with real ID from repository
     if (userMessageResult.success && userMessageResult.messageId) {
       this.updateMessageId(conversation, userMessage.id, userMessageResult.messageId, userMessage);
@@ -143,14 +149,15 @@ export class MessageStateManager {
     const messageIndex = conversation.messages.findIndex(msg => msg.id === messageId);
     if (messageIndex === -1) return;
 
+    // Commit before changing the visible snapshot; a failed edit stays recoverable.
+    await this.chatService.updateMessage(conversation.id, messageId, { content: newContent, metadata: {}, replaceMetadata: true });
+
     // Update message content in-memory
     conversation.messages[messageIndex].content = newContent;
     if (conversation.messages[messageIndex].metadata) {
       delete conversation.messages[messageIndex].metadata;
     }
 
-    // Persist to storage (works for both parent and branch)
-    await this.chatService.updateConversation(conversation);
 
     // Notify about conversation update
     this.events.onConversationUpdated(conversation);

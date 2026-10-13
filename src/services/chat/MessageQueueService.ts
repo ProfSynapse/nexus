@@ -18,6 +18,7 @@ export type MessageQueueServiceEvents = MessageQueueEvents
 export class MessageQueueService extends Events {
   private queue: QueuedMessage[] = [];
   private isGenerating = false;
+  private generations = new Set<string>();
   private processMessageFn: ((message: QueuedMessage) => Promise<void>) | null = null;
 
   constructor() {
@@ -85,7 +86,8 @@ export class MessageQueueService extends Events {
    * Called when generation starts
    * Queue mode is activated - messages will be queued instead of processed
    */
-  onGenerationStart(): void {
+  onGenerationStart(generationId = 'legacy'): void {
+    this.generations.add(generationId);
     this.isGenerating = true;
   }
 
@@ -93,8 +95,9 @@ export class MessageQueueService extends Events {
    * Called when generation completes
    * Processes all queued messages in order
    */
-  async onGenerationComplete(): Promise<void> {
-    this.isGenerating = false;
+  async onGenerationComplete(generationId = 'legacy'): Promise<void> {
+    this.generations.delete(generationId);
+    this.isGenerating = this.generations.size > 0;
     await this.processQueue();
   }
 

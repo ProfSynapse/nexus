@@ -74,6 +74,17 @@ export class Modal {
 
 // Component mock (base class for UI components like MessageBubble)
 export class Component {
+  private _children = new Set<Component>();
+  addChild<T extends Component>(child: T): T {
+    this._children.add(child);
+    if (this._isLoaded) child.load();
+    return child;
+  }
+  removeChild<T extends Component>(child: T): T {
+    if (this._children.delete(child)) child.unload();
+    return child;
+  }
+
   private _domEvents: Array<{ el: HTMLElement; type: string; handler: EventListenerOrEventListenerObject }> = [];
   private _intervals: Array<ReturnType<typeof setInterval>> = [];
   private _cleanups: Array<() => void> = [];
@@ -88,6 +99,8 @@ export class Component {
   }
 
   unload(): void {
+    for (const child of this._children) child.unload();
+    this._children.clear();
     // Run registered cleanup callbacks (Obsidian's Component.register)
     for (const cb of this._cleanups) {
       try {

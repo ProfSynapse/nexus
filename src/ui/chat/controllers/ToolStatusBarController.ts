@@ -25,7 +25,7 @@ export class ToolStatusBarController {
 
   constructor(
     private toolStatusBar: ToolStatusBar,
-    private streamingController: StreamingController,
+    private streamingController: StreamingController | (() => string | null),
     component: Component
   ) {
     component.register(() => {
@@ -44,7 +44,7 @@ export class ToolStatusBarController {
     // Allow through when: (a) messageId matches current streaming turn,
     // (b) currentMsgId is null (streaming just started, not registered yet),
     // (c) entry state is 'past' or 'failed' (terminal, no stale-data risk).
-    const currentMsgId = this.streamingController.getCurrentMessageId();
+    const currentMsgId = typeof this.streamingController === 'function' ? this.streamingController() : this.streamingController.getCurrentMessageId();
     if (currentMsgId !== null && messageId !== currentMsgId && entry.state === 'present') {
       return;
     }

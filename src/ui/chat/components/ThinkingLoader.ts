@@ -9,14 +9,17 @@ export class ThinkingLoader extends Component {
   private typewriterInterval: number | null = null;
   private cycleInterval: number | null = null;
   public isDisposed = false;
+  private active = true;
+  private ownerWindow: Window = window;
 
   public start(parent: HTMLElement): void {
     if (this.isDisposed) return;
     this.stop();
 
+    this.ownerWindow = parent.ownerDocument?.defaultView ?? window;
+    this.active = true;
     this.container = parent.createDiv('thinking-loader');
-    this.container.setAttribute('role', 'status');
-    this.container.setAttribute('aria-live', 'polite');
+    this.container.setAttribute('aria-hidden', 'true');
     this.iconElement = this.container.createDiv('thinking-loader-icon');
     this.wordElement = this.container.createDiv('thinking-loader-text');
 
@@ -25,11 +28,11 @@ export class ThinkingLoader extends Component {
 
   public stop(): void {
     if (this.typewriterInterval) {
-      window.clearInterval(this.typewriterInterval);
+      this.ownerWindow.clearInterval(this.typewriterInterval);
       this.typewriterInterval = null;
     }
     if (this.cycleInterval) {
-      window.clearInterval(this.cycleInterval);
+      this.ownerWindow.clearInterval(this.cycleInterval);
       this.cycleInterval = null;
     }
     this.container?.remove();
@@ -44,7 +47,7 @@ export class ThinkingLoader extends Component {
 
   private startCycle(): void {
     this.renderCurrentWord();
-    this.cycleInterval = window.setInterval(() => {
+    this.cycleInterval = this.ownerWindow.setInterval(() => {
       if (this.isDisposed) {
         this.stop();
         return;
@@ -61,7 +64,7 @@ export class ThinkingLoader extends Component {
 
   private prefersReducedMotion(): boolean {
     try {
-      return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+      return this.ownerWindow.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
     } catch {
       return false;
     }
@@ -71,7 +74,7 @@ export class ThinkingLoader extends Component {
     if (!this.wordElement || this.isDisposed) return;
 
     if (this.typewriterInterval) {
-      window.clearInterval(this.typewriterInterval);
+      this.ownerWindow.clearInterval(this.typewriterInterval);
       this.typewriterInterval = null;
     }
 
@@ -87,9 +90,9 @@ export class ThinkingLoader extends Component {
     this.wordElement.textContent = '';
     let charIndex = 0;
 
-    this.typewriterInterval = window.setInterval(() => {
-      if (this.isDisposed || !this.wordElement) {
-        if (this.typewriterInterval) window.clearInterval(this.typewriterInterval);
+    this.typewriterInterval = this.ownerWindow.setInterval(() => {
+      if (this.isDisposed || !this.active || !this.wordElement) {
+        if (this.typewriterInterval) this.ownerWindow.clearInterval(this.typewriterInterval);
         return;
       }
 
@@ -100,14 +103,14 @@ export class ThinkingLoader extends Component {
       }
 
       if (this.typewriterInterval) {
-        window.clearInterval(this.typewriterInterval);
+        this.ownerWindow.clearInterval(this.typewriterInterval);
         this.typewriterInterval = null;
       }
 
       let dotsCount = 0;
-      this.typewriterInterval = window.setInterval(() => {
-        if (this.isDisposed || !this.wordElement) {
-          if (this.typewriterInterval) window.clearInterval(this.typewriterInterval);
+      this.typewriterInterval = this.ownerWindow.setInterval(() => {
+        if (this.isDisposed || !this.active || !this.wordElement) {
+          if (this.typewriterInterval) this.ownerWindow.clearInterval(this.typewriterInterval);
           return;
         }
         dotsCount = (dotsCount + 1) % 4;
@@ -119,10 +122,25 @@ export class ThinkingLoader extends Component {
     this.registerInterval(this.typewriterInterval);
   }
 
+  public setActive(active: boolean): void {
+    if (this.active === active || !this.container) return;
+    this.active = active;
+    this.container.toggleClass('is-settled', !active);
+    if (this.cycleInterval !== null) this.ownerWindow.clearInterval(this.cycleInterval);
+    this.cycleInterval = null;
+    if (this.typewriterInterval !== null) this.ownerWindow.clearInterval(this.typewriterInterval);
+    this.typewriterInterval = null;
+    if (active) this.startCycle();
+    else {
+      this.updateIcon('brain');
+      if (this.wordElement) this.wordElement.textContent = 'Reasoning';
+    }
+  }
+
   private updateIcon(iconName: string): void {
     if (!this.iconElement || this.isDisposed) return;
 
-    const finalIconName = ICON_SUBSTITUTIONS[iconName] || iconName;
+    const finalIconName = !this.active && iconName === 'brain' ? 'brain' : ICON_SUBSTITUTIONS[iconName] || iconName;
     this.iconElement.empty();
     try {
       setIcon(this.iconElement, finalIconName);

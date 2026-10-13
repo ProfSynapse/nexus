@@ -54,6 +54,8 @@ export type ChatRuntimeEvent =
 export interface ChatRuntimeEnvelope {
   messageId: string;
   event: ChatRuntimeEvent;
+  /** Runtime-owned projection; optional for external/legacy event producers. */
+  snapshot?: import('../../chat/ChatTurnStore').ChatTurnSnapshot;
 }
 
 export type TerminalChatRuntimeEvent = Extract<
