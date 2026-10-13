@@ -12,6 +12,7 @@ jest.mock('obsidian', () => {
   }
 
   return {
+    Events: jest.requireActual('../mocks/obsidian/core').Events,
     App: jest.fn(),
     Plugin: jest.fn(),
     PluginSettingTab,

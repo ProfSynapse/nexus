@@ -12,6 +12,7 @@
  */
 
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
+import type { GoogleMessage as GoogleContextMessage } from '../../chat/builders/IContextBuilder';
 import { ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { Tool } from '../adapters/types';
 import type { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
@@ -243,15 +244,14 @@ export class ProviderMessageBuilder {
         systemPrompt: generateOptions.systemPrompt
       };
     } else if (isGoogleModel) {
-      // Build proper Google/Gemini conversation history with functionCall and functionResponse
-      const conversationHistory = ConversationContextBuilder.buildToolContinuation(
-        'google',
-        userPrompt,
-        toolCalls,
-        toolResults,
-        previousMessages,
-        generateOptions.systemPrompt
-      ) as GoogleMessage[];
+      // The prior request includes the current user turn and signed tool parts.
+      // The legacy previousMessages accumulator omits that user turn.
+      const history = generateOptions.conversationHistory as GoogleContextMessage[] | undefined;
+      const conversationHistory = (history?.length
+        ? ConversationContextBuilder.appendToolExecution('google', toolCalls, toolResults, history)
+        : ConversationContextBuilder.buildToolContinuation(
+          'google', userPrompt, toolCalls, toolResults, previousMessages, generateOptions.systemPrompt
+        )) as GoogleMessage[];
 
       return {
         ...generateOptions,
@@ -261,10 +261,13 @@ export class ProviderMessageBuilder {
     } else if (provider === 'openai-codex') {
       // Codex uses stateless Responses API — no previous_response_id.
       // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
-      // Reconstruct prior conversation messages in order. Unlike stateful
-      // OpenAI Responses, Codex requires every prior function_call to still have
-      // its matching function_call_output in the replayed input array.
-      const inputItems: Array<Record<string, unknown>> = toResponsesInputItems(previousMessages, userPrompt);
+      // Initial options already flatten stored history to Responses input items.
+      // Keep that exact prefix, including prior function_call/output pairs, so
+      // recursive rounds never move the original prompt after tool results.
+      const history = generateOptions.conversationHistory;
+      const inputItems: Array<Record<string, unknown>> = history?.length
+        ? history.map(item => ({ ...item }))
+        : toResponsesInputItems(previousMessages, userPrompt);
 
       // Synthesize ids for any tool calls missing them. Codex/Responses API
       // strictly requires call_id on every function_call and function_call_output.
@@ -328,15 +331,12 @@ export class ProviderMessageBuilder {
     } else if (provider === 'lmstudio') {
       // LM Studio: Send FULL conversation history to ensure AI sees complete context
       // Format depends on model: Nexus uses custom <tool_call> format, others use OpenAI format
-      const conversationHistory = ConversationContextBuilder.buildToolContinuation(
-        'lmstudio',
-        userPrompt,
-        toolCalls,
-        toolResults,
-        previousMessages,
-        generateOptions.systemPrompt,
-        generateOptions.model // Pass model to determine correct format
-      ) as ConversationMessage[];
+      const history = generateOptions.conversationHistory as ConversationMessage[] | undefined;
+      const conversationHistory = (history?.length
+        ? ConversationContextBuilder.appendToolExecution('lmstudio', toolCalls, toolResults, history, generateOptions.model)
+        : ConversationContextBuilder.buildToolContinuation(
+          'lmstudio', userPrompt, toolCalls, toolResults, previousMessages, generateOptions.systemPrompt, generateOptions.model
+        )) as ConversationMessage[];
 
       return {
         ...generateOptions,
@@ -347,15 +347,12 @@ export class ProviderMessageBuilder {
     } else {
       // Other OpenAI-compatible providers (groq, mistral, perplexity, requesty, openrouter)
       // These still use Chat Completions API message arrays
-      const conversationHistory = ConversationContextBuilder.buildToolContinuation(
-        provider,
-        userPrompt,
-        toolCalls,
-        toolResults,
-        previousMessages,
-        generateOptions.systemPrompt,
-        generateOptions.model
-      ) as ConversationMessage[];
+      const history = generateOptions.conversationHistory as ConversationMessage[] | undefined;
+      const conversationHistory = (history?.length
+        ? ConversationContextBuilder.appendToolExecution(provider, toolCalls, toolResults, history, generateOptions.model)
+        : ConversationContextBuilder.buildToolContinuation(
+          provider, userPrompt, toolCalls, toolResults, previousMessages, generateOptions.systemPrompt, generateOptions.model
+        )) as ConversationMessage[];
 
       return {
         ...generateOptions,
