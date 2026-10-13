@@ -94,3 +94,7 @@ skill.
 - 2026-10-10 | An iOS chat request reached HTTP 401, so the plugin loaded and this was a runtime authentication investigation. The mobile reachability gate passed; this does not validate device credentials or the native request bridge. | No procedure change.
 
 - 2026-10-10 | User resolved the iOS 401 after replacing the key; the key input was compressed beside a full-width Get key button and may have appended to the existing value. | Scoped the existing API-key setting with a mobile full-width input and compact button below it; no transport workaround needed. On-device layout retest remains separate.
+
+## 2026-10-13 — Setup detection
+
+- No change: desktop config detection reused lazy desktopRequire calls behind capability guards. The production build passed the mobile import reachability check.

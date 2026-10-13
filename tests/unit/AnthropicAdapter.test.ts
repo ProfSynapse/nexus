@@ -15,7 +15,7 @@ jest.mock('../../src/utils/platform', () => ({
 import { AnthropicAdapter } from '../../src/services/llm/adapters/anthropic/AnthropicAdapter';
 import { ANTHROPIC_DEFAULT_MODEL } from '../../src/services/llm/adapters/anthropic/AnthropicModels';
 import { LLMProviderError, StreamChunk } from '../../src/services/llm/adapters/types';
-import { ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
+import { ProviderHttpClient, ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
 import {
   jsonResponse,
   sseResponse,
@@ -372,6 +372,20 @@ describe('AnthropicAdapter', () => {
   });
 
   describe('SSE streaming', () => {
+    it('passes the chat cancellation signal through to the transport', async () => {
+      const controller = new AbortController();
+      const request = jest.spyOn(ProviderHttpClient, 'requestStream');
+      __setRequestUrlMock(async () => sseResponse(sse({ type: 'message_stop' })));
+      try {
+        await collect(new AnthropicAdapter('ak-test').generateStreamAsync('hi', {
+          abortSignal: controller.signal,
+        }));
+        expect(request).toHaveBeenCalledWith(expect.objectContaining({ signal: controller.signal }));
+      } finally {
+        request.mockRestore();
+      }
+    });
+
     it.each([
       ['claude-haiku-4-5-20251001', 'max', undefined, 64000, 62976],
       ['claude-haiku-4-5-20251001', 'max', 4096, 4096, 3072],
@@ -437,11 +451,10 @@ describe('AnthropicAdapter', () => {
       // Anthropic streaming usage has no total_tokens; the normalizer derives it
       expect(final.usage).toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
       expect(final.toolCallsReady).toBe(true);
-      // Current behavior: the synthetic id from input_json_delta overwrites
-      // the real tool_use id supplied by content_block_start
+      // Argument deltas must retain the provider ID used by replayed tool_use blocks.
       expect(final.toolCalls).toEqual([
         {
-          id: 'anthropic-tool-2',
+          id: 'toolu_1',
           type: 'function',
           function: { name: 'search', arguments: '{"q":"x"}' },
           anthropic_thinking_blocks: [{ type: 'thinking', thinking: 'hmm', signature: '' }]

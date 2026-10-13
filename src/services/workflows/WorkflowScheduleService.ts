@@ -15,34 +15,56 @@ export interface WorkflowScheduleServiceDeps {
 
 export class WorkflowScheduleService {
   private started = false;
-  private scanInProgress = false;
+  private stopped = false;
+  private intervalId: number | null = null;
+  private scanPromise: Promise<void> | null = null;
+  private shutdownController = new AbortController();
 
-  constructor(private deps: WorkflowScheduleServiceDeps) {}
+  constructor(private deps: WorkflowScheduleServiceDeps) {
+    // Fence saves immediately on unload, before asynchronous service teardown.
+    deps.plugin.register(() => { void this.cleanup(); });
+  }
 
   async start(): Promise<void> {
-    if (this.started) {
+    if (this.started || this.stopped) {
       return;
     }
 
     this.started = true;
     await this.scanDueWorkflows(true);
+    if (this.stopped) return;
 
-    const intervalId = window.setInterval(() => {
-      void this.scanDueWorkflows(false);
+    this.intervalId = window.setInterval(() => {
+      void this.scanDueWorkflows(false).catch(error => {
+        if (!this.stopped) console.error('[WorkflowScheduleService] Scheduled scan failed:', error);
+      });
     }, 60_000);
-    this.deps.plugin.registerInterval(intervalId);
+    this.deps.plugin.registerInterval(this.intervalId);
   }
 
-  async scanDueWorkflows(isStartup: boolean): Promise<void> {
-    if (this.scanInProgress) {
-      return;
-    }
+  scanDueWorkflows(isStartup: boolean): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    if (this.scanPromise) return this.scanPromise;
+    this.scanPromise = this.runScan(isStartup).finally(() => { this.scanPromise = null; });
+    return this.scanPromise;
+  }
 
-    this.scanInProgress = true;
+  async cleanup(): Promise<void> {
+    this.stopped = true;
+    this.shutdownController.abort();
+    if (this.intervalId !== null) {
+      window.clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    await this.scanPromise?.catch(() => undefined);
+  }
+
+  private async runScan(isStartup: boolean): Promise<void> {
     const now = Date.now();
 
     try {
       const workspaces = await this.deps.workspaceService.getAllWorkspaces();
+      if (this.stopped) return;
       const lastCheckAt = this.deps.settings.settings.workflowScheduler?.lastCheckAt;
 
       for (const workspace of workspaces) {
@@ -60,10 +82,12 @@ export class WorkflowScheduleService {
           const runSlots = isStartup ? this.applyCatchUpPolicy(dueSlots, schedule) : dueSlots;
 
           for (const scheduledFor of runSlots) {
+            if (this.stopped) return;
             const runKey = `${workspace.id}:${workflow.id}:${scheduledFor}`;
             if (await this.deps.conversationService.hasRunKey(runKey)) {
               continue;
             }
+            if (this.stopped) return;
 
             await this.deps.workflowRunService.start({
               workspaceId: workspace.id,
@@ -77,10 +101,9 @@ export class WorkflowScheduleService {
         }
       }
     } finally {
-      this.scanInProgress = false;
-      this.deps.settings.settings.workflowScheduler = this.deps.settings.settings.workflowScheduler || {};
-      this.deps.settings.settings.workflowScheduler.lastCheckAt = now;
-      await this.deps.settings.saveSettings();
+      if (!this.stopped) {
+        await this.deps.settings.saveWorkflowSchedulerState(now, this.shutdownController.signal);
+      }
     }
   }
 

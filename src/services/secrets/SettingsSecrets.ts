@@ -120,6 +120,8 @@ export function hydrateSecrets(settings: MCPSettings, store: SecretStore): void 
     return;
   }
   for (const field of collectSecretFields(settings)) {
+    // Nonempty plaintext may be a newer fallback after a secure-store write failed.
+    if (field.read()) continue;
     const stored = store.get(field.id);
     if (stored !== null && stored !== '') {
       field.write(stored);

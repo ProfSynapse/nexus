@@ -232,7 +232,8 @@ export class AnthropicAdapter extends BaseAdapter {
         method: 'POST',
         headers: this.buildAnthropicHeaders(modelSpec?.betaHeaders),
         body: JSON.stringify(requestParams),
-        timeoutMs: 120_000
+        timeoutMs: 120_000,
+        signal: options?.abortSignal
       });
 
       yield* this.processNodeStream(nodeStream, {
@@ -304,7 +305,8 @@ export class AnthropicAdapter extends BaseAdapter {
             && event.index !== undefined && clientToolIndices.has(event.index)) {
             return [{
               index: event.index,
-              id: `anthropic-tool-${event.index ?? 0}`,
+              // Argument fragments carry no ID. Match by block index and keep
+              // the provider ID captured at content_block_start for tool_result.
               function: {
                 name: '',
                 arguments: event.delta.partial_json || ''

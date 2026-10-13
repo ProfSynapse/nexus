@@ -225,15 +225,15 @@ export class ProviderMessageBuilder {
     const isGoogleModel = provider === 'google';
 
     if (isAnthropicModel) {
-      // Build proper Anthropic messages with tool_use and tool_result blocks
-      const conversationHistory = ConversationContextBuilder.buildToolContinuation(
-        'anthropic',
-        userPrompt,
-        toolCalls,
-        toolResults,
-        previousMessages,
-        generateOptions.systemPrompt
-      ) as ConversationMessage[];
+      // Append to the actual prior request. Rebuilding from previousMessages
+      // moves the original user prompt between recursive tool rounds, splitting
+      // the assistant turn and orphaning delayed native web-search results.
+      const history = generateOptions.conversationHistory as ConversationMessage[] | undefined;
+      const conversationHistory = (history?.length
+        ? ConversationContextBuilder.appendToolExecution('anthropic', toolCalls, toolResults, history)
+        : ConversationContextBuilder.buildToolContinuation(
+          'anthropic', userPrompt, toolCalls, toolResults, previousMessages, generateOptions.systemPrompt
+        )) as ConversationMessage[];
 
       // Keep thinking enabled. AnthropicContextBuilder replays the exact signed
       // thinking/redacted_thinking blocks captured on the tool calls.

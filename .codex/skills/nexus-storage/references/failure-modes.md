@@ -324,3 +324,26 @@ and that matters most for data the event store cannot replay. Workspace and
 conversation rows survive a lost snapshot because a rebuild replays them; embeddings
 do not, so for those the flag is the only thing standing between a mid-save write and
 a silent re-embed of the vault.
+
+## "An API key works until restart"
+
+Credentials are settings, not JSONL/cache data. Inspect `Settings`,
+`SettingsSecrets` and `SecretStore`; do not rebuild the cache for this symptom.
+Compare only presence/equality between the current adapter, in-memory settings,
+`plugin.loadData()` and (if enabled) the matching secure-store entry. Never print
+keys. Preserve the working key through the normal settings save before reloading,
+then repeat the equality and authentication checks. A mismatch identifies stale
+persistence, but does not by itself prove which writer or sync operation caused it.
+If the saved key changes again, trace settings saves with equality/version markers
+and caller stacks, then correlate physical file changes with Sync events. A second
+device can turn old in-memory settings into a newer file by periodically saving
+the whole object. Background bookkeeping must merge only its owned fields into
+freshly loaded data under `pluginDataLock`; a recent file timestamp does not prove
+each setting in that file is recent.
+Implement Obsidian's `onExternalSettingsChange` callback and verify it fires from
+an actual external file change, not just a direct method call. The plugin folder
+must match its manifest ID. Keep retained provider objects current without
+discarding pending local edits; configuration that changes running storage or
+integration services should wait for reload. Test with two independently loaded
+settings owners and then a third fresh owner to prove the saved result survives
+restart. A shared JavaScript lock does not lock Sync or another computer.

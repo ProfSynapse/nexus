@@ -12,6 +12,7 @@ import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
 import { hasNodeRuntime, isDesktop } from '../../../../utils/platform';
 import { desktopRequire } from '../../../../utils/desktopRequire';
+import { isRetryableConnectFailure, ProviderConnectionError } from './ProviderConnectionError';
 
 export interface ProviderHttpRequest {
   url: string;
@@ -55,11 +56,32 @@ interface ErrorLikeResponse {
   json: unknown;
 }
 
+/** Keep the provider's actionable explanation visible in logs and chat errors. */
+function providerErrorDetail(response: ErrorLikeResponse): string {
+  const body = response.json ?? response.data;
+  if (typeof body !== 'object' || body === null) return '';
+
+  let detail: unknown;
+  if ('error' in body) {
+    const error = body.error;
+    detail = typeof error === 'object' && error !== null && 'message' in error
+      ? error.message
+      : error;
+  }
+  if (typeof detail !== 'string' && 'message' in body) detail = body.message;
+  if (typeof detail !== 'string') return '';
+
+  // Do not dump raw bodies (for example proxy HTML) into a user-facing error.
+  const normalized = detail.replace(/\s+/g, ' ').trim();
+  return normalized.length > 1000 ? `${normalized.slice(0, 1000)}…` : normalized;
+}
+
 export class ProviderHttpError extends Error {
   response: ErrorLikeResponse;
 
   constructor(message: string, response: ErrorLikeResponse) {
-    super(message);
+    const detail = providerErrorDetail(response);
+    super(detail ? `${message}: ${detail}` : message);
     this.name = 'ProviderHttpError';
     this.response = response;
   }
@@ -188,6 +210,20 @@ export class ProviderHttpClient {
       return this.requestStreamBufferedFallback(config);
     }
 
+    for (let attempt = 0; ; attempt++) {
+      if (config.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+      try {
+        return await this.requestStreamDesktop(config);
+      } catch (error) {
+        // A POST is safe to replay only when the fresh socket never connected.
+        // HTTP errors and any possibly delivered request are never retried here.
+        if (attempt > 0 || !(error instanceof ProviderConnectionError) || !error.safeToRetry) throw error;
+        await this.waitForConnectionRetry(config.signal);
+      }
+    }
+  }
+
+  private static async requestStreamDesktop(config: ProviderStreamRequest): Promise<NodeJS.ReadableStream> {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
@@ -202,6 +238,7 @@ export class ProviderHttpClient {
     const timeoutMs = config.timeoutMs ?? 120_000;
 
     return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+      let freshSocketStillConnecting = false;
       const requestOptions = {
         hostname: parsed.hostname,
         port: parsed.port || (isHttps ? 443 : 80),
@@ -211,6 +248,7 @@ export class ProviderHttpClient {
       };
 
       const req = nodeModule.request(requestOptions, (res) => {
+        freshSocketStillConnecting = false;
         const status = res.statusCode ?? 0;
 
         if (status < 200 || status >= 300) {
@@ -239,24 +277,41 @@ export class ProviderHttpClient {
         resolve(res);
       });
 
+      req.once('socket', socket => {
+        freshSocketStillConnecting = socket.connecting && !req.reusedSocket;
+        const connected = () => { freshSocketStillConnecting = false; };
+        socket.once('connect', connected);
+        socket.once('secureConnect', connected);
+        req.once('close', () => {
+          socket.removeListener('connect', connected);
+          socket.removeListener('secureConnect', connected);
+        });
+      });
+
       // Timeout handling
       req.setTimeout(timeoutMs, () => {
         req.destroy(new Error(`Stream request timeout after ${timeoutMs}ms`));
       });
 
-      req.on('error', (err) => {
-        reject(err instanceof Error ? err : new Error(String(err)));
+      req.on('error', (err: unknown) => {
+        const safeToRetry = freshSocketStillConnecting && !req.reusedSocket && !config.signal?.aborted && isRetryableConnectFailure(err);
+        if (safeToRetry || !(err instanceof Error || err instanceof DOMException) || !err.message.trim()) {
+          reject(new ProviderConnectionError(config.operation, config.provider, parsed.hostname, err, safeToRetry));
+        } else {
+          reject(err);
+        }
       });
 
       // Abort support; remove the listener when the transport closes.
       if (config.signal) {
         if (config.signal.aborted) {
-          req.destroy(new Error('Request aborted'));
-          reject(new Error('Request aborted'));
+          const error = new DOMException('Request aborted', 'AbortError');
+          req.destroy(error);
+          reject(error);
           return;
         }
         const abort = () => {
-          req.destroy(new Error('Request aborted'));
+          req.destroy(new DOMException('Request aborted', 'AbortError'));
         };
         config.signal.addEventListener('abort', abort, { once: true });
         req.once('close', () => config.signal?.removeEventListener('abort', abort));
@@ -267,6 +322,22 @@ export class ProviderHttpClient {
         req.write(config.body);
       }
       req.end();
+    });
+  }
+
+  private static waitForConnectionRetry(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new DOMException('Request aborted', 'AbortError'));
+    return new Promise((resolve, reject) => {
+      const abort = () => {
+        window.clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+        reject(new DOMException('Request aborted', 'AbortError'));
+      };
+      const timer = window.setTimeout(() => {
+        signal?.removeEventListener('abort', abort);
+        resolve();
+      }, 250);
+      signal?.addEventListener('abort', abort, { once: true });
     });
   }
 

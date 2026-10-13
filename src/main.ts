@@ -15,6 +15,9 @@ export default class NexusPlugin extends Plugin {
     private connector!: MCPConnectorType;
     private serviceManager!: ServiceManager;
     private lifecycleManager!: PluginLifecycleManager;
+    private unloading = false;
+    private syncedSettingsNeedReload = false;
+    private settingsSyncAbort = new AbortController();
 
     /**
      * Get a service asynchronously
@@ -58,7 +61,26 @@ export default class NexusPlugin extends Plugin {
     }
 
     onload(): void {
+        this.unloading = false;
+        this.syncedSettingsNeedReload = false;
+        this.settingsSyncAbort = new AbortController();
         void this.loadPlugin();
+    }
+
+    /** Adopt synced settings without discarding edits still being made locally. */
+    async onExternalSettingsChange(): Promise<void> {
+        if (this.unloading || !this.settings) return;
+        try {
+            const needsReload = await this.settings.reconcileExternalSettings(this.settingsSyncAbort.signal);
+            if (needsReload && !this.unloading && !this.syncedSettingsNeedReload) {
+                this.syncedSettingsNeedReload = true;
+                new Notice(`${BRAND_NAME}: Settings changed on another device. Reload Nexus to apply changes outside AI providers.`);
+            }
+        } catch (error) {
+            if (this.unloading) return;
+            console.error(`[${BRAND_NAME}] Failed to reconcile synced settings:`, error);
+            new Notice(`${BRAND_NAME}: Could not load synced settings. Local edits have been kept.`);
+        }
     }
 
     private async loadPlugin(): Promise<void> {
@@ -153,6 +175,8 @@ export default class NexusPlugin extends Plugin {
     }
 
     onunload(): void {
+        this.unloading = true;
+        this.settingsSyncAbort.abort();
         // Free the MCP socket path here, synchronously, before anything below
         // gets a chance to await. unloadPlugin() runs embedding shutdown, a
         // state save and a SQLite close before it reaches the connector, which

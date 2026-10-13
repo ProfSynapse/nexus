@@ -226,6 +226,71 @@ describe('ProviderHttpClient', () => {
     ]);
   });
 
+  // HTTP 400 continuation failures used to hide the provider's explanation
+  // behind a generic status, making rejected thinking/tool history impossible to diagnose.
+  it('includes the provider explanation when a streaming request is rejected', async () => {
+    const explanation = 'messages.2.content.0: Expected thinking or redacted_thinking';
+    const body = { type: 'error', error: { type: 'invalid_request_error', message: explanation } };
+    __setRequestUrlMock(async () => ({
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+      text: JSON.stringify(body),
+      json: body,
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    await expect(ProviderHttpClient.requestStream({
+      url: 'https://example.com/stream',
+      provider: 'anthropic',
+      operation: 'streaming generation'
+    })).rejects.toMatchObject({
+      message: `streaming generation failed with HTTP 400: ${explanation}`,
+      response: { status: 400, json: body, text: JSON.stringify(body) }
+    });
+  });
+
+  it.each([
+    { error: { message: 'Rate limit exceeded' } },
+    { error: 'Rate limit exceeded' },
+    { message: 'Rate limit exceeded' }
+  ])('includes structured provider errors from assertOk: %j', (body) => {
+    expect(() => ProviderHttpClient.assertOk({
+      ok: false,
+      status: 429,
+      headers: {},
+      text: JSON.stringify(body),
+      json: body,
+      arrayBuffer: new ArrayBuffer(0)
+    })).toThrow('HTTP 429: Rate limit exceeded');
+  });
+
+  it('normalizes and bounds displayed provider details while retaining the full response', () => {
+    const detail = `  Invalid\n\trequest: ${'x'.repeat(1500)}  `;
+    const body = { error: { message: detail } };
+    const response = { status: 400, statusText: 'Bad Request', data: body, json: body, text: JSON.stringify(body) };
+    const error = new ProviderHttpError('HTTP 400', response);
+
+    expect(error.message).toBe(`HTTP 400: ${detail.replace(/\s+/g, ' ').trim().slice(0, 1000)}…`);
+    expect(error.response).toBe(response);
+  });
+
+  it.each([
+    '<html><body>Internal proxy failure</body></html>',
+    { error: { details: 'not an error message' } },
+    { error: { message: 123 } },
+    { error: { message: '   ' } }
+  ])('does not expose arbitrary response bodies in the error message: %j', (body) => {
+    const error = new ProviderHttpError('HTTP 500', {
+      status: 500,
+      statusText: 'Internal Server Error',
+      data: body,
+      json: typeof body === 'string' ? null : body,
+      text: typeof body === 'string' ? body : JSON.stringify(body)
+    });
+
+    expect(error.message).toBe('HTTP 500');
+  });
+
   it('requestStream uses the buffered fallback when runtime looks like Node but platform is not desktop', async () => {
     mockHasNodeRuntime.mockReturnValue(true);
     mockIsDesktop.mockReturnValue(false);
