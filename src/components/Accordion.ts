@@ -16,7 +16,7 @@ export class Accordion extends Component {
      * @param title Accordion header title
      * @param defaultOpen Whether accordion is open by default
      */
-    constructor(containerEl: HTMLElement, title: string, defaultOpen = false) {
+    constructor(containerEl: HTMLElement, title: string, defaultOpen = false, private onToggle?: (isOpen: boolean) => void) {
         super();
         
         this.containerEl = containerEl;
@@ -82,6 +82,7 @@ export class Accordion extends Component {
         if (contentEl) {
             contentEl.classList.toggle('is-open');
         }
+        this.onToggle?.(this.isOpen);
     }
 
     /**

@@ -142,3 +142,7 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 ## 2026-10-09 — Retry metadata replacement
 - Observation: preserving omitted metadata for accounting patches also retained stale provider replay blocks when regenerating an answer.
 - Change: verified omission/patch separately from explicit regeneration replacement, using the existing metadata persistence contract. No protocol change needed.
+
+## 2026-10-13 — Accordion preference
+
+- No change: the persist-new-data protocol correctly routed this UI preference to plugin settings. Existing Settings save/load preserved it; no event-store or schema change was needed.

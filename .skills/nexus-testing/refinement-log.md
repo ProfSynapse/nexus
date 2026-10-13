@@ -197,3 +197,9 @@ there while `npx jest` still works (node resolution walks up). Symlink it, or
 - 2026-10-10 | Mobile authentication investigation exposed a validation/save mismatch outside the adapter; a successful validator fixture alone would not prove which credential chat later sends. | Regression coverage must cross the provider modal's final getConfig/autosave boundary and check stale validation completion. Existing mock-honesty guidance applies.
 
 - 2026-10-12 | Windows Obsidian 1.14.4: explicit Obsidian.com CLI path, in-band vault assertion, plugin:reload, dev:errors, eval and dev:screenshot worked. dev:mobile on/off reloads the renderer; an immediate eval can temporarily report command not found. Mobile-emulated key-row measurement confirmed a full-width input and compact button below, without inspecting credentials. Jest's OS-temp transform cache hit EPERM; a workspace --cacheDirectory allowed the suite to run. | Recorded observed commands and limits; no testing protocol change. Release protocol now documents Windows CLI discovery.
+
+## 2026-10-13 — Get started accordion verification
+
+- No protocol change. Focused regressions failed under intentional policy/save mutations, then passed after restoration. Full-suite socket tests needed unsandboxed local socket access.
+- `obsidian vaults` and `obsidian eval 'vault=Professor Synapse' code=…` worked outside the sandbox. `eval vault=Code` reached the focused vault instead; the in-band name assertion caught it before mutation.
+- Verified the new Accordion against real Obsidian Component/DOM with detached elements and in-memory Settings persistence; no installed bundle or vault data was changed. This is a component check, not a plugin reload/deployment check.

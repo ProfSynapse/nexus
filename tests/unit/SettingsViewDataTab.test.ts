@@ -55,10 +55,7 @@ jest.mock('../../src/utils/platform', () => ({
   supportsMCPBridge: jest.fn().mockReturnValue(false)
 }));
 
-jest.mock('../../src/settings/getStartedStatus', () => ({
-  getConfigStatus: jest.fn().mockReturnValue('nexus-configured'),
-  hasConfiguredProviders: jest.fn().mockReturnValue(true)
-}));
+jest.mock('../../src/settings/getStartedStatus', () => jest.requireActual('../../src/settings/getStartedStatus'));
 
 jest.mock('../../src/components/UnifiedTabs', () => ({
   UnifiedTabs: jest.fn().mockImplementation((options) => {
@@ -155,4 +152,52 @@ describe('SettingsView data tab wiring', () => {
 
     expect(mockDataTab).toHaveBeenCalled();
   });
+});
+
+
+it('saves accordion toggles and restores them in a new settings/view instance', async () => {
+  const { Settings } = await import('../../src/settings');
+  const bridge = jest.requireMock('../../src/utils/platform').supportsMCPBridge as jest.Mock;
+  bridge.mockReturnValue(true);
+  const accordion = jest.requireMock('../../src/components/Accordion').Accordion as jest.Mock;
+  let saved: Record<string, unknown> = { getStartedOpen: true };
+  const app = { vault: { configDir: '.obsidian' }, workspace: {} };
+  const plugin = {
+    app,
+    manifest: { id: 'nexus', version: 'test' },
+    loadData: jest.fn(async () => saved),
+    saveData: jest.fn(async (data: Record<string, unknown>) => { saved = JSON.parse(JSON.stringify(data)); })
+  };
+  const render = (manager: InstanceType<typeof Settings>) => {
+    const view = new SettingsView(app as never, plugin as never, manager);
+    view.containerEl = createMockElement('div') as unknown as HTMLElement;
+    // Content is unrelated; exercise the actual accordion policy and save callback.
+    jest.spyOn(view as unknown as { renderGetStartedContent(): Promise<void> }, 'renderGetStartedContent').mockResolvedValue();
+    view.display();
+    return view;
+  };
+  try {
+    const first = new Settings(plugin as never);
+    await first.loadSettings();
+    const view = render(first);
+    expect(accordion.mock.calls[accordion.mock.calls.length - 1][2]).toBe(true);
+    accordion.mock.calls[accordion.mock.calls.length - 1][3](false);
+    // Drain the real settings save lock and promise chain.
+    await new Promise(resolve => setImmediate(resolve));
+    expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ getStartedOpen: false }));
+    view.cleanup();
+
+    const reloaded = new Settings(plugin as never);
+    await reloaded.loadSettings();
+    const secondView = render(reloaded);
+    expect(accordion.mock.calls[accordion.mock.calls.length - 1][2]).toBe(false);
+    accordion.mock.calls[accordion.mock.calls.length - 1][3](true);
+    await new Promise(resolve => setImmediate(resolve));
+    const reopened = new Settings(plugin as never);
+    await reopened.loadSettings();
+    expect(reopened.settings.getStartedOpen).toBe(true);
+    secondView.cleanup();
+  } finally {
+    bridge.mockReturnValue(false);
+  }
 });

@@ -80,6 +80,8 @@ export interface ProcessedFilesData {
  */
 export interface MCPSettings {
   enabledVault: boolean;
+  /** Explicit accordion preference; absent means infer from configured setup paths. */
+  getStartedOpen?: boolean;
   enableEmbeddings?: boolean; // Enable/disable local embeddings for semantic search (desktop only)
   enableIngestion?: boolean; // Enable/disable PDF/audio ingestion UI and ingest-only model settings
   autoIngestion?: boolean; // Automatically convert newly added supported binary files to Markdown

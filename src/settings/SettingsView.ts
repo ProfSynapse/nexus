@@ -5,7 +5,7 @@ import { SettingsRouter, RouterState, SettingsTab } from './SettingsRouter';
 import { UpdateManager } from '../utils/UpdateManager';
 import { supportsMCPBridge } from '../utils/platform';
 import { Accordion } from '../components/Accordion';
-import { getConfigStatus, hasConfiguredProviders } from './getStartedStatus';
+import { shouldOpenGetStarted } from './getStartedStatus';
 
 // Services
 import { WorkspaceService } from '../services/WorkspaceService';
@@ -536,13 +536,17 @@ export class SettingsView extends PluginSettingTab {
             return;
         }
 
-        const hasProviders = hasConfiguredProviders(this.settingsManager.settings.llmProviders);
-        const mcpConfigured = getConfigStatus(this.app) === 'nexus-configured';
-
         this.getStartedAccordion = new Accordion(
             containerEl,
-            'Get Started',
-            !hasProviders || !mcpConfigured
+            'Get started',
+            shouldOpenGetStarted(this.app, this.settingsManager.settings),
+            (isOpen) => {
+                this.settingsManager.settings.getStartedOpen = isOpen;
+                void this.settingsManager.saveSettings().catch((error: unknown) => {
+                    console.error('[SettingsView] Failed to save get started preference:', error);
+                    new Notice('Could not save the get started preference.');
+                });
+            }
         );
         this.getStartedAccordion.rootEl.addClass('nexus-settings-accordion');
 
