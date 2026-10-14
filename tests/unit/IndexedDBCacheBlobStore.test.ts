@@ -62,4 +62,34 @@ describe('IndexedDBCacheBlobStore', () => {
       () => new IndexedDBCacheBlobStore({ idbKey: 'k', factory: undefined as unknown as IDBFactory })
     ).toThrow(/indexedDB is not available/);
   });
+
+  // The store lives as long as the plugin. Taking the factory from whichever
+  // window had focus at load (a popout, or the Settings window, which is its
+  // own window since Obsidian 1.14) breaks every later save once that window
+  // closes: in the running app its open() then returns null.
+  it('defaults to the main window factory, not the focused window one', async () => {
+    const testWindow = (globalThis as unknown as { window: object }).window;
+    const mainFactory = freshFactory();
+    const focusedFactory = freshFactory();
+    const mainOpen = jest.spyOn(mainFactory, 'open');
+    const focusedOpen = jest.spyOn(focusedFactory, 'open');
+    const indexedDbDescriptor = Object.getOwnPropertyDescriptor(testWindow, 'indexedDB');
+    const activeWindowDescriptor = Object.getOwnPropertyDescriptor(testWindow, 'activeWindow');
+    Object.defineProperty(testWindow, 'indexedDB', { configurable: true, get: () => mainFactory });
+    Object.defineProperty(testWindow, 'activeWindow', {
+      configurable: true,
+      get: () => ({ indexedDB: focusedFactory })
+    });
+
+    try {
+      const store = new IndexedDBCacheBlobStore({ idbKey: 'vault-A:plugin-X' });
+      await store.write(new Uint8Array([1, 2, 3]).buffer);
+
+      expect(mainOpen).toHaveBeenCalled();
+      expect(focusedOpen).not.toHaveBeenCalled();
+    } finally {
+      if (indexedDbDescriptor) Object.defineProperty(testWindow, 'indexedDB', indexedDbDescriptor);
+      if (activeWindowDescriptor) Object.defineProperty(testWindow, 'activeWindow', activeWindowDescriptor);
+    }
+  });
 });
