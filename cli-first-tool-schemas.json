@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14T17:23:45.944Z",
+  "generatedAt": "2026-10-14T17:55:57.022Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1787,7 +1787,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-nano-banana-2.1, gemini-3-pro-image, gemini-3.1-flash-image-preview, gemini-3-pro-image-preview, gemini-2.5-flash-image, gpt-5-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-5-image-mini, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash, gpt-image-1.5, gpt-image-1, gpt-image-1-mini (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-nano-banana-2.1\", \"gemini-3-pro-image\", \"gemini-3.1-flash-image-preview\", \"gemini-3-pro-image-preview\", \"gemini-2.5-flash-image\", \"gpt-5-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-5-image-mini\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\", \"gpt-image-1.5\", \"gpt-image-1\", \"gpt-image-1-mini\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-nano-banana-2.1, gemini-3-pro-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-nano-banana-2.1\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\"])"
         },
         {
           "name": "aspectRatio",
@@ -1811,7 +1811,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image and gemini-3-pro-image. Not accepted by gemini-2.5-flash-image or the FLUX models. (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
+          "description": "[OPTIONAL] Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image, gemini-nano-banana-2.1 and gemini-3-pro-image. Not accepted by the FLUX models. (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
         },
         {
           "name": "referenceImages",
@@ -1819,7 +1819,7 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter; up to 16 on OpenAI (Array of a string) [max items: 14]"
+          "description": "[OPTIONAL] Reference images for style/composition. Max 14 for the Gemini models; per-model limits apply on OpenRouter; up to 16 on OpenAI (Array of a string) [max items: 14]"
         },
         {
           "name": "savePath",
@@ -1837,7 +1837,7 @@
     {
       "agent": "promptManager",
       "tool": "generateVideo",
-      "description": "Generate text-to-video MP4 files in the vault using Google Veo or OpenRouter video models.",
+      "description": "Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.",
       "command": "prompt generate-video",
       "usage": "prompt generate-video <prompt> [--provider <provider>] [--model <model>] <outputPath> [--overwrite] [--aspect-ratio <aspectRatio>] [--resolution <resolution>] [--seconds <seconds>] [--reference-image <referenceImage>] [--generate-audio] [--negative-prompt <negativePrompt>] [--poll-interval-ms <pollIntervalMs>] [--timeout-ms <timeoutMs>]",
       "arguments": [
@@ -1863,7 +1863,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. (string)"
+          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Google: gemini-omni-1.1-flash (retired Veo 3.1 preview ids are mapped to it). OpenRouter: e.g. google/veo-3.1-fast, google/veo-3.1. (string)"
         },
         {
           "name": "outputPath",
@@ -1895,7 +1895,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. (One of: [\"720p\", \"1080p\", \"4k\"])"
+          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. 360p is Google Gemini Omni Flash only. (One of: [\"360p\", \"720p\", \"1080p\", \"4k\"])"
         },
         {
           "name": "seconds",
@@ -1903,7 +1903,7 @@
           "type": "number",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional clip duration in seconds. Provider/model support varies. (number)"
+          "description": "[OPTIONAL] Optional clip duration in seconds. Provider/model support varies; Google Gemini Omni Flash accepts whole seconds from 3 to 10. (number)"
         },
         {
           "name": "referenceImage",
@@ -1919,7 +1919,7 @@
           "type": "boolean",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Whether to ask the provider to generate audio when the selected model supports it. (boolean)"
+          "description": "[OPTIONAL] Whether to ask the provider to generate audio when the selected model supports it. Google Gemini Omni Flash always generates audio and rejects false. (boolean)"
         },
         {
           "name": "negativePrompt",
@@ -1927,7 +1927,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional negative prompt for providers/models that support it. (string)"
+          "description": "[OPTIONAL] Optional negative prompt for providers/models that support it. Google Gemini Omni Flash has no negative prompt, so it is appended to the prompt as \"Do not include: ...\". (string)"
         },
         {
           "name": "pollIntervalMs",
