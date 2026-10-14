@@ -55,7 +55,7 @@ describe('GeminiImageAdapter', () => {
   });
 
   describe('request shape', () => {
-    it('defaults to Nano Banana 2 and posts to generateContent with the API key header', async () => {
+    it('defaults to Nano Banana 2.1 and posts to generateContent with the API key header', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
         requests.push(request);
@@ -65,7 +65,7 @@ describe('GeminiImageAdapter', () => {
       const adapter = new GeminiImageAdapter({ apiKey: 'g-test' });
       await adapter.generateImage(baseParams({ aspectRatio: AspectRatio.SQUARE }));
 
-      expect(requests[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent');
+      expect(requests[0].url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-nano-banana-2.1:generateContent');
       expect(requests[0].headers?.['x-goog-api-key']).toBe('g-test');
 
       const body = parsedBody(requests[0]) as {
@@ -131,7 +131,7 @@ describe('GeminiImageAdapter', () => {
     it('fills in the default model', () => {
       const result = adapter.validateImageParams(baseParams());
       expect(result.isValid).toBe(true);
-      expect(result.adjustedParams?.model).toBe('gemini-3.1-flash-image');
+      expect(result.adjustedParams?.model).toBe('gemini-nano-banana-2.1');
     });
 
     it('limits Lite to 1K and rejects 512px and 2K, as the live API does', () => {

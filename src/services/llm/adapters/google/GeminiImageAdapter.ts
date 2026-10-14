@@ -32,6 +32,7 @@ import {
   StreamChunk
 } from '../types';
 import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
+import { DEFAULT_IMAGE_MODEL } from '../../types/ImageTypes';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp';
 type GeminiImageSize = '512' | '1K' | '2K' | '4K';
@@ -128,6 +129,23 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
 };
 
 export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelSpec>> = {
+  // First on purpose: the generateImage tool and the chat image picker fall
+  // back to a provider's first catalog entry, and this is the default (DEFAULT_IMAGE_MODEL).
+  // GA 2026-10-06; Google's recommended successor to gemini-3.1-flash-image.
+  // Half the image-token price of Nano Banana 2 and no 512 size. The Gemini
+  // docs now show only Interactions API samples; the model page lists Batch
+  // API support, which is a generateContent-only feature.
+  // https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1
+  'gemini-nano-banana-2.1': {
+    displayName: 'Nano Banana 2.1',
+    costPerImage: 0.0336,
+    pricingNote: '1120 image tokens at $30/M for 1K; 2K is $0.0504 (1680 tokens), 4K $0.113 (3780 tokens)',
+    imageTokenPricePerMillion: 30,
+    maxReferenceImages: 14,
+    imageSizes: ['1K', '2K', '4K'],
+    contextWindow: 131072,
+    lastUpdated: '2026-10-14'
+  },
   'gemini-3.1-flash-lite-image': {
     displayName: 'Nano Banana 2 Lite',
     costPerImage: 0.0336,
@@ -147,21 +165,6 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     imageSizes: ['512', '1K', '2K', '4K'],
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
-  },
-  // GA 2026-10-06; Google's recommended successor to gemini-3.1-flash-image.
-  // Half the image-token price of Nano Banana 2 and no 512 size. The Gemini
-  // docs now show only Interactions API samples; the model page lists Batch
-  // API support, which is a generateContent-only feature.
-  // https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1
-  'gemini-nano-banana-2.1': {
-    displayName: 'Nano Banana 2.1',
-    costPerImage: 0.0336,
-    pricingNote: '1120 image tokens at $30/M for 1K; 2K is $0.0504 (1680 tokens), 4K $0.113 (3780 tokens)',
-    imageTokenPricePerMillion: 30,
-    maxReferenceImages: 14,
-    imageSizes: ['1K', '2K', '4K'],
-    contextWindow: 131072,
-    lastUpdated: '2026-10-14'
   },
   'gemini-3-pro-image': {
     displayName: 'Nano Banana Pro',
@@ -194,7 +197,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
   private vault: Vault | null = null;
-  private readonly defaultModel = 'gemini-3.1-flash-image';
+  private readonly defaultModel = DEFAULT_IMAGE_MODEL;
 
   // Supported aspect ratios for Nano Banana models
   private readonly nanoBananaAspectRatios: string[] = [
@@ -204,7 +207,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   constructor(config?: ProviderConfig & { vault?: Vault }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-3.1-flash-image', config?.baseUrl);
+    super(apiKey, DEFAULT_IMAGE_MODEL, config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -463,7 +466,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
    * List price for one 1K image. The actual charge is computed from the
    * response's image token count and recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-3.1-flash-image'): Promise<CostDetails> {
+  getImageModelPricing(model: string = DEFAULT_IMAGE_MODEL): Promise<CostDetails> {
     const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.039;
 
     return Promise.resolve({

@@ -5,6 +5,7 @@
 
 import type { OAuthState } from '../../services/oauth/IOAuthProvider';
 import type { VideoAspectRatio, VideoResolution } from '../../services/llm/types/VideoTypes';
+import { DEFAULT_IMAGE_MODEL } from '../../services/llm/types/ImageTypes';
 
 /**
  * Thinking effort levels - unified across all providers
@@ -260,7 +261,7 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
   },
   defaultImageModel: {
     provider: 'google',
-    model: 'gemini-3.1-flash-image'
+    model: DEFAULT_IMAGE_MODEL
   },
   // Veo 3.1 Fast via OpenRouter: GA, on a route that is not being retired, and
   // priced like Google-direct Gemini Omni Flash (about $0.10/s at 720p with

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14T17:55:57.022Z",
+  "generatedAt": "2026-10-14T18:25:35.464Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1787,7 +1787,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-nano-banana-2.1, gemini-3-pro-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash (One of: [\"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-nano-banana-2.1\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash (One of: [\"gemini-nano-banana-2.1\", \"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\"])"
         },
         {
           "name": "aspectRatio",

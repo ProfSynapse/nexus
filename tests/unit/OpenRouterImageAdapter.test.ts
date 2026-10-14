@@ -78,7 +78,7 @@ describe('OpenRouterImageAdapter', () => {
   });
 
   describe('request shape', () => {
-    it('posts to /api/v1/images with Nano Banana 2 Lite as the default model', async () => {
+    it('posts to /api/v1/images with Nano Banana 2.1 as the default model', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
         requests.push(request);
@@ -94,7 +94,7 @@ describe('OpenRouterImageAdapter', () => {
       expect(requests[0].headers?.Authorization).toBe('Bearer or-test');
 
       const body = parsedBody(requests[0]);
-      expect(body.model).toBe('google/gemini-3.1-flash-image');
+      expect(body.model).toBe('google/gemini-nano-banana-2.1');
       expect(body.prompt).toBe('a red circle');
       expect(body).not.toHaveProperty('modalities');
       expect(body).not.toHaveProperty('messages');
@@ -250,7 +250,7 @@ describe('OpenRouterImageAdapter', () => {
     it('fills in the default model', () => {
       const result = adapter.validateImageParams(baseParams());
       expect(result.isValid).toBe(true);
-      expect(result.adjustedParams?.model).toBe('gemini-3.1-flash-image');
+      expect(result.adjustedParams?.model).toBe('gemini-nano-banana-2.1');
     });
 
     it('rejects an unknown model instead of guessing an OpenRouter id', () => {

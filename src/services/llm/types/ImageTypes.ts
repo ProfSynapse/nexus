@@ -15,6 +15,14 @@
 
 import { CostDetails, LLMProviderError } from '../adapters/types';
 
+/**
+ * The default image model, shared by Google direct and OpenRouter (both catalog
+ * it under this id, first in their catalogs). Every fallback reads this
+ * constant; do not repeat the literal. Google recommends Nano Banana 2.1 over
+ * gemini-3.1-flash-image (now deprecated, no shutdown date) at half the price.
+ */
+export const DEFAULT_IMAGE_MODEL = 'gemini-nano-banana-2.1';
+
 // Core image generation parameter interfaces
 export interface ImageGenerationParams {
   prompt: string;
@@ -245,13 +253,13 @@ export type ImageModel =
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
   | 'flux-2-flex'                    // Black Forest Labs FLUX.2 Flex (OpenRouter only)
   | 'flux-2-klein-4b'                // Black Forest Labs FLUX.2 Klein 4B (OpenRouter only)
-  | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id, the default (Google direct and OpenRouter)
+  | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id (deprecated by Google in favour of 2.1, no shutdown date)
   | 'gemini-3.1-flash-lite-image'    // Google Nano Banana 2 Lite (Google direct and OpenRouter)
   | 'gemini-3-pro-image'             // Google Nano Banana Pro, GA id (Google direct and OpenRouter)
   | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter, and the OpenAI adapter)
   | 'seedream-4.5'                   // ByteDance Seedream 4.5 (OpenRouter only)
   | 'seedream-5-lite'                // ByteDance Seedream 5.0 Lite (OpenRouter only)
-  | 'gemini-nano-banana-2.1'         // Google Nano Banana 2.1 (Google direct and OpenRouter)
+  | 'gemini-nano-banana-2.1'         // Google Nano Banana 2.1, the default (Google direct and OpenRouter)
   | 'flux-3-image'                   // Black Forest Labs FLUX.3 Image (OpenRouter only)
   | 'seedream-5-pro'                 // ByteDance Seedream 5.0 Pro (OpenRouter only)
   | 'seedream-5-flash';              // ByteDance Seedream 5.0 Flash (OpenRouter only)

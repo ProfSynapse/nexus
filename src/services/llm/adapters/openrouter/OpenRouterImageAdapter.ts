@@ -32,6 +32,7 @@ import {
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
+import { DEFAULT_IMAGE_MODEL } from '../../types/ImageTypes';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp';
 
@@ -126,7 +127,18 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
  */
 export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterImageModelSpec>> = {
   // First on purpose: the generateImage tool and the chat image picker fall
-  // back to a provider's first catalog entry, and this is the adapter default.
+  // back to a provider's first catalog entry, and this is the default (DEFAULT_IMAGE_MODEL).
+  // Added 2026-10-14 from /api/v1/images/models/<id>/endpoints.
+  'gemini-nano-banana-2.1': {
+    openRouterId: 'google/gemini-nano-banana-2.1',
+    displayName: 'Nano Banana 2.1 (via OpenRouter)',
+    costPerImage: 0.0336,
+    pricingNote: '1120 output tokens at $30/M for 1K; 2K and 4K use more tokens; no 512',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-10-14'
+  },
   'gemini-3.1-flash-image': {
     openRouterId: 'google/gemini-3.1-flash-image',
     displayName: 'Nano Banana 2 (via OpenRouter)',
@@ -229,17 +241,6 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     contextWindow: 32000,
     lastUpdated: '2026-09-02'
   },
-  // Added 2026-10-14 from /api/v1/images/models/<id>/endpoints.
-  'gemini-nano-banana-2.1': {
-    openRouterId: 'google/gemini-nano-banana-2.1',
-    displayName: 'Nano Banana 2.1 (via OpenRouter)',
-    costPerImage: 0.0336,
-    pricingNote: '1120 output tokens at $30/M for 1K; 2K and 4K use more tokens; no 512',
-    maxReferenceImages: 14,
-    resolutions: ['1K', '2K', '4K'],
-    contextWindow: 65536,
-    lastUpdated: '2026-10-14'
-  },
   'gpt-image-2.5-sunburst': {
     openRouterId: 'openai/gpt-image-2.5-sunburst',
     displayName: 'GPT Image 2.5 Sunburst (via OpenRouter)',
@@ -316,7 +317,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private httpReferer: string;
   private xTitle: string;
 
-  private readonly defaultModel = 'gemini-3.1-flash-image';
+  private readonly defaultModel = DEFAULT_IMAGE_MODEL;
 
   // Aspect ratios accepted across the catalog. Individual endpoints may
   // support fewer; OpenRouter rejects those with a 400 naming the parameter.
@@ -327,7 +328,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
     const apiKey = config?.apiKey || '';
-    super(apiKey, 'gemini-3.1-flash-image', config?.baseUrl);
+    super(apiKey, DEFAULT_IMAGE_MODEL, config?.baseUrl);
 
     if (config?.vault) {
       this.vault = config.vault;
@@ -574,7 +575,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * Per-image list price at the default resolution. The actual charge is in
    * the response's `usage.cost` and is recorded as `metadata.reportedCostUsd`.
    */
-  getImageModelPricing(model = 'gemini-3.1-flash-image'): Promise<CostDetails> {
+  getImageModelPricing(model: string = DEFAULT_IMAGE_MODEL): Promise<CostDetails> {
     const basePrice = this.modelSpecs[model]?.costPerImage ?? 0.05;
 
     return Promise.resolve({

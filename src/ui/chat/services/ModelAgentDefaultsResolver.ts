@@ -14,6 +14,7 @@ import type { ModelAgentWorkspaceContextService, ModelAgentWorkspaceState } from
 import { buildOpenAICompatibleModels, OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import { resolveAgentTemperature } from '../../../services/llm/utils/SubagentModelResolver';
 import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
+import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
 
 interface PluginWithSettings {
   settings?: {
@@ -124,7 +125,7 @@ export class ModelAgentDefaultsResolver {
       agentTemperature: resolveAgentTemperature(null, llmProviders),
       agentContextWindow: this.resolveAgentContextWindowDefault(llmProviders),
       imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
-      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-3.1-flash-image',
+      imageModel: llmProviders?.defaultImageModel?.model || DEFAULT_IMAGE_MODEL,
       speechProvider: llmProviders?.defaultSpeechModel?.provider || null,
       speechModel: llmProviders?.defaultSpeechModel?.model || null,
       speechVoice: llmProviders?.defaultSpeechModel?.voice || null,

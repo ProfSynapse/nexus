@@ -21,6 +21,7 @@ import {
   getRetiredImageModel,
   type RetiredModel
 } from '../../../services/llm/types/RetiredMediaModels';
+import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
 
 export interface GenerateImageParams extends CommonParameters {
   prompt: string;
@@ -233,7 +234,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       }
     }
     if (!model) {
-      model = 'gemini-3.1-flash-image';
+      model = DEFAULT_IMAGE_MODEL;
     }
 
     // A saved prompt, conversation or agent may still name a retired id; run
@@ -267,7 +268,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     }
 
     // Minimal fallback — only the most common default model
-    return ['gemini-3.1-flash-image'];
+    return [DEFAULT_IMAGE_MODEL];
   }
 
   /**

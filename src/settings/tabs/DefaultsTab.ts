@@ -25,6 +25,7 @@ import { SemanticSearchSettings, type SemanticSearchRuntime } from './defaults/S
 import { SemanticSearchOffModal } from './defaults/SemanticSearchOffModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { SEMANTIC_DELETE_MODAL_COPY } from '../../components/shared/chatSettings/copy';
+import { DEFAULT_IMAGE_MODEL } from '../../services/llm/types/ImageTypes';
 
 export interface DefaultsTabServices {
   app: App;
@@ -139,7 +140,7 @@ export class DefaultsTab {
       agentTemperature: llmSettings?.agentTemperature,
       agentContextWindowOverrides: { ...(llmSettings?.agentContextWindowOverrides ?? {}) },
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
-      imageModel: llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
+      imageModel: llmSettings?.defaultImageModel?.model || DEFAULT_IMAGE_MODEL,
       speechProvider: speechChosen ? speech?.provider : undefined,
       speechModel: speechChosen ? speech?.model : undefined,
       speechVoice: speechChosen ? speech?.voice : undefined,

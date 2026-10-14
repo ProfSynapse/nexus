@@ -14,6 +14,7 @@ import { Settings } from '../../../settings';
 import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
 import { resolveSubagentTarget } from '../../../components/shared/chatSettings/subagentTarget';
 import { getRegistryContextWindow } from '../../../services/llm/utils/modelCapabilityLookup';
+import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
 
 /**
  * Type for the NexusPlugin with settings property
@@ -189,7 +190,7 @@ export class ChatSettingsModal extends Modal {
       agentTemperature: this.modelAgentManager.getAgentTemperature(),
       agentContextWindowOverrides,
       imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
-      imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
+      imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || DEFAULT_IMAGE_MODEL,
       speechProvider: this.modelAgentManager.getSpeechProvider() || llmSettings?.defaultSpeechModel?.provider,
       speechModel: this.modelAgentManager.getSpeechModel() || llmSettings?.defaultSpeechModel?.model,
       speechVoice: this.modelAgentManager.getSpeechVoice() || llmSettings?.defaultSpeechModel?.voice,

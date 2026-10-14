@@ -54,6 +54,7 @@ import {
   type ConversationAgentSettings
 } from '../../../services/llm/utils/SubagentModelResolver';
 import { getRetiredImageModel } from '../../../services/llm/types/RetiredMediaModels';
+import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
 
 /** A positive whole-token budget, or null for "use the model's default". */
 function normalizeAgentContextWindow(value: unknown): number | null {
@@ -126,7 +127,7 @@ export class ModelAgentManager {
   /** Subagent context budget for this chat; null uses the subagent model's default. */
   private agentContextWindow: number | null = null;
   private imageProvider: 'google' | 'openrouter' | 'openai' = 'google';
-  private imageModel = 'gemini-3.1-flash-image';
+  private imageModel: string = DEFAULT_IMAGE_MODEL;
   private speechProvider: DefaultSpeechModelSettings['provider'] | null = null;
   private speechModel: DefaultSpeechModelSettings['model'] | null = null;
   private speechVoice: DefaultSpeechModelSettings['voice'] | null = null;
