@@ -11,10 +11,10 @@ import { MemorySettings, DEFAULT_MEMORY_SETTINGS } from '../../types';
 import { MemoryService } from "../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
-import { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { ServiceManager } from '../../core/ServiceManager';
 import type { StorageAdapterResolver } from './services/ServiceAccessors';
+import { resolveSemanticSearchState } from '../../services/embeddings/embeddingAccess';
 
 const noop = (): void => {
   return;
@@ -54,7 +54,6 @@ export class SearchManagerAgent extends BaseAgent {
   private memoryService: MemoryService | null = null;
   private workspaceService: WorkspaceService | null = null;
   private storageAdapterResolver: (() => IStorageAdapter | undefined) | null = null;
-  private embeddingService: EmbeddingService | null = null;
   private searchContentTool: SearchContentTool | null = null;
   private settings: MemorySettings;
 
@@ -110,9 +109,6 @@ export class SearchManagerAgent extends BaseAgent {
             if (!this.storageAdapterResolver) {
               this.storageAdapterResolver = () => serviceContainer.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') || undefined;
             }
-            if (!this.embeddingService) {
-              this.embeddingService = serviceContainer.getServiceIfReady<EmbeddingService>('embeddingService');
-            }
           }
         }
       }
@@ -134,12 +130,14 @@ export class SearchManagerAgent extends BaseAgent {
     // Tools accept Plugin interface which only requires app property
     const pluginOrFallback: Plugin = pluginRef || this.createMinimalPlugin(app);
 
-    // Register ContentSearchTool (fuzzy + keyword + semantic search)
-    this.searchContentTool = new SearchContentTool(pluginOrFallback);
-    // Wire up EmbeddingService for semantic search if available
-    if (this.embeddingService) {
-      this.searchContentTool.setEmbeddingService(this.embeddingService);
-    }
+    // Register ContentSearchTool (fuzzy + keyword + semantic search). The tool
+    // resolves the embedding service from the plugin on every semantic call,
+    // and reads the semantic search setting whenever it describes itself, so
+    // turning semantic search off stops it being offered without a reload.
+    this.searchContentTool = new SearchContentTool(
+      pluginOrFallback,
+      () => resolveSemanticSearchState(pluginOrFallback)
+    );
     this.registerTool(this.searchContentTool);
 
     // Register focused search tools - lazy loaded

@@ -21,7 +21,10 @@ import { AppManager } from '../../services/apps/AppManager';
 import { FoldStateStore } from '../../components/shared/settings/FoldStateStore';
 import { VideoSettings } from './defaults/VideoSettings';
 import { FileConversionSettings } from './defaults/FileConversionSettings';
-import { SemanticSearchSettings } from './defaults/SemanticSearchSettings';
+import { SemanticSearchSettings, type SemanticSearchRuntime } from './defaults/SemanticSearchSettings';
+import { SemanticSearchOffModal } from './defaults/SemanticSearchOffModal';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { SEMANTIC_DELETE_MODAL_COPY } from '../../components/shared/chatSettings/copy';
 
 export interface DefaultsTabServices {
   app: App;
@@ -30,6 +33,15 @@ export interface DefaultsTabServices {
   workspaceService?: WorkspaceService;
   customPromptStorage?: CustomPromptStorageService;
   appManager?: AppManager;
+  /**
+   * Desktop semantic search runtime, for the Semantic search fold's status,
+   * hot-apply and index deletion. Without it the fold shows only the switch
+   * state and saves the setting.
+   */
+  semanticSearch?: {
+    getRuntime(): SemanticSearchRuntime | null;
+    applyEnabled(enabled: boolean): Promise<void>;
+  };
 }
 
 /**
@@ -265,12 +277,24 @@ export class DefaultsTab {
       })
     ];
     if (Platform.isDesktop) {
+      const semantic = this.services.semanticSearch;
+      const app = this.services.app;
       folds.push(new SemanticSearchSettings({
         isEnabled: () => pluginSettings().enableEmbeddings ?? true,
         setEnabled: enabled => {
           pluginSettings().enableEmbeddings = enabled;
           this.enqueueSave();
-        }
+        },
+        applyEnabled: enabled => semantic?.applyEnabled(enabled) ?? Promise.resolve(),
+        getRuntime: () => semantic?.getRuntime() ?? null,
+        confirmTurnOff: () => SemanticSearchOffModal.confirm(app),
+        confirmDeleteIndex: () => ConfirmModal.confirm(app, {
+          variant: 'delete',
+          title: SEMANTIC_DELETE_MODAL_COPY.title,
+          body: SEMANTIC_DELETE_MODAL_COPY.body,
+          cancelLabel: SEMANTIC_DELETE_MODAL_COPY.cancel,
+          ctaLabel: SEMANTIC_DELETE_MODAL_COPY.confirm
+        })
       }));
     }
     return folds;

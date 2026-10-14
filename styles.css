@@ -1930,6 +1930,26 @@ body.theme-light .message-content {
     min-width: 40px;
 }
 
+/* Semantic search fold: index counts and indexing progress (plan Phase 4). */
+.nexus-semantic-value {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.setting-item.nexus-semantic-progress .setting-progress-bar {
+    width: 140px;
+}
+
+body.is-mobile .setting-item.nexus-semantic-progress .setting-progress-bar {
+    width: 70px;
+}
+
+.nexus-semantic-off-note {
+    color: var(--text-muted);
+}
+
 body.is-mobile .nexus-accordion-toggle {
     min-height: 44px;
 }

@@ -21,6 +21,7 @@ import { TaskBoardFilterController } from './services/TaskBoardFilterController'
 import { TaskBoardGroupingService } from './services/TaskBoardGroupingService';
 import { TaskBoardRenderer } from './services/TaskBoardRenderer';
 import { TaskBoardSyncCoordinator } from './services/TaskBoardSyncCoordinator';
+import { resolveEmbeddingService } from '../../services/embeddings/embeddingAccess';
 
 export class TaskBoardView extends ItemView {
   private dataController: TaskBoardDataController;
@@ -58,7 +59,7 @@ export class TaskBoardView extends ItemView {
       getTaskService: () => this.dataController.getTaskService(),
       getProjects: () => this.projects,
       getTasks: () => this.tasks,
-      getEmbeddingService: () => this.plugin.getServiceIfReady('embeddingService') ?? undefined,
+      getEmbeddingService: () => resolveEmbeddingService(this.plugin) ?? undefined,
       reloadBoard: () => this.loadBoardData(),
       renderBoard: () => this.renderBoard(),
       onEditModalStateChange: (isOpen) => {

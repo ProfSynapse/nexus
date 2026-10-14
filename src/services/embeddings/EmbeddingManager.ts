@@ -7,19 +7,22 @@
  * - Lazy initialization (3-second delay on startup)
  * - Coordinates EmbeddingEngine, EmbeddingService, EmbeddingWatcher,
  *   ConversationEmbeddingWatcher, IndexingQueue, and StatusBar
+ * - Can be turned off and on at runtime (setEnabled) without a restart
+ * - Publishes its status and indexing progress (onStateChange, getStatus)
+ * - Deletes the stored vectors on request while turned off (deleteIndex)
  * - Graceful shutdown with cleanup
  *
  * Relationships:
- * - Called by PluginLifecycleManager for initialization
+ * - Called by PluginLifecycleManager for initialization and hot-apply
  * - Manages all embedding system components
  */
 
-import { App, Plugin, Platform, Notice } from 'obsidian';
+import { App, Plugin, Platform, Notice, Events, type EventRef } from 'obsidian';
 import { EmbeddingEngine } from './EmbeddingEngine';
 import { EmbeddingService } from './EmbeddingService';
 import { EmbeddingWatcher } from './EmbeddingWatcher';
 import { ConversationEmbeddingWatcher } from './ConversationEmbeddingWatcher';
-import { IndexingQueue } from './IndexingQueue';
+import { IndexingQueue, type IndexingProgress } from './IndexingQueue';
 import { EmbeddingStatusBar } from './EmbeddingStatusBar';
 import { createRetrievalDreamService, RetrievalDream } from './adapter/createRetrievalDreamService';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
@@ -35,6 +38,43 @@ interface PluginWithSettings {
 
 /** How often a dream-consolidation cycle runs (ms). */
 const DREAM_INTERVAL_MS = 45 * 60 * 1000;
+
+/** Command id of the manual "dream now" command; removed again on stop. */
+const DREAM_COMMAND_ID = 'consolidate-retrieval-memory';
+
+/** Event name used on the manager's private Events bus. */
+const STATE_EVENT = 'state-change';
+
+/**
+ * Snapshot of the embedding runtime, for status surfaces.
+ *
+ * `enabled` is whether semantic search is turned on for this device (always
+ * false on mobile). `initialized` is whether the engine, watchers and queue are
+ * running. `progress` is the latest indexing progress event, or null when
+ * nothing has been reported since the last start.
+ */
+export interface EmbeddingRuntimeStatus {
+  enabled: boolean;
+  initialized: boolean;
+  indexing: boolean;
+  paused: boolean;
+  progress: IndexingProgress | null;
+}
+
+/** Stored index sizes plus runtime state. Counts are read even while turned off. */
+export interface EmbeddingStats {
+  enabled: boolean;
+  initialized: boolean;
+  noteCount: number;
+  traceCount: number;
+  conversationChunkCount: number;
+  /** Distinct conversations that have at least one embedded chunk. */
+  conversationCount: number;
+  indexingInProgress: boolean;
+  indexingPaused: boolean;
+}
+
+export type EmbeddingStateListener = (status: EmbeddingRuntimeStatus) => void;
 
 /**
  * Embedding system manager
@@ -66,6 +106,28 @@ export class EmbeddingManager {
   private backgroundIndexingTimer: number | null = null;
   private backgroundIndexingWork: Promise<void> | null = null;
   private shuttingDown = false;
+
+  /**
+   * The periodic dream-cycle interval. Kept so a runtime stop can clear it;
+   * registerInterval alone only clears it at plugin unload.
+   */
+  private dreamInterval: number | null = null;
+  private dreamCommandRegistered = false;
+
+  /**
+   * Bumped by every teardown. A background indexing chain captures the value
+   * it started under and stops between phases once it changes, so turning
+   * semantic search off cannot let the next phase start against a torn-down
+   * queue.
+   */
+  private runGeneration = 0;
+
+  /** Serializes setEnabled/deleteIndex so rapid toggles apply in order. */
+  private transition: Promise<void> = Promise.resolve();
+
+  private readonly events = new Events();
+  private queueProgressRef: EventRef | null = null;
+  private lastProgress: IndexingProgress | null = null;
 
   constructor(
     app: App,
@@ -99,6 +161,13 @@ export class EmbeddingManager {
       this.watcher = new EmbeddingWatcher(this.app, this.service);
       this.queue = new IndexingQueue(this.app, this.service, this.db);
       this.statusBar = new EmbeddingStatusBar(this.plugin, this.queue);
+      this.lastProgress = null;
+
+      // Relay queue progress to status subscribers (the settings fold).
+      this.queueProgressRef = this.queue.on('progress', (...data: unknown[]) => {
+        this.lastProgress = (data[0] as IndexingProgress | undefined) ?? null;
+        this.emitState();
+      });
 
       // Initialize status bar (desktop only)
       this.statusBar.init();
@@ -134,6 +203,68 @@ export class EmbeddingManager {
       console.error('[EmbeddingManager] Initialization failed:', error);
       // Don't throw - embeddings are optional functionality
     }
+
+    this.emitState();
+  }
+
+  /**
+   * Turn semantic search on or off for this session, without a restart.
+   *
+   * Turning on builds fresh components and schedules indexing; the index kept
+   * on this device means only notes that changed are re-embedded, and the
+   * prune pass drops vectors of notes deleted or renamed while it was off.
+   * Turning off stops the watchers, the queue, the status bar, the dream cycle
+   * and the engine, and leaves the stored vectors in place (see deleteIndex).
+   *
+   * Idempotent, a no-op on mobile and after shutdown(), and serialized: two
+   * quick toggles apply in the order they were made.
+   */
+  setEnabled(enabled: boolean): Promise<void> {
+    const next = this.transition.then(async () => {
+      if (this.shuttingDown || Platform.isMobile) {
+        return;
+      }
+      if (enabled === this.isEnabled) {
+        return;
+      }
+
+      if (enabled) {
+        this.isEnabled = true;
+        this.initialize();
+        return;
+      }
+
+      this.isEnabled = false;
+      await this.teardown();
+      this.emitState();
+    });
+    this.transition = next.catch((error) => {
+      console.error('[EmbeddingManager] Failed to apply the semantic search setting:', error);
+    });
+    return this.transition;
+  }
+
+  /**
+   * Delete the stored note, trace and conversation vectors on this device.
+   *
+   * Allowed only while semantic search is turned off, so it can never race the
+   * indexing queue. The learned retrieval adapter (AdapterStore) is kept: it is
+   * a separate file, and it stays valid for the same embedding model.
+   *
+   * @throws Error when semantic search is on.
+   */
+  async deleteIndex(): Promise<void> {
+    const run = this.transition.then(async () => {
+      if (this.isEnabled || this.isInitialized) {
+        throw new Error('Turn semantic search off before deleting its index.');
+      }
+      await this.db.clearEmbeddingIndex();
+      this.lastProgress = null;
+    });
+    // A failed delete must not wedge later toggles behind a rejected promise.
+    this.transition = run.catch(() => undefined);
+    await run;
+    this.emitState();
   }
 
   /**
@@ -142,21 +273,53 @@ export class EmbeddingManager {
    */
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
-    // Cleared before the isEnabled bail-out on purpose: this timer is the one
-    // thing that can still fire after shutdown() returns, so it is cancelled
+    // Cleared before anything else on purpose: this timer is the one thing
+    // that can still fire after shutdown() returns, so it is cancelled
     // unconditionally rather than behind a flag that may have changed.
     if (this.backgroundIndexingTimer !== null) {
       window.clearTimeout(this.backgroundIndexingTimer);
       this.backgroundIndexingTimer = null;
     }
 
-    if (!this.isEnabled) {
-      return;
+    try {
+      // Let an in-flight toggle or delete finish before tearing down, so the
+      // two never interleave against the same components.
+      await this.transition;
+      await this.teardown();
+    } catch (error) {
+      console.error('[EmbeddingManager] Shutdown failed:', error);
+    } finally {
+      // Even a failing watcher or engine cleanup must not leave the accepted
+      // background phase writing after the lifecycle closes its cache.
+      await this.backgroundIndexingWork;
     }
+  }
+
+  /**
+   * Stop every running component and drop it. Shared by shutdown() and by
+   * turning semantic search off. Safe to call when nothing is running.
+   *
+   * Order matters: cancel and unsubscribe first, then wait for the indexing
+   * phase that was already running to persist its final progress, and only
+   * then dispose the engine it may still be using.
+   */
+  private async teardown(): Promise<void> {
+    this.runGeneration++;
+
+    if (this.backgroundIndexingTimer !== null) {
+      window.clearTimeout(this.backgroundIndexingTimer);
+      this.backgroundIndexingTimer = null;
+    }
+
+    this.stopRetrievalLearning();
 
     try {
       // Cancel indexing and remove all listeners
       if (this.queue) {
+        if (this.queueProgressRef) {
+          this.queue.offref(this.queueProgressRef);
+          this.queueProgressRef = null;
+        }
         this.queue.destroy();
       }
 
@@ -170,7 +333,7 @@ export class EmbeddingManager {
         await this.conversationWatcher.shutdown();
       }
 
-      // Clean up status bar (removes progress listener)
+      // Clean up status bar (removes progress listener and the item itself)
       if (this.statusBar) {
         this.statusBar.destroy();
       }
@@ -183,15 +346,15 @@ export class EmbeddingManager {
       if (this.engine) {
         await this.engine.dispose();
       }
-
-      this.isInitialized = false;
-
-    } catch (error) {
-      console.error('[EmbeddingManager] Shutdown failed:', error);
     } finally {
-      // Even a failing watcher or engine cleanup must not leave the accepted
-      // background phase writing after the lifecycle closes its cache.
-      await this.backgroundIndexingWork;
+      this.engine = null;
+      this.service = null;
+      this.watcher = null;
+      this.conversationWatcher = null;
+      this.queue = null;
+      this.statusBar = null;
+      this.isInitialized = false;
+      this.lastProgress = null;
     }
   }
 
@@ -260,37 +423,103 @@ export class EmbeddingManager {
   }
 
   /**
-   * Get statistics about the embedding system
+   * Whether semantic search is turned on for this device, whether or not the
+   * engine has finished starting. Always false on mobile.
    */
-  async getStats(): Promise<{
-    enabled: boolean;
-    initialized: boolean;
-    noteCount: number;
-    traceCount: number;
-    conversationChunkCount: number;
-    indexingInProgress: boolean;
-  }> {
-    if (!this.isEnabled || !this.service) {
-      return {
-        enabled: false,
-        initialized: false,
-        noteCount: 0,
-        traceCount: 0,
-        conversationChunkCount: 0,
-        indexingInProgress: false
-      };
-    }
+  isTurnedOn(): boolean {
+    return this.isEnabled;
+  }
 
-    const stats = await this.service.getStats();
+  /** Synchronous snapshot for a first paint; subscribe for updates. */
+  getStatus(): EmbeddingRuntimeStatus {
+    return {
+      enabled: this.isEnabled,
+      initialized: this.isInitialized,
+      indexing: this.queue?.isIndexing() ?? false,
+      paused: this.queue?.isIndexingPaused() ?? false,
+      progress: this.lastProgress
+    };
+  }
+
+  /**
+   * Current indexing progress: the queue's own view while it is running,
+   * otherwise the last event it reported, otherwise null.
+   */
+  getProgress(): IndexingProgress | null {
+    if (this.queue?.isIndexing()) {
+      return this.queue.getProgress();
+    }
+    return this.lastProgress;
+  }
+
+  /** Pause the running indexing pass. A no-op when nothing is indexing. */
+  pauseIndexing(): void {
+    this.queue?.pause();
+    this.emitState();
+  }
+
+  /** Resume a paused indexing pass. */
+  resumeIndexing(): void {
+    this.queue?.resume();
+    this.emitState();
+  }
+
+  /**
+   * Subscribe to state changes: start, stop, index deletion and every
+   * indexing progress event.
+   *
+   * @returns A function that removes the listener.
+   */
+  onStateChange(listener: EmbeddingStateListener): () => void {
+    const ref = this.events.on(STATE_EVENT, (...data: unknown[]) => {
+      listener(data[0] as EmbeddingRuntimeStatus);
+    });
+    return () => this.events.offref(ref);
+  }
+
+  private emitState(): void {
+    try {
+      this.events.trigger(STATE_EVENT, this.getStatus());
+    } catch (error) {
+      console.error('[EmbeddingManager] A state listener failed:', error);
+    }
+  }
+
+  /**
+   * Get statistics about the embedding system.
+   *
+   * The counts come straight from the cache database, so they are reported
+   * while semantic search is turned off as well: the off state shows how much
+   * index is being kept. Each count answers 0 on its own when its table cannot
+   * be read.
+   */
+  async getStats(): Promise<EmbeddingStats> {
+    const [noteCount, traceCount, conversationChunkCount, conversationCount] = await Promise.all([
+      this.countOrZero('SELECT COUNT(*) as count FROM embedding_metadata'),
+      this.countOrZero('SELECT COUNT(*) as count FROM trace_embedding_metadata'),
+      this.countOrZero('SELECT COUNT(*) as count FROM conversation_embedding_metadata'),
+      this.countOrZero('SELECT COUNT(DISTINCT conversationId) as count FROM conversation_embedding_metadata')
+    ]);
 
     return {
       enabled: this.isEnabled,
       initialized: this.isInitialized,
-      noteCount: stats.noteCount,
-      traceCount: stats.traceCount,
-      conversationChunkCount: stats.conversationChunkCount,
-      indexingInProgress: this.queue?.isIndexing() ?? false
+      noteCount,
+      traceCount,
+      conversationChunkCount,
+      conversationCount,
+      indexingInProgress: this.queue?.isIndexing() ?? false,
+      indexingPaused: this.queue?.isIndexingPaused() ?? false
     };
+  }
+
+  private async countOrZero(sql: string): Promise<number> {
+    try {
+      const row = await this.db.queryOne<{ count: number }>(sql);
+      return Number(row?.count ?? 0) || 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**
@@ -317,22 +546,49 @@ export class EmbeddingManager {
         console.error('[EmbeddingManager] Failed to load retrieval adapter:', error);
       });
 
-      // Periodic consolidation, unless explicitly disabled.
+      // Periodic consolidation, unless explicitly disabled. The id is kept so
+      // turning semantic search off can clear it; registerInterval still
+      // covers plugin unload.
       if (pluginSettings?.embeddings?.retrievalLearning !== false) {
         const interval = window.setInterval(() => {
           void this.runDreamCycle(false);
         }, DREAM_INTERVAL_MS);
+        this.dreamInterval = interval;
         this.plugin.registerInterval(interval);
       }
 
       this.plugin.addCommand({
-        id: 'consolidate-retrieval-memory',
+        id: DREAM_COMMAND_ID,
         name: 'Consolidate retrieval memory (dream now)',
         callback: () => { void this.runDreamCycle(true); }
       });
+      this.dreamCommandRegistered = true;
     } catch (error) {
       console.error('[EmbeddingManager] Failed to initialize retrieval learning:', error);
     }
+  }
+
+  /**
+   * Undo initRetrievalLearning: clear the dream interval and remove the
+   * command, so a stopped manager leaves nothing scheduled or advertised.
+   * The persisted adapter file is not touched.
+   */
+  private stopRetrievalLearning(): void {
+    if (this.dreamInterval !== null) {
+      window.clearInterval(this.dreamInterval);
+      this.dreamInterval = null;
+    }
+
+    if (this.dreamCommandRegistered) {
+      this.dreamCommandRegistered = false;
+      try {
+        this.plugin.removeCommand(DREAM_COMMAND_ID);
+      } catch (error) {
+        console.error('[EmbeddingManager] Failed to remove the dream command:', error);
+      }
+    }
+
+    this.retrievalDream = null;
   }
 
   /**
@@ -377,11 +633,23 @@ export class EmbeddingManager {
   }
 
   private async runIndexingPhases(): Promise<void> {
-    if (!this.queue) {
+    const queue = this.queue;
+    if (!queue) {
       return;
     }
+    const generation = this.runGeneration;
+    const stopped = (): boolean => this.shuttingDown || generation !== this.runGeneration;
 
     try {
+      // Prune first. Vectors of notes deleted or renamed while semantic search
+      // was off, and of conversations deleted meanwhile, are otherwise never
+      // removed: the passes below only walk what still exists. Running it on
+      // every pass covers startup, turning search back on and a cache rebuild.
+      await queue.pruneMissingNotes();
+      if (stopped()) return;
+      await queue.pruneMissingConversations();
+      if (stopped()) return;
+
       // Cheapest-first, and deliberately so.
       //
       // The three phases are independent - conversations read conversations/
@@ -396,15 +664,15 @@ export class EmbeddingManager {
       // in seconds and the long vault walk runs behind them.
 
       // Phase 1: Backfill existing conversations (idempotent, resumable)
-      await this.queue.startConversationIndex();
-      if (this.shuttingDown) return;
+      await queue.startConversationIndex();
+      if (stopped()) return;
 
       // Phase 2: Backfill existing traces (from migration)
-      await this.queue.startTraceIndex();
-      if (this.shuttingDown) return;
+      await queue.startTraceIndex();
+      if (stopped()) return;
 
       // Phase 3: Index all notes - longest by far, so it goes last
-      await this.queue.startFullIndex();
+      await queue.startFullIndex();
     } catch (error) {
       console.error('[EmbeddingManager] Background indexing failed:', error);
     }
