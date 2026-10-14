@@ -532,6 +532,15 @@ export class IndexingQueue extends Events {
     try {
       await this.embeddingService.initialize();
 
+      // initialize() swallows a model that failed to load and turns the
+      // service off. Every embedNote() after that is a silent no-op, so
+      // walking the queue anyway reported "complete, N of N" over an empty
+      // index. Say what happened instead.
+      if (!this.embeddingService.isServiceEnabled()) {
+        this.queue = [];
+        throw new Error('The embedding model could not be loaded');
+      }
+
       this.emitProgress({
         phase: 'indexing',
         totalNotes: this.totalCount,
