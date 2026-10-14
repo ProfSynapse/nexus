@@ -756,8 +756,19 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Delete all embedding vectors (notes, traces, conversations) and save.
    * Used by "Delete index" while semantic search is turned off.
    */
+  /**
+   * Delete the embedding vectors, then VACUUM so the saved cache actually
+   * shrinks: dropped tables only move their pages to SQLite's freelist, and
+   * the exported blob would otherwise keep them.
+   */
   async clearEmbeddingIndex(): Promise<void> {
     await this.getMaintenanceService().clearEmbeddingIndex();
+    try {
+      await this.vacuum();
+    } catch (error) {
+      // The vectors are gone either way; only the space stays allocated.
+      console.warn('[SQLiteCacheManager] Could not compact the cache after deleting the index:', error);
+    }
     await this.save();
   }
 
@@ -765,8 +776,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     await this.getMaintenanceService().rebuildFTSIndexes();
   }
 
+  /** VACUUM cannot run inside a transaction, so it waits for any open one to finish. */
   async vacuum(): Promise<void> {
-    await this.getMaintenanceService().vacuum();
+    await this.transactionCoordinator.exclusive(() => this.getMaintenanceService().vacuum());
     this.markDirty();
   }
 

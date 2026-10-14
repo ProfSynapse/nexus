@@ -306,6 +306,57 @@ describe('SQLiteCacheManager', () => {
       expect(dbExec).toHaveBeenCalledWith('VACUUM');
       expect(manager.hasUnsavedData).toBe(true);
     });
+
+    it('vacuum waits for an open transaction, since SQLite refuses VACUUM inside one', async () => {
+      const manager = createManager();
+      const order: string[] = [];
+      manager.db = { exec: jest.fn((sql: string) => { order.push(sql); }) };
+      const gate = createDeferred<void>();
+      manager.commit.mockImplementation(async () => { order.push('COMMIT'); });
+
+      const running = manager.transaction(async () => {
+        order.push('in transaction');
+        await gate.promise;
+      });
+      const vacuum = manager.vacuum();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      expect(order).toEqual(['in transaction']);
+
+      gate.resolve();
+      await Promise.all([running, vacuum]);
+      expect(order).toEqual(['in transaction', 'COMMIT', 'VACUUM']);
+    });
+
+    it('clearEmbeddingIndex compacts the database before saving, so Delete index frees the space', async () => {
+      const manager = createManager();
+      const order: string[] = [];
+      manager.db = { exec: jest.fn((sql: string) => { order.push(sql); }) };
+      manager.commit.mockImplementation(async () => { order.push('COMMIT'); });
+      const save = jest.spyOn(manager, 'save').mockImplementation(async () => { order.push('save'); });
+
+      await manager.clearEmbeddingIndex();
+
+      expect(order.indexOf('COMMIT')).toBeGreaterThan(-1);
+      expect(order.slice(order.indexOf('COMMIT') + 1)).toEqual(['VACUUM', 'save']);
+      expect(order.filter(sql => sql.startsWith('DROP TABLE'))).toHaveLength(3);
+      expect(save).toHaveBeenCalledTimes(1);
+    });
+
+    it('clearEmbeddingIndex still saves when VACUUM fails', async () => {
+      const manager = createManager();
+      manager.db = { exec: jest.fn((sql: string) => { if (sql === 'VACUUM') throw new Error('busy'); }) };
+      const save = jest.spyOn(manager, 'save').mockResolvedValue(undefined);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        await manager.clearEmbeddingIndex();
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+        error.mockRestore();
+      }
+    });
   });
 
   describe('statistics', () => {

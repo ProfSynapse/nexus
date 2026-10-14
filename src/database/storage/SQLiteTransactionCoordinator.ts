@@ -7,14 +7,7 @@ export class SQLiteTransactionCoordinator {
     rollbackTransaction: () => Promise<void>,
     fn: () => Promise<T>
   ): Promise<T> {
-    let releaseLock: (() => void) | undefined;
-    const previousLock = this.transactionLock;
-    this.transactionLock = new Promise<void>(resolve => {
-      releaseLock = resolve;
-    });
-
-    try {
-      await previousLock;
+    return this.exclusive(async () => {
       await beginTransaction();
 
       try {
@@ -25,6 +18,23 @@ export class SQLiteTransactionCoordinator {
         await rollbackTransaction();
         throw error;
       }
+    });
+  }
+
+  /**
+   * Run `fn` with no transaction open and none able to start until it ends.
+   * For statements SQLite refuses inside a transaction, such as VACUUM.
+   */
+  async exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    let releaseLock: (() => void) | undefined;
+    const previousLock = this.transactionLock;
+    this.transactionLock = new Promise<void>(resolve => {
+      releaseLock = resolve;
+    });
+
+    try {
+      await previousLock;
+      return await fn();
     } finally {
       releaseLock?.();
     }
