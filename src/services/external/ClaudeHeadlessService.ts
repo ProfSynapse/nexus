@@ -333,7 +333,7 @@ export class ClaudeHeadlessService {
             throw new Error(`${moduleName} is only available on desktop.`);
         }
 
-        const maybeRequire = (window.activeWindow as Window & {
+        const maybeRequire = (window as Window & {
             require?: (moduleId: string) => unknown;
         }).require;
 
