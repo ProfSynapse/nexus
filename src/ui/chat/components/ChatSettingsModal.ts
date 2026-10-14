@@ -29,6 +29,7 @@ export class ChatSettingsModal extends Modal {
   private pendingSettings: ChatSettings | null = null;
   private saveButton: ButtonComponent | null = null;
   private saveStatus: HTMLElement | null = null;
+  private buttonContainer: HTMLElement | null = null;
   private saving = false;
   private ownsContextHandoff = false;
   private closed = false;
@@ -49,13 +50,20 @@ export class ChatSettingsModal extends Modal {
     this.closed = false;
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass('chat-settings-modal');
+    this.setTitle('Chat settings');
+    this.modalEl.addClass('chat-settings-modal');
 
-    // Header with buttons
-    const header = contentEl.createDiv('chat-settings-header');
-    header.createEl('h2', { text: 'Chat settings' });
+    // The renderer's container comes first so the form sits above the buttons
+    // even though it fills in asynchronously.
+    const rendererContainer = contentEl.createDiv('chat-settings-renderer');
 
-    const buttonContainer = header.createDiv('chat-settings-buttons');
+    // Cancel / Save sit at the bottom of the modal, outside the scrolling content.
+    this.buttonContainer?.remove();
+    const buttonContainer = this.modalEl.createDiv('modal-button-container');
+    this.buttonContainer = buttonContainer;
+    this.saveStatus = buttonContainer.createEl('p', { text: '', cls: 'chat-settings-save-status' });
+    this.saveStatus.setAttribute('role', 'status');
+    this.saveStatus.setAttribute('aria-live', 'polite');
     new ButtonComponent(buttonContainer)
       .setButtonText('Cancel')
       .onClick(() => this.close());
@@ -66,20 +74,17 @@ export class ChatSettingsModal extends Modal {
       .onClick(() => {
         void this.handleSave();
       });
-    this.saveStatus = buttonContainer.createEl('p', { text: '' });
-    this.saveStatus.setAttribute('role', 'status');
-    this.saveStatus.setAttribute('aria-live', 'polite');
 
     // Load data and render
-    void this.loadAndRender(contentEl);
+    void this.loadAndRender(rendererContainer);
   }
 
-  private async loadAndRender(contentEl: HTMLElement): Promise<void> {
+  private async loadAndRender(rendererContainer: HTMLElement): Promise<void> {
     const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
     const llmProviderSettings = plugin?.settings?.settings?.llmProviders;
 
     if (!llmProviderSettings) {
-      contentEl.createEl('p', { text: 'Settings not available' });
+      rendererContainer.createEl('p', { text: 'Settings not available' });
       return;
     }
 
@@ -94,14 +99,11 @@ export class ChatSettingsModal extends Modal {
     const initialSettings = this.getCurrentSettings();
     initialSettings.workflowId = workflowId;
 
-    // Create renderer
-    const rendererContainer = contentEl.createDiv('chat-settings-renderer');
-
     this.renderer = new ChatSettingsRenderer(rendererContainer, {
       app: this.app,
+      surface: 'chat',
       llmProviderSettings,
       initialSettings,
-      showWorkflowSelection: true,
       options: { workspaces, prompts },
       callbacks: {
         onSettingsChange: (settings) => {
@@ -322,6 +324,8 @@ export class ChatSettingsModal extends Modal {
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;
+    this.buttonContainer?.remove();
+    this.buttonContainer = null;
     this.contentEl.empty();
   }
 }

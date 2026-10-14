@@ -1,119 +1,71 @@
 /**
- * ChatSettingsRenderer - Shared settings UI for DefaultsTab and ChatSettingsModal
+ * ChatSettingsRenderer - Shared settings UI for the Defaults tab and the Chat settings modal.
  *
- * Renders identical UI in both places:
- * - Chat provider + model
- * - Reasoning toggle + Effort slider
- * - Image generation settings
- * - Transcription settings
- * - Workspace + prompt
- * - Context notes
+ * Layout ("Essentials + folds"):
+ * - an always-open top block (an Obsidian SettingGroup with no heading) holding
+ *   Provider, Model and Thinking;
+ * - collapsible folds (the shared Accordion), each with an icon and a one-line
+ *   summary while closed: Chat options, Context, Subagents, Images, Voice, plus
+ *   any folds the host adds (Video, File conversion, Semantic search on Defaults).
  *
- * The difference is only WHERE data is saved (via callbacks).
+ * The shell (top block and accordions) is built once. Each group empties and
+ * refills only its own `setting-items` list, so a provider change, a workspace
+ * change or a synced settings update never collapses a fold or loses the scroll
+ * position. Fold open/closed state is remembered per device and per surface.
+ *
+ * The surfaces differ only in which rows appear (Web search and Workflow are
+ * chat-only) and where data is saved (via callbacks).
  */
 
-import { App, Component, Setting, EventRef } from 'obsidian';
+import { App, Component, EventRef, Setting, setIcon } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
 import { ImageGenerationService } from '../../services/llm/ImageGenerationService';
-import {
-  buildSpeechProviderAvailability,
-  getSpeechModel,
-  resolveDefaultSpeechSelection,
-  type SpeechProvider,
-  type SpeechProviderAvailability,
-} from '../../services/llm/types/SpeechTypes';
-import {
-  buildRealtimeVoiceProviderAvailability,
-  getRealtimeVoiceModel,
-  resolveDefaultRealtimeVoiceSelection,
-  type RealtimeVoiceProviderAvailability,
-} from '../../services/llm/types/RealtimeVoiceTypes';
-import {
-  DefaultRealtimeVoiceModelSettings,
-  DefaultSpeechModelSettings,
-  LLMProviderSettings,
-  ThinkingEffort
-} from '../../types/llm/ProviderTypes';
+import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import type { AppsSettings } from '../../types/apps/AppTypes';
 import { isTextOnlyProvider } from '../../services/llm/utils/ToolSchemaSupport';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
-import { renderModelDropdownSection } from './ModelDropdownRenderer';
-import {
-  getIngestCapabilityOptions,
-  normalizeIngestSelection
-} from '../../agents/ingestManager/tools/services/IngestCapabilityService';
-import { renderIngestModelDropdowns } from './IngestModelDropdownRenderer';
-import { VoiceCatalogService } from '../../services/readAloud/VoiceCatalogService';
-import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
+import { renderModelSetting, renderProviderSetting, type ModelDropdownConfig } from './ModelDropdownRenderer';
 import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 import { getContextWindowOverrideKey, resolveContextWindowLimit } from '../../ui/chat/utils/ContextWindowSettings';
+import { Accordion } from '../Accordion';
+import { FoldStateStore } from './settings/FoldStateStore';
+import { createSettingGroup, type SettingGroupHandle } from './settings/settingGroup';
+import { bindSliderReadout } from './settings/sliderReadout';
+import { COPY, FOLD_ICONS, FOLD_IDS, FOLD_TITLES } from './chatSettings/copy';
+import {
+  chatOptionsSummary,
+  contextSummary,
+  formatContextWindow,
+  formatTemperature,
+  imagesSummary,
+  subagentsSummary
+} from './chatSettings/sectionSummaries';
+import {
+  getThinkingLevels,
+  optionToThinking,
+  THINKING_LABELS,
+  thinkingToOption
+} from './chatSettings/thinkingOptions';
+import { VoiceSettings, type VoiceAudioFolderOption } from './chatSettings/VoiceSettings';
+import type {
+  ChatSettings,
+  ChatSettingsOptions,
+  FoldDefinition,
+  FoldHost,
+  SettingsSurface
+} from './chatSettings/types';
 
-/**
- * Current settings state
- */
-export interface ChatSettings {
-  provider: string;
-  model: string;
-  contextWindowOverrides?: Record<string, number>;
-  webSearch?: boolean;
-  // Subagent model - used for executePrompt when chat model is local
-  agentProvider?: string;
-  agentModel?: string;
-  thinking: {
-    enabled: boolean;
-    effort: ThinkingEffort;
-  };
-  // Subagent model thinking settings (separate from chat model)
-  agentThinking?: {
-    enabled: boolean;
-    effort: ThinkingEffort;
-  };
-  temperature: number; // 0.0-1.0, controls randomness
-  imageProvider: 'google' | 'openrouter' | 'openai';
-  imageModel: string;
-  speechProvider?: DefaultSpeechModelSettings['provider'];
-  speechModel?: DefaultSpeechModelSettings['model'];
-  speechVoice?: DefaultSpeechModelSettings['voice'];
-  realtimeVoiceProvider?: DefaultRealtimeVoiceModelSettings['provider'];
-  realtimeVoiceModel?: DefaultRealtimeVoiceModelSettings['model'];
-  realtimeVoiceVoice?: DefaultRealtimeVoiceModelSettings['voice'];
-  transcriptionProvider?: string;
-  transcriptionModel?: string;
-  workspaceId: string | null;
-  workflowId?: string | null;
-  promptId: string | null;
-  contextNotes: string[];
-}
+export type { ChatSettings, ChatSettingsOptions, FoldDefinition, FoldHost, SettingsSurface } from './chatSettings/types';
 
 /**
  * Local providers that can't be used for executePrompt
  */
 const LOCAL_PROVIDERS = ['webllm', 'ollama', 'lmstudio'];
-
-/**
- * Available options for dropdowns
- */
-export interface ChatSettingsOptions {
-  workspaces: Array<{
-    id: string;
-    name: string;
-    /** Canonical prompt binding (name or ID); preferred over context.dedicatedAgent. */
-    dedicatedAgentId?: string;
-    context?: {
-      workflows?: Array<{ id: string; name: string; when?: string }>;
-      dedicatedAgent?: {
-        agentId: string;
-        agentName: string;
-      };
-    };
-  }>;
-  prompts: Array<{ id: string; name: string }>;
-}
 
 /**
  * Callbacks for when settings change
@@ -131,11 +83,14 @@ export interface ChatSettingsRendererConfig {
   initialSettings: ChatSettings;
   options: ChatSettingsOptions;
   callbacks: ChatSettingsCallbacks;
-  showWorkflowSelection?: boolean;
-  showVoiceSection?: boolean;
-  showTranscriptionSection?: boolean;
-  showWebSearch?: boolean;
-  renderAfterImageSection?: (parent: HTMLElement) => void;
+  /** Which screen this is: decides chat-only rows and where fold state is remembered. */
+  surface: SettingsSurface;
+  /** Device-local fold memory; defaults to one backed by `app`'s local storage. */
+  foldStore?: FoldStateStore;
+  /** Host-specific folds (Video, File conversion, Semantic search on Defaults). */
+  extraFolds?: Array<FoldDefinition & { after?: string }>;
+  /** Defaults only: the saved read-aloud audio folder row in the Voice fold. */
+  voiceAudioFolder?: VoiceAudioFolderOption;
 }
 
 interface PluginWithAppSettings {
@@ -146,14 +101,15 @@ interface PluginWithAppSettings {
   };
 }
 
-const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-const EFFORT_LABELS: Record<ThinkingEffort, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'Extra high',
-  max: 'Max'
-};
+const TOP_GROUP = 'top';
+
+interface FoldRecord {
+  id: string;
+  accordion: Accordion;
+  render: (itemsEl: HTMLElement) => void;
+  summary?: () => string;
+  definition?: FoldDefinition;
+}
 
 export class ChatSettingsRenderer {
   private container: HTMLElement;
@@ -161,27 +117,35 @@ export class ChatSettingsRenderer {
   private providerManager: LLMProviderManager;
   private staticModelsService: StaticModelsService;
   private settings: ChatSettings;
-
-  // UI references
-  private effortSection?: HTMLElement;
-  private agentEffortSection?: HTMLElement;
-  private contextNotesListEl?: HTMLElement;
   private settingsEventRef?: EventRef;
-  // Owns DOM listeners for the current render; unloaded on every redraw and on destroy.
-  private domEvents?: Component;
+  private imageService: ImageGenerationService;
+  private foldStore: FoldStateStore;
+  private voice: VoiceSettings;
+
+  // Stable shell: built once, never rebuilt by a redraw.
+  private topGroup: SettingGroupHandle | null = null;
+  private folds = new Map<string, FoldRecord>();
+  // One Component per group owns that group's DOM listeners; unloaded when the group redraws.
+  private groupEvents = new Map<string, Component>();
+
   // Maps dropdown option value -> actual { provider, modelId } for merged model lists
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
-  private imageService: ImageGenerationService;
+  private modelNames: { chat?: string; agent?: string; image?: string } = {};
+  // Context windows discovered at runtime (Ollama, LM Studio), keyed by provider/model.
+  private discoveredContextWindows = new Map<string, number>();
+  private pendingContextLookups = new Set<string>();
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
     this.config = config;
     this.settings = {
       ...config.initialSettings,
+      contextNotes: [...(config.initialSettings.contextNotes ?? [])],
       contextWindowOverrides: { ...(config.initialSettings.contextWindowOverrides ?? config.llmProviderSettings.contextWindowOverrides ?? {}) }
     };
     this.staticModelsService = StaticModelsService.getInstance();
+    this.foldStore = config.foldStore ?? new FoldStateStore(config.app);
 
     this.providerManager = new LLMProviderManager(
       config.llmProviderSettings,
@@ -189,6 +153,22 @@ export class ChatSettingsRenderer {
     );
 
     this.imageService = new ImageGenerationService(config.app.vault, config.llmProviderSettings);
+
+    const settings = (): ChatSettings => this.settings;
+    const llmProviderSettings = (): LLMProviderSettings => this.config.llmProviderSettings;
+    const providerManager = (): LLMProviderManager => this.providerManager;
+    this.voice = new VoiceSettings({
+      surface: config.surface,
+      get settings() { return settings(); },
+      get llmProviderSettings() { return llmProviderSettings(); },
+      get providerManager() { return providerManager(); },
+      notifyChange: () => this.notifyChange(),
+      setSummary: summary => this.folds.get(FOLD_IDS.voice)?.accordion.setSummary(summary),
+      redraw: () => this.redrawGroups([FOLD_IDS.voice]),
+      getProviderDisplayName: id => this.getProviderDisplayName(id),
+      getAppsSettings: () => this.getAppsSettings(),
+      audioFolder: config.voiceAudioFolder
+    });
 
     this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
       this.config.llmProviderSettings = newSettings;
@@ -199,37 +179,173 @@ export class ChatSettingsRenderer {
   }
 
   destroy(): void {
-    this.domEvents?.unload();
-    this.domEvents = undefined;
+    for (const events of this.groupEvents.values()) events.unload();
+    this.groupEvents.clear();
+    for (const fold of this.folds.values()) {
+      fold.definition?.destroy?.();
+      fold.accordion.unload();
+    }
     if (this.settingsEventRef) {
       LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
       this.settingsEventRef = undefined;
     }
   }
 
+  /**
+   * Draw the form. The first call builds the shell; later calls (synced
+   * settings, provider changes elsewhere) refill every group in place.
+   */
   render(): void {
-    this.domEvents?.unload();
-    this.domEvents = undefined;
-    this.container.empty();
-    this.container.addClass('chat-settings-renderer');
+    this.preserveScroll(() => {
+      if (!this.topGroup) this.buildShell();
+      this.renderGroups([TOP_GROUP, ...this.folds.keys()]);
+    });
+  }
 
-    // Vertical layout - order: Chat (with Reasoning), Agent, Image, Transcription, Temp, Context
-    this.renderModelSection(this.container);
-    this.renderAgentModelSection(this.container);
-    this.renderImageSection(this.container);
-    this.config.renderAfterImageSection?.(this.container);
-    if (this.config.showVoiceSection !== false) {
-      this.renderVoiceSection(this.container);
-    } else if (this.config.showTranscriptionSection !== false) {
-      this.renderTranscriptionSection(this.container);
-    }
-    this.renderTemperatureSection(this.container);
-    this.renderContextSection(this.container);
+  private get surface(): SettingsSurface {
+    return this.config.surface;
   }
 
   private notifyChange(): void {
     this.config.callbacks.onSettingsChange({ ...this.settings });
+    this.updateSummaries();
   }
+
+  // ========== SHELL ==========
+
+  private buildShell(): void {
+    this.container.empty();
+    this.container.addClass('chat-settings-renderer');
+    this.container.addClass('nexus-settings-folds');
+    this.topGroup = createSettingGroup(this.container, 'nexus-settings-essentials');
+
+    const shared: FoldRecord[] = [
+      this.createFold(FOLD_IDS.chatOptions, FOLD_TITLES.chatOptions, FOLD_ICONS.chatOptions,
+        el => this.renderChatOptions(el), () => this.chatOptionsSummary()),
+      this.createFold(FOLD_IDS.context, FOLD_TITLES.context, FOLD_ICONS.context,
+        el => this.renderContext(el), () => this.contextSummary()),
+      this.createFold(FOLD_IDS.subagents, FOLD_TITLES.subagents, FOLD_ICONS.subagents,
+        el => this.renderSubagents(el), () => this.subagentsSummary()),
+      this.createFold(FOLD_IDS.images, FOLD_TITLES.images, FOLD_ICONS.images,
+        el => this.renderImages(el), () => imagesSummary(this.modelNames.image ?? this.settings.imageModel)),
+      this.createFold(FOLD_IDS.voice, FOLD_TITLES.voice, FOLD_ICONS.voice,
+        el => this.voice.render(el), () => this.voice.getSummary())
+    ];
+
+    // Host folds go after the shared fold they name, otherwise at the end.
+    const order = shared.map(fold => fold.id);
+    const extras = this.config.extraFolds ?? [];
+    for (const extra of extras) {
+      const anchor = extra.after ? order.indexOf(extra.after) : -1;
+      const index = anchor >= 0 ? anchor + 1 : order.length;
+      order.splice(index, 0, extra.id);
+    }
+    const byId = new Map(shared.map(fold => [fold.id, fold]));
+    for (const id of order) {
+      const sharedFold = byId.get(id);
+      if (sharedFold) {
+        this.mountFold(sharedFold);
+        continue;
+      }
+      const extra = extras.find(item => item.id === id);
+      if (!extra) continue;
+      const record = this.createFold(extra.id, extra.title, extra.icon,
+        el => extra.render(el, this.createFoldHost(extra.id)));
+      record.definition = extra;
+      this.mountFold(record);
+    }
+  }
+
+  /** Accordions are created detached from order; mountFold appends them in final order. */
+  private createFold(
+    id: string,
+    title: string,
+    icon: string,
+    render: (itemsEl: HTMLElement) => void,
+    summary?: () => string
+  ): FoldRecord {
+    const accordion = new Accordion(this.container, {
+      id,
+      title,
+      icon,
+      open: this.foldStore.isOpen(this.surface, id),
+      onToggle: open => this.foldStore.setOpen(this.surface, id, open)
+    });
+    return { id, accordion, render, summary };
+  }
+
+  private mountFold(record: FoldRecord): void {
+    // Re-append so the DOM order matches the fold order.
+    this.container.appendChild(record.accordion.rootEl);
+    this.folds.set(record.id, record);
+  }
+
+  private createFoldHost(id: string): FoldHost {
+    const settings = (): ChatSettings => this.settings;
+    const llmProviderSettings = (): LLMProviderSettings => this.config.llmProviderSettings;
+    return {
+      get settings() { return settings(); },
+      get llmProviderSettings() { return llmProviderSettings(); },
+      surface: this.surface,
+      notifyChange: () => this.notifyChange(),
+      setSummary: summary => this.folds.get(id)?.accordion.setSummary(summary),
+      redraw: () => this.redrawGroups([id]),
+      registerDomEvent: (el, type, callback) => this.events(id).registerDomEvent(el, type, callback)
+    };
+  }
+
+  /** A fresh listener owner for a group, replacing (and unloading) the previous one. */
+  private resetEvents(groupId: string): Component {
+    this.groupEvents.get(groupId)?.unload();
+    const events = new Component();
+    events.load();
+    this.groupEvents.set(groupId, events);
+    return events;
+  }
+
+  private events(groupId: string): Component {
+    return this.groupEvents.get(groupId) ?? this.resetEvents(groupId);
+  }
+
+  /** Redraw some groups, keeping the scroll position. */
+  private redrawGroups(ids: string[]): void {
+    this.preserveScroll(() => this.renderGroups(ids));
+  }
+
+  private renderGroups(ids: string[]): void {
+    for (const id of ids) {
+      if (id === TOP_GROUP) {
+        if (!this.topGroup) continue;
+        this.resetEvents(TOP_GROUP);
+        this.topGroup.itemsEl.empty();
+        this.renderTop(this.topGroup.itemsEl);
+        continue;
+      }
+      const fold = this.folds.get(id);
+      if (!fold) continue;
+      this.resetEvents(id);
+      fold.accordion.itemsEl.empty();
+      fold.render(fold.accordion.itemsEl);
+      if (fold.summary) fold.accordion.setSummary(fold.summary());
+    }
+  }
+
+  private updateSummaries(): void {
+    for (const fold of this.folds.values()) {
+      if (fold.summary) fold.accordion.setSummary(fold.summary());
+    }
+  }
+
+  private preserveScroll(work: () => void): void {
+    const scroller = this.container.closest?.('.vertical-tab-content, .modal-content') as HTMLElement | null | undefined;
+    const top = scroller?.scrollTop;
+    work();
+    if (scroller && typeof top === 'number' && scroller.scrollTop !== top) {
+      scroller.scrollTop = top;
+    }
+  }
+
+  // ========== PROVIDERS ==========
 
   private getEnabledProviders(): string[] {
     const llmSettings = this.config.llmProviderSettings;
@@ -305,25 +421,29 @@ export class ChatSettingsRenderer {
     return !!geminiCliConfig?.oauth?.connected;
   }
 
-  // ========== MODEL SECTION ==========
-
-  private renderModelSection(parent: HTMLElement): void {
-    renderModelDropdownSection(parent, {
-      sectionTitle: 'Chat model',
-      getProviders: () => this.getEnabledProviders(),
-      getCurrentProvider: () => this.settings.provider,
-      getCurrentModel: () => this.settings.model,
+  private modelDropdownConfig(variant: 'chat' | 'agent'): ModelDropdownConfig {
+    const isAgent = variant === 'agent';
+    return {
+      getProviders: () => isAgent
+        ? this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id))
+        : this.getEnabledProviders(),
+      getCurrentProvider: () => isAgent ? this.settings.agentProvider : this.settings.provider,
+      getCurrentModel: () => isAgent ? this.settings.agentModel : this.settings.model,
       onProviderChange: (provider) => {
-        this.settings.provider = provider ?? '';
+        if (isAgent) this.settings.agentProvider = provider;
+        else this.settings.provider = provider ?? '';
       },
       onModelChange: (model, provider) => {
-        this.settings.model = model ?? '';
-        if (provider !== undefined) {
-          this.settings.provider = provider;
+        if (isAgent) {
+          this.settings.agentModel = model;
+          if (provider !== undefined) this.settings.agentProvider = provider;
+        } else {
+          this.settings.model = model ?? '';
+          if (provider !== undefined) this.settings.provider = provider;
         }
       },
-      noProvidersText: 'No providers enabled',
-      modelOptionMap: this.modelOptionMap,
+      noProvidersText: isAgent ? COPY.noCloudProviders : COPY.noProviders,
+      modelOptionMap: isAgent ? this.agentModelOptionMap : this.modelOptionMap,
       providerManager: this.providerManager,
       getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
         ? this.getProviderDisplayName(id) : undefined,
@@ -332,179 +452,175 @@ export class ChatSettingsRenderer {
       isGeminiCliConnected: () => this.isGeminiCliConnected(),
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
-      reRender: () => this.render(),
-      onAfterRender: (content) => {
-        this.renderReasoningControls(content);
-        this.renderContextWindowControl(content);
-        this.renderWebSearchControl(content);
-        this.renderTextOnlyProviderWarning(content, 'chat');
+      onSelectionChanged: () => {
+        if (isAgent) this.redrawGroups([FOLD_IDS.subagents]);
+        // The chat model decides the top block, the chat options and (when no
+        // subagent model is set) what the Subagents summary reports.
+        else this.redrawGroups([TOP_GROUP, FOLD_IDS.chatOptions, FOLD_IDS.subagents]);
       },
-    });
+      onModelNameResolved: (name) => {
+        if (isAgent) this.modelNames.agent = name;
+        else this.modelNames.chat = name;
+        this.updateSummaries();
+      }
+    };
+  }
+
+  // ========== TOP BLOCK ==========
+
+  private renderTop(itemsEl: HTMLElement): void {
+    renderProviderSetting(itemsEl, this.modelDropdownConfig('chat'));
+    const modelSetting = renderModelSetting(itemsEl, this.modelDropdownConfig('chat'));
+    this.applyTextOnlyProviderWarning(modelSetting, 'chat');
+    this.renderThinkingSetting(itemsEl, 'chat');
+  }
+
+  private supportsThinking(provider: string | undefined, model: string | undefined): boolean {
+    if (!provider || !model) return false;
+    return this.staticModelsService.findModel(provider, model)?.capabilities?.supportsThinking === true;
   }
 
   /**
-   * Render reasoning controls (toggle + effort slider) parameterized for chat or agent.
+   * The Thinking dropdown (Off, Low … Max). Present only when the model can
+   * reason; Off keeps the stored effort so switching back restores it.
    */
-  private renderReasoningControls(content: HTMLElement, variant: 'chat' | 'agent' = 'chat'): void {
+  private renderThinkingSetting(itemsEl: HTMLElement, variant: 'chat' | 'agent'): void {
     const isAgent = variant === 'agent';
-
-    // Check model support
     const provider = isAgent ? this.settings.agentProvider : this.settings.provider;
     const model = isAgent ? this.settings.agentModel : this.settings.model;
-    if (!provider || !model) return;
-    const modelDef = this.staticModelsService.findModel(provider, model);
-    if (!modelDef?.capabilities?.supportsThinking) return;
+    if (!this.supportsThinking(provider, model)) return;
 
-    // Ensure agent thinking state is initialized
-    if (isAgent && !this.settings.agentThinking) {
-      this.settings.agentThinking = { enabled: false, effort: 'medium' };
-    }
-
-    const getThinking = () => {
-      if (isAgent) {
-        if (!this.settings.agentThinking) {
-          this.settings.agentThinking = { enabled: false, effort: 'medium' };
+    const current = isAgent ? this.settings.agentThinking : this.settings.thinking;
+    new Setting(itemsEl)
+      .setName(COPY.thinking)
+      .addDropdown(dropdown => {
+        dropdown.addOption('off', THINKING_LABELS.off);
+        for (const level of getThinkingLevels(provider, model)) {
+          dropdown.addOption(level, THINKING_LABELS[level]);
         }
-        return this.settings.agentThinking;
-      }
-
-      return this.settings.thinking;
-    };
-
-    // Reasoning toggle
-    new Setting(content)
-      .setName('Reasoning')
-      .setDesc('Think step-by-step')
-      .addToggle(toggle => toggle
-        .setValue(getThinking().enabled)
-        .onChange(value => {
-          if (isAgent && !this.settings.agentThinking) {
-            this.settings.agentThinking = { enabled: false, effort: 'medium' };
-          }
-          getThinking().enabled = value;
-          this.notifyChange();
-          this.updateEffortVisibility(variant);
-        }));
-
-    // Effort slider
-    const effortEl = content.createDiv('csr-effort-row');
-    if (isAgent) {
-      this.agentEffortSection = effortEl;
-    } else {
-      this.effortSection = effortEl;
-    }
-    if (!getThinking().enabled) {
-      effortEl.addClass('is-hidden');
-    }
-
-    const effortSetting = new Setting(effortEl)
-      .setName('Effort');
-
-    const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
-    valueDisplay.setText(EFFORT_LABELS[getThinking().effort]);
-
-    effortSetting.addSlider(slider => {
-      slider
-        .setLimits(0, EFFORT_LEVELS.length - 1, 1)
-        .setValue(EFFORT_LEVELS.indexOf(getThinking().effort))
-        .onChange((value: number) => {
-          if (isAgent && !this.settings.agentThinking) {
-            this.settings.agentThinking = { enabled: false, effort: 'medium' };
-          }
-          getThinking().effort = EFFORT_LEVELS[value];
-          valueDisplay.setText(EFFORT_LABELS[getThinking().effort]);
+        dropdown.setValue(thinkingToOption(current));
+        dropdown.onChange(value => {
+          const next = optionToThinking(value, isAgent ? this.settings.agentThinking : this.settings.thinking);
+          if (isAgent) this.settings.agentThinking = next;
+          else this.settings.thinking = next;
           this.notifyChange();
         });
-      this.registerLiveSliderInput(slider.sliderEl, () => {
-        const index = Number(slider.sliderEl.value);
-        const effort = EFFORT_LEVELS[index];
-        if (effort) valueDisplay.setText(EFFORT_LABELS[effort]);
+      });
+  }
+
+  // ========== CHAT OPTIONS ==========
+
+  private renderChatOptions(itemsEl: HTMLElement): void {
+    const events = this.events(FOLD_IDS.chatOptions);
+
+    const creativity = new Setting(itemsEl)
+      .setName(COPY.creativity)
+      .setDesc(COPY.creativityDesc);
+    creativity.addSlider(slider => {
+      slider
+        .setLimits(0, 1, 0.1)
+        .setValue(this.settings.temperature);
+      bindSliderReadout(events, creativity, slider, formatTemperature);
+      slider.onChange((value: number) => {
+        this.settings.temperature = value;
+        this.notifyChange();
       });
       return slider;
     });
+
+    this.renderContextWindowSetting(itemsEl);
+
+    if (this.surface === 'chat') this.renderWebSearchSetting(itemsEl);
   }
 
-  private registerLiveSliderInput(element: HTMLInputElement, update: () => void): void {
-    this.registerDomEvent(element, 'input', update);
-  }
-
-  private registerDomEvent<K extends keyof HTMLElementEventMap>(
-    element: HTMLElement,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void
-  ): void {
-    if (!this.domEvents) {
-      this.domEvents = new Component();
-      this.domEvents.load();
-    }
-    this.domEvents.registerDomEvent(element, type, handler);
-  }
-
-  private renderContextWindowControl(content: HTMLElement): void {
-    const provider = this.settings.provider;
-    const model = this.settings.model;
-    if (!provider || !model) return;
-
+  /** The chat model's advertised window, from the registry or a runtime lookup. */
+  private getChatContextWindow(): number | undefined {
+    const { provider, model } = this.settings;
+    if (!provider || !model) return undefined;
     const staticWindow = this.staticModelsService.findModel(provider, model)?.contextWindow;
-    if (staticWindow && staticWindow > 0) {
-      this.addContextWindowSlider(content, provider, model, staticWindow);
-      return;
-    }
+    if (staticWindow && staticWindow > 0) return staticWindow;
+    const key = getContextWindowOverrideKey(provider, model);
+    const discovered = this.discoveredContextWindows.get(key);
+    if (discovered) return discovered;
+    this.lookupContextWindow(provider, model);
+    return undefined;
+  }
 
+  private lookupContextWindow(provider: string, model: string): void {
+    const key = getContextWindowOverrideKey(provider, model);
+    if (this.pendingContextLookups.has(key)) return;
+    this.pendingContextLookups.add(key);
     void this.providerManager.getModelsForProvider(provider).then(models => {
-      if (content.isConnected === false || provider !== this.settings.provider || model !== this.settings.model) return;
-      const discoveredWindow = models.find(candidate => candidate.id === model)?.contextWindow;
-      if (discoveredWindow && discoveredWindow > 0) {
-        this.addContextWindowSlider(content, provider, model, discoveredWindow);
+      const discovered = models.find(candidate => candidate.id === model)?.contextWindow;
+      if (!discovered || discovered <= 0) return;
+      this.discoveredContextWindows.set(key, discovered);
+      if (provider === this.settings.provider && model === this.settings.model) {
+        this.redrawGroups([FOLD_IDS.chatOptions]);
       }
     }).catch(() => {
       // An unavailable provider has no reliable advertised limit to adjust.
     });
   }
 
-  private addContextWindowSlider(content: HTMLElement, provider: string, model: string, advertised: number): void {
+  /** The budget the chat will use: the override when set, else the model maximum. */
+  private getChatContextBudget(): number | undefined {
+    const advertised = this.getChatContextWindow();
+    if (!advertised) return undefined;
+    const maximum = resolveContextWindowLimit(advertised);
+    const key = getContextWindowOverrideKey(this.settings.provider, this.settings.model);
+    return resolveContextWindowLimit(maximum, this.settings.contextWindowOverrides?.[key]);
+  }
+
+  private renderContextWindowSetting(itemsEl: HTMLElement): void {
+    const advertised = this.getChatContextWindow();
+    if (!advertised) return;
+    this.addContextWindowSlider(itemsEl, this.settings.provider, this.settings.model, advertised);
+  }
+
+  private addContextWindowSlider(itemsEl: HTMLElement, provider: string, model: string, advertised: number): void {
     const maximum = resolveContextWindowLimit(advertised);
     if (maximum <= 0) return;
     const key = getContextWindowOverrideKey(provider, model);
     const selected = resolveContextWindowLimit(maximum, this.settings.contextWindowOverrides?.[key]);
-    const setting = new Setting(content)
-      .setName('Context window')
-      .setDesc('Set the conversation budget used by the context meter and automatic compaction.');
-    const valueDisplay = setting.controlEl.createSpan({ cls: 'csr-context-window-value' });
-    valueDisplay.setText(`${selected.toLocaleString()} tokens`);
+    const setting = new Setting(itemsEl)
+      .setName(COPY.contextWindow)
+      .setDesc(COPY.contextWindowDesc);
 
     setting.addSlider(slider => {
       slider
         .setLimits(Math.min(1024, maximum), maximum, 1)
-        .setValue(selected)
-        .onChange(value => {
-          const limit = resolveContextWindowLimit(maximum, value);
-          if (!this.settings.contextWindowOverrides) this.settings.contextWindowOverrides = {};
-          if (limit === maximum) delete this.settings.contextWindowOverrides[key];
-          else this.settings.contextWindowOverrides[key] = limit;
-          valueDisplay.setText(`${limit.toLocaleString()} tokens`);
-          this.notifyChange();
-        });
-      this.registerLiveSliderInput(slider.sliderEl, () => {
-        const limit = resolveContextWindowLimit(maximum, Number(slider.sliderEl.value));
-        valueDisplay.setText(`${limit.toLocaleString()} tokens`);
+        .setValue(selected);
+      const format = (value: number): string => formatContextWindow(resolveContextWindowLimit(maximum, value));
+      bindSliderReadout(this.events(FOLD_IDS.chatOptions), setting, slider, format, {
+        ariaValueText: value => `${format(value)} tokens`,
+        cls: 'nexus-ctx-value'
+      });
+      slider.onChange(value => {
+        const limit = resolveContextWindowLimit(maximum, value);
+        if (!this.settings.contextWindowOverrides) this.settings.contextWindowOverrides = {};
+        if (limit === maximum) delete this.settings.contextWindowOverrides[key];
+        else this.settings.contextWindowOverrides[key] = limit;
+        this.notifyChange();
       });
       return slider;
     });
   }
 
-  private renderWebSearchControl(content: HTMLElement): void {
-    if (this.config.showWebSearch === false) return;
-    if (!['anthropic', 'openai', 'google', 'openrouter'].includes(this.settings.provider)) return;
+  private supportsWebSearch(): boolean {
+    return ['anthropic', 'openai', 'google', 'openrouter'].includes(this.settings.provider);
+  }
+
+  private renderWebSearchSetting(itemsEl: HTMLElement): void {
+    if (!this.supportsWebSearch()) return;
     if (this.settings.provider === 'google' && !this.settings.model.startsWith('gemini-3')) {
-      new Setting(content)
-        .setName('Web search')
-        .setDesc('Available with Gemini 3 or newer when Nexus tools are enabled.');
+      new Setting(itemsEl)
+        .setName(COPY.webSearch)
+        .setDesc(COPY.webSearchGeminiDesc);
       return;
     }
-    new Setting(content)
-      .setName('Web search')
-      .setDesc('Allow this chat model to search the web when needed.')
+    new Setting(itemsEl)
+      .setName(COPY.webSearch)
+      .setDesc(COPY.webSearchDesc)
       .addToggle(toggle => toggle
         .setValue(this.settings.webSearch ?? false)
         .onChange(value => {
@@ -513,66 +629,66 @@ export class ChatSettingsRenderer {
         }));
   }
 
-  // ========== SUBAGENT MODEL SECTION ==========
-
-  /**
-   * Render Subagent model section - always shown, excludes local providers.
-   * This model is used for executePrompt and other API-dependent operations.
-   */
-  private renderAgentModelSection(parent: HTMLElement): void {
-    renderModelDropdownSection(parent, {
-      sectionTitle: 'Subagent model',
-      description: {
-        text: 'Cloud model for AI actions',
-        infoTooltip: 'Saved prompts and automations require a cloud API.',
-      },
-      getProviders: () => this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id)),
-      getCurrentProvider: () => this.settings.agentProvider,
-      getCurrentModel: () => this.settings.agentModel,
-      onProviderChange: (provider) => {
-        this.settings.agentProvider = provider;
-      },
-      onModelChange: (model, provider) => {
-        this.settings.agentModel = model;
-        if (provider !== undefined) {
-          this.settings.agentProvider = provider;
-        }
-      },
-      noProvidersText: 'No cloud providers enabled',
-      modelOptionMap: this.agentModelOptionMap,
-      providerManager: this.providerManager,
-      getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
-        ? this.getProviderDisplayName(id) : undefined,
-      isCodexConnected: () => this.isCodexConnected(),
-      isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
-      isGeminiCliConnected: () => this.isGeminiCliConnected(),
-      getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
-      notifyChange: () => this.notifyChange(),
-      reRender: () => this.render(),
-      onAfterRender: (content) => {
-        this.renderReasoningControls(content, 'agent');
-        this.renderTextOnlyProviderWarning(content, 'agent');
-      },
+  private chatOptionsSummary(): string {
+    return chatOptionsSummary({
+      temperature: this.settings.temperature,
+      contextWindow: this.getChatContextBudget(),
+      webSearch: this.surface === 'chat' ? this.settings.webSearch === true : undefined
     });
   }
 
-  private renderTextOnlyProviderWarning(content: HTMLElement, variant: 'chat' | 'agent'): void {
-    const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
-    if (!isTextOnlyProvider(provider)) {
-      return;
+  // ========== SUBAGENTS ==========
+
+  /**
+   * Subagents, saved prompts and automations. Always shown; local providers
+   * are excluded because these run without the chat open.
+   */
+  private renderSubagents(itemsEl: HTMLElement): void {
+    new Setting(itemsEl)
+      .setName(COPY.usedFor)
+      .setDesc(COPY.usedForDesc)
+      .setClass('nexus-note');
+
+    if (!this.settings.agentThinking) {
+      this.settings.agentThinking = { enabled: false, effort: 'medium' };
     }
 
-    const { title, message } = this.getTextOnlyProviderWarningCopy(provider, variant);
+    renderProviderSetting(itemsEl, this.modelDropdownConfig('agent'));
+    const modelSetting = renderModelSetting(itemsEl, this.modelDropdownConfig('agent'));
+    this.applyTextOnlyProviderWarning(modelSetting, 'agent');
+    this.renderThinkingSetting(itemsEl, 'agent');
+  }
 
-    const warningEl = content.createDiv({ cls: 'csr-provider-warning' });
-    warningEl.createDiv({
-      cls: 'csr-provider-warning-title',
-      text: title
+  private subagentsSummary(): string {
+    const hasAgentModel = !!(this.settings.agentProvider && this.settings.agentModel);
+    const provider = hasAgentModel ? this.settings.agentProvider : this.settings.provider;
+    const model = hasAgentModel ? this.settings.agentModel : this.settings.model;
+    const name = hasAgentModel
+      ? this.modelDisplayName(provider, model, this.modelNames.agent)
+      : this.modelDisplayName(provider, model, this.modelNames.chat);
+    const thinking = hasAgentModel ? this.settings.agentThinking : this.settings.thinking;
+    return subagentsSummary({
+      modelName: name,
+      thinking: this.supportsThinking(provider, model) ? thinking : null
     });
-    warningEl.createDiv({
-      cls: 'csr-provider-warning-text',
-      text: message
-    });
+  }
+
+  private modelDisplayName(provider: string | undefined, model: string | undefined, loadedName?: string): string | undefined {
+    if (!provider || !model) return undefined;
+    return this.staticModelsService.findModel(provider, model)?.name ?? loadedName ?? model;
+  }
+
+  /**
+   * A text-completion-only provider is explained in the Model row's
+   * description, title in bold, rather than in a separate warning box.
+   */
+  private applyTextOnlyProviderWarning(setting: Setting, variant: 'chat' | 'agent'): void {
+    const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
+    if (!isTextOnlyProvider(provider)) return;
+    const { title, message } = this.getTextOnlyProviderWarningCopy(provider, variant);
+    setting.descEl.empty();
+    setting.descEl.createEl('strong', { text: title });
+    setting.descEl.createSpan({ text: ` ${message}` });
   }
 
   /**
@@ -602,62 +718,11 @@ export class ChatSettingsRenderer {
     };
   }
 
-  // ========== TEMPERATURE SECTION ==========
+  // ========== IMAGES ==========
 
-  private renderTemperatureSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Temperature');
-    const content = section.createDiv('csr-section-content');
-
-    // Create container for slider row with value display
-    const tempSetting = new Setting(content)
-      .setName('Creativity')
-      .setDesc('Lower is more focused, higher is more creative.');
-
-    // Add value display span
-    const valueDisplay = tempSetting.controlEl.createSpan({ cls: 'csr-temp-value' });
-    valueDisplay.setText(this.settings.temperature.toFixed(1));
-
-    // Add Obsidian slider component
-    tempSetting.addSlider(slider => {
-      slider
-        .setLimits(0, 1, 0.1)
-        .setValue(this.settings.temperature)
-        .setDynamicTooltip()
-        .onChange((value: number) => {
-          this.settings.temperature = value;
-          valueDisplay.setText(value.toFixed(1));
-          this.notifyChange();
-        });
-      return slider;
-    });
-  }
-
-  private updateEffortVisibility(variant: 'chat' | 'agent' = 'chat'): void {
-    const section = variant === 'agent' ? this.agentEffortSection : this.effortSection;
-    if (!section) return;
-
-    const enabled = variant === 'agent'
-      ? this.settings.agentThinking?.enabled
-      : this.settings.thinking.enabled;
-
-    if (enabled) {
-      section.removeClass('is-hidden');
-    } else {
-      section.addClass('is-hidden');
-    }
-  }
-
-  // ========== IMAGE SECTION ==========
-
-  private renderImageSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Image model');
-    const content = section.createDiv('csr-section-content');
-
-    // Provider
-    new Setting(content)
-      .setName('Provider')
+  private renderImages(itemsEl: HTMLElement): void {
+    new Setting(itemsEl)
+      .setName(COPY.provider)
       .addDropdown(dropdown => {
         // Every image adapter speaks requestUrl, so the list is the same on
         // desktop and mobile.
@@ -671,13 +736,6 @@ export class ChatSettingsRenderer {
         if (!providers.some(p => p.id === this.settings.imageProvider)) {
           this.settings.imageProvider = providers[0].id;
           this.settings.imageModel = '';
-          // Async: pick the first model from the new provider
-          void this.imageService.getModelsForProvider(this.settings.imageProvider).then(models => {
-            if (models.length > 0) {
-              this.settings.imageModel = models[0].id;
-              this.notifyChange();
-            }
-          });
         }
 
         for (const provider of providers) {
@@ -686,609 +744,81 @@ export class ChatSettingsRenderer {
 
         dropdown.setValue(this.settings.imageProvider);
         dropdown.onChange((value) => {
-          this.settings.imageProvider = value as 'google' | 'openrouter' | 'openai';
-          void this.imageService.getModelsForProvider(value as 'google' | 'openrouter' | 'openai').then(models => {
+          const provider = value as 'google' | 'openrouter' | 'openai';
+          this.settings.imageProvider = provider;
+          void this.imageService.getModelsForProvider(provider).then(models => {
+            if (provider !== this.settings.imageProvider) return;
             this.settings.imageModel = models[0]?.id || '';
+            this.modelNames.image = models[0]?.name;
             this.notifyChange();
-            this.render();
+            this.redrawGroups([FOLD_IDS.images]);
           });
         });
       });
 
     // Model (async — populate from adapter)
-    new Setting(content)
-      .setName('Model')
+    const provider = this.settings.imageProvider;
+    new Setting(itemsEl)
+      .setName(COPY.model)
       .addDropdown(async dropdown => {
-        const models = await this.imageService.getModelsForProvider(this.settings.imageProvider);
+        const models = await this.imageService.getModelsForProvider(provider);
+        if (provider !== this.settings.imageProvider) return;
 
         if (models.length === 0) {
           dropdown.addOption('', 'No models available');
         } else {
-          sortModelsNewestFirst(models, m => ({ provider: this.settings.imageProvider, id: m.id })).forEach(m => {
+          sortModelsNewestFirst(models, m => ({ provider, id: m.id })).forEach(m => {
             dropdown.addOption(m.id, m.name);
           });
 
-          const exists = models.some(m => m.id === this.settings.imageModel);
-          if (exists) {
-            dropdown.setValue(this.settings.imageModel);
-          } else if (models.length > 0) {
+          // A missing model falls back to the first; saved with the next real edit.
+          if (!models.some(m => m.id === this.settings.imageModel)) {
             this.settings.imageModel = models[0].id;
-            dropdown.setValue(this.settings.imageModel);
           }
+          dropdown.setValue(this.settings.imageModel);
+          this.modelNames.image = models.find(m => m.id === this.settings.imageModel)?.name;
+          this.updateSummaries();
         }
 
         dropdown.onChange((value) => {
           this.settings.imageModel = value;
+          this.modelNames.image = models.find(m => m.id === value)?.name;
           this.notifyChange();
         });
       });
   }
 
-  // ========== TRANSCRIPTION SECTION ==========
+  // ========== CONTEXT ==========
 
-  private renderTranscriptionSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Transcription model');
-    const content = section.createDiv('csr-section-content');
-    this.renderTranscriptionControls(content);
-  }
-
-  private renderTranscriptionControls(parent: HTMLElement): void {
-    const content = parent.createDiv('csr-transcription-controls');
-    content.createDiv({
-      cls: 'setting-item-description',
-      text: 'Loading transcription models...'
-    });
-
-    void getIngestCapabilityOptions(this.providerManager).then(capabilities => {
-      content.empty();
-      const normalizedSelection = normalizeIngestSelection(
-        capabilities.transcriptionProviders,
-        this.settings.transcriptionProvider,
-        this.settings.transcriptionModel
-      );
-
-      const changed = normalizedSelection.provider !== this.settings.transcriptionProvider
-        || normalizedSelection.model !== this.settings.transcriptionModel;
-
-      this.settings.transcriptionProvider = normalizedSelection.provider;
-      this.settings.transcriptionModel = normalizedSelection.model;
-
-      if (changed) {
-        this.notifyChange();
-      }
-
-      renderIngestModelDropdowns(content, {
-        labelPrefix: 'Transcription',
-        description: 'Model for audio transcription.',
-        providers: capabilities.transcriptionProviders,
-        getSelection: () => this.settings.transcriptionProvider && this.settings.transcriptionModel
-          ? {
-            provider: this.settings.transcriptionProvider,
-            model: this.settings.transcriptionModel
-          }
-          : undefined,
-        onChange: (provider, model) => {
-          this.settings.transcriptionProvider = provider;
-          this.settings.transcriptionModel = model;
-          this.notifyChange();
-        },
-        providerSettingName: 'Provider',
-        modelSettingName: 'Model'
-      });
-    }).catch(() => {
-      content.empty();
-      content.createDiv({
-        cls: 'setting-item-description',
-        text: 'Transcription models are not available.'
-      });
-    });
-  }
-
-  private renderVoiceSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Voice');
-    const content = section.createDiv('csr-section-content');
-    content.createDiv({
-      cls: 'csr-section-desc nexus-voice-section-desc',
-      text: 'Defaults for microphone input, read aloud, and live voice in this chat.'
-    });
-
-    let updateVoiceWarning = (): void => undefined;
-
-    this.renderVoiceGroupLabel(content, 'Voice input');
-    this.renderTranscriptionControls(content);
-
-    this.renderVoiceGroupLabel(content, 'Read aloud');
-    this.renderSpeechSettings(content, () => updateVoiceWarning());
-
-    this.renderVoiceGroupLabel(content, 'Live voice');
-    this.renderRealtimeVoiceSettings(content, () => updateVoiceWarning());
-
-    const warningEl = content.createDiv({ cls: 'nexus-voice-warning is-hidden' });
-    updateVoiceWarning = (): void => {
-      const messages = this.getVoiceWarningMessages();
-      warningEl.empty();
-      warningEl.toggleClass('is-hidden', messages.length === 0);
-      messages.forEach(message => {
-        warningEl.createDiv({ text: message });
-      });
-    };
-    updateVoiceWarning();
-  }
-
-  private renderVoiceGroupLabel(parentEl: HTMLElement, label: string): void {
-    parentEl.createDiv({ cls: 'nexus-voice-group-label', text: label });
-  }
-
-  private renderSpeechSettings(parent: HTMLElement, onSelectionChange: () => void): void {
-    let modelDropdown: HTMLSelectElement | null = null;
-    let voiceDropdown: HTMLSelectElement | null = null;
-    let modelRequestId = 0;
-    let voiceRequestId = 0;
-    const voiceCatalogService = new VoiceCatalogService();
-    const speechModelCatalogService = new SpeechModelCatalogService();
-
-    const getAvailability = (): SpeechProviderAvailability[] =>
-      buildSpeechProviderAvailability(this.config.llmProviderSettings, this.getSpeechAppStates());
-
-    const getSelection = (): DefaultSpeechModelSettings => {
-      const availability = getAvailability();
-      const configuredProvider = this.settings.speechProvider;
-      const provider = configuredProvider
-        || availability.find(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0)?.provider;
-      const providerAvailability = availability.find(item => item.provider === provider);
-      const model = this.settings.speechModel && providerAvailability?.models?.some(candidate => candidate.id === this.settings.speechModel)
-        ? this.settings.speechModel
-        : providerAvailability?.models?.[0]?.id;
-
-      return {
-        provider,
-        model,
-        voice: this.settings.speechVoice,
-        source: 'user'
-      };
-    };
-
-    const updateVoiceOptions = async (): Promise<void> => {
-      if (!voiceDropdown) return;
-      const requestId = ++voiceRequestId;
-      const selection = getSelection();
-
-      voiceDropdown.empty();
-      if (selection.provider === 'elevenlabs') {
-        voiceDropdown.createEl('option', { value: '', text: 'Loading voices...' });
-        voiceDropdown.disabled = true;
-      }
-
-      const voices = await voiceCatalogService.getVoices(selection.provider, selection.model, {
-        llmSettings: this.config.llmProviderSettings,
-        appsSettings: this.getAppsSettings()
-      }).catch(() => []);
-
-      if (requestId !== voiceRequestId || !voiceDropdown) {
-        return;
-      }
-
-      voiceDropdown.empty();
-      voiceDropdown.createEl('option', { value: '', text: 'Provider default' });
-      voices.forEach(voice => {
-        voiceDropdown?.createEl('option', { value: voice.id, text: voice.name });
-      });
-
-      if (selection.voice && !voices.some(voice => voice.id === selection.voice)) {
-        voiceDropdown.createEl('option', {
-          value: selection.voice,
-          text: `${selection.voice} (unavailable)`
-        });
-      }
-
-      voiceDropdown.disabled = !selection.provider || !selection.model;
-      voiceDropdown.value = selection.voice || '';
-    };
-
-    const updateModelOptions = async (): Promise<void> => {
-      if (!modelDropdown) return;
-      const requestId = ++modelRequestId;
-      const selection = getSelection();
-      const availability = getAvailability();
-      const providerAvailability = availability.find(item => item.provider === selection.provider);
-      const providerUsable = providerAvailability?.enabled === true && providerAvailability.configured === true;
-
-      modelDropdown.empty();
-      if (!selection.provider) {
-        modelDropdown.createEl('option', {
-          value: '',
-          text: 'Select a speech provider first'
-        });
-        modelDropdown.disabled = true;
-        void updateVoiceOptions();
-        return;
-      }
-
-      if (selection.provider === 'openrouter') {
-        modelDropdown.createEl('option', { value: '', text: 'Loading OpenRouter speech models...' });
-        modelDropdown.disabled = true;
-      }
-
-      const models = await speechModelCatalogService.getModels(
-        selection.provider as SpeechProvider,
-        this.config.llmProviderSettings
-      ).catch(() => providerAvailability?.models ?? []);
-
-      if (requestId !== modelRequestId || !modelDropdown) {
-        return;
-      }
-
-      modelDropdown.empty();
-      if (models.length === 0) {
-        modelDropdown.createEl('option', {
-          value: '',
-          text: 'No speech models available'
-        });
-        modelDropdown.disabled = true;
-        void updateVoiceOptions();
-        return;
-      }
-
-      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
-        modelDropdown?.createEl('option', { value: model.id, text: model.name });
-      });
-
-      if (selection.model && !models.some(model => model.id === selection.model)) {
-        modelDropdown.createEl('option', {
-          value: selection.model,
-          text: `${selection.model} (unavailable)`
-        });
-      }
-
-      const selectedModelExists = models.some(model => model.id === selection.model);
-      const nextModel = selection.model && selectedModelExists
-        ? selection.model
-        : models[0]?.id || '';
-
-      this.settings.speechProvider = selection.provider;
-      this.settings.speechModel = nextModel || undefined;
-      modelDropdown.disabled = !providerUsable;
-      modelDropdown.value = nextModel;
-      this.notifyChange();
-      void updateVoiceOptions();
-    };
-
-    new Setting(parent)
-      .setName('Speech provider')
-      .setDesc('Normal text-to-speech models for reading chat content aloud.')
+  private renderContext(itemsEl: HTMLElement): void {
+    new Setting(itemsEl)
+      .setName(COPY.workspace)
       .addDropdown(dropdown => {
-        const availability = getAvailability();
-        const selection = getSelection();
-        const usableProviders = availability.filter(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0);
-
-        if (usableProviders.length === 0 && !selection.provider) {
-          dropdown.addOption('', 'No speech providers available');
-          dropdown.setDisabled(true);
-          return;
-        }
-
-        usableProviders.forEach(provider => {
-          dropdown.addOption(provider.provider, this.getProviderDisplayName(provider.provider));
-        });
-
-        if (selection.provider && !usableProviders.some(provider => provider.provider === selection.provider)) {
-          dropdown.addOption(
-            selection.provider,
-            `${this.getProviderDisplayName(selection.provider)} (unavailable)`
-          );
-        }
-
-        dropdown.setValue(selection.provider || usableProviders[0]?.provider || '');
-        dropdown.onChange((provider) => {
-          const providerAvailability = getAvailability().find(item => item.provider === provider);
-          const model = providerAvailability?.models?.[0];
-          this.settings.speechProvider = provider || undefined;
-          this.settings.speechModel = model?.id;
-          this.settings.speechVoice = model?.defaultVoice;
-          this.notifyChange();
-          void updateModelOptions().then(onSelectionChange);
-        });
-      });
-
-    new Setting(parent)
-      .setName('Speech model')
-      .addDropdown(dropdown => {
-        modelDropdown = dropdown.selectEl;
-        void updateModelOptions();
-        dropdown.onChange((modelId) => {
-          const selection = getSelection();
-          const model = getSpeechModel(selection.provider, modelId);
-          this.settings.speechModel = modelId || undefined;
-          if (model) {
-            this.settings.speechVoice = this.settings.speechVoice || model.defaultVoice;
-          }
-          this.notifyChange();
-          void updateVoiceOptions().then(onSelectionChange);
-        });
-      });
-
-    new Setting(parent)
-      .setName('Speech voice')
-      .addDropdown(dropdown => {
-        voiceDropdown = dropdown.selectEl;
-        void updateVoiceOptions();
-        dropdown.onChange((voice) => {
-          this.settings.speechVoice = voice || undefined;
-          this.notifyChange();
-          onSelectionChange();
-        });
-      });
-  }
-
-  private renderRealtimeVoiceSettings(parent: HTMLElement, onSelectionChange: () => void): void {
-    let modelDropdown: HTMLSelectElement | null = null;
-    let voiceDropdown: HTMLSelectElement | null = null;
-
-    const getAvailability = (): RealtimeVoiceProviderAvailability[] =>
-      buildRealtimeVoiceProviderAvailability(this.config.llmProviderSettings, this.getRealtimeAppStates());
-
-    const getSelection = (): DefaultRealtimeVoiceModelSettings => {
-      const availability = getAvailability();
-      const configuredProvider = this.settings.realtimeVoiceProvider;
-      const provider = configuredProvider
-        || availability.find(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0)?.provider;
-      const providerAvailability = availability.find(item => item.provider === provider);
-      const model = this.settings.realtimeVoiceModel && providerAvailability?.models?.some(candidate => candidate.id === this.settings.realtimeVoiceModel)
-        ? this.settings.realtimeVoiceModel
-        : providerAvailability?.models?.[0]?.id;
-
-      return {
-        provider,
-        model,
-        voice: this.settings.realtimeVoiceVoice,
-        source: 'user'
-      };
-    };
-
-    const updateVoiceOptions = (): void => {
-      if (!voiceDropdown) return;
-      const selection = getSelection();
-      const model = getRealtimeVoiceModel(selection.provider, selection.model);
-      const voices = model?.voices ?? [];
-      const usesSpeechDefault = model?.execution === 'transcription-pipeline';
-
-      voiceDropdown.empty();
-      voiceDropdown.createEl('option', {
-        value: '',
-        text: usesSpeechDefault ? 'Uses speech default' : 'Provider default'
-      });
-      voices.forEach(voice => {
-        voiceDropdown?.createEl('option', { value: voice.id, text: voice.name });
-      });
-
-      if (selection.voice && !voices.some(voice => voice.id === selection.voice)) {
-        voiceDropdown.createEl('option', {
-          value: selection.voice,
-          text: `${selection.voice} (unavailable)`
-        });
-      }
-
-      voiceDropdown.disabled = usesSpeechDefault || !selection.provider || !selection.model;
-      voiceDropdown.value = usesSpeechDefault ? '' : selection.voice || '';
-    };
-
-    const updateModelOptions = (): void => {
-      if (!modelDropdown) return;
-      const selection = getSelection();
-      const availability = getAvailability();
-      const providerAvailability = availability.find(item => item.provider === selection.provider);
-      const providerUsable = providerAvailability?.enabled === true && providerAvailability.configured === true;
-      const models = providerAvailability?.models ?? [];
-
-      modelDropdown.empty();
-      if (!selection.provider || models.length === 0) {
-        modelDropdown.createEl('option', {
-          value: '',
-          text: 'Select a live voice provider first'
-        });
-        modelDropdown.disabled = true;
-        updateVoiceOptions();
-        return;
-      }
-
-      sortModelsNewestFirst(models, model => ({ provider: selection.provider || '', id: model.id })).forEach(model => {
-        modelDropdown?.createEl('option', { value: model.id, text: model.name });
-      });
-
-      if (selection.model && !models.some(model => model.id === selection.model)) {
-        modelDropdown.createEl('option', {
-          value: selection.model,
-          text: `${selection.model} (unavailable)`
-        });
-      }
-
-      const selectedModelExists = models.some(model => model.id === selection.model);
-      const nextModel = selection.model && selectedModelExists
-        ? selection.model
-        : models[0]?.id || '';
-
-      this.settings.realtimeVoiceProvider = selection.provider;
-      this.settings.realtimeVoiceModel = nextModel || undefined;
-      modelDropdown.disabled = !providerUsable;
-      modelDropdown.value = nextModel;
-      this.notifyChange();
-      updateVoiceOptions();
-    };
-
-    new Setting(parent)
-      .setName('Live voice provider')
-      .setDesc('Native voice agents and realtime transcription pipelines appear here.')
-      .addDropdown(dropdown => {
-        const availability = getAvailability();
-        const selection = getSelection();
-        const usableProviders = availability.filter(item => item.enabled && item.configured && (item.models?.length ?? 0) > 0);
-
-        if (usableProviders.length === 0 && !selection.provider) {
-          dropdown.addOption('', 'No live voice providers available');
-          dropdown.setDisabled(true);
-          return;
-        }
-
-        usableProviders.forEach(provider => {
-          dropdown.addOption(provider.provider, this.getProviderDisplayName(provider.provider));
-        });
-
-        if (selection.provider && !usableProviders.some(provider => provider.provider === selection.provider)) {
-          dropdown.addOption(
-            selection.provider,
-            `${this.getProviderDisplayName(selection.provider)} (unavailable)`
-          );
-        }
-
-        dropdown.setValue(selection.provider || usableProviders[0]?.provider || '');
-        dropdown.onChange((provider) => {
-          const providerAvailability = getAvailability().find(item => item.provider === provider);
-          const model = providerAvailability?.models?.[0];
-          this.settings.realtimeVoiceProvider = provider || undefined;
-          this.settings.realtimeVoiceModel = model?.id;
-          this.settings.realtimeVoiceVoice = model?.defaultVoice;
-          this.notifyChange();
-          updateModelOptions();
-          onSelectionChange();
-        });
-      });
-
-    new Setting(parent)
-      .setName('Live voice model')
-      .addDropdown(dropdown => {
-        modelDropdown = dropdown.selectEl;
-        updateModelOptions();
-        dropdown.onChange((modelId) => {
-          const selection = getSelection();
-          const model = getRealtimeVoiceModel(selection.provider, modelId);
-          this.settings.realtimeVoiceModel = modelId || undefined;
-          if (model) {
-            this.settings.realtimeVoiceVoice = this.settings.realtimeVoiceVoice || model.defaultVoice;
-          }
-          this.notifyChange();
-          updateVoiceOptions();
-          onSelectionChange();
-        });
-      });
-
-    new Setting(parent)
-      .setName('Live voice output')
-      .addDropdown(dropdown => {
-        voiceDropdown = dropdown.selectEl;
-        updateVoiceOptions();
-        dropdown.onChange((voice) => {
-          this.settings.realtimeVoiceVoice = voice || undefined;
-          this.notifyChange();
-          onSelectionChange();
-        });
-      });
-  }
-
-  private getSpeechAppStates(): Partial<Record<SpeechProvider, { enabled: boolean; configured: boolean }>> {
-    const elevenLabs = this.getAppsSettings()?.apps.elevenlabs;
-    return elevenLabs
-      ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials.apiKey?.trim() } }
-      : {};
-  }
-
-  private getRealtimeAppStates(): Partial<Record<'elevenlabs', { enabled: boolean; configured: boolean }>> {
-    const elevenLabs = this.getAppsSettings()?.apps.elevenlabs;
-    return elevenLabs
-      ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials.apiKey?.trim() } }
-      : {};
-  }
-
-  private getVoiceWarningMessages(): string[] {
-    const messages: string[] = [];
-    const speechDefault = this.settings.speechProvider || this.settings.speechModel || this.settings.speechVoice
-      ? {
-        provider: this.settings.speechProvider,
-        model: this.settings.speechModel,
-        voice: this.settings.speechVoice,
-        source: 'user' as const
-      }
-      : undefined;
-    const realtimeDefault = this.settings.realtimeVoiceProvider || this.settings.realtimeVoiceModel || this.settings.realtimeVoiceVoice
-      ? {
-        provider: this.settings.realtimeVoiceProvider,
-        model: this.settings.realtimeVoiceModel,
-        voice: this.settings.realtimeVoiceVoice,
-        source: 'user' as const
-      }
-      : undefined;
-    const speechSelection = resolveDefaultSpeechSelection(
-      {
-        ...this.config.llmProviderSettings,
-        defaultSpeechModel: speechDefault
-      },
-      buildSpeechProviderAvailability(this.config.llmProviderSettings, this.getSpeechAppStates())
-    );
-    const realtimeSelection = resolveDefaultRealtimeVoiceSelection(
-      {
-        ...this.config.llmProviderSettings,
-        defaultRealtimeVoiceModel: realtimeDefault
-      },
-      buildRealtimeVoiceProviderAvailability(this.config.llmProviderSettings, this.getRealtimeAppStates())
-    );
-
-    if (speechSelection.status === 'invalid' && speechSelection.reason) {
-      messages.push(speechSelection.reason);
-    }
-
-    if (realtimeSelection.status === 'invalid' && realtimeSelection.reason) {
-      messages.push(realtimeSelection.reason);
-    }
-
-    return messages;
-  }
-
-  private getAppsSettings(): AppsSettings | undefined {
-    const plugin = getNexusPlugin(this.config.app) as PluginWithAppSettings | null;
-    return plugin?.settings?.settings?.apps;
-  }
-
-  private getProviderDisplayName(providerId: string): string {
-    const config = this.config.llmProviderSettings.providers[providerId];
-    if (config?.driverKind === 'openai-compatible') {
-      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
-    }
-    return ProviderUtils.getProviderDisplayName(providerId);
-  }
-
-  // ========== CONTEXT SECTION ==========
-
-  private renderContextSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Context');
-    const content = section.createDiv('csr-section-content');
-
-    // Workspace
-    new Setting(content)
-      .setName('Workspace')
-      .addDropdown(dropdown => {
-        dropdown.addOption('', 'None');
-
+        dropdown.addOption('', COPY.none);
         this.config.options.workspaces.forEach(w => {
           dropdown.addOption(w.id, w.name);
         });
-
         dropdown.setValue(this.settings.workspaceId || '');
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
+          if (this.surface === 'chat') {
+            // A workflow belongs to its workspace, so a new workspace starts with none.
+            this.settings.workflowId = null;
+            this.notifyChange();
+            this.redrawGroups([FOLD_IDS.context]);
+            return;
+          }
           this.notifyChange();
-          if (this.config.showWorkflowSelection) { this.settings.workflowId = null; this.render(); }
-          else void this.syncWorkspacePrompt(value);
+          this.syncWorkspacePrompt(value);
         });
       });
 
-    if (this.config.showWorkflowSelection) {
-      new Setting(content)
-        .setName('Workflow')
-        .setDesc('Preload instructions and tools for this chat. Steps run only when you ask.')
+    if (this.surface === 'chat') {
+      new Setting(itemsEl)
+        .setName(COPY.workflow)
+        .setDesc(COPY.workflowDesc)
         .addDropdown(dropdown => {
-          dropdown.addOption('', 'None');
+          dropdown.addOption('', COPY.none);
           const workspace = this.config.options.workspaces.find(item => item.id === this.settings.workspaceId);
           for (const workflow of workspace?.context?.workflows ?? []) dropdown.addOption(workflow.id, workflow.name);
           dropdown.setValue(this.settings.workflowId || '');
@@ -1296,16 +826,13 @@ export class ChatSettingsRenderer {
         });
     }
 
-    // Prompt
-    new Setting(content)
-      .setName('Prompt')
+    new Setting(itemsEl)
+      .setName(COPY.prompt)
       .addDropdown(dropdown => {
-        dropdown.addOption('', 'None');
-
+        dropdown.addOption('', COPY.none);
         this.config.options.prompts.forEach(p => {
           dropdown.addOption(p.id, p.name);
         });
-
         dropdown.setValue(this.settings.promptId || '');
         dropdown.onChange((value) => {
           this.settings.promptId = value || null;
@@ -1313,15 +840,28 @@ export class ChatSettingsRenderer {
         });
       });
 
-    // Context Notes header with Add button
-    const notesHeader = content.createDiv('csr-notes-header');
-    notesHeader.createSpan().setText('Context notes');
-    const addBtn = notesHeader.createEl('button', { cls: 'csr-add-btn' });
-    addBtn.setText('Add');
-    this.registerDomEvent(addBtn, 'click', () => { void this.openNotePicker(); });
+    new Setting(itemsEl)
+      .setName(COPY.contextNotes)
+      .addButton(button => button
+        .setButtonText(COPY.addNote)
+        .onClick(() => { void this.openNotePicker(); }));
 
-    this.contextNotesListEl = content.createDiv('csr-notes-list');
-    this.renderContextNotesList();
+    this.settings.contextNotes.forEach((notePath, index) => {
+      const name = noteBasename(notePath);
+      const row = new Setting(itemsEl).setClass('nexus-note-row');
+      row.nameEl.empty();
+      setIcon(row.nameEl.createSpan({ cls: 'nexus-note-icon' }), 'file-text');
+      row.nameEl.createSpan({ text: name });
+      row.nameEl.setAttribute('title', notePath);
+      row.addExtraButton(button => button
+        .setIcon('x')
+        .setTooltip(COPY.removeNote(name))
+        .onClick(() => {
+          this.settings.contextNotes.splice(index, 1);
+          this.notifyChange();
+          this.redrawGroups([FOLD_IDS.context]);
+        }));
+    });
   }
 
   private syncWorkspacePrompt(workspaceId: string | null): void {
@@ -1336,29 +876,17 @@ export class ChatSettingsRenderer {
     if (prompt) {
       this.settings.promptId = prompt.id;
       this.notifyChange();
-      this.render();
+      this.redrawGroups([FOLD_IDS.context]);
     }
   }
 
-  private renderContextNotesList(): void {
-    const contextNotesListEl = this.contextNotesListEl;
-    if (!contextNotesListEl) return;
-    contextNotesListEl.empty();
-
-    if (this.settings.contextNotes.length === 0) {
-      contextNotesListEl.createDiv({ cls: 'csr-notes-empty', text: 'No files added' });
-      return;
-    }
-
-    this.settings.contextNotes.forEach((notePath, index) => {
-      const item = contextNotesListEl.createDiv('csr-note-item');
-      item.createSpan({ cls: 'csr-note-path', text: notePath });
-      const removeBtn = item.createEl('button', { cls: 'csr-note-remove', text: '×' });
-      this.registerDomEvent(removeBtn, 'click', () => {
-        this.settings.contextNotes.splice(index, 1);
-        this.notifyChange();
-        this.renderContextNotesList();
-      });
+  private contextSummary(): string {
+    const workspace = this.config.options.workspaces.find(w => w.id === this.settings.workspaceId);
+    const prompt = this.config.options.prompts.find(p => p.id === this.settings.promptId || p.name === this.settings.promptId);
+    return contextSummary({
+      workspaceName: workspace?.name ?? null,
+      promptName: prompt?.name ?? this.settings.promptId,
+      noteCount: this.settings.contextNotes.length
     });
   }
 
@@ -1371,11 +899,24 @@ export class ChatSettingsRenderer {
     if (selectedPaths.length > 0) {
       this.settings.contextNotes.push(...selectedPaths);
       this.notifyChange();
-      this.renderContextNotesList();
+      this.redrawGroups([FOLD_IDS.context]);
     }
   }
 
   // ========== HELPERS ==========
+
+  private getAppsSettings(): AppsSettings | undefined {
+    const plugin = getNexusPlugin(this.config.app) as PluginWithAppSettings | null;
+    return plugin?.settings?.settings?.apps;
+  }
+
+  private getProviderDisplayName(providerId: string): string {
+    const config = this.config.llmProviderSettings.providers[providerId];
+    if (config?.driverKind === 'openai-compatible') {
+      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
+    }
+    return ProviderUtils.getProviderDisplayName(providerId);
+  }
 
   private async getDefaultModelForProvider(providerId: string): Promise<string> {
     try {
@@ -1387,6 +928,11 @@ export class ChatSettingsRenderer {
   }
 
   getSettings(): ChatSettings {
-    return { ...this.settings };
+    return { ...this.settings, contextNotes: [...this.settings.contextNotes] };
   }
+}
+
+function noteBasename(path: string): string {
+  const file = path.split('/').pop() || path;
+  return file.replace(/\.md$/i, '');
 }

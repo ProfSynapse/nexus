@@ -1,9 +1,9 @@
 /**
  * ModelDropdownRenderer - Shared provider + model dropdown rendering
  *
- * Extracts the duplicated pattern from ChatSettingsRenderer's
- * renderModelSection() and renderAgentModelSection() into a
- * parameterized utility.
+ * Provider and Model rows shared by the chat model (top block) and the
+ * Subagents fold. Each function adds one Setting to a caller-owned
+ * `setting-items` list and returns it.
  */
 
 import { Setting } from 'obsidian';
@@ -37,15 +37,6 @@ const PROVIDER_NAMES: Record<string, string> = {
 export { PROVIDER_NAMES };
 
 export interface ModelDropdownConfig {
-  /** Section header text (e.g., "Chat model", "Subagent model") */
-  sectionTitle: string;
-
-  /** Optional description text below the header */
-  description?: {
-    text: string;
-    infoTooltip?: string;
-  };
-
   /** Get the list of enabled providers to show */
   getProviders: () => string[];
 
@@ -87,11 +78,14 @@ export interface ModelDropdownConfig {
   /** Notify that settings changed */
   notifyChange: () => void;
 
-  /** Trigger a full re-render */
-  reRender: () => void;
+  /**
+   * The user picked a provider or model. The caller redraws only the rows that
+   * depend on the selection; the dropdowns themselves are not rebuilt here.
+   */
+  onSelectionChanged: (kind: 'provider' | 'model') => void;
 
-  /** Called after provider+model dropdowns are rendered, receives the content element */
-  onAfterRender?: (contentEl: HTMLElement) => void;
+  /** Called with the model's display name once the model list has loaded. */
+  onModelNameResolved?: (name: string | undefined) => void;
 }
 
 /**
@@ -102,41 +96,25 @@ function buildModelOptionKey(provider: string, modelId: string): string {
   return `${provider}::${modelId}`;
 }
 
+/** The provider shown in the dropdown: merged sign-in providers appear under their API provider. */
+export function toDisplayProvider(provider: string | undefined): string | undefined {
+  if (provider === 'openai-codex') return 'openai';
+  if (provider === 'anthropic-claude-code') return 'anthropic';
+  if (provider === 'google-gemini-cli') return 'google';
+  return provider;
+}
+
 /**
- * Renders a provider + model dropdown section.
- *
- * Creates the standard section structure:
- *   div.csr-section > div.csr-section-header + div.csr-section-content
- *     Setting(Provider) + Setting(Model)
+ * Adds the Provider row to a settings list (`setting-items`). No section shell,
+ * heading or description; the caller owns the surrounding group.
  */
-export function renderModelDropdownSection(
-  parent: HTMLElement,
-  config: ModelDropdownConfig
-): void {
-  const section = parent.createDiv('csr-section');
-  section.createDiv('csr-section-header').setText(config.sectionTitle);
+export function renderProviderSetting(itemsEl: HTMLElement, config: ModelDropdownConfig): Setting {
+  return renderProviderDropdown(itemsEl, config);
+}
 
-  // Optional description
-  if (config.description) {
-    const desc = section.createDiv('csr-section-desc');
-    const descText = desc.createSpan();
-    descText.setText(config.description.text);
-    if (config.description.infoTooltip) {
-      const infoIcon = desc.createSpan({ cls: 'csr-info-icon' });
-      infoIcon.setText(' \u24D8');
-      infoIcon.setAttribute('aria-label', config.description.infoTooltip);
-      infoIcon.addClass('clickable-icon');
-    }
-  }
-
-  const content = section.createDiv('csr-section-content');
-
-  renderProviderDropdown(content, config);
-  renderModelDropdown(content, config);
-
-  if (config.onAfterRender) {
-    config.onAfterRender(content);
-  }
+/** Adds the Model row (dropdown, loaded asynchronously) to a settings list. */
+export function renderModelSetting(itemsEl: HTMLElement, config: ModelDropdownConfig): Setting {
+  return renderModelDropdown(itemsEl, config);
 }
 
 /**
@@ -145,18 +123,11 @@ export function renderModelDropdownSection(
 function renderProviderDropdown(
   content: HTMLElement,
   config: ModelDropdownConfig
-): void {
+): Setting {
   const providers = config.getProviders();
-  const currentProvider = config.getCurrentProvider();
-  const displayProvider = currentProvider === 'openai-codex'
-    ? 'openai'
-    : currentProvider === 'anthropic-claude-code'
-      ? 'anthropic'
-      : currentProvider === 'google-gemini-cli'
-        ? 'google'
-      : currentProvider;
+  const displayProvider = toDisplayProvider(config.getCurrentProvider());
 
-  new Setting(content)
+  return new Setting(content)
     .setName('Provider')
     .addDropdown(dropdown => {
       if (providers.length === 0) {
@@ -185,7 +156,7 @@ function renderProviderDropdown(
           config.onModelChange(undefined, undefined);
         }
         config.notifyChange();
-        config.reRender();
+        config.onSelectionChanged('provider');
       });
     });
 }
@@ -196,17 +167,10 @@ function renderProviderDropdown(
 function renderModelDropdown(
   content: HTMLElement,
   config: ModelDropdownConfig
-): void {
-  const currentProvider = config.getCurrentProvider();
-  const modelProviderId = currentProvider === 'openai-codex'
-    ? 'openai'
-    : currentProvider === 'anthropic-claude-code'
-      ? 'anthropic'
-      : currentProvider === 'google-gemini-cli'
-        ? 'google'
-      : currentProvider;
+): Setting {
+  const modelProviderId = toDisplayProvider(config.getCurrentProvider());
 
-  new Setting(content)
+  return new Setting(content)
     .setName('Model')
     .addDropdown(async dropdown => {
       if (!modelProviderId) {
@@ -265,15 +229,19 @@ function renderModelDropdown(
           const exists = selectedOptionKey ? config.modelOptionMap.has(selectedOptionKey) : false;
           if (exists) {
             dropdown.setValue(selectedOptionKey);
+            config.onModelNameResolved?.(models.find(model =>
+              buildModelOptionKey(model.provider, model.id) === selectedOptionKey)?.name);
           } else if (currentProvider && currentModel) {
             dropdown.addOption(selectedOptionKey, `${currentModel} (Unavailable)`);
             dropdown.setValue(selectedOptionKey);
+            config.onModelNameResolved?.(currentModel);
           } else if (originalFirstModel) {
             const firstOptionKey = buildModelOptionKey(originalFirstModel.provider, originalFirstModel.id);
             const firstEntry = config.modelOptionMap.get(firstOptionKey);
             config.onModelChange(originalFirstModel.id, firstEntry?.provider);
             config.notifyChange();
             dropdown.setValue(firstOptionKey);
+            config.onModelNameResolved?.(originalFirstModel.name);
           }
         }
 
@@ -283,8 +251,10 @@ function renderModelDropdown(
             entry?.modelId ?? value,
             entry?.provider ?? modelProviderId
           );
+          config.onModelNameResolved?.(models.find(model =>
+            buildModelOptionKey(model.provider, model.id) === value)?.name);
           config.notifyChange();
-          config.reRender();
+          config.onSelectionChanged('model');
         });
       } catch {
         dropdown.addOption('', 'Error loading models');

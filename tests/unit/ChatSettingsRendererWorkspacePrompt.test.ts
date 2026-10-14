@@ -7,52 +7,50 @@
  * deprecated path, and DefaultsTab passed only `{ id, name }`, so the prompt
  * never followed the workspace there.
  *
- * Real pieces: ChatSettingsRenderer.renderContextSection and its workspace
- * dropdown handler, DefaultsTab.loadWorkspaces. Faked: the dropdown and
- * element mocks (they only capture the registered callbacks).
+ * Real pieces: ChatSettingsRenderer.renderContext and its workspace dropdown
+ * handler, DefaultsTab.loadWorkspaces. Rows render into the FakeElement tree
+ * and the dropdown is driven by a change event.
  */
 import { Component } from 'obsidian';
-import { DropdownComponent } from '../mocks/obsidian/components';
-import { createMockElement } from '../helpers/mockFactories';
+import { createFakeRoot, FakeElement } from '../mocks/obsidian/dom';
 import { ChatSettingsRenderer, type ChatSettingsOptions } from '../../src/components/shared/ChatSettingsRenderer';
 import { DefaultsTab } from '../../src/settings/tabs/DefaultsTab';
+import { choose, control, findRow } from '../helpers/settingsDom';
 
 type RendererInternals = {
   settings: { workspaceId: string | null; promptId: string | null; workflowId?: string | null; contextNotes: string[] };
-  config: { options: ChatSettingsOptions; showWorkflowSelection?: boolean };
+  config: { options: ChatSettingsOptions; surface: 'defaults' | 'chat' };
   notifyChange: jest.Mock;
-  render: jest.Mock;
-  renderContextSection(parent: HTMLElement): void;
+  redrawGroups: jest.Mock;
+  events(groupId: string): Component;
+  renderContext(itemsEl: HTMLElement): void;
 };
 
 function renderer(workspaces: ChatSettingsOptions['workspaces']): RendererInternals {
   const r = Object.create(ChatSettingsRenderer.prototype) as RendererInternals;
   r.settings = { workspaceId: null, promptId: null, contextNotes: [] };
   r.config = {
+    surface: 'defaults',
     options: {
       workspaces,
       prompts: [{ id: 'Writer', name: 'Writer' }, { id: 'Editor', name: 'Editor' }]
     }
   };
   r.notifyChange = jest.fn();
-  r.render = jest.fn();
+  r.redrawGroups = jest.fn();
   return r;
 }
 
-/** Render the Context section and return the Workspace dropdown's change handler. */
+/** Render the Context rows and return the Workspace dropdown. */
+function renderContext(r: RendererInternals): FakeElement {
+  const items = createFakeRoot();
+  r.renderContext(items as unknown as HTMLElement);
+  return items;
+}
+
 function workspaceDropdown(r: RendererInternals): (value: string) => void {
-  const handlers: Array<(value: string) => void> = [];
-  const onChange = jest.spyOn(DropdownComponent.prototype, 'onChange').mockImplementation(function (callback) {
-    handlers.push(callback);
-    return this;
-  });
-  try {
-    r.renderContextSection(createMockElement('div') as unknown as HTMLElement);
-  } finally {
-    onChange.mockRestore();
-  }
-  // Workspace is the first dropdown in the Context section.
-  return handlers[0];
+  const items = renderContext(r);
+  return (value: string) => choose(control(findRow(items, 'Workspace'), 'select'), value);
 }
 
 it('selecting a workspace whose top-level dedicatedAgentId names a prompt selects that prompt', () => {
@@ -88,18 +86,15 @@ it('DefaultsTab hands the workspace prompt binding to the renderer', async () =>
   expect(await tab.loadWorkspaces()).toEqual([{ id: 'ws1', name: 'Novel', dedicatedAgentId: 'Writer', context }]);
 });
 
-it('context note buttons register their clicks through a Component, not onclick', () => {
+it('context note rows use Obsidian components, not onclick or hand-made buttons', () => {
   const r = renderer([]);
-  (r.settings as { contextNotes: string[] }).contextNotes = ['Notes/a.md'];
-  const registered: Array<{ type: string }> = [];
-  const register = jest.spyOn(Component.prototype, 'registerDomEvent').mockImplementation((_el, type) => {
-    registered.push({ type: String(type) });
-  });
-  try {
-    workspaceDropdown(r);
-  } finally {
-    register.mockRestore();
-  }
-  // "Add" in the header plus one remove button for the single note.
-  expect(registered.filter(entry => entry.type === 'click')).toHaveLength(2);
+  r.settings.contextNotes = ['Notes/a.md'];
+  const items = renderContext(r);
+  const remove = control(findRow(items, 'a'), '.extra-setting-button');
+  expect(remove.getAttribute('aria-label')).toBe('Remove a');
+  expect(items.querySelectorAll('.csr-add-btn, .csr-note-remove')).toEqual([]);
+  remove.click();
+  expect(r.settings.contextNotes).toEqual([]);
+  expect(r.notifyChange).toHaveBeenCalledTimes(1);
+  expect(r.redrawGroups).toHaveBeenCalledWith(['context']);
 });
