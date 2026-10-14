@@ -16,6 +16,7 @@ import { VaultOperations } from '../../../core/VaultOperations';
 import { CacheManager, VaultAdapter } from '../utils/CacheManager';
 import { Logger } from '../utils/Logger';
 import { LLMSettingsNotifier } from '../LLMSettingsNotifier';
+import { resolveAgentModel, type AgentDefaults } from '../utils/SubagentModelResolver';
 
 export interface LLMExecutionOptions extends GenerateOptions {
   provider?: string;
@@ -119,36 +120,31 @@ export class LLMService {
   }
 
   /**
-   * Get the model to use for agent operations (executePrompt).
-   * If the default model is a local provider (webllm, ollama, lmstudio),
-   * returns the configured agentModel or falls back to first available API provider.
+   * Get the model to use for agent runs (subagents and executePrompt).
+   *
+   * A configured `agentModel` wins whatever the chat model is. Without one,
+   * agent runs use the chat model if it is a cloud model, otherwise the first
+   * available cloud provider (model left empty for the caller to pick). The
+   * precedence lives in `resolveAgentModel` so every agent path agrees.
    */
   getAgentModel(): { provider: string; model: string } {
-    const LOCAL_PROVIDERS = ['webllm', 'ollama', 'lmstudio'];
-    const defaultModel = this.settings.defaultModel;
+    const resolved = resolveAgentModel({
+      defaultAgent: this.settings.agentModel,
+      chat: this.settings.defaultModel,
+      availableProviders: this.getAvailableProviders()
+    });
+    return { provider: resolved.provider, model: resolved.model };
+  }
 
-    // If default is not a local provider, use it
-    if (!LOCAL_PROVIDERS.includes(defaultModel.provider)) {
-      return defaultModel;
-    }
-
-    // If agentModel is configured, use it
-    if (this.settings.agentModel?.provider && this.settings.agentModel?.model) {
-      return this.settings.agentModel;
-    }
-
-    // Fall back to first available API provider
-    const availableProviders = this.getAvailableProviders();
-    const apiProviders = availableProviders.filter(p => !LOCAL_PROVIDERS.includes(p));
-
-    if (apiProviders.length > 0) {
-      // Return first API provider with its default model
-      // This is a best-effort fallback - the caller should handle model selection
-      return { provider: apiProviders[0], model: '' };
-    }
-
-    // No API providers available - return default anyway (will likely fail)
-    return defaultModel;
+  /** Plugin-wide defaults for agent runs (Settings → Defaults → Subagents). */
+  getAgentDefaults(): AgentDefaults {
+    return {
+      model: this.settings.agentModel,
+      thinking: this.settings.agentThinking,
+      agentTemperature: this.settings.agentTemperature,
+      defaultTemperature: this.settings.defaultTemperature,
+      contextWindowOverrides: this.settings.agentContextWindowOverrides
+    };
   }
 
   /** Execute a prompt with the specified or default provider/model */
@@ -219,7 +215,9 @@ export class LLMService {
         frequencyPenalty: options.frequencyPenalty,
         presencePenalty: options.presencePenalty,
         stopSequences: options.stopSequences,
-        webSearch: options.webSearch
+        webSearch: options.webSearch,
+        enableThinking: options.enableThinking,
+        thinkingEffort: options.thinkingEffort
       };
 
       const result: LLMResponse = await adapter.generate(fullPrompt, generateOptions);

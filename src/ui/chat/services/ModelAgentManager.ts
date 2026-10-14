@@ -49,6 +49,15 @@ import {
 } from '../../../services/chat/CompactionFrontierService';
 import { ConversationData } from '../../../types/chat/ChatTypes';
 import type { App, Plugin } from 'obsidian';
+import {
+  DEFAULT_AGENT_TEMPERATURE,
+  type ConversationAgentSettings
+} from '../../../services/llm/utils/SubagentModelResolver';
+
+/** A positive whole-token budget, or null for "use the model's default". */
+function normalizeAgentContextWindow(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
 
 interface NexusPluginWithLLMSettings extends Plugin {
   settings?: { settings?: { llmProviders?: LLMProviderSettings } };
@@ -111,6 +120,10 @@ export class ModelAgentManager {
   private agentProvider: string | null = null;
   private agentModel: string | null = null;
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
+  /** Subagent Creativity for this chat (0-1). */
+  private agentTemperature: number = DEFAULT_AGENT_TEMPERATURE;
+  /** Subagent context budget for this chat; null uses the subagent model's default. */
+  private agentContextWindow: number | null = null;
   private imageProvider: 'google' | 'openrouter' | 'openai' = 'google';
   private imageModel = 'gemini-3.1-flash-image';
   private speechProvider: DefaultSpeechModelSettings['provider'] | null = null;
@@ -313,6 +326,14 @@ export class ModelAgentManager {
       };
     }
 
+    // Restore subagent Creativity and context budget
+    if ('agentTemperature' in settings && typeof settings.agentTemperature === 'number' && Number.isFinite(settings.agentTemperature)) {
+      this.agentTemperature = Math.max(0, Math.min(1, settings.agentTemperature));
+    }
+    if ('agentContextWindow' in settings) {
+      this.agentContextWindow = normalizeAgentContextWindow(settings.agentContextWindow);
+    }
+
     // Restore image model
     if ('imageProvider' in settings && settings.imageProvider) {
       this.imageProvider = settings.imageProvider;
@@ -395,6 +416,8 @@ export class ModelAgentManager {
       this.agentProvider = defaultState.agentProvider;
       this.agentModel = defaultState.agentModel;
       this.agentThinkingSettings = { ...defaultState.agentThinkingSettings };
+      this.agentTemperature = defaultState.agentTemperature ?? DEFAULT_AGENT_TEMPERATURE;
+      this.agentContextWindow = normalizeAgentContextWindow(defaultState.agentContextWindow);
       this.imageProvider = defaultState.imageProvider;
       this.imageModel = defaultState.imageModel;
       this.speechProvider = defaultState.speechProvider;
@@ -851,6 +874,36 @@ export class ModelAgentManager {
     this.agentThinkingSettings = { ...settings };
   }
 
+  /** Subagent Creativity for this chat (0-1). */
+  getAgentTemperature(): number {
+    return this.agentTemperature;
+  }
+
+  setAgentTemperature(temperature: number): void {
+    if (!Number.isFinite(temperature)) return;
+    this.agentTemperature = Math.max(0, Math.min(1, temperature));
+  }
+
+  /** Subagent context budget for this chat; null uses the subagent model's default. */
+  getAgentContextWindow(): number | null {
+    return this.agentContextWindow;
+  }
+
+  setAgentContextWindow(contextWindow: number | null): void {
+    this.agentContextWindow = normalizeAgentContextWindow(contextWindow);
+  }
+
+  /** Everything an agent run (subagent, executePrompt) takes from this chat. */
+  getAgentSettings(): ConversationAgentSettings {
+    return {
+      provider: this.agentProvider,
+      model: this.agentModel,
+      thinking: { ...this.agentThinkingSettings },
+      temperature: this.agentTemperature,
+      contextWindow: this.agentContextWindow
+    };
+  }
+
   /**
    * Get image provider
    */
@@ -1242,6 +1295,8 @@ export class ModelAgentManager {
       agentProvider: this.agentProvider,
       agentModel: this.agentModel,
       agentThinking: this.agentThinkingSettings,
+      agentTemperature: this.agentTemperature,
+      agentContextWindow: this.agentContextWindow,
       imageProvider: this.imageProvider,
       imageModel: this.imageModel,
       speechProvider: this.speechProvider,
