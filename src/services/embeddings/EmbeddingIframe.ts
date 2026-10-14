@@ -79,6 +79,15 @@ export class EmbeddingIframe {
   }
 
   private async doInitialize(): Promise<void> {
+    // The iframe and its message listener live in the main window, never in
+    // window.activeDocument. The iframe posts to its own `parent`, so the two
+    // must share a window: appended to a focused popout or the Settings window
+    // (its own window since Obsidian 1.14), the ready message reaches that
+    // window, the listener below never sees it, and initialization times out.
+    // It would also die with that window when it closes. Nothing here is
+    // rendered, so the main window is always the right host.
+    const host = window;
+
     // Create the iframe HTML that will load transformers.js
     const iframeHtml = this.createIframeHtml();
 
@@ -98,35 +107,42 @@ export class EmbeddingIframe {
         this.handleMessage(event.data);
       }
     };
-    window.addEventListener('message', this.messageHandler);
+    host.addEventListener('message', this.messageHandler);
 
-    // Wait for iframe to load and initialize
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        reject(new Error('Iframe initialization timeout (60s)'));
-      }, 60000);
+    try {
+      // Wait for iframe to load and initialize
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          reject(new Error('Iframe initialization timeout (60s)'));
+        }, 60000);
 
-      // Store the resolve for when we get the ready message
-      this.pendingRequests.set(-1, {
-        resolve: () => {
-          window.clearTimeout(timeout);
-          resolve();
-        },
-        reject: (err: Error) => {
-          window.clearTimeout(timeout);
-          reject(err);
+        // Store the resolve for when we get the ready message
+        this.pendingRequests.set(-1, {
+          resolve: () => {
+            window.clearTimeout(timeout);
+            resolve();
+          },
+          reject: (err: Error) => {
+            window.clearTimeout(timeout);
+            reject(err);
+          }
+        });
+
+        const iframe = this.iframe;
+        const blobUrl = this.blobUrl;
+        if (!iframe || !blobUrl) {
+          throw new Error('Iframe initialization failed');
         }
+
+        iframe.src = blobUrl;
+        host.document.body.appendChild(iframe);
       });
-
-      const iframe = this.iframe;
-      const blobUrl = this.blobUrl;
-      if (!iframe || !blobUrl) {
-        throw new Error('Iframe initialization failed');
-      }
-
-      iframe.src = blobUrl;
-      window.activeDocument.body.appendChild(iframe);
-    });
+    } catch (error) {
+      // Drop the half-started iframe, so a retry starts clean instead of
+      // stacking a second hidden iframe and listener on top of this one.
+      this.releaseFrame();
+      throw error;
+    }
   }
 
   /**
@@ -323,18 +339,27 @@ export class EmbeddingIframe {
    * Dispose of the iframe
    */
   async dispose(): Promise<void> {
-    // Remove window message listener
+    // Only a ready iframe can answer. Asking one that never finished loading
+    // waits out the 30s request timeout, which held up turning search off.
+    if (this.iframe && this.isReady) {
+      try {
+        await this.sendRequest({ method: 'dispose' });
+      } catch {
+        // Ignore errors during disposal
+      }
+    }
+
+    this.releaseFrame();
+  }
+
+  /** Remove the listener and the iframe, revoke the blob URL, forget requests. */
+  private releaseFrame(): void {
     if (this.messageHandler) {
       window.removeEventListener('message', this.messageHandler);
       this.messageHandler = null;
     }
 
     if (this.iframe) {
-      try {
-        await this.sendRequest({ method: 'dispose' });
-      } catch {
-        // Ignore errors during disposal
-      }
       this.iframe.remove();
       this.iframe = null;
     }
@@ -346,7 +371,14 @@ export class EmbeddingIframe {
     }
 
     this.isReady = false;
+
+    // Settle anything still waiting, rather than leaving it to a timeout that
+    // no longer finds its entry and so never rejects.
+    const pending = Array.from(this.pendingRequests.values());
     this.pendingRequests.clear();
+    for (const request of pending) {
+      request.reject(new Error('Embedding iframe was disposed'));
+    }
   }
 
   /**

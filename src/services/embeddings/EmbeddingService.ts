@@ -20,7 +20,7 @@
  * - Used by ChatTraceService for trace embedding
  */
 
-import { App, Notice, Platform } from 'obsidian';
+import { App, Platform } from 'obsidian';
 import { EmbeddingEngine } from './EmbeddingEngine';
 import { NoteEmbeddingService } from './NoteEmbeddingService';
 import { TraceEmbeddingService } from './TraceEmbeddingService';
@@ -99,8 +99,9 @@ export class EmbeddingService {
     try {
       await this.engine.initialize();
     } catch (error) {
+      // No notice here: the indexing queue, the only caller, ends its pass
+      // with phase 'error' and the status bar reports that once.
       console.error('[EmbeddingService] Initialization failed:', error);
-      new Notice('Failed to load embedding model. Vector search will be unavailable.');
       this.isEnabled = false;
     }
   }
