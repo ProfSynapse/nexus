@@ -102,6 +102,8 @@ export interface ChatSettingsOptions {
   workspaces: Array<{
     id: string;
     name: string;
+    /** Canonical prompt binding (name or ID); preferred over context.dedicatedAgent. */
+    dedicatedAgentId?: string;
     context?: {
       workflows?: Array<{ id: string; name: string; when?: string }>;
       dedicatedAgent?: {
@@ -165,7 +167,8 @@ export class ChatSettingsRenderer {
   private agentEffortSection?: HTMLElement;
   private contextNotesListEl?: HTMLElement;
   private settingsEventRef?: EventRef;
-  private sliderEvents?: Component;
+  // Owns DOM listeners for the current render; unloaded on every redraw and on destroy.
+  private domEvents?: Component;
   // Maps dropdown option value -> actual { provider, modelId } for merged model lists
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
@@ -196,8 +199,8 @@ export class ChatSettingsRenderer {
   }
 
   destroy(): void {
-    this.sliderEvents?.unload();
-    this.sliderEvents = undefined;
+    this.domEvents?.unload();
+    this.domEvents = undefined;
     if (this.settingsEventRef) {
       LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
       this.settingsEventRef = undefined;
@@ -205,8 +208,8 @@ export class ChatSettingsRenderer {
   }
 
   render(): void {
-    this.sliderEvents?.unload();
-    this.sliderEvents = undefined;
+    this.domEvents?.unload();
+    this.domEvents = undefined;
     this.container.empty();
     this.container.addClass('chat-settings-renderer');
 
@@ -422,11 +425,19 @@ export class ChatSettingsRenderer {
   }
 
   private registerLiveSliderInput(element: HTMLInputElement, update: () => void): void {
-    if (!this.sliderEvents) {
-      this.sliderEvents = new Component();
-      this.sliderEvents.load();
+    this.registerDomEvent(element, 'input', update);
+  }
+
+  private registerDomEvent<K extends keyof HTMLElementEventMap>(
+    element: HTMLElement,
+    type: K,
+    handler: (event: HTMLElementEventMap[K]) => void
+  ): void {
+    if (!this.domEvents) {
+      this.domEvents = new Component();
+      this.domEvents.load();
     }
-    this.sliderEvents.registerDomEvent(element, 'input', update);
+    this.domEvents.registerDomEvent(element, type, handler);
   }
 
   private renderContextWindowControl(content: HTMLElement): void {
@@ -1307,7 +1318,7 @@ export class ChatSettingsRenderer {
     notesHeader.createSpan().setText('Context notes');
     const addBtn = notesHeader.createEl('button', { cls: 'csr-add-btn' });
     addBtn.setText('Add');
-    addBtn.onclick = () => this.openNotePicker();
+    this.registerDomEvent(addBtn, 'click', () => { void this.openNotePicker(); });
 
     this.contextNotesListEl = content.createDiv('csr-notes-list');
     this.renderContextNotesList();
@@ -1317,15 +1328,15 @@ export class ChatSettingsRenderer {
     if (!workspaceId) return;
 
     const workspace = this.config.options.workspaces.find(w => w.id === workspaceId);
-    // dedicatedAgent field stored for backward compat, but contains prompt info
-    if (workspace?.context?.dedicatedAgent?.agentId) {
-      const promptId = workspace.context.dedicatedAgent.agentId;
-      const prompt = this.config.options.prompts.find(p => p.id === promptId || p.name === promptId);
-      if (prompt) {
-        this.settings.promptId = prompt.id;
-        this.notifyChange();
-        this.render();
-      }
+    // Same precedence as WorkspacePromptResolver: the top-level binding first,
+    // then the deprecated context.dedicatedAgent. Either holds a prompt name or ID.
+    const promptId = workspace?.dedicatedAgentId || workspace?.context?.dedicatedAgent?.agentId;
+    if (!promptId) return;
+    const prompt = this.config.options.prompts.find(p => p.id === promptId || p.name === promptId);
+    if (prompt) {
+      this.settings.promptId = prompt.id;
+      this.notifyChange();
+      this.render();
     }
   }
 
@@ -1343,11 +1354,11 @@ export class ChatSettingsRenderer {
       const item = contextNotesListEl.createDiv('csr-note-item');
       item.createSpan({ cls: 'csr-note-path', text: notePath });
       const removeBtn = item.createEl('button', { cls: 'csr-note-remove', text: '×' });
-      removeBtn.onclick = () => {
+      this.registerDomEvent(removeBtn, 'click', () => {
         this.settings.contextNotes.splice(index, 1);
         this.notifyChange();
         this.renderContextNotesList();
-      };
+      });
     });
   }
 

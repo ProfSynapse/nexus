@@ -15,7 +15,7 @@ import { Settings } from '../../settings';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
-import { ChatSettingsRenderer, ChatSettings } from '../../components/shared/ChatSettingsRenderer';
+import { ChatSettingsRenderer, ChatSettings, ChatSettingsOptions } from '../../components/shared/ChatSettingsRenderer';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import {
   getIngestCapabilityOptions,
@@ -87,12 +87,13 @@ export class DefaultsTab {
     await this.render(workspaces, prompts);
   }
 
-  private async loadWorkspaces(): Promise<Array<{ id: string; name: string }>> {
+  private async loadWorkspaces(): Promise<ChatSettingsOptions['workspaces']> {
     if (!this.services.workspaceService) return [];
 
     try {
       const workspaces = await this.services.workspaceService.getAllWorkspaces();
-      return workspaces.map(w => ({ id: w.id, name: w.name }));
+      // The prompt binding travels with each workspace so choosing one can preselect its prompt.
+      return workspaces.map(w => ({ id: w.id, name: w.name, dedicatedAgentId: w.dedicatedAgentId, context: w.context }));
     } catch {
       return [];
     }
@@ -203,7 +204,7 @@ export class DefaultsTab {
    * Main render method
    */
   private async render(
-    workspaces: Array<{ id: string; name: string }>,
+    workspaces: ChatSettingsOptions['workspaces'],
     prompts: Array<{ id: string; name: string }>
   ): Promise<void> {
     this.container.empty();
