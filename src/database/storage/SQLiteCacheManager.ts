@@ -752,6 +752,15 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     await this.getMaintenanceService().clearAllData();
   }
 
+  /**
+   * Delete all embedding vectors (notes, traces, conversations) and save.
+   * Used by "Delete index" while semantic search is turned off.
+   */
+  async clearEmbeddingIndex(): Promise<void> {
+    await this.getMaintenanceService().clearEmbeddingIndex();
+    await this.save();
+  }
+
   async rebuildFTSIndexes(): Promise<void> {
     await this.getMaintenanceService().rebuildFTSIndexes();
   }
