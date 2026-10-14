@@ -112,7 +112,7 @@ describe('BackButton', () => {
   describe('rendering', () => {
     it('should create a back button element in the container', () => {
       const container = createMockContainer();
-      new BackButton(container as unknown as HTMLElement, 'Back to list', jest.fn());
+      new BackButton(container as unknown as HTMLElement, 'Back to list', jest.fn(), new Component());
 
       expect(container.createEl).toHaveBeenCalledWith('button', {
         cls: 'clickable-icon nexus-back-button'
@@ -121,7 +121,7 @@ describe('BackButton', () => {
 
     it('should create an icon span with chevron-left icon class', () => {
       const container = createMockContainer();
-      new BackButton(container as unknown as HTMLElement, 'Back to Workspaces', jest.fn());
+      new BackButton(container as unknown as HTMLElement, 'Back to Workspaces', jest.fn(), new Component());
 
       const buttonEl = container._children[0];
       if (!buttonEl) {
@@ -134,7 +134,7 @@ describe('BackButton', () => {
 
     it('should create a label span with the provided text', () => {
       const container = createMockContainer();
-      new BackButton(container as unknown as HTMLElement, 'Back to Providers', jest.fn());
+      new BackButton(container as unknown as HTMLElement, 'Back to Providers', jest.fn(), new Component());
 
       const buttonEl = container._children[0];
       if (!buttonEl) {
@@ -151,24 +151,13 @@ describe('BackButton', () => {
   // --------------------------------------------------------------------------
 
   describe('click handling', () => {
-    it('should register click handler via addEventListener when no component', () => {
-      const container = createMockContainer();
-      const onClick = jest.fn();
-      new BackButton(container as unknown as HTMLElement, 'Back', onClick);
-
-      const buttonEl = container._children[0];
-      if (!buttonEl) {
-        throw new Error('Missing button element');
-      }
-      expect(buttonEl.addEventListener).toHaveBeenCalledWith('click', onClick);
-    });
-
-    it('should register click handler via component.registerDomEvent when component provided', () => {
+    it('registers the click handler through the owning component, never a bare listener', () => {
       const container = createMockContainer();
       const onClick = jest.fn();
       const component = new Component();
 
-      const registerSpy = jest.spyOn(component, 'registerDomEvent');
+      // Stub the registration so any listener on the element could only come from BackButton itself.
+      const registerSpy = jest.spyOn(component, 'registerDomEvent').mockImplementation(() => undefined);
       new BackButton(container as unknown as HTMLElement, 'Back', onClick, component);
 
       expect(registerSpy).toHaveBeenCalledWith(
@@ -176,6 +165,8 @@ describe('BackButton', () => {
         'click',
         onClick
       );
+      const buttonEl = container._children[0];
+      expect(buttonEl?.addEventListener).not.toHaveBeenCalled();
     });
   });
 
@@ -186,14 +177,14 @@ describe('BackButton', () => {
   describe('public methods', () => {
     it('should return the element via getElement()', () => {
       const container = createMockContainer();
-      const button = new BackButton(container as unknown as HTMLElement, 'Back', jest.fn());
+      const button = new BackButton(container as unknown as HTMLElement, 'Back', jest.fn(), new Component());
       const el = button.getElement();
       expect(el).toBeTruthy();
     });
 
     it('should remove element from DOM via destroy()', () => {
       const container = createMockContainer();
-      const button = new BackButton(container as unknown as HTMLElement, 'Back', jest.fn());
+      const button = new BackButton(container as unknown as HTMLElement, 'Back', jest.fn(), new Component());
       const el = button.getElement();
 
       button.destroy();

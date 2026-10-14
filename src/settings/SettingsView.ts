@@ -1,11 +1,12 @@
-import { App, Plugin, PluginSettingTab, Notice, ButtonComponent, FileSystemAdapter } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Notice, ButtonComponent, Component, FileSystemAdapter, Platform } from 'obsidian';
 import { Settings } from '../settings';
 import { UnifiedTabs, UnifiedTabConfig } from '../components/UnifiedTabs';
-import { SettingsRouter, RouterState, SettingsTab } from './SettingsRouter';
+import { SettingsRouter, RouterState, SettingsPage, SettingsTab } from './SettingsRouter';
 import { UpdateManager } from '../utils/UpdateManager';
 import { supportsMCPBridge } from '../utils/platform';
-import { Accordion } from '../components/Accordion';
-import { shouldOpenGetStarted } from './getStartedStatus';
+import { hasConfiguredProviders, hasExternalAgentSetup } from './getStartedStatus';
+import { renderGetStartedPage, renderGetStartedRow } from './getStarted/GetStartedPage';
+import { renderChatSetupPage } from './getStarted/ChatSetupPage';
 
 // Services
 import { WorkspaceService } from '../services/WorkspaceService';
@@ -29,8 +30,11 @@ import { ProvidersTab } from './tabs/ProvidersTab';
 import { RemoteAgentsTab } from './tabs/RemoteAgentsTab';
 import { AppsTab } from './tabs/AppsTab';
 import { DataTab } from './tabs/DataTab';
-// GetStartedTab is dynamically imported (desktop-only, requires Node.js)
-type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
+
+/** Obsidian's settings modal is not part of the public App typings. */
+interface AppWithSettingModal {
+    setting?: { close(): void };
+}
 
 /**
  * SettingsView - New unified settings interface with tab-based navigation
@@ -67,8 +71,15 @@ export class SettingsView extends PluginSettingTab {
     private remoteAgentsTab: RemoteAgentsTab | undefined;
     private appsTab: AppsTab | undefined;
     private dataTab: DataTab | undefined;
-    private getStartedTab: GetStartedTabType | undefined;
-    private getStartedAccordion: Accordion | undefined;
+
+    // Body below the header: the Get started row, tab strip and panes, or a page.
+    private bodyEl: HTMLElement | undefined;
+    // Owns the DOM listeners of whatever the body shows; replaced on every body render.
+    private bodyComponent: Component | undefined;
+    private renderedPage: SettingsPage | undefined;
+    private bodyRenderToken = 0;
+    // Get started opens by itself only on the first display() of a plugin session.
+    private firstRunChecked = false;
 
     // Prefetched data cache
     private prefetchedWorkspaces: IndividualWorkspace[] | null = null;
@@ -124,8 +135,12 @@ export class SettingsView extends PluginSettingTab {
         this.memoryService = services.memoryService;
         this.workspaceService = services.workspaceService;
 
-        // Refresh the UI
-        this.display();
+        // Refresh the UI only while it is on screen. display() reads the current
+        // services anyway, and a render nobody sees must not use up the
+        // first-run Get started check.
+        if (this.containerEl.isConnected) {
+            this.display();
+        }
     }
 
     /**
@@ -147,8 +162,7 @@ export class SettingsView extends PluginSettingTab {
         this.remoteAgentsTab?.destroy();
         this.appsTab?.destroy();
         this.dataTab?.destroy();
-        this.getStartedTab?.destroy();
-        this.getStartedAccordion?.unload();
+        this.unloadBody();
         // Clear prefetch cache
         this.prefetchedWorkspaces = null;
     }
@@ -207,6 +221,29 @@ export class SettingsView extends PluginSettingTab {
     private applyRoute(route: Partial<RouterState>): void {
         if (route.tab) this.router.setTab(route.tab);
         if (route.view === 'detail' && route.detailId) this.router.showDetail(route.detailId);
+        if (route.page) this.router.openPage(route.page);
+    }
+
+    /**
+     * Settings closed: pages are transient, so the next opening starts on the
+     * tab list (on the same tab).
+     */
+    hide(): void {
+        this.unsubscribeRouter?.();
+        this.unsubscribeRouter = undefined;
+        if (this.router.isPageOpen()) this.router.closePage();
+        this.unloadBody();
+        super.hide();
+    }
+
+    /** Nothing is set up yet: no chat provider and no external agent. */
+    private needsGetStarted(): boolean {
+        try {
+            return !hasConfiguredProviders(this.settingsManager.settings.llmProviders) && !hasExternalAgentSetup(this.app);
+        } catch (error) {
+            console.error('[SettingsView] Could not check setup state:', error);
+            return false;
+        }
     }
 
     /**
@@ -217,17 +254,23 @@ export class SettingsView extends PluginSettingTab {
         containerEl.empty();
         containerEl.addClass('nexus-settings');
 
+        // Navigate before the body exists, so no stale listener renders the old panes.
+        this.unsubscribeRouter?.();
+        this.unsubscribeRouter = undefined;
+
         const pendingRoute = this.pendingRoute;
         this.pendingRoute = undefined;
         if (pendingRoute) {
-            // Navigate before the tab strip exists, so no stale listener renders the old panes.
-            this.unsubscribeRouter?.();
-            this.unsubscribeRouter = undefined;
             this.applyRoute(pendingRoute);
         }
 
-        this.getStartedTab?.destroy();
-        this.getStartedAccordion?.unload();
+        if (!this.firstRunChecked) {
+            this.firstRunChecked = true;
+            // A route asked for by other code (e.g. the chat's "Open settings") wins.
+            if (!pendingRoute && this.needsGetStarted()) {
+                this.router.openPage('get-started');
+            }
+        }
 
         // Start prefetching workspaces in background (non-blocking)
         void this.prefetchWorkspaces();
@@ -235,10 +278,49 @@ export class SettingsView extends PluginSettingTab {
         // 1. Render header (About + Update button)
         this.renderHeader(containerEl);
 
-        // 2. Render get started accordion above the tabs
-        this.renderGetStartedAccordion(containerEl);
+        // 2. The body: Get started row + tabs, or the open page
+        this.bodyEl = containerEl.createDiv({ cls: 'nexus-settings-body' });
+        this.renderBody(this.router.getState());
 
-        // 3. Create tabs
+        this.unsubscribeRouter = this.router.onNavigate((state) => {
+            if (state.page || this.renderedPage) {
+                this.renderBody(state);
+                return;
+            }
+            this.tabs?.activateTab(state.tab, false);
+            this.renderTabContent(state);
+        });
+    }
+
+    private unloadBody(): void {
+        this.bodyRenderToken++;
+        this.bodyComponent?.unload();
+        this.bodyComponent = undefined;
+    }
+
+    /** Render the Get started row and the tabs, or the page the router has open. */
+    private renderBody(state: RouterState): void {
+        const bodyEl = this.bodyEl;
+        if (!bodyEl) return;
+
+        this.unloadBody();
+        this.tabs?.destroy();
+        this.tabs = undefined;
+        bodyEl.empty();
+
+        const component = new Component();
+        component.load();
+        this.bodyComponent = component;
+        this.renderedPage = state.page;
+
+        if (state.page) {
+            const pageEl = bodyEl.createDiv({ cls: 'nexus-gs-page' });
+            this.renderPage(pageEl, state.page, component);
+            return;
+        }
+
+        renderGetStartedRow(bodyEl, this.router, component);
+
         const tabConfigs: UnifiedTabConfig[] = [
             { key: 'defaults', label: 'Defaults' },
             { key: 'workspaces', label: 'Workspaces' },
@@ -250,7 +332,7 @@ export class SettingsView extends PluginSettingTab {
         ];
 
         this.tabs = new UnifiedTabs({
-            containerEl,
+            containerEl: bodyEl,
             tabs: tabConfigs,
             defaultTab: this.router.getState().tab,
             onTabChange: (tabKey) => {
@@ -259,17 +341,60 @@ export class SettingsView extends PluginSettingTab {
             component: this.plugin
         });
 
-        // 4. Subscribe to router changes
-        if (this.unsubscribeRouter) {
-            this.unsubscribeRouter();
-        }
-        this.unsubscribeRouter = this.router.onNavigate((state) => {
-            this.tabs?.activateTab(state.tab, false);
-            this.renderTabContent(state);
-        });
+        this.renderTabContent(state);
+    }
 
-        // 5. Render initial content
-        this.renderTabContent(this.router.getState());
+    /** Whether the external-agent path (Node.js, desktop only) is offered. */
+    private externalAgentsAvailable(): boolean {
+        return Platform.isDesktop && supportsMCPBridge();
+    }
+
+    private renderPage(pageEl: HTMLElement, page: SettingsPage, component: Component): void {
+        const llmProviders = this.settingsManager.settings.llmProviders;
+        if (page === 'get-started-chat') {
+            renderChatSetupPage(pageEl, {
+                app: this.app,
+                router: this.router,
+                component,
+                llmProviders,
+                pluginId: this.plugin.manifest.id,
+                closeSettings: () => (this.app as unknown as AppWithSettingModal).setting?.close()
+            });
+            return;
+        }
+        if (page === 'get-started-agents' && this.externalAgentsAvailable()) {
+            void this.renderExternalAgentsPage(pageEl, component);
+            return;
+        }
+        // The Get started page; also stands in for the desktop-only agents page elsewhere.
+        renderGetStartedPage(pageEl, {
+            app: this.app,
+            router: this.router,
+            component,
+            llmProviders,
+            externalAgentsAvailable: this.externalAgentsAvailable()
+        });
+    }
+
+    /**
+     * The external-agent page loads Node-backed helpers, so it is imported on
+     * demand and never on mobile.
+     */
+    private async renderExternalAgentsPage(pageEl: HTMLElement, component: Component): Promise<void> {
+        const token = this.bodyRenderToken;
+        try {
+            const { ExternalAgentsPage } = await import('./getStarted/ExternalAgentsPage');
+            if (token !== this.bodyRenderToken) return;
+            new ExternalAgentsPage(pageEl, {
+                app: this.app,
+                router: this.router,
+                component,
+                pluginPath: this.getPluginPath()
+            });
+        } catch (error) {
+            console.error('[SettingsView] Could not load the external agent setup:', error);
+            new Notice('Could not load the external agent setup.');
+        }
     }
 
     /**
@@ -559,70 +684,15 @@ export class SettingsView extends PluginSettingTab {
         this.dataTab.render();
     }
 
-    private renderGetStartedAccordion(containerEl: HTMLElement): void {
-        if (!supportsMCPBridge()) {
-            return;
-        }
-
-        this.getStartedAccordion = new Accordion(containerEl, {
-            id: 'get-started',
-            title: 'Get started',
-            icon: 'rocket',
-            open: shouldOpenGetStarted(this.app, this.settingsManager.settings),
-            onToggle: (isOpen) => {
-                this.settingsManager.settings.getStartedOpen = isOpen;
-                void this.settingsManager.saveSettings().catch((error: unknown) => {
-                    console.error('[SettingsView] Failed to save get started preference:', error);
-                    new Notice('Could not save the get started preference.');
-                });
-            }
-        });
-        this.getStartedAccordion.rootEl.addClass('nexus-settings-accordion');
-
-        const accordionContent = this.getStartedAccordion.itemsEl;
-        accordionContent.addClass('nexus-settings-accordion-content');
-
-        void this.renderGetStartedContent(accordionContent);
-    }
-
-    /**
-     * Render Get Started accordion content
-     * Uses dynamic import to avoid loading Node.js modules on mobile
-     */
-    private async renderGetStartedContent(container: HTMLElement): Promise<void> {
-        // Destroy previous tab instance if exists
-        this.getStartedTab?.destroy();
-
-        // Get plugin path for MCP config
+    /** Absolute path of this plugin's folder, or '' when the vault is not on the file system. */
+    private getPluginPath(): string {
         const vaultBasePath = this.getVaultBasePath();
         const pluginDir = this.plugin.manifest.dir;
-        // Extract just the folder name in case manifest.dir contains a full path
-        // (e.g., ".obsidian/plugins/claudesidian-mcp" instead of just "claudesidian-mcp")
+        // manifest.dir may be a vault-relative path (".obsidian/plugins/nexus"); keep the folder name.
         const pluginFolderName = pluginDir ? pluginDir.split('/').pop() || pluginDir : '';
-        const pluginPath = vaultBasePath && pluginFolderName
+        return vaultBasePath && pluginFolderName
             ? `${vaultBasePath}/${this.app.vault.configDir}/plugins/${pluginFolderName}`
             : '';
-        const vaultPath = vaultBasePath || '';
-
-        // Dynamic import to avoid loading Node.js modules on mobile
-        const { GetStartedTab } = await import('./tabs/GetStartedTab');
-
-        // Create new GetStartedTab
-        this.getStartedTab = new GetStartedTab(
-            container,
-            {
-                app: this.app,
-                pluginPath,
-                vaultPath,
-                onOpenProviders: () => {
-                    this.router.setTab('providers');
-                    if (this.tabs) {
-                        this.tabs.activateTab('providers');
-                    }
-                },
-                component: this.getStartedAccordion
-            }
-        );
     }
 
     /**

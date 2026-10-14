@@ -3,17 +3,15 @@ import type { LLMProviderConfig, LLMProviderSettings } from '../types/llm/Provid
 import { getServerKeyCandidates } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
 import { desktopRequire } from '../utils/desktopRequire';
-import type { MCPSettings } from '../types/plugin/PluginTypes';
-import { hasCodexMcpServerConfig } from '../utils/codexMcpConfig';
 import { LocalCliInstaller } from '../services/cli/LocalCliInstaller';
-
-export type ConfigStatus =
-  | 'unsupported'
-  | 'no-claude-folder'
-  | 'no-config-file'
-  | 'nexus-configured'
-  | 'config-exists'
-  | 'invalid-config';
+import {
+  type McpConfigStatus,
+  getAntigravityConfigPath,
+  getAntigravityLegacyConfigPath,
+  getCodexConfigPath,
+  getCodexStatus,
+  getMcpJsonStatus
+} from '../utils/mcpClientConfigs';
 
 export function isProviderConfigured(providerId: string, config?: LLMProviderConfig): boolean {
   if (!config?.enabled) {
@@ -74,99 +72,90 @@ export function getClaudeDesktopConfigPath(): string | null {
   return joinPath(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
 }
 
-export function getConfigStatus(app: App): ConfigStatus {
+export type ExternalClientId = 'claude-desktop' | 'codex' | 'antigravity';
+
+export interface ExternalClientStatus {
+  id: ExternalClientId;
+  label: string;
+  configPath: string;
+  status: McpConfigStatus;
+}
+
+/**
+ * One-click MCP clients in display order, with the state of their configs.
+ * Empty on mobile and wherever the MCP bridge is unavailable.
+ */
+export function getExternalClientStatuses(app: App): ExternalClientStatus[] {
   if (!Platform.isDesktop || !supportsMCPBridge()) {
-    return 'unsupported';
+    return [];
   }
 
-  const configPath = getClaudeDesktopConfigPath();
-  if (!configPath) {
-    return 'unsupported';
-  }
+  const keys = getServerKeyCandidates(app.vault.getName());
+  const statuses: ExternalClientStatus[] = [];
+  const add = (id: ExternalClientId, label: string, configPath: string, read: () => McpConfigStatus): void => {
+    let status: McpConfigStatus;
+    try {
+      status = read();
+    } catch (error) {
+      console.error(`[getStartedStatus] Could not read the ${label} config:`, error);
+      status = { state: 'invalid-config', stale: false };
+    }
+    statuses.push({ id, label, configPath, status });
+  };
 
-  const configDir = configPath.replace(/[\\/][^\\/]+$/, '');
-  const nodeFs = desktopRequire<typeof import('node:fs')>('node:fs');
-
-  if (!nodeFs.existsSync(configDir)) {
-    return 'no-claude-folder';
-  }
-
-  if (!nodeFs.existsSync(configPath)) {
-    return 'no-config-file';
+  const claudePath = getClaudeDesktopConfigPath();
+  if (claudePath) {
+    add('claude-desktop', 'Claude Desktop', claudePath, () => getMcpJsonStatus(claudePath, keys));
   }
 
   try {
-    const content = nodeFs.readFileSync(configPath, 'utf-8');
-    if (!content.trim()) {
-      return 'invalid-config';
-    }
-
-    const config = JSON.parse(content) as unknown;
-    if (isRecord(config) && isRecord(config.mcpServers)) {
-      const servers = config.mcpServers;
-      if (getServerKeyCandidates(app.vault.getName()).some(key => Boolean(servers[key]))) {
-        return 'nexus-configured';
-      }
-    }
-
-    return 'config-exists';
+    const codexPath = getCodexConfigPath();
+    add('codex', 'Codex', codexPath, () => getCodexStatus(keys));
   } catch (error) {
-    console.error('[getStartedStatus] Error parsing config:', error);
-    return 'invalid-config';
+    console.error('[getStartedStatus] Could not resolve the Codex config path:', error);
   }
+
+  try {
+    const antigravityPath = getAntigravityConfigPath();
+    add('antigravity', 'Antigravity', antigravityPath, () => {
+      const current = getMcpJsonStatus(antigravityPath, keys);
+      if (current.state === 'nexus-configured') return current;
+      const legacy = getMcpJsonStatus(getAntigravityLegacyConfigPath(), keys);
+      return legacy.state === 'nexus-configured' ? legacy : current;
+    });
+  } catch (error) {
+    console.error('[getStartedStatus] Could not resolve the Antigravity config path:', error);
+  }
+
+  return statuses;
 }
 
 export function isMCPConfigured(app: App): boolean {
-  return getConfigStatus(app) === 'nexus-configured';
+  return getExternalClientStatuses(app).some(client => client.status.state === 'nexus-configured');
 }
 
-/** Setup can use internal chat OR external agents; neither path requires the other. */
-export function shouldOpenGetStarted(app: App, settings: MCPSettings): boolean {
-  if (typeof settings.getStartedOpen === 'boolean') {
-    return settings.getStartedOpen;
+/** Installation is enough for onboarding. status() probes shells and runtimes, so it is avoided here. */
+function isLocalCliInstalled(): boolean {
+  if (!Platform.isDesktop || !supportsMCPBridge()) {
+    return false;
   }
-  return !hasConfiguredProviders(settings.llmProviders) && !hasExternalAgentSetup(app);
+  try {
+    const nodeFs = desktopRequire<typeof import('node:fs')>('node:fs');
+    return nodeFs.existsSync(new LocalCliInstaller().getPaths().cliJsPath);
+  } catch {
+    return false;
+  }
+}
+
+/** Claude Desktop, Codex and Antigravity configs that name this vault, plus the command line when installed. */
+export function countExternalConnections(app: App): number {
+  const clients = getExternalClientStatuses(app).filter(client => client.status.state === 'nexus-configured').length;
+  return clients + (isLocalCliInstalled() ? 1 : 0);
 }
 
 export function hasExternalAgentSetup(app: App): boolean {
   if (!Platform.isDesktop || !supportsMCPBridge()) {
     return false;
   }
-
-  // Installation is enough for onboarding. Avoid status(), which probes shells
-  // and runtime versions synchronously; those diagnostics belong in setup.
-  try {
-    const nodeFs = desktopRequire<typeof import('node:fs')>('node:fs');
-    if (nodeFs.existsSync(new LocalCliInstaller().getPaths().cliJsPath)) {
-      return true;
-    }
-  } catch {
-    // An unavailable CLI path must not hide another configured setup path.
-  }
-
-  try {
-    const nodeFs = desktopRequire<typeof import('node:fs')>('node:fs');
-    const path = desktopRequire<typeof import('node:path')>('node:path');
-    const home = Platform.isWin ? process.env.USERPROFILE || process.env.HOME || '' : process.env.HOME || '';
-    const codexHome = process.env.CODEX_HOME || path.join(home, '.codex');
-    const configPath = path.join(codexHome, 'config.toml');
-    if (nodeFs.existsSync(configPath)) {
-      const content = nodeFs.readFileSync(configPath, 'utf-8');
-      if (getServerKeyCandidates(app.vault.getName()).some(key => hasCodexMcpServerConfig(content, key))) {
-        return true;
-      }
-    }
-  } catch {
-    // Missing or unreadable client configuration is not a settings-render error.
-  }
-
-  try {
-    return isMCPConfigured(app);
-  } catch {
-    return false;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return isLocalCliInstalled() || isMCPConfigured(app);
 }

@@ -1,4 +1,4 @@
-/** Regression: a fully configured single setup path must not reopen onboarding. */
+/** Regression: a fully configured single setup path must not reopen onboarding, and every one-click client counts. */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -7,7 +7,7 @@ import type { LLMProviderConfig } from '../../src/types/llm/ProviderTypes';
 import { getServerKeyCandidates } from '../../src/constants/branding';
 import { buildCodexMcpTomlSnippet } from '../../src/utils/codexMcpConfig';
 import { LocalCliInstaller } from '../../src/services/cli/LocalCliInstaller';
-import { getClaudeDesktopConfigPath, hasExternalAgentSetup, isProviderConfigured, shouldOpenGetStarted } from '../../src/settings/getStartedStatus';
+import { countExternalConnections, getClaudeDesktopConfigPath, getExternalClientStatuses, hasConfiguredProviders, hasExternalAgentSetup, isProviderConfigured } from '../../src/settings/getStartedStatus';
 
 let mockHome: string;
 jest.mock('../../src/utils/desktopRequire', () => ({
@@ -20,7 +20,6 @@ jest.mock('../../src/utils/platform', () => ({ supportsMCPBridge: () => Platform
 const app = { vault: { getName: () => 'Setup test' } } as unknown as App;
 const config = (extra: Partial<LLMProviderConfig> = {}): LLMProviderConfig => ({ enabled: true, apiKey: '', ...extra });
 const connected = { connected: true, providerId: 'test', connectedAt: 1 };
-const settings = { enabledVault: true };
 const originalEnv = { HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME };
 
 function write(path: string, content: string): void {
@@ -42,30 +41,61 @@ afterEach(() => {
   }
 });
 
-it('opens for a fresh install, but either chat or external setup suffices', () => {
-  expect(shouldOpenGetStarted(app, settings)).toBe(true);
-  expect(shouldOpenGetStarted(app, {
-    ...settings,
-    llmProviders: { defaultModel: { provider: 'openai', model: 'test' }, providers: { openai: config({ apiKey: 'test-key' }) } }
-  })).toBe(false);
+it('a fresh install has neither setup path; either chat or the command line is enough', () => {
+  expect(hasConfiguredProviders(undefined)).toBe(false);
+  expect(hasExternalAgentSetup(app)).toBe(false);
+  expect(countExternalConnections(app)).toBe(0);
+  expect(hasConfiguredProviders({ defaultModel: { provider: 'openai', model: 'test' }, providers: { openai: config({ apiKey: 'test-key' }) } })).toBe(true);
   write(new LocalCliInstaller().getPaths().cliJsPath, '// installed CLI');
-  expect(shouldOpenGetStarted(app, settings)).toBe(false);
-});
-
-it('honors explicit closed and open preferences regardless of setup', () => {
-  expect(shouldOpenGetStarted(app, { ...settings, getStartedOpen: false })).toBe(false);
-  write(new LocalCliInstaller().getPaths().cliJsPath, '// installed CLI');
-  expect(shouldOpenGetStarted(app, { ...settings, getStartedOpen: true })).toBe(true);
+  expect(hasExternalAgentSetup(app)).toBe(true);
+  expect(countExternalConnections(app)).toBe(1);
 });
 
 it.each(getServerKeyCandidates('Setup test'))('recognizes Claude MCP configuration for %s', (key) => {
   write(getClaudeDesktopConfigPath()!, JSON.stringify({ mcpServers: { [key]: { command: 'node', args: ['connector.js'] } } }));
-  expect(shouldOpenGetStarted(app, settings)).toBe(false);
+  expect(hasExternalAgentSetup(app)).toBe(true);
+  expect(countExternalConnections(app)).toBe(1);
 });
 
 it.each(getServerKeyCandidates('Setup test'))('recognizes Codex-only configuration for %s in CODEX_HOME', (key) => {
   write(join(process.env.CODEX_HOME!, 'config.toml'), buildCodexMcpTomlSnippet(key, 'node', ['connector.js']));
-  expect(shouldOpenGetStarted(app, settings)).toBe(false);
+  expect(hasExternalAgentSetup(app)).toBe(true);
+  expect(countExternalConnections(app)).toBe(1);
+});
+
+it.each([
+  ['.gemini/config/mcp_config.json'],
+  ['.gemini/antigravity/mcp_config.json']
+])('recognizes Antigravity configuration at ~/%s', (relative) => {
+  const key = getServerKeyCandidates('Setup test')[0];
+  write(join(mockHome, relative), JSON.stringify({ mcpServers: { [key]: { command: 'node', args: ['connector.js'] } } }));
+  expect(hasExternalAgentSetup(app)).toBe(true);
+  const antigravity = getExternalClientStatuses(app).find(client => client.id === 'antigravity');
+  expect(antigravity?.status.state).toBe('nexus-configured');
+  // The status may come from either file, but the path Nexus writes is always the current one.
+  expect(antigravity?.configPath).toBe(join(mockHome, '.gemini/config/mcp_config.json'));
+});
+
+it('counts every connected client plus the command line', () => {
+  const key = getServerKeyCandidates('Setup test')[0];
+  const json = JSON.stringify({ mcpServers: { [key]: { command: 'node', args: ['connector.js'] } } });
+  write(getClaudeDesktopConfigPath()!, json);
+  write(join(mockHome, '.gemini/config/mcp_config.json'), json);
+  write(join(process.env.CODEX_HOME!, 'config.toml'), buildCodexMcpTomlSnippet(key, 'node', ['connector.js']));
+  write(new LocalCliInstaller().getPaths().cliJsPath, '// installed CLI');
+  expect(getExternalClientStatuses(app).map(client => client.label)).toEqual(['Claude Desktop', 'Codex', 'Antigravity']);
+  expect(countExternalConnections(app)).toBe(4);
+});
+
+it('reports a configured client whose saved node path is gone as stale', () => {
+  const key = getServerKeyCandidates('Setup test')[0];
+  const connector = join(mockHome, 'connector.js');
+  write(connector, '// connector');
+  const missingNode = join(mockHome, '.nvm/versions/node/v20.0.0/bin/node');
+  write(getClaudeDesktopConfigPath()!, JSON.stringify({ mcpServers: { [key]: { command: missingNode, args: [connector] } } }));
+  expect(getExternalClientStatuses(app)[0].status).toEqual({ state: 'nexus-configured', stale: true });
+  write(missingNode, '');
+  expect(getExternalClientStatuses(app)[0].status).toEqual({ state: 'nexus-configured', stale: false });
 });
 
 it('uses the default Codex home when no override exists', () => {

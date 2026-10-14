@@ -3,7 +3,7 @@
  *
  * Tests for PR #43 coverage gaps:
  * 1. SQL whitelist validation (ConversationRepository, WorkspaceRepository)
- * 2. Platform guards (ConfigModal, GetStartedTab)
+ * 2. Platform guards (ConfigModal, resolveNodeRuntime)
  * 3. EmbeddingIframe timeout cleanup
  * 4. MessageEditController DOM cloning
  * 5. MessageManager null conversation event
@@ -200,31 +200,18 @@ describe('Platform guards for Node.js modules', () => {
     });
   });
 
-  describe('GetStartedTab resolveNodePath pattern', () => {
-    // Replicates the mobile guard from GetStartedTab.resolveNodePath():
-    // if (!Platform.isDesktop) {
-    //     this.cachedNodePath = '';
-    //     return '';
-    // }
-
-    function resolveNodePath(): string {
-      if (!Platform.isDesktop) {
-        return '';
-      }
-      // On desktop, would call execSync('which node') — we just verify the guard
-      return '/usr/local/bin/node';
-    }
-
-    it('should return empty string on mobile', () => {
+  describe('resolveNodeRuntime mobile guard', () => {
+    // The external agent page asks for Node.js; on mobile the lookup must
+    // return before it reaches any Node built-in.
+    it('returns null on mobile without loading a desktop module', () => {
       Platform.isDesktop = false;
       Platform.isMobile = true;
-      expect(resolveNodePath()).toBe('');
-    });
-
-    it('should proceed on desktop', () => {
-      Platform.isDesktop = true;
-      Platform.isMobile = false;
-      expect(resolveNodePath()).not.toBe('');
+      const binaryDiscovery = jest.requireActual('../../src/utils/binaryDiscovery');
+      const spy = jest.spyOn(binaryDiscovery, 'resolveDesktopBinaryPath');
+      const { resolveNodeRuntime } = jest.requireActual('../../src/utils/nodeRuntime');
+      expect(resolveNodeRuntime()).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
     });
   });
 });

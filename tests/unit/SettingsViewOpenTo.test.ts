@@ -19,19 +19,18 @@ jest.mock('obsidian', () => {
       this.plugin = plugin;
       this.containerEl = {} as HTMLElement;
     }
+
+    hide(): void {}
   }
 
   return {
-    Events: jest.requireActual('../mocks/obsidian/core').Events,
-    App: jest.fn(),
-    Plugin: jest.fn(),
+    ...jest.requireActual('../mocks/obsidian'),
     PluginSettingTab,
     Notice: jest.fn(),
     ButtonComponent: jest.fn(),
     FileSystemAdapter: jest.fn(),
-    Platform: { isMobile: false, isDesktop: true },
   };
-}, { virtual: true });
+});
 
 const mockTab = () => jest.fn().mockImplementation(() => ({ destroy: jest.fn(), render: jest.fn() }));
 const mockDefaultsTab = mockTab();
@@ -55,19 +54,18 @@ jest.mock('../../src/settings/tabs/ProvidersTab', () => ({ ProvidersTab: mockPro
 jest.mock('../../src/settings/tabs/RemoteAgentsTab', () => ({ RemoteAgentsTab: mockTab() }));
 jest.mock('../../src/settings/tabs/AppsTab', () => ({ AppsTab: mockTab() }));
 jest.mock('../../src/settings/tabs/DataTab', () => ({ DataTab: mockTab() }));
-// Get started is desktop-bridge only and not under test (supportsMCPBridge is false).
-jest.mock('../../src/components/Accordion', () => ({ Accordion: jest.fn() }));
 
-import { createMockElement } from '../helpers/mockFactories';
+import { createFakeRoot } from '../mocks/obsidian/dom';
 import { SettingsView } from '../../src/settings/SettingsView';
 
 function buildView(): SettingsView {
   const view = new SettingsView(
     { vault: { configDir: '.obsidian' }, workspace: {} } as never,
     { manifest: { id: 'nexus', version: 'test' } } as never,
-    { settings: { llmProviders: {} }, saveSettings: jest.fn() } as never
+    // A configured provider, so the first-run Get started page stays out of the way.
+    { settings: { llmProviders: { providers: { openai: { enabled: true, apiKey: 'test-key' } } } }, saveSettings: jest.fn() } as never
   );
-  view.containerEl = createMockElement('div') as unknown as HTMLElement;
+  view.containerEl = createFakeRoot() as unknown as HTMLElement;
   return view;
 }
 
@@ -103,7 +101,7 @@ it('navigates at once when settings are already on screen', () => {
   const view = buildView();
   view.display();
   expect(mockDefaultsTab).toHaveBeenCalledTimes(1);
-  (view.containerEl as unknown as { isConnected: boolean }).isConnected = true;
+  // The fake root counts as on screen.
 
   view.openTo({ tab: 'providers' });
 
