@@ -208,6 +208,12 @@ function createHarness(rows: NoteRow[] = VAULT, options: { vectorTableBroken?: b
   }));
 
   const plugin = {
+    // The tool resolves its service from the plugin's embedding manager on
+    // every call, exactly as it does in the running plugin.
+    embeddingManager: {
+      isEmbeddingEnabled: () => true,
+      getService: () => embeddingService
+    },
     app: {
       vault: {
         getMarkdownFiles: () => [...files.values()],
@@ -221,7 +227,6 @@ function createHarness(rows: NoteRow[] = VAULT, options: { vectorTableBroken?: b
   } as unknown as Plugin;
 
   const tool = new SearchContentTool(plugin);
-  tool.setEmbeddingService(embeddingService);
 
   return { tool, captured, embeddingService };
 }

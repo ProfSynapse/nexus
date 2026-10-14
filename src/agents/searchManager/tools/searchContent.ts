@@ -3,20 +3,13 @@ import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
 import { isGlobPattern, globToRegex, normalizePath, isWithinPathScope } from '../../../utils/pathUtils';
-import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
-import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
+import type { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
+import { resolveEmbeddingService } from '../../../services/embeddings/embeddingAccess';
 import { CommonParameters } from '../../../types';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelQuery, verbs } from '../../utils/toolStatusLabels';
 
 type SearchContentSchema = ReturnType<BaseTool<ContentSearchParams, ContentSearchResult>['getMergedSchema']>;
-
-/**
- * Extended plugin interface that includes optional embedding manager
- */
-interface PluginWithEmbeddings extends Plugin {
-  embeddingManager?: EmbeddingManager;
-}
 
 /**
  * How a result was matched.
@@ -227,7 +220,6 @@ function scoreTextMatch(
  */
 export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSearchResult> {
   private plugin: Plugin;
-  private embeddingService: EmbeddingService | null = null;
 
   constructor(plugin: Plugin) {
     super(
@@ -244,37 +236,13 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   }
 
   /**
-   * Set the embedding service for semantic search
-   */
-  setEmbeddingService(service: EmbeddingService): void {
-    this.embeddingService = service;
-  }
-
-  /**
-   * Lazily get the embedding service from the plugin
-   * This handles the timing issue where EmbeddingManager initializes after VaultLibrarian
+   * Resolve the live embedding service from the plugin's embedding manager.
+   *
+   * Never cached: the manager can be turned off or rebuilt during a session,
+   * and each start builds a new service instance.
    */
   private getEmbeddingService(): EmbeddingService | null {
-    // Return cached service if available
-    if (this.embeddingService) {
-      return this.embeddingService;
-    }
-
-    // Try to get from plugin's embeddingManager
-    try {
-      const pluginWithEmbeddings = this.plugin as PluginWithEmbeddings;
-      if (pluginWithEmbeddings.embeddingManager) {
-        const service = pluginWithEmbeddings.embeddingManager.getService();
-        if (service) {
-          this.embeddingService = service; // Cache for future use
-          return service;
-        }
-      }
-    } catch (error) {
-      void error;
-    }
-
-    return null;
+    return resolveEmbeddingService(this.plugin);
   }
 
   async execute(params: ContentSearchParams): Promise<ContentSearchResult> {
