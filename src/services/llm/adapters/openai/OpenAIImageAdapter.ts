@@ -50,8 +50,6 @@ export interface OpenAIImageModelSpec {
   outputTokenPricePerMillion: number;
   defaultQuality?: 'medium';
   strictSizeLimits?: boolean;
-  /** gpt-image-2 accepts any WIDTHxHEIGHT; the others accept three sizes plus auto. */
-  supportsArbitrarySize: boolean;
   lastUpdated: string;
 }
 
@@ -127,9 +125,6 @@ const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
   '8:1': '2048x256'
 };
 
-const PORTRAIT_RATIOS = new Set(['2:3', '3:4', '4:5', '9:16', '1:4', '1:8']);
-const LANDSCAPE_RATIOS = new Set(['3:2', '4:3', '5:4', '16:9', '21:9', '4:1', '8:1']);
-
 export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelSpec>> = {
   'gpt-image-2': {
     displayName: 'GPT Image 2',
@@ -137,7 +132,6 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     pricingNote: '1756 output tokens at $30/M for 1024x1024 medium; auto picked low (196 tokens) on a simple prompt',
     inputTokenPricePerMillion: 8,
     outputTokenPricePerMillion: 30,
-    supportsArbitrarySize: true,
     lastUpdated: '2026-09-02'
   },
   // https://developers.openai.com/api/docs/guides/image-generation
@@ -150,7 +144,6 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     outputTokenPricePerMillion: 30,
     defaultQuality: 'medium',
     strictSizeLimits: true,
-    supportsArbitrarySize: true,
     lastUpdated: '2026-09-08'
   },
   'gpt-image-2.5-flare': {
@@ -162,39 +155,7 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     outputTokenPricePerMillion: 30,
     defaultQuality: 'medium',
     strictSizeLimits: true,
-    supportsArbitrarySize: true,
     lastUpdated: '2026-09-08'
-  },
-  // Deprecated: OpenAI shuts down gpt-image-1.5 and gpt-image-1-mini on
-  // 2026-12-01 and gpt-image-1 on 2026-10-23; the recommended replacement is
-  // gpt-image-2.5-sunburst or gpt-image-2.5-flare.
-  // https://developers.openai.com/api/docs/deprecations
-  'gpt-image-1.5': {
-    displayName: 'GPT Image 1.5 (shuts down 2026-12-01)',
-    costPerImage: 0.034,
-    pricingNote: '1056 output tokens at $32/M for 1024x1024 medium; auto picks high (4160 tokens, $0.133)',
-    inputTokenPricePerMillion: 8,
-    outputTokenPricePerMillion: 32,
-    supportsArbitrarySize: false,
-    lastUpdated: '2026-09-02'
-  },
-  'gpt-image-1': {
-    displayName: 'GPT Image 1 (shuts down 2026-10-23)',
-    costPerImage: 0.042,
-    pricingNote: '1056 output tokens at $40/M for 1024x1024 medium',
-    inputTokenPricePerMillion: 10,
-    outputTokenPricePerMillion: 40,
-    supportsArbitrarySize: false,
-    lastUpdated: '2026-09-02'
-  },
-  'gpt-image-1-mini': {
-    displayName: 'GPT Image 1 Mini (shuts down 2026-12-01)',
-    costPerImage: 0.008,
-    pricingNote: '1056 output tokens at $8/M for 1024x1024 medium',
-    inputTokenPricePerMillion: 2.5,
-    outputTokenPricePerMillion: 8,
-    supportsArbitrarySize: false,
-    lastUpdated: '2026-09-02'
   }
 };
 
@@ -257,7 +218,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         output_format: 'png'
       };
 
-      const size = this.resolveSize(params, spec);
+      const size = this.resolveSize(params);
       const sizeError = spec.strictSizeLimits ? this.getSizeError(size) : undefined;
       if (sizeError) throw new Error(sizeError);
       if (size) {
@@ -296,26 +257,20 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   }
 
   /**
-   * Pick the `size` to send: an explicit size wins; otherwise derive from the
-   * aspect ratio — exact pixels for models that accept arbitrary sizes, the
-   * nearest fixed size for the rest. Undefined lets the API choose (auto).
+   * Pick the `size` to send: an explicit size wins; otherwise the exact pixels
+   * for the aspect ratio (every catalog model accepts arbitrary WIDTHxHEIGHT).
    */
-  private resolveSize(params: ImageGenerationParams, spec: OpenAIImageModelSpec): string | undefined {
+  private resolveSize(params: ImageGenerationParams): string {
     if (params.size) {
       return params.size;
     }
-    // Always send a size: with `size` omitted OpenAI also picks the quality, and
-    // for gpt-image-1-mini that resolved to 1536x1024 at high, five times the
+    // Always send a size: with `size` omitted OpenAI also picks the quality,
+    // which has resolved to a high-quality 1536x1024 at several times the
     // list price.
     if (!params.aspectRatio) {
       return '1024x1024';
     }
-    if (spec.supportsArbitrarySize) {
-      return ASPECT_RATIO_TO_SIZE[params.aspectRatio] || '1024x1024';
-    }
-    if (PORTRAIT_RATIOS.has(params.aspectRatio)) return '1024x1536';
-    if (LANDSCAPE_RATIOS.has(params.aspectRatio)) return '1536x1024';
-    return '1024x1024';
+    return ASPECT_RATIO_TO_SIZE[params.aspectRatio] || '1024x1024';
   }
 
   private getSizeError(size: string | undefined): string | undefined {
@@ -357,14 +312,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       errors.push('Prompt too long (max 32,000 characters)');
     }
 
-    if (params.size) {
-      if (spec.supportsArbitrarySize) {
-        if (!/^\d{3,4}x\d{3,4}$/.test(params.size) && params.size !== 'auto') {
-          errors.push(`Invalid size ${params.size}. Use WIDTHxHEIGHT in pixels or "auto"`);
-        }
-      } else if (!FIXED_SIZES.includes(params.size)) {
-        errors.push(`Invalid size for ${model}. Supported sizes: ${FIXED_SIZES.join(', ')}`);
-      }
+    if (params.size && !/^\d{3,4}x\d{3,4}$/.test(params.size) && params.size !== 'auto') {
+      errors.push(`Invalid size ${params.size}. Use WIDTHxHEIGHT in pixels or "auto"`);
     }
 
     if (params.imageSize) {
@@ -372,7 +321,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       adjustedParams.imageSize = undefined;
     }
     if (spec.strictSizeLimits) {
-      const sizeError = this.getSizeError(this.resolveSize(params, spec));
+      const sizeError = this.getSizeError(this.resolveSize(params));
       if (sizeError) errors.push(sizeError);
     }
 

@@ -90,20 +90,6 @@ describe('GeminiImageAdapter', () => {
       const body = parsedBody(requests[0]) as { generationConfig: { imageConfig?: Record<string, string> } };
       expect(body.generationConfig.imageConfig?.imageSize).toBe('512');
     });
-
-    it('never sends imageSize to gemini-2.5-flash-image, which has no such parameter', async () => {
-      const requests: CapturedRequest[] = [];
-      __setRequestUrlMock(async (request) => {
-        requests.push(request);
-        return geminiResponse(pngBase64(1024, 1024), 'image/png', 1290, 'gemini-2.5-flash-image');
-      });
-
-      const adapter = new GeminiImageAdapter({ apiKey: 'g-test' });
-      await adapter.generateImage(baseParams({ model: 'gemini-2.5-flash-image', imageSize: '2K', aspectRatio: AspectRatio.SQUARE }));
-
-      const body = parsedBody(requests[0]) as { generationConfig: { imageConfig?: Record<string, string> } };
-      expect(body.generationConfig.imageConfig).toEqual({ aspectRatio: '1:1' });
-    });
   });
 
   describe('response parsing', () => {
@@ -164,17 +150,10 @@ describe('GeminiImageAdapter', () => {
       expect(adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image', imageSize: '4K' })).isValid).toBe(true);
     });
 
-    it('drops imageSize with a warning for the legacy 2.5 model', () => {
-      const result = adapter.validateImageParams(baseParams({ model: 'gemini-2.5-flash-image', imageSize: '1K' }));
-      expect(result.isValid).toBe(true);
-      expect(result.warnings?.join(' ')).toMatch(/does not take an imageSize/);
-      expect(result.adjustedParams).toHaveProperty('imageSize', undefined);
-    });
-
     it('enforces the per-model reference image limit', () => {
-      const refs = Array.from({ length: 4 }, (_, i) => `refs/${i}.png`);
-      expect(adapter.validateImageParams(baseParams({ model: 'gemini-2.5-flash-image', referenceImages: refs })).isValid).toBe(false);
-      expect(adapter.validateImageParams(baseParams({ model: 'gemini-3.1-flash-image', referenceImages: refs })).isValid).toBe(true);
+      const refs = (count: number) => Array.from({ length: count }, (_, i) => `refs/${i}.png`);
+      expect(adapter.validateImageParams(baseParams({ model: 'gemini-3.1-flash-image', referenceImages: refs(15) })).isValid).toBe(false);
+      expect(adapter.validateImageParams(baseParams({ model: 'gemini-3.1-flash-image', referenceImages: refs(14) })).isValid).toBe(true);
     });
   });
 

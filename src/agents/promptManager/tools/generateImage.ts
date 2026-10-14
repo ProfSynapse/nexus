@@ -16,6 +16,11 @@ import {
 import { SchemaBuilder } from '../../../utils/schemas/SchemaBuilder';
 import { Vault } from 'obsidian';
 import { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
+import {
+  describeRetiredModelSubstitution,
+  getRetiredImageModel,
+  type RetiredModel
+} from '../../../services/llm/types/RetiredMediaModels';
 
 export interface GenerateImageParams extends CommonParameters {
   prompt: string;
@@ -31,6 +36,8 @@ export interface GenerateImageParams extends CommonParameters {
 export interface GenerateImageModeResult extends CommonResult {
   data?: {
     imagePath: string;
+    /** Present when the requested model was retired and its successor was used. */
+    note?: string;
   };
 }
 
@@ -119,7 +126,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       }
 
       // Apply defaults from user settings, falling back to first available provider/model
-      const { provider, model } = this.resolveDefaults(params.provider, params.model);
+      const { provider, model, retiredModel } = this.resolveDefaults(params.provider, params.model);
 
       // Validate parameters
       const validation = this.imageService.validateParams({
@@ -167,10 +174,16 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         );
       }
 
-      // Return lean result - just the path
+      // Return lean result - just the path, plus a note when a retired model
+      // id was swapped for its successor
       return createResult<GenerateImageModeResult>(
         true,
-        result.data ? { imagePath: result.data.imagePath } : undefined
+        result.data
+          ? {
+            imagePath: result.data.imagePath,
+            ...(retiredModel ? { note: describeRetiredModelSubstitution(retiredModel) } : {})
+          }
+          : undefined
       );
 
     } catch (error) {
@@ -189,7 +202,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
   private resolveDefaults(
     paramProvider?: string,
     paramModel?: string
-  ): { provider: 'google' | 'openrouter' | 'openai'; model: string } {
+  ): { provider: 'google' | 'openrouter' | 'openai'; model: string; retiredModel?: RetiredModel } {
     // User settings defaults
     const settingsProvider = this.llmSettings?.defaultImageModel?.provider;
     const settingsModel = this.llmSettings?.defaultImageModel?.model;
@@ -221,6 +234,13 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     }
     if (!model) {
       model = 'gemini-3.1-flash-image';
+    }
+
+    // A saved prompt, conversation or agent may still name a retired id; run
+    // the provider's documented successor instead of failing validation.
+    const retiredModel = getRetiredImageModel(provider, model);
+    if (retiredModel) {
+      return { provider, model: retiredModel.replacement, retiredModel };
     }
 
     return { provider, model };
@@ -307,13 +327,13 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         imageSize: {
           type: 'string',
           enum: ['512px', '1K', '2K', '4K'],
-          description: 'Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image and gemini-3-pro-image. Not accepted by gemini-2.5-flash-image or the FLUX models.'
+          description: 'Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image, gemini-nano-banana-2.1 and gemini-3-pro-image. Not accepted by the FLUX models.'
         },
         referenceImages: {
           type: 'array',
           items: { type: 'string' },
           maxItems: 14,
-          description: 'Reference images for style/composition. Max 3 for gemini-2.5-flash-image, 14 for the Gemini 3.x models; per-model limits apply on OpenRouter; up to 16 on OpenAI'
+          description: 'Reference images for style/composition. Max 14 for the Gemini models; per-model limits apply on OpenRouter; up to 16 on OpenAI'
         },
         savePath: {
           type: 'string',
@@ -343,7 +363,8 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         data: {
           type: 'object',
           properties: {
-            imagePath: { type: 'string', description: 'Path where image was saved' }
+            imagePath: { type: 'string', description: 'Path where image was saved' },
+            note: { type: 'string', description: 'Set when the requested model was retired and its successor was used instead' }
           }
         },
         error: { type: 'string' }

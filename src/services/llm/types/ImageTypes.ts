@@ -19,12 +19,12 @@ import { CostDetails, LLMProviderError } from '../adapters/types';
 export interface ImageGenerationParams {
   prompt: string;
   provider: 'google' | 'openrouter' | 'openai'; // Google direct, OpenRouter routing, or OpenAI direct
-  model?: string; // Internal id from the adapter catalog, e.g. gemini-2.5-flash-image, flux-2-pro
+  model?: string; // Internal id from the adapter catalog, e.g. gemini-3.1-flash-image, flux-2-pro
   size?: string; // Legacy support for pixel dimensions (converted to aspectRatio)
   aspectRatio?: AspectRatio; // Nano Banana aspect ratios
   numberOfImages?: number; // 1-4 images
   imageSize?: NanoBananaImageSize; // Image resolution: 512px, 1K, 2K, or 4K (per-model availability)
-  referenceImages?: string[]; // Vault-relative paths; per-model limit enforced by the adapter (3 for 2.5-flash, 14 for 3.x)
+  referenceImages?: string[]; // Vault-relative paths; per-model limit enforced by the adapter (14 for the Gemini 3.x family)
   savePath: string; // vault relative path
   sessionId?: string;
   context?: string;
@@ -241,13 +241,6 @@ export type ImageProvider = 'openai' | 'google' | 'openrouter';
 export type ImageModel =
   | 'gpt-image-2.5-sunburst'  // OpenAI GPT Image 2.5 Sunburst (OpenAI direct)
   | 'gpt-image-2.5-flare'     // OpenAI GPT Image 2.5 Flare (OpenAI direct)
-  | 'gpt-image-1'              // OpenAI GPT Image 1 (OpenAI direct), shuts down 2026-10-23
-  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (OpenAI direct), shuts down 2026-12-01
-  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (OpenAI direct), shuts down 2026-12-01
-  | 'gemini-2.5-flash-image'   // Google Nano Banana legacy, deprecated (shutdown 2027-03-15)
-  | 'gemini-3-pro-image-preview' // Google Nano Banana Pro preview id
-  | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 preview id
-  | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
   | 'gpt-5.4-image-2'                // OpenAI GPT-5.4 Image 2 (OpenRouter only)
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
   | 'flux-2-flex'                    // Black Forest Labs FLUX.2 Flex (OpenRouter only)
@@ -255,7 +248,6 @@ export type ImageModel =
   | 'gemini-3.1-flash-image'         // Google Nano Banana 2, GA id, the default (Google direct and OpenRouter)
   | 'gemini-3.1-flash-lite-image'    // Google Nano Banana 2 Lite (Google direct and OpenRouter)
   | 'gemini-3-pro-image'             // Google Nano Banana Pro, GA id (Google direct and OpenRouter)
-  | 'gpt-5-image-mini'               // OpenAI GPT-5 Image Mini (OpenRouter only)
   | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter, and the OpenAI adapter)
   | 'seedream-4.5'                   // ByteDance Seedream 4.5 (OpenRouter only)
   | 'seedream-5-lite'                // ByteDance Seedream 5.0 Lite (OpenRouter only)

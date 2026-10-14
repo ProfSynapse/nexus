@@ -53,6 +53,7 @@ import {
   DEFAULT_AGENT_TEMPERATURE,
   type ConversationAgentSettings
 } from '../../../services/llm/utils/SubagentModelResolver';
+import { getRetiredImageModel } from '../../../services/llm/types/RetiredMediaModels';
 
 /** A positive whole-token budget, or null for "use the model's default". */
 function normalizeAgentContextWindow(value: unknown): number | null {
@@ -370,7 +371,10 @@ export class ModelAgentManager {
       this.imageProvider = settings.imageProvider;
     }
     if ('imageModel' in settings && settings.imageModel) {
-      this.imageModel = settings.imageModel;
+      // A conversation saved before a model was retired keeps working on the
+      // provider's documented successor. The stored metadata is left as is.
+      this.imageModel = getRetiredImageModel(this.imageProvider, settings.imageModel)?.replacement
+        ?? settings.imageModel;
     }
 
     // Restore speech model

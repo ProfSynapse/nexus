@@ -125,47 +125,16 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
  * output token at the provider's default (high) quality.
  */
 export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterImageModelSpec>> = {
-  'gemini-2.5-flash-image': {
-    // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
-    // now answers "No endpoints found".
-    openRouterId: 'google/gemini-2.5-flash-image',
-    // Deprecated; Google's deprecations page now lists a 2027-03-15 shutdown.
-    displayName: 'Nano Banana legacy, deprecated (via OpenRouter)',
-    costPerImage: 0.039,
-    pricingNote: '1290 output tokens at $30/M',
-    maxReferenceImages: 3,
-    resolutions: null,
-    contextWindow: 32768,
-    lastUpdated: '2026-09-02'
-  },
-  'gemini-3-pro-image-preview': {
-    openRouterId: 'google/gemini-3-pro-image-preview',
-    displayName: 'Nano Banana Pro preview (via OpenRouter)',
-    costPerImage: 0.134,
-    pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
-    maxReferenceImages: 14,
-    resolutions: ['1K', '2K', '4K'],
-    contextWindow: 65536,
-    lastUpdated: '2026-09-02'
-  },
-  'gemini-3.1-flash-image-preview': {
-    openRouterId: 'google/gemini-3.1-flash-image-preview',
-    displayName: 'Nano Banana 2 preview (via OpenRouter)',
+  // First on purpose: the generateImage tool and the chat image picker fall
+  // back to a provider's first catalog entry, and this is the adapter default.
+  'gemini-3.1-flash-image': {
+    openRouterId: 'google/gemini-3.1-flash-image',
+    displayName: 'Nano Banana 2 (via OpenRouter)',
     costPerImage: 0.067,
     pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
     maxReferenceImages: 14,
     resolutions: ['512', '1K', '2K', '4K'],
     contextWindow: 65536,
-    lastUpdated: '2026-09-02'
-  },
-  'gpt-5-image': {
-    openRouterId: 'openai/gpt-5-image',
-    displayName: 'GPT-5 Image (via OpenRouter)',
-    costPerImage: 0.167,
-    pricingNote: '4160 output tokens at $40/M at the default high quality',
-    maxReferenceImages: 16,
-    resolutions: null,
-    contextWindow: 400000,
     lastUpdated: '2026-09-02'
   },
   'gpt-5.4-image-2': {
@@ -208,18 +177,6 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     contextWindow: 4096,
     lastUpdated: '2026-09-02'
   },
-  // GA ids for the Gemini image family. The -preview ids above still resolve
-  // but Google retires previews (2.5's is already gone), so prefer these.
-  'gemini-3.1-flash-image': {
-    openRouterId: 'google/gemini-3.1-flash-image',
-    displayName: 'Nano Banana 2 (via OpenRouter)',
-    costPerImage: 0.067,
-    pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
-    maxReferenceImages: 14,
-    resolutions: ['512', '1K', '2K', '4K'],
-    contextWindow: 65536,
-    lastUpdated: '2026-09-02'
-  },
   'gemini-3.1-flash-lite-image': {
     openRouterId: 'google/gemini-3.1-flash-lite-image',
     displayName: 'Nano Banana 2 Lite (via OpenRouter)',
@@ -240,18 +197,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
-  'gpt-5-image-mini': {
-    openRouterId: 'openai/gpt-5-image-mini',
-    displayName: 'GPT-5 Image Mini (via OpenRouter)',
-    costPerImage: 0.033,
-    pricingNote: '4160 output tokens at $8/M at the default high quality',
-    maxReferenceImages: 16,
-    resolutions: null,
-    contextWindow: 400000,
-    lastUpdated: '2026-09-02'
-  },
   'gpt-image-2': {
-    // OpenRouter's recommended replacement for the gpt-5-image chat models.
     openRouterId: 'openai/gpt-image-2',
     displayName: 'GPT Image 2 (via OpenRouter)',
     costPerImage: 0.125,
@@ -370,7 +316,6 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private httpReferer: string;
   private xTitle: string;
 
-  // gemini-2.5-flash-image is deprecated.
   private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Aspect ratios accepted across the catalog. Individual endpoints may

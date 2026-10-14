@@ -94,26 +94,11 @@ describe('OpenRouterImageAdapter', () => {
       expect(requests[0].headers?.Authorization).toBe('Bearer or-test');
 
       const body = parsedBody(requests[0]);
-      // gemini-2.5-flash-image shuts down on 2026-10-02, so it is no longer the default.
       expect(body.model).toBe('google/gemini-3.1-flash-image');
       expect(body.prompt).toBe('a red circle');
       expect(body).not.toHaveProperty('modalities');
       expect(body).not.toHaveProperty('messages');
       expect(body).not.toHaveProperty('n');
-    });
-
-    it('maps gemini-2.5-flash-image to the GA id, not the retired preview id', async () => {
-      const requests: CapturedRequest[] = [];
-      __setRequestUrlMock(async (request) => {
-        requests.push(request);
-        return imagesResponse(pngBase64(1024, 1024));
-      });
-
-      const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
-      await adapter.generateImage(baseParams({ model: 'gemini-2.5-flash-image' }));
-
-      // google/gemini-2.5-flash-image-preview returns "No endpoints found".
-      expect(parsedBody(requests[0]).model).toBe('google/gemini-2.5-flash-image');
     });
 
     it('sends aspect_ratio and maps imageSize to the resolution enum for Gemini 3.x', async () => {
@@ -125,13 +110,13 @@ describe('OpenRouterImageAdapter', () => {
 
       const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
       await adapter.generateImage(baseParams({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-3.1-flash-image',
         aspectRatio: AspectRatio.LANDSCAPE_16_9,
         imageSize: '512px'
       }));
 
       const body = parsedBody(requests[0]);
-      expect(body.model).toBe('google/gemini-3.1-flash-image-preview');
+      expect(body.model).toBe('google/gemini-3.1-flash-image');
       expect(body.aspect_ratio).toBe('16:9');
       expect(body.resolution).toBe('512');
     });
@@ -192,14 +177,14 @@ describe('OpenRouterImageAdapter', () => {
 
       const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
       const response = await adapter.generateImage(baseParams({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-3.1-flash-image',
         aspectRatio: AspectRatio.LANDSCAPE_16_9
       }));
 
       expect(response.format).toBe('png');
       expect(response.dimensions).toEqual({ width: 1344, height: 768 });
       expect(response.imageData.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-      expect(response.metadata.openRouterModel).toBe('google/gemini-3.1-flash-image-preview');
+      expect(response.metadata.openRouterModel).toBe('google/gemini-3.1-flash-image');
       expect(response.metadata.reportedCostUsd).toBe(0.067);
       expect(response.usage?.imagesGenerated).toBe(1);
       expect(response.usage?.resolution).toBe('1344x768');
@@ -275,12 +260,12 @@ describe('OpenRouterImageAdapter', () => {
     });
 
     it('enforces the per-model reference image limit', () => {
-      const refs = Array.from({ length: 4 }, (_, i) => `refs/${i}.png`);
-      const tooMany = adapter.validateImageParams(baseParams({ model: 'gemini-2.5-flash-image', referenceImages: refs }));
+      const refs = Array.from({ length: 5 }, (_, i) => `refs/${i}.png`);
+      const tooMany = adapter.validateImageParams(baseParams({ model: 'flux-2-klein-4b', referenceImages: refs }));
       expect(tooMany.isValid).toBe(false);
-      expect(tooMany.errors.join(' ')).toMatch(/Maximum is 3/);
+      expect(tooMany.errors.join(' ')).toMatch(/Maximum is 4/);
 
-      const ok = adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image-preview', referenceImages: refs }));
+      const ok = adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image', referenceImages: refs }));
       expect(ok.isValid).toBe(true);
     });
 
@@ -292,7 +277,7 @@ describe('OpenRouterImageAdapter', () => {
     });
 
     it('rejects a resolution the model does not offer', () => {
-      const result = adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image-preview', imageSize: '512px' }));
+      const result = adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image', imageSize: '512px' }));
       expect(result.isValid).toBe(false);
       expect(result.errors.join(' ')).toMatch(/512px/);
     });

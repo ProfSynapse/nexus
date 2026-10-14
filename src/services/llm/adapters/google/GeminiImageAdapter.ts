@@ -38,13 +38,13 @@ type GeminiImageSize = '512' | '1K' | '2K' | '4K';
 
 export interface GeminiImageModelSpec {
   displayName: string;
-  /** USD for one 1K image (1120 output image tokens; 1290 for 2.5). */
+  /** USD for one 1K image (1120 output image tokens). */
   costPerImage: number;
   pricingNote: string;
   imageTokenPricePerMillion: number;
   maxReferenceImages: number;
-  /** imageConfig.imageSize values the model accepts; null = no imageSize at all. */
-  imageSizes: GeminiImageSize[] | null;
+  /** imageConfig.imageSize values the model accepts. */
+  imageSizes: GeminiImageSize[];
   contextWindow: number;
   lastUpdated: string;
 }
@@ -173,40 +173,6 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     contextWindow: 131072,
     lastUpdated: '2026-09-02'
   },
-  // Preview ids. Google's deprecation page lists a 2026-06-25 shutdown for
-  // both, but the API still serves them; kept so saved settings keep working.
-  'gemini-3.1-flash-image-preview': {
-    displayName: 'Nano Banana 2 preview',
-    costPerImage: 0.067,
-    pricingNote: 'Same pricing as gemini-3.1-flash-image',
-    imageTokenPricePerMillion: 60,
-    maxReferenceImages: 14,
-    imageSizes: ['512', '1K', '2K', '4K'],
-    contextWindow: 65536,
-    lastUpdated: '2026-09-02'
-  },
-  'gemini-3-pro-image-preview': {
-    displayName: 'Nano Banana Pro preview',
-    costPerImage: 0.134,
-    pricingNote: 'Same pricing as gemini-3-pro-image',
-    imageTokenPricePerMillion: 120,
-    maxReferenceImages: 14,
-    imageSizes: ['1K', '2K', '4K'],
-    contextWindow: 131072,
-    lastUpdated: '2026-09-02'
-  },
-  // Deprecated. Google's deprecations page (updated 2026-10-12) moved the
-  // shutdown to 2027-03-15; the pricing page still says 2026-10-02.
-  'gemini-2.5-flash-image': {
-    displayName: 'Nano Banana legacy (deprecated)',
-    costPerImage: 0.039,
-    pricingNote: '1290 image tokens at $30/M; no imageSize parameter',
-    imageTokenPricePerMillion: 30,
-    maxReferenceImages: 3,
-    imageSizes: null,
-    contextWindow: 32768,
-    lastUpdated: '2026-09-02'
-  }
 };
 
 export class GeminiImageAdapter extends BaseImageAdapter {
@@ -228,8 +194,6 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
   private vault: Vault | null = null;
-  // gemini-2.5-flash-image is deprecated; Google recommends Nano Banana 2
-  // Lite as the transition.
   private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Supported aspect ratios for Nano Banana models
@@ -284,9 +248,9 @@ export class GeminiImageAdapter extends BaseImageAdapter {
       if (params.aspectRatio) {
         imageConfig.aspectRatio = params.aspectRatio;
       }
-      // Only models that declare imageSize accept one, and the wire value for
-      // '512px' is '512' — the '512px' spelling is silently rendered at 1K.
-      if (params.imageSize && spec.imageSizes) {
+      // The wire value for '512px' is '512' — the '512px' spelling is
+      // silently rendered at 1K.
+      if (params.imageSize) {
         imageConfig.imageSize = IMAGE_SIZE_TO_GEMINI[params.imageSize];
       }
       if (Object.keys(imageConfig).length > 0) {
@@ -406,9 +370,6 @@ export class GeminiImageAdapter extends BaseImageAdapter {
       const wireValue = IMAGE_SIZE_TO_GEMINI[params.imageSize];
       if (!wireValue) {
         errors.push('imageSize must be "512px", "1K", "2K", or "4K"');
-      } else if (!spec.imageSizes) {
-        warnings.push(`${model} does not take an imageSize; ${params.imageSize} ignored`);
-        adjustedParams.imageSize = undefined;
       } else if (!spec.imageSizes.includes(wireValue)) {
         const supported = spec.imageSizes.map(s => (s === '512' ? '512px' : s)).join(', ');
         errors.push(`imageSize ${params.imageSize} is not available for ${model}. Supported: ${supported}`);

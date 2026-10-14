@@ -146,7 +146,7 @@ describe('OpenAIImageAdapter', () => {
     });
 
     const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
-    await adapter.generateImage(baseParams({ model: 'gpt-image-1-mini' }));
+    await adapter.generateImage(baseParams({ model: 'gpt-image-2' }));
 
     expect(parsedBody(requests[0]).size).toBe('1024x1024');
   });
@@ -166,19 +166,6 @@ describe('OpenAIImageAdapter', () => {
       const [rw, rh] = ratio.split(':').map(Number);
       expect(w / h).toBeCloseTo(rw / rh, 2);
     }
-  });
-
-  it('snaps aspect ratios to the three fixed sizes for models without arbitrary sizing', async () => {
-    const requests: CapturedRequest[] = [];
-    __setRequestUrlMock(async (request) => {
-      requests.push(request);
-      return imagesResponse(pngBase64(1024, 1536), '1024x1536');
-    });
-
-    const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
-    await adapter.generateImage(baseParams({ model: 'gpt-image-1-mini', aspectRatio: AspectRatio.PORTRAIT_9_16 }));
-
-    expect(parsedBody(requests[0]).size).toBe('1024x1536');
   });
 
   it('decodes b64_json, reads dimensions from the bytes and prices the tokens', async () => {
@@ -202,7 +189,7 @@ describe('OpenAIImageAdapter', () => {
     });
 
     const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
-    await expect(adapter.generateImage(baseParams({ model: 'gpt-image-1', size: '1792x1024' }))).rejects.toThrow(/Invalid value/);
+    await expect(adapter.generateImage(baseParams({ model: 'gpt-image-2', size: '1792x1024' }))).rejects.toThrow(/Invalid value/);
     expect(requests).toHaveLength(1);
   });
 
@@ -229,9 +216,16 @@ describe('OpenAIImageAdapter', () => {
       expect(withVault.validateImageParams(baseParams({ referenceImages: ['refs/a.png', 'refs/b.webp'] })).isValid).toBe(true);
     });
 
-    it('rejects a non-standard size for a fixed-size model but allows it for gpt-image-2', () => {
-      expect(adapter.validateImageParams(baseParams({ model: 'gpt-image-1', size: '1792x1024' })).isValid).toBe(false);
+    it('rejects a size that is not WIDTHxHEIGHT and accepts an arbitrary one for gpt-image-2', () => {
+      expect(adapter.validateImageParams(baseParams({ model: 'gpt-image-2', size: 'large' })).isValid).toBe(false);
       expect(adapter.validateImageParams(baseParams({ model: 'gpt-image-2', size: '1792x1024' })).isValid).toBe(true);
+    });
+
+    it('no longer offers the retired GPT Image 1 family', () => {
+      for (const retired of ['gpt-image-1', 'gpt-image-1.5', 'gpt-image-1-mini']) {
+        expect(adapter.supportedModels).not.toContain(retired);
+        expect(adapter.validateImageParams(baseParams({ model: retired })).isValid).toBe(false);
+      }
     });
 
     it('drops imageSize with a warning', () => {
@@ -267,7 +261,7 @@ describe('OpenAIImageAdapter', () => {
       });
 
       const response = await adapter.generateImage(baseParams({
-        model: 'gpt-image-1.5',
+        model: 'gpt-image-2',
         aspectRatio: AspectRatio.LANDSCAPE_16_9,
         referenceImages: ['refs/a.png', 'refs/b.webp']
       }));
@@ -286,10 +280,10 @@ describe('OpenAIImageAdapter', () => {
       const parts = body.split(`--${boundary}`).filter(p => p.includes('Content-Disposition'));
 
       const field = (name: string) => parts.find(p => p.includes(`name="${name}"`)) || '';
-      expect(field('model')).toContain('\r\n\r\ngpt-image-1.5\r\n');
+      expect(field('model')).toContain('\r\n\r\ngpt-image-2\r\n');
       expect(field('prompt')).toContain('\r\n\r\na blue teacup\r\n');
       expect(field('n')).toContain('\r\n\r\n1\r\n');
-      expect(field('size')).toContain('\r\n\r\n1536x1024\r\n');
+      expect(field('size')).toContain('\r\n\r\n1792x1008\r\n');
       expect(field('output_format')).toContain('\r\n\r\npng\r\n');
 
       const images = parts.filter(p => p.includes('name="image[]"'));

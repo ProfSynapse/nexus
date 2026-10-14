@@ -74,7 +74,7 @@ describe('ImageGenerationService', () => {
     const result = await service.generateImage({
       prompt: 'a red circle',
       provider: 'openrouter',
-      model: 'gemini-2.5-flash-image',
+      model: 'gemini-3.1-flash-lite-image',
       savePath: 'images/circle.png'
     });
 
