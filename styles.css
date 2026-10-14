@@ -1934,6 +1934,255 @@ body.is-mobile .nexus-accordion-toggle {
     min-height: 44px;
 }
 
+/* ===========================================
+   Settings: Get started pages
+   The Get started row above the tab strip and the in-tab pages it opens
+   (docs/plans/defaults-settings-redesign-plan.md, Phase 3).
+   =========================================== */
+
+.nexus-get-started {
+    margin-bottom: var(--space-l);
+}
+
+.nexus-row-icon {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-right: var(--space-xs);
+    color: var(--text-accent);
+}
+
+.nexus-row-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.setting-item.mod-navigable,
+.setting-item.nexus-other-row {
+    cursor: pointer;
+}
+
+.setting-item.mod-navigable:hover,
+.setting-item.nexus-other-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.setting-item.mod-navigable:first-child:hover {
+    border-radius: var(--setting-items-radius) var(--setting-items-radius) 0 0;
+}
+
+.setting-item.mod-navigable:last-child:hover,
+.setting-item.nexus-other-row:last-child:hover {
+    border-radius: 0 0 var(--setting-items-radius) var(--setting-items-radius);
+}
+
+.setting-item.mod-navigable:only-child:hover {
+    border-radius: var(--setting-items-radius);
+}
+
+.setting-item.mod-navigable:focus-visible,
+.setting-item.nexus-other-row:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.setting-item-chevron {
+    display: flex;
+    align-items: center;
+    color: var(--text-faint);
+}
+
+.nexus-page-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+    max-width: var(--setting-group-max-width);
+    margin: 0 auto var(--space-m);
+}
+
+.nexus-page-head .nexus-back-button {
+    margin: 0 0 0 -4px;
+    padding: 4px 8px 4px 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-normal);
+}
+
+.nexus-page-head .nexus-back-button:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
+}
+
+.nexus-page-head .nexus-back-button svg {
+    width: 16px;
+    height: 16px;
+}
+
+.nexus-page-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: var(--font-semibold);
+    letter-spacing: -0.01em;
+}
+
+.nexus-page-lede {
+    max-width: var(--setting-group-max-width);
+    margin: 0 auto var(--space-l);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-can {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-s) var(--space-xl);
+    max-width: var(--setting-group-max-width);
+    margin: 0 auto var(--space-xl);
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-ui-small);
+}
+
+.nexus-can li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.nexus-can-icon {
+    display: inline-flex;
+    color: var(--text-accent);
+}
+
+.nexus-can-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.setting-item.nexus-gs-heading {
+    flex-wrap: wrap;
+    max-width: var(--setting-group-max-width);
+    margin: 0 auto var(--space-s);
+}
+
+.nexus-gs-apps,
+.nexus-gs-cli {
+    margin-top: var(--space-m);
+}
+
+.nexus-step {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin-right: var(--space-xs);
+    border-radius: 50%;
+    background: rgba(var(--interactive-accent-rgb), 0.18);
+    color: var(--text-accent);
+    font-size: 12px;
+    font-weight: var(--font-semibold);
+}
+
+.nexus-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nexus-status.is-ok {
+    color: var(--text-success);
+}
+
+.nexus-status-check {
+    display: inline-flex;
+}
+
+.nexus-status-check svg {
+    width: 14px;
+    height: 14px;
+}
+
+.nexus-node-missing .setting-item-name {
+    color: var(--text-warning);
+}
+
+.nexus-node-warning {
+    margin-top: var(--space-xs);
+    color: var(--text-warning);
+}
+
+.nexus-code {
+    max-height: 240px;
+    margin: var(--space-s) 0 0;
+    padding: var(--space-s) var(--space-m);
+    overflow: auto;
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font: 11px/1.5 var(--font-monospace);
+    white-space: pre;
+    user-select: text;
+}
+
+.nexus-prompt {
+    font-family: var(--font-interface);
+    font-size: var(--font-ui-smaller);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.setting-item:has(.nexus-code) {
+    align-items: flex-start;
+}
+
+.setting-item:has(.nexus-code) .setting-item-control {
+    padding-top: 2px;
+}
+
+.nexus-other-steps {
+    margin: 0 var(--setting-items-padding-x) var(--space-s) calc(var(--setting-items-padding-x) + var(--space-s));
+    padding-left: var(--space-m);
+    border-left: 2px solid var(--setting-items-divider-color);
+}
+
+.nexus-other-steps .setting-item {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.nexus-other-guide {
+    margin: var(--space-s) 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-child-row .setting-item-name {
+    padding-left: var(--space-l);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-child-row .setting-item-description {
+    padding-left: var(--space-l);
+}
+
+.nexus-path-row .setting-item-description {
+    font-family: var(--font-monospace);
+    font-size: 11px;
+}
+
+body.is-mobile .nexus-can {
+    grid-template-columns: 1fr;
+}
+
+body.is-mobile .setting-item.mod-navigable,
+body.is-mobile .setting-item.nexus-other-row,
+body.is-mobile .nexus-page-head .nexus-back-button {
+    min-height: 44px;
+}
+
 /* Setup Prompt Styles */
 .mcp-section {
     margin-bottom: 1.5rem;
@@ -2274,14 +2523,6 @@ body.is-mobile .nexus-accordion-toggle {
 .nexus-settings-tab.active {
     border: 1px solid var(--interactive-accent);
     background: var(--background-secondary);
-}
-
-.nexus-settings-accordion {
-    margin-bottom: 16px;
-}
-
-.nexus-settings-accordion-content {
-    padding: 0;
 }
 
 .memory-tab-content {
@@ -4611,514 +4852,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     color: var(--text-muted);
     margin: 24px 0 8px 0;
     padding: 0 4px;
-}
-
-/* Get Started intro section */
-.nexus-intro {
-    margin-bottom: 16px;
-}
-
-.nexus-intro-desc {
-    color: var(--text-muted);
-    line-height: 1.6;
-    margin-bottom: 20px;
-}
-
-.nexus-capabilities h4 {
-    margin: 0 0 12px 0;
-    font-size: 0.95em;
-}
-
-.nexus-capability-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 16px;
-}
-
-@media (max-width: 500px) {
-    .nexus-capability-list {
-        grid-template-columns: 1fr;
-    }
-}
-
-.nexus-capability-list li {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9em;
-    color: var(--text-normal);
-}
-
-.nexus-cap-icon {
-    font-size: 1.1em;
-    width: 24px;
-    text-align: center;
-    flex-shrink: 0;
-}
-
-.nexus-divider {
-    border: none;
-    border-top: 1px solid var(--background-modifier-border);
-    margin: 24px 0;
-}
-
-/* Get Started setup paths */
-.nexus-setup-paths {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin: 24px 0;
-}
-
-@media (max-width: 500px) {
-    .nexus-setup-paths {
-        grid-template-columns: 1fr;
-    }
-}
-
-.nexus-setup-path {
-    padding: 24px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s ease;
-}
-
-.nexus-setup-path:hover {
-    border-color: var(--interactive-accent);
-    background: var(--background-modifier-hover);
-}
-
-.nexus-setup-path-icon {
-    font-size: 2rem;
-    margin-bottom: 12px;
-}
-
-.nexus-setup-path-title {
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.nexus-setup-path-desc {
-    color: var(--text-muted);
-    font-size: 0.85em;
-}
-
-/* MCP config output */
-.nexus-mcp-output {
-    background: var(--background-primary-alt);
-    padding: 16px;
-    border-radius: 6px;
-    overflow-x: auto;
-    font-family: var(--font-monospace);
-    font-size: 0.85em;
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-
-/* MCP config input */
-.nexus-mcp-input {
-    width: 100%;
-    font-family: var(--font-monospace);
-    font-size: 0.85em;
-}
-
-/* Config path display */
-.nexus-config-path {
-    background: var(--background-primary-alt);
-    padding: 12px 16px;
-    border-radius: 6px;
-    margin-bottom: 12px;
-}
-
-.nexus-config-path code {
-    font-family: var(--font-monospace);
-    font-size: 0.9em;
-    word-break: break-all;
-}
-
-/* Setup steps */
-.nexus-setup-step {
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.nexus-setup-step:last-child {
-    border-bottom: none;
-}
-
-.nexus-setup-step h4 {
-    margin: 0 0 8px 0;
-}
-
-/* Setup instructions list */
-.nexus-setup-instructions {
-    margin: 12px 0;
-    padding-left: 24px;
-}
-
-.nexus-setup-instructions li {
-    margin-bottom: 8px;
-    line-height: 1.5;
-}
-
-/* MCP Setup - Compact Row Layout */
-.nexus-mcp-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    background: var(--background-secondary);
-    border-radius: 8px;
-    margin-top: 12px;
-}
-
-.nexus-mcp-status {
-    font-weight: 500;
-    color: var(--text-muted);
-}
-
-.nexus-mcp-status.nexus-mcp-warning {
-    color: var(--text-error);
-}
-
-.nexus-mcp-status.nexus-mcp-success {
-    color: var(--text-success);
-}
-
-.nexus-cli-providers {
-    margin-top: 10px;
-    padding: 10px 16px;
-    background: var(--background-secondary);
-    border-radius: 8px;
-}
-
-.nexus-cli-provider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 0;
-}
-
-.nexus-cli-provider-row input[type="checkbox"] {
-    margin: 0;
-}
-
-.nexus-cli-provider-row label {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    cursor: pointer;
-}
-
-.nexus-cli-provider-hint {
-    color: var(--text-muted);
-    font-size: var(--font-smaller);
-}
-
-.nexus-mcp-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.nexus-mcp-actions button {
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 0.85em;
-}
-
-.nexus-mcp-help {
-    color: var(--text-muted);
-    font-size: 0.85em;
-    margin: 8px 0 0 0;
-}
-
-.nexus-mcp-node-warning {
-    border: 1px solid var(--background-modifier-error);
-    margin-bottom: 4px;
-}
-
-/* Manual Config Section */
-.nexus-manual-config {
-    margin-top: 16px;
-}
-
-.nexus-manual-config h4 {
-    margin: 0 0 8px 0;
-    font-size: 1em;
-    color: var(--text-normal);
-}
-
-.nexus-config-code {
-    background: var(--background-primary-alt);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s);
-    padding: 12px;
-    margin: 8px 0;
-    overflow-x: auto;
-    font-size: 0.85em;
-}
-
-.nexus-config-code code {
-    font-family: var(--font-monospace);
-    white-space: pre;
-}
-
-.nexus-manual-config .nexus-config-path {
-    margin-top: 12px;
-    background: transparent;
-    padding: 0;
-    border-radius: 0;
-}
-
-.nexus-manual-config .nexus-config-path a {
-    color: var(--text-accent);
-    text-decoration: none;
-    font-family: var(--font-monospace);
-    font-size: 0.85em;
-}
-
-.nexus-manual-config .nexus-config-path a:hover {
-    text-decoration: underline;
-}
-
-/* MCP setup — connector.js explainer */
-.nexus-connector-explainer {
-    display: flex;
-    gap: 12px;
-    padding: 14px 16px;
-    background: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    margin: 12px 0 20px;
-}
-
-.nexus-connector-explainer .nx-icon {
-    font-size: 1.3em;
-    line-height: 1.2;
-    flex-shrink: 0;
-}
-
-.nexus-connector-explainer p {
-    margin: 0;
-    font-size: 0.88em;
-    color: var(--text-muted);
-    line-height: 1.5;
-}
-
-.nexus-connector-explainer code {
-    font-family: var(--font-monospace);
-    background: var(--background-primary-alt);
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 0.9em;
-    color: var(--text-normal);
-}
-
-/* MCP setup — per-agent block */
-.nexus-agent-block {
-    margin-bottom: 20px;
-}
-
-.nexus-agent-block > h4 {
-    display: flex;
-    align-items: center;
-    margin: 0 0 4px;
-}
-
-.nx-agent-logo {
-    font-size: 1.1em;
-}
-
-/* MCP setup — "just connected" confirmation card */
-.nexus-connect-result {
-    border: 1px solid var(--background-modifier-border);
-    border-left: 3px solid var(--text-success);
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-top: 8px;
-    background: var(--background-secondary);
-}
-
-.nexus-connect-result .nx-result-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
-}
-
-.nexus-connect-result .nx-result-title {
-    font-weight: 600;
-    color: var(--text-success);
-}
-
-.nx-result-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.nx-checklist {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.nx-checklist li {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 5px 0;
-    font-size: 0.88em;
-    line-height: 1.45;
-}
-
-.nx-checklist .nx-check {
-    color: var(--text-success);
-    flex-shrink: 0;
-}
-
-.nx-checklist .nx-next {
-    color: var(--text-accent);
-    flex-shrink: 0;
-}
-
-.nx-checklist .nx-label {
-    color: var(--text-muted);
-}
-
-.nx-checklist code {
-    font-family: var(--font-monospace);
-    font-size: 0.85em;
-    background: var(--background-primary-alt);
-    padding: 1px 5px;
-    border-radius: 3px;
-    word-break: break-all;
-    color: var(--text-normal);
-}
-
-/* MCP setup — manual disclosure with numbered steps */
-.nexus-manual-details {
-    margin-top: 10px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.nexus-manual-details > summary {
-    cursor: pointer;
-    list-style: none;
-    padding: 10px 14px;
-    font-size: 0.9em;
-    color: var(--text-muted);
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.nexus-manual-details > summary::-webkit-details-marker {
-    display: none;
-}
-
-.nexus-manual-details > summary::before {
-    content: "\25B8";
-    transition: transform 0.15s ease;
-}
-
-.nexus-manual-details[open] > summary::before {
-    transform: rotate(90deg);
-}
-
-.nexus-manual-details > summary:hover {
-    color: var(--text-normal);
-}
-
-.nexus-manual-body {
-    padding: 4px 16px 16px;
-}
-
-.nx-step {
-    display: flex;
-    gap: 12px;
-    padding: 12px 0;
-}
-
-.nx-step + .nx-step {
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-.nx-step-num {
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.78em;
-    font-weight: 600;
-    margin-top: 1px;
-}
-
-.nx-step-body {
-    flex: 1;
-    min-width: 0;
-}
-
-.nx-step-body h5 {
-    margin: 0 0 4px;
-    font-size: 0.92em;
-}
-
-.nx-step-body p {
-    margin: 0 0 8px;
-    font-size: 0.85em;
-}
-
-.nx-pathrow {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-
-.nx-inline-path {
-    font-family: var(--font-monospace);
-    font-size: 0.82em;
-    color: var(--text-accent);
-    word-break: break-all;
-}
-
-/* Local CLI installed but unresolvable in the user's shell — actionable fix panel */
-.nexus-cli-pathfix {
-    margin-top: 10px;
-    padding: 10px 12px;
-    border: 1px solid var(--background-modifier-border);
-    border-left: 3px solid var(--text-warning);
-    border-radius: var(--radius-s);
-    background-color: var(--background-secondary);
-}
-
-.nexus-cli-pathfix p {
-    margin: 0 0 4px 0;
-}
-
-.nexus-cli-pathfix .nx-inline-path {
-    user-select: all;
-}
-
-.nexus-cli-pathfix button {
-    margin-top: 8px;
 }
 
 /* Reasoning - Compact Inline */

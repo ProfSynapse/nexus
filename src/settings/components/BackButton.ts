@@ -13,9 +13,9 @@ export class BackButton {
      * @param container Parent element to attach to
      * @param label Text to display (e.g., "Back to Workspaces")
      * @param onClick Callback when clicked
-     * @param component Optional Component for registerDomEvent
+     * @param component Component that owns the click listener
      */
-    constructor(container: HTMLElement, label: string, onClick: () => void, component?: Component) {
+    constructor(container: HTMLElement, label: string, onClick: () => void, component: Component) {
         this.element = container.createEl('button', { cls: 'clickable-icon nexus-back-button' });
 
         const iconSpan = this.element.createSpan({ cls: 'nexus-back-button-icon' });
@@ -24,12 +24,7 @@ export class BackButton {
         // Label text
         this.element.createSpan({ text: label });
 
-        // Click handler - use component.registerDomEvent if available, otherwise addEventListener
-        if (component) {
-            component.registerDomEvent(this.element, 'click', onClick);
-        } else {
-            this.element.addEventListener('click', onClick);
-        }
+        component.registerDomEvent(this.element, 'click', onClick);
     }
 
     /**

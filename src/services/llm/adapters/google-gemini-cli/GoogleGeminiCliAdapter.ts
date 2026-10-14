@@ -241,7 +241,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
 
     if (result.errorCode === PROVIDER_TIMEOUT_ERROR_CODE) {
       return new LLMProviderError(
-        result.stderr.trim() || 'Gemini CLI stopped responding and was terminated. Please try again.',
+        result.stderr.trim() || 'Antigravity CLI stopped responding and was terminated. Please try again.',
         this.name,
         PROVIDER_TIMEOUT_ERROR_CODE
       );
