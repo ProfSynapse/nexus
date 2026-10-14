@@ -99,10 +99,19 @@ export class WorkspaceEventApplier {
       return;
     }
 
+    // A create for an id that already has a row is a duplicate, not a reset.
+    // Plugin builds 5.17.0-5.20.4 appended a fresh `workspace_created` for the
+    // default workspace on every load (DefaultWorkspaceManager raced startup),
+    // so those streams interleave duplicates with real `workspace_updated`
+    // events. Replaying a duplicate as INSERT OR REPLACE reverted every edit
+    // made before it. First create wins; later ones are no-ops. A create after
+    // `workspace_deleted` still lands, because the delete purged the row.
+    // OR REPLACE is kept for the name constraint only, as before.
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO workspaces
        (id, name, description, rootFolder, created, lastAccessed, isActive, isArchived, contextJson, dedicatedAgentId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM workspaces WHERE id = ?)`,
       [
         event.data.id,
         event.data.name,
@@ -114,7 +123,8 @@ export class WorkspaceEventApplier {
         event.data.isActive !== undefined ? (event.data.isActive ? 1 : 0) : 1,
         event.data.isArchived !== undefined ? (event.data.isArchived ? 1 : 0) : 0,
         event.data.contextJson ?? null,
-        event.data.dedicatedAgentId ?? null
+        event.data.dedicatedAgentId ?? null,
+        event.data.id
       ]
     );
   }

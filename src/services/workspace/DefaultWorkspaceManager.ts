@@ -125,21 +125,10 @@ export class DefaultWorkspaceManager {
     }
 
     try {
-      // Check if default workspace JSON already exists
-      const existingWorkspace = await this.workspaceService.getWorkspace(this.defaultWorkspaceId);
-
-      if (existingWorkspace) {
-        return;
-      }
-
-      const legacyDefaultWorkspace = await this.workspaceService.getWorkspaceByNameOrId(this.defaultConfig.name);
-      if (legacyDefaultWorkspace) {
-        this.setDefaultWorkspaceId(legacyDefaultWorkspace.id);
-        return;
-      }
-
-      // Create default workspace JSON
-      await this.workspaceService.createWorkspace({
+      // ensureWorkspace, not getWorkspace + createWorkspace: this runs during
+      // plugin load, when that pair checks the legacy index but writes to the
+      // event store, and re-created the default workspace on every load.
+      const workspace = await this.workspaceService.ensureWorkspace({
         id: this.defaultWorkspaceId,
         name: this.defaultConfig.name,
         description: this.defaultConfig.description,
@@ -150,6 +139,10 @@ export class DefaultWorkspaceManager {
         sessions: {}
       });
 
+      // A legacy default saved under a generated id is adopted, not duplicated.
+      if (workspace.id !== this.defaultWorkspaceId) {
+        this.setDefaultWorkspaceId(workspace.id);
+      }
     } catch (error) {
       console.error('[DefaultWorkspaceManager] Failed to create default workspace:', error);
       // Don't throw - allow plugin to continue even if workspace creation fails

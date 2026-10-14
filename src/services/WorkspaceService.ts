@@ -10,6 +10,7 @@ import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
+import { WorkspaceConflictError } from '../database/repositories/interfaces/IWorkspaceRepository';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
 import type { VaultOperations } from '../core/VaultOperations';
 import type { MCPSettings } from '../types/plugin/PluginTypes';
@@ -141,7 +142,10 @@ export class WorkspaceService {
     return withTimeout(adapter.waitForQueryReady(), QUERY_READY_WAIT_MS, false);
   }
 
-  private isWorkspaceNameUniqueConstraint(error: unknown): boolean {
+  private isWorkspaceUniqueConflict(error: unknown): boolean {
+    if (error instanceof WorkspaceConflictError) {
+      return true;
+    }
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('UNIQUE constraint failed: workspaces.name');
   }
@@ -335,6 +339,79 @@ export class WorkspaceService {
     );
   }
 
+  private toIndividualWorkspace(metadata: HybridTypes.WorkspaceMetadata): IndividualWorkspace {
+    return {
+      id: metadata.id,
+      name: metadata.name,
+      description: metadata.description,
+      rootFolder: metadata.rootFolder,
+      created: metadata.created,
+      lastAccessed: metadata.lastAccessed,
+      isActive: metadata.isActive,
+      isArchived: metadata.isArchived,
+      dedicatedAgentId: metadata.dedicatedAgentId,
+      context: metadata.context ? normalizeWorkspaceContext(metadata.context).context : metadata.context,
+      sessions: {}
+    };
+  }
+
+  /**
+   * Return the workspace with `data.id` — or, failing that, the one named
+   * `data.name` — creating it only when the store that will hold it has
+   * neither. For well-known workspaces that code provisions on its own
+   * (the default workspace), never for user-initiated creates.
+   *
+   * Do not rebuild this out of `getWorkspace` + `createWorkspace`. While
+   * storage is starting those two consult different stores: the read falls
+   * back to the legacy `.workspaces` index the moment the hybrid adapter is
+   * not ready, while the create waits for the adapter and writes through it.
+   * On a vault-root install the legacy index never holds hybrid workspaces,
+   * so the check said "missing" on every plugin load and the create appended
+   * one more `workspace_created` event before SQLite rejected the row. Here
+   * the existence check and the write go to the same store, after it has
+   * finished replaying.
+   */
+  async ensureWorkspace(
+    data: Partial<IndividualWorkspace> & { id: string; name: string }
+  ): Promise<IndividualWorkspace> {
+    const adapter = await resolveWritableAdapter(this.storageAdapterOrGetter);
+    if (!adapter) {
+      // No hybrid adapter in play: the legacy store is the store of record,
+      // and that is what both getWorkspace and createWorkspace use.
+      const existing = await this.getWorkspace(data.id) ?? await this.getWorkspaceByNameOrId(data.name);
+      return existing ?? this.createWorkspace(data);
+    }
+
+    // A cache that is still replaying JSONL answers "missing" for rows it
+    // has not reached yet, and acting on that answer is the duplicate. Wait
+    // on the adapter's own readiness (bounded by its hydration watchdog), not
+    // the short service cap: nobody is waiting on this, and guessing is
+    // exactly the failure being prevented.
+    const settled = typeof adapter.waitForQueryReady === 'function'
+      ? await adapter.waitForQueryReady()
+      : adapter.isReady();
+    if (!settled) {
+      throw new Error(
+        `Workspace storage did not finish loading; cannot tell whether workspace "${data.name}" already exists.`
+      );
+    }
+
+    const byId = await adapter.getWorkspace(data.id);
+    if (byId) {
+      return this.toIndividualWorkspace(byId);
+    }
+    const byName = await adapter.getWorkspaces({ search: data.name, pageSize: 100 });
+    // Exact first (that is what UNIQUE(name) compares); then case-folded, so a
+    // legacy default saved as "default workspace" is adopted, not duplicated.
+    const nameMatch = byName.items.find(ws => ws.name === data.name)
+      ?? byName.items.find(ws => ws.name.toLowerCase() === data.name.toLowerCase());
+    if (nameMatch) {
+      return this.toIndividualWorkspace(nameMatch);
+    }
+
+    return this.createWorkspace(data);
+  }
+
   /**
    * Get full workspace with sessions and traces (loads individual file)
    * NOTE: When using IStorageAdapter, this only returns metadata.
@@ -349,22 +426,7 @@ export class WorkspaceService {
       this.storageAdapterOrGetter,
       async (adapter) => {
         const metadata = await adapter.getWorkspace(id);
-        if (!metadata) {
-          return null;
-        }
-        return {
-          id: metadata.id,
-          name: metadata.name,
-          description: metadata.description,
-          rootFolder: metadata.rootFolder,
-          created: metadata.created,
-          lastAccessed: metadata.lastAccessed,
-          isActive: metadata.isActive,
-          isArchived: metadata.isArchived,
-          dedicatedAgentId: metadata.dedicatedAgentId,
-          context: metadata.context ? normalizeWorkspaceContext(metadata.context).context : metadata.context,
-          sessions: {}
-        };
+        return metadata ? this.toIndividualWorkspace(metadata) : null;
       },
       async () => {
         const workspace = await this.fileSystem.readWorkspace(id);
@@ -475,7 +537,7 @@ export class WorkspaceService {
         const isDefaultWorkspace =
           hybridData.id === GLOBAL_WORKSPACE_ID || hybridData.name === DEFAULT_WORKSPACE_NAME;
 
-        if (isDefaultWorkspace && this.isWorkspaceNameUniqueConstraint(error)) {
+        if (isDefaultWorkspace && this.isWorkspaceUniqueConflict(error)) {
           const existingWorkspace = await this.reuseExistingWorkspaceAfterUniqueError(hybridData);
           if (existingWorkspace) {
             return existingWorkspace;

@@ -23,7 +23,8 @@ import { DatabaseRow } from './base/BaseRepository';
 import {
   IWorkspaceRepository,
   CreateWorkspaceData,
-  UpdateWorkspaceData
+  UpdateWorkspaceData,
+  WorkspaceConflictError
 } from './interfaces/IWorkspaceRepository';
 import { WorkspaceMetadata } from '../../types/storage/HybridStorageTypes';
 import {
@@ -100,6 +101,16 @@ export class WorkspaceRepository
 
     try {
       await this.transaction(async () => {
+        // 0. Refuse a create SQLite would reject, before anything is written.
+        //    The event append below cannot be rolled back with the transaction,
+        //    so letting the INSERT be the uniqueness check leaves a
+        //    `workspace_created` for a workspace that was never created — and
+        //    replay applies it with INSERT OR REPLACE, overwriting (same id) or
+        //    deleting (same name) the real one on the next cache rebuild.
+        //    Inside the transaction, so concurrent creates are serialized
+        //    against this check.
+        await this.assertNoConflict(id, data.name);
+
         // 1. Write event to JSONL
         await this.writeEvent<WorkspaceCreatedEvent>(
           this.jsonlPath(id),
@@ -145,8 +156,22 @@ export class WorkspaceRepository
 
       return id;
     } catch (error) {
-      this.logError('create', error);
+      // A conflict is an answer for the caller to handle (WorkspaceService
+      // reuses the existing default workspace), not a storage failure.
+      if (!(error instanceof WorkspaceConflictError)) {
+        this.logError('create', error);
+      }
       throw error;
+    }
+  }
+
+  private async assertNoConflict(id: string, name: string): Promise<void> {
+    const existing = await this.sqliteCache.queryOne<{ id: string; name: string }>(
+      'SELECT id, name FROM workspaces WHERE id = ? OR name = ? LIMIT 1',
+      [id, name]
+    );
+    if (existing) {
+      throw new WorkspaceConflictError(existing.id === id ? 'id' : 'name', existing.id, name);
     }
   }
 
