@@ -522,6 +522,8 @@ export class ProgressBarComponent {
 
   setValue(value: number): this {
     this.value = value;
+    // Recorded on the element so FakeElement tests can read the bar's value.
+    asFake(this.progressBar)?.setAttribute('data-value', String(value));
     return this;
   }
 

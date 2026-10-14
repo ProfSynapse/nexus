@@ -125,9 +125,7 @@ export const SEMANTIC_COPY = {
   deleteIndex: 'Delete index',
   deleteIndexDesc: 'Frees the space it uses. Turning search back on re-indexes the whole vault.',
   deleteFailed: 'The search index could not be deleted.',
-  applyFailed: 'The semantic search setting could not be applied. Restart Obsidian to apply it.',
-  restartNotice: (enabled: boolean): string =>
-    `Semantic search ${enabled ? 'turned on' : 'turned off'}. Restart Obsidian to apply.`
+  applyFailed: 'The semantic search setting could not be applied. Restart Obsidian to apply it.'
 } as const;
 
 /** The confirmation shown before semantic search is turned off. */

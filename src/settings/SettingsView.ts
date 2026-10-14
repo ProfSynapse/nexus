@@ -22,6 +22,7 @@ import type { AppManager } from '../services/apps/AppManager';
 
 // Tab implementations
 import { DefaultsTab } from './tabs/DefaultsTab';
+import { resolveSemanticSearchRuntime } from './tabs/defaults/SemanticSearchSettings';
 import { WorkspacesTab } from './tabs/WorkspacesTab';
 import { InstructionsTab } from './tabs/InstructionsTab';
 import type { InstructionLibraryService } from '../services/instructions/InstructionLibraryService';
@@ -454,7 +455,17 @@ export class SettingsView extends PluginSettingTab {
                 llmProviderSettings: this.settingsManager.settings.llmProviders,
                 workspaceService: services.workspaceService,
                 customPromptStorage: services.customPromptStorage,
-                appManager: this.appManager
+                appManager: this.appManager,
+                semanticSearch: {
+                    getRuntime: () => resolveSemanticSearchRuntime(this.plugin),
+                    applyEnabled: async (enabled: boolean) => {
+                        if (this.pluginLifecycleManager) {
+                            await this.pluginLifecycleManager.setEmbeddingsEnabled(enabled);
+                        } else {
+                            await resolveSemanticSearchRuntime(this.plugin)?.setEnabled(enabled);
+                        }
+                    }
+                }
             }
         );
     }
