@@ -58,7 +58,10 @@ export interface ResolveAgentModelInput {
   availableProviders?: readonly string[];
   /**
    * Model to use with a cloud-fallback provider. Without it the fallback
-   * leaves the model empty and the caller picks one.
+   * leaves the model empty and the caller picks one. With it, the fallback
+   * takes the first cloud provider that has a default model, and when none
+   * has one (custom OpenAI-compatible endpoints, say) it stays on the chat
+   * model: a provider must never be paired with another provider's model.
    */
   defaultModelFor?: (provider: string) => string | undefined;
 }
@@ -104,12 +107,23 @@ export function resolveAgentModel(input: ResolveAgentModelInput): ResolvedAgentM
     return { provider: chat.provider, model: chat.model, source: 'chat' };
   }
 
-  const cloudProvider = available?.find(provider => !isLocalProvider(provider));
-  if (cloudProvider) {
-    return { provider: cloudProvider, model: input.defaultModelFor?.(cloudProvider) || '', source: 'cloud-fallback' };
+  const cloudProviders = available?.filter(provider => !isLocalProvider(provider)) ?? [];
+  const defaultModelFor = input.defaultModelFor;
+  if (!defaultModelFor) {
+    if (cloudProviders.length > 0) {
+      return { provider: cloudProviders[0], model: '', source: 'cloud-fallback' };
+    }
+  } else {
+    for (const provider of cloudProviders) {
+      const model = defaultModelFor(provider);
+      if (model) {
+        return { provider, model, source: 'cloud-fallback' };
+      }
+    }
   }
 
-  // Nothing usable. Return the chat model so the caller reports a real error.
+  // Nothing usable (or no cloud provider with a known model). Return the
+  // chat model: it runs, or the caller reports a real error.
   return { provider: chat?.provider || '', model: chat?.model || '', source: 'unresolved' };
 }
 

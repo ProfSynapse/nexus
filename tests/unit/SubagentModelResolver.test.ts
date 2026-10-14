@@ -43,6 +43,18 @@ describe('resolveAgentModel', () => {
       .toEqual({ ...defaultAgent, source: 'default-agent' });
   });
 
+  it('skips a cloud provider with no default model instead of pairing it with no model', () => {
+    // An OpenAI-compatible instance has a custom id and no DEFAULT_MODELS entry.
+    const providers = ['ollama', 'my-endpoint', 'anthropic'];
+    expect(resolveAgentModel({ chat: chatLocal, availableProviders: providers, defaultModelFor: p => (p === 'anthropic' ? 'claude-sonnet-5' : undefined) }))
+      .toEqual({ provider: 'anthropic', model: 'claude-sonnet-5', source: 'cloud-fallback' });
+  });
+
+  it('stays on the chat model when no cloud provider has a default model', () => {
+    expect(resolveAgentModel({ chat: chatLocal, availableProviders: ['ollama', 'my-endpoint'], defaultModelFor: () => undefined }))
+      .toEqual({ ...chatLocal, source: 'unresolved' });
+  });
+
   it('uses the supplied default model for a cloud fallback provider', () => {
     expect(resolveAgentModel({ chat: chatLocal, availableProviders: available, defaultModelFor: p => (p === 'openai' ? 'gpt-5.4' : undefined) }))
       .toEqual({ provider: 'openai', model: 'gpt-5.4', source: 'cloud-fallback' });
