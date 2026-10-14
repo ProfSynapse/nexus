@@ -275,11 +275,11 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
     }),
     defineDriver({
       kind: 'google-gemini-cli',
-      displayName: 'Gemini CLI',
+      displayName: 'Antigravity CLI',
       compatibility: 'desktop-only',
       shouldInitialize: (config, vault) => Boolean(config?.enabled && config.oauth?.connected && vault),
       createAdapter: async ({ vault }) => {
-        if (!vault) throw new Error('Gemini CLI requires a vault');
+        if (!vault) throw new Error('Antigravity CLI requires a vault');
         const { GoogleGeminiCliAdapter } = await import('../adapters/google-gemini-cli/GoogleGeminiCliAdapter');
         return new GoogleGeminiCliAdapter(vault);
       },

@@ -13,7 +13,7 @@ Nexus gives AI agents and built-in chat access to your Obsidian vault so you can
 
 Nexus can be used in two ways:
 - Inside Obsidian with native chat (hook up to your favorite provider or agentic platform!)
-- From external agents like Claude Desktop, Claude Code, Codex CLI, Gemini CLI, Cursor, Cline, and other MCP clients
+- From external agents like Claude Desktop, Claude Code, Codex CLI, Antigravity, Cursor, Cline, and other MCP clients
 
 > Nexus is the successor to Claudesidian. Legacy installs in `.obsidian/plugins/claudesidian-mcp/` still work.
 
@@ -81,7 +81,7 @@ Ollama and LM Studio talk to your own machine and leave it entirely.
 
 | If you want to... | Start here |
 |---|---|
-| Connect Claude Desktop, Codex CLI, Gemini CLI, Cursor, Cline, or another MCP client | [MCP setup](guide/mcp-setup.md) |
+| Connect Claude Desktop, Codex CLI, Antigravity, Cursor, Cline, or another MCP client | [MCP setup](guide/mcp-setup.md) |
 | Drive your vault from the shell with Claude Code, Cursor, or Codex — no MCP config | [Nexus CLI](guide/nexus-cli.md) |
 | Configure built-in chat providers inside Obsidian | [Provider setup](guide/provider-setup.md) |
 | Use live voice, read notes aloud, or save spoken audio back into your notes | [Native chat](guide/native-chat.md) |

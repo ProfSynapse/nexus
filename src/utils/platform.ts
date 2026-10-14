@@ -156,7 +156,7 @@ export const getMobileUnavailableFeatures = (): string[] => {
         'WebLLM/Nexus local models',
         'ChatGPT Codex OAuth provider',
         'Claude Code subscription provider',
-        'Gemini CLI Google-login provider',
+        'Antigravity CLI Google-login provider',
     ];
 };
 
