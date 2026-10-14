@@ -13,6 +13,7 @@ import type NexusPlugin from '../../../main';
 import type { MemoryService } from '../../memoryManager/services/MemoryService';
 import type { WorkspaceService } from '../../../services/WorkspaceService';
 import type { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
+import { resolveEmbeddingService } from '../../../services/embeddings/embeddingAccess';
 import type { IMessageRepository } from '../../../database/repositories/interfaces/IMessageRepository';
 import type { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 
@@ -21,9 +22,10 @@ export type StorageAdapterResolver = IStorageAdapter | (() => IStorageAdapter | 
 /**
  * Provides runtime service resolution for the search subsystem.
  *
- * Services are resolved lazily via the plugin's `getServiceIfReady` API,
- * returning `undefined` when a service has not yet initialised or is
- * unavailable (e.g. embeddings on mobile).
+ * Services are resolved lazily on every call, returning `undefined` when a
+ * service has not yet initialised or is unavailable (e.g. embeddings on mobile
+ * or turned off). Registry services go through `getServiceIfReady`; the
+ * embedding service goes through `resolveEmbeddingService`.
  */
 export class ServiceAccessors {
   private plugin: Plugin;
@@ -67,16 +69,17 @@ export class ServiceAccessors {
   }
 
   /**
-   * Resolve the EmbeddingService from the running plugin instance.
+   * Resolve the live EmbeddingService from the plugin's embedding manager.
+   *
+   * The embedding system is not a registry entry, so this goes through
+   * `resolveEmbeddingService` and is re-read on every call: the manager can be
+   * turned off or rebuilt during a session.
    */
   getEmbeddingService(): EmbeddingService | undefined {
     try {
       const app: App = this.plugin.app;
-      const plugin = getNexusPlugin<NexusPlugin>(app);
-      if (plugin) {
-        return plugin.getServiceIfReady<EmbeddingService>('embeddingService') || undefined;
-      }
-      return undefined;
+      const plugin = getNexusPlugin<NexusPlugin>(app) ?? this.plugin;
+      return resolveEmbeddingService(plugin) ?? undefined;
     } catch {
       return undefined;
     }
