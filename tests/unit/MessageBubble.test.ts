@@ -322,6 +322,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     bubble.createElement();
 
@@ -353,6 +354,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const element = bubble.createElement() as unknown as MockElement;
 
@@ -387,6 +389,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const element = bubble.createElement() as unknown as MockElement;
 
@@ -402,6 +405,7 @@ describe('MessageBubble', () => {
       jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn(), jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
     const element = bubble.createElement() as MockElement;
     const first = [{ text: 'Check the first tool.', contentOffset: 0 }];
     const second = [...first, { text: 'Check the second tool.', contentOffset: 12 }];
@@ -423,6 +427,7 @@ describe('MessageBubble', () => {
     const message = createAssistantMessage({ content: '', state: 'streaming', reasoning: 'First thought' });
     const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
     const initial = block();
@@ -446,6 +451,7 @@ describe('MessageBubble', () => {
     });
     const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
     expect(block().open).toBe(false);
@@ -460,6 +466,7 @@ describe('MessageBubble', () => {
     const message = createAssistantMessage({ content: '', state: 'streaming', reasoning: 'First thought' });
     const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
     block().open = false; // Browser default action happens before its queued toggle event.
@@ -473,6 +480,7 @@ describe('MessageBubble', () => {
     const message = createAssistantMessage({ content: 'Answer', state: 'complete', reasoning: 'Thought' });
     const bubble = new MessageBubble(message, app, jest.fn(), jest.fn());
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
     const root = bubble.createElement() as MockElement;
     const block = () => collectBySelector(root, '.message-reasoning')[0] as unknown as HTMLDetailsElement;
     block().open = true;
@@ -512,6 +520,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const element = bubble.createElement() as MockElement;
     await Promise.resolve();
@@ -549,6 +558,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const root = bubble.createElement();
     expect(MessageBranchNavigator).not.toHaveBeenCalled();
@@ -624,6 +634,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const root = bubble.createElement();
 
@@ -669,6 +680,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const root = bubble.createElement() as MockElement;
     const imageBubbles = root.children.filter(child => child.hasClass('message-image'));
@@ -710,6 +722,7 @@ describe('MessageBubble', () => {
       jest.fn()
     );
     activeBubble = bubble;
+    bubble.load(); // As MessageDisplay does; cleanup() only releases a loaded component's timers.
 
     const root = bubble.createElement() as MockElement;
     const imageBubbles = root.children.filter(child => child.hasClass('message-image'));
