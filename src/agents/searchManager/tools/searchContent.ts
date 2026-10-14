@@ -420,9 +420,17 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         });
       }
 
-      // Convert to lean result format (just filePath + frontmatter)
+      // Convert to lean result format (just filePath + frontmatter): one entry
+      // per file, the best-ranked hit for it, filling up to `limit` distinct
+      // files. The note index holds one vector per path today, so this is a
+      // guard rather than a filter, but a file listed twice in one answer is
+      // never what a caller wants whatever the index does in future.
       const results: ContentSearchResult['results'] = [];
-      for (const result of filteredResults.slice(0, searchParams.limit)) {
+      const seen = new Set<string>();
+      for (const result of filteredResults) {
+        if (results.length >= searchParams.limit) break;
+        if (seen.has(result.notePath)) continue;
+        seen.add(result.notePath);
         const file = this.plugin.app.vault.getAbstractFileByPath(result.notePath);
         if (file instanceof TFile) {
           // Get frontmatter only

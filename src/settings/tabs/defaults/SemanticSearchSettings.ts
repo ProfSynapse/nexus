@@ -78,7 +78,7 @@ type FoldView =
   | { mode: 'indexing'; key: string; paused: boolean; progress: IndexingProgress };
 
 /** Phases in which a pass is running and its progress is worth showing. */
-const ACTIVE_PHASES = new Set<IndexingProgress['phase']>(['loading_model', 'indexing', 'paused']);
+const ACTIVE_PHASES = new Set<IndexingProgress['phase']>(['loading_model', 'checking', 'indexing', 'paused']);
 
 /** How often a fold drawn before the runtime existed checks for it. */
 const RUNTIME_POLL_MS = 1000;
@@ -117,7 +117,11 @@ export class SemanticSearchSettings implements FoldDefinition {
       return semanticSearchSummary({ enabled: false, indexKept: counts ? counts.total > 0 : undefined });
     }
     if (view.mode === 'indexing') {
-      return semanticSearchSummary({ enabled: true, indexingPercent: percentOf(view.progress) });
+      return semanticSearchSummary({
+        enabled: true,
+        indexingPercent: percentOf(view.progress),
+        checking: view.progress.phase === 'checking'
+      });
     }
     if (view.mode === 'error') return semanticSearchSummary({ enabled: true, loadFailed: true });
     return semanticSearchSummary({ enabled: true, noteCount: this.readyCounts()?.notes });
@@ -169,7 +173,10 @@ export class SemanticSearchSettings implements FoldDefinition {
     const progress = status?.progress;
     if (status?.indexing && progress && ACTIVE_PHASES.has(progress.phase)) {
       const paused = status.paused || progress.phase === 'paused';
-      return { mode: 'indexing', key: paused ? 'indexing-paused' : 'indexing', paused, progress };
+      // Checking and indexing are separate rows: the pass that compares note
+      // hashes counts notes compared, and must not read as notes indexed.
+      const key = paused ? 'indexing-paused' : progress.phase === 'checking' ? 'checking' : 'indexing';
+      return { mode: 'indexing', key, paused, progress };
     }
     if (!status?.indexing && progress?.phase === 'error') {
       return { mode: 'error', key: 'error', detail: progress.error };
@@ -207,8 +214,8 @@ export class SemanticSearchSettings implements FoldDefinition {
 
   private renderIndexing(itemsEl: HTMLElement, progress: IndexingProgress, paused: boolean): void {
     const setting = new Setting(itemsEl)
-      .setName(COPY.indexing)
-      .setDesc(paused ? COPY.indexingPausedDesc : COPY.indexingDesc(progress.estimatedTimeRemaining))
+      .setName(progress.phase === 'checking' ? COPY.checking : COPY.indexing)
+      .setDesc(paused ? COPY.indexingPausedDesc : this.progressDesc(progress))
       .setClass('nexus-semantic-progress');
 
     let bar: ProgressBarComponent | null = null;
@@ -218,7 +225,7 @@ export class SemanticSearchSettings implements FoldDefinition {
     });
     const valueEl = setting.controlEl.createDiv({
       cls: 'nexus-semantic-value',
-      text: COPY.indexingProgress(progress.processedNotes, progress.totalNotes)
+      text: COPY.indexingProgress(progress.processedNotes, progress.totalNotes, progress.scope)
     });
     setting.addExtraButton(button => button
       .setIcon(paused ? 'play' : 'pause')
@@ -231,6 +238,12 @@ export class SemanticSearchSettings implements FoldDefinition {
       }));
 
     this.indexingRow = { setting, bar, valueEl };
+  }
+
+  private progressDesc(progress: IndexingProgress): string {
+    return progress.phase === 'checking'
+      ? COPY.checkingDesc
+      : COPY.indexingDesc(progress.estimatedTimeRemaining);
   }
 
   private renderIndexOff(itemsEl: HTMLElement): void {
@@ -386,8 +399,8 @@ export class SemanticSearchSettings implements FoldDefinition {
     if (view.mode === 'indexing' && this.indexingRow) {
       const { setting, bar, valueEl } = this.indexingRow;
       bar?.setValue(percentOf(view.progress));
-      valueEl.setText(COPY.indexingProgress(view.progress.processedNotes, view.progress.totalNotes));
-      if (!view.paused) setting.setDesc(COPY.indexingDesc(view.progress.estimatedTimeRemaining));
+      valueEl.setText(COPY.indexingProgress(view.progress.processedNotes, view.progress.totalNotes, view.progress.scope));
+      if (!view.paused) setting.setDesc(this.progressDesc(view.progress));
     }
     this.host.setSummary(this.getSummary());
   }

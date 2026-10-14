@@ -139,7 +139,15 @@ export const SEMANTIC_COPY = {
     return `About ${minutes} minute${minutes === 1 ? '' : 's'} left. You can keep working.`;
   },
   indexingPausedDesc: 'Paused. Resume indexing whenever you like.',
-  indexingProgress: (done: number, total: number): string => `${done.toLocaleString()} / ${total.toLocaleString()}`,
+  /** "1,904 / 4,512" for notes; chats and memory say what they count. */
+  indexingProgress: (done: number, total: number, scope?: 'notes' | 'conversations' | 'traces'): string => {
+    const counts = `${done.toLocaleString()} / ${total.toLocaleString()}`;
+    if (scope === 'conversations') return `${counts} chats`;
+    if (scope === 'traces') return `${counts} memories`;
+    return counts;
+  },
+  checking: 'Checking for changes',
+  checkingDesc: 'Comparing notes with the index. Only notes that changed are re-indexed.',
   pauseIndexing: 'Pause indexing',
   resumeIndexing: 'Resume indexing',
   deleteIndex: 'Delete index',

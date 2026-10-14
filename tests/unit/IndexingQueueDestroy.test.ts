@@ -65,8 +65,8 @@ function createHarness(fileCount: number) {
 
 describe('IndexingQueue teardown', () => {
   it('stops scanning notes as soon as destroy() is called', async () => {
-    // filterUnindexedNotes() runs one queryOne per markdown file, and it runs
-    // with isRunning === false -- the window the old cancel() could not touch.
+    // filterUnindexedNotes() runs one queryOne per markdown file -- a window
+    // the old cancel() could not touch.
     const { queue, db, queryOne } = createHarness(50);
 
     const DESTROY_AFTER = 3;

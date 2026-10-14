@@ -36,12 +36,21 @@ import {
   type CacheSaveStage
 } from './CacheSavePolicy';
 
+/** What a pass is working through. Absent on events that predate it. */
+export type IndexingScope = 'notes' | 'conversations' | 'traces';
+
 export interface IndexingProgress {
-  phase: 'idle' | 'loading_model' | 'indexing' | 'complete' | 'paused' | 'error';
+  /**
+   * 'checking' is the note pass comparing every note's content hash with the
+   * index before it knows what needs embedding: processed/total count notes
+   * compared, not notes embedded. 'indexing' counts only real work.
+   */
+  phase: 'idle' | 'loading_model' | 'checking' | 'indexing' | 'complete' | 'paused' | 'error';
   totalNotes: number;
   processedNotes: number;
   currentNote: string | null;
   estimatedTimeRemaining: number | null;  // seconds
+  scope?: IndexingScope;
   error?: string;
 }
 
@@ -69,8 +78,8 @@ export class IndexingQueue extends Events {
    * awaits three phases in sequence and each one mints a fresh AbortController,
    * so aborting phase 1 does not stop phases 2 and 3 - they start *after* the
    * unload and iterate against a SQLiteCacheManager whose handle close() already
-   * nulled. `isRunning` is also false during filterUnindexedNotes(), which is one
-   * db.queryOne per markdown file. The result is the "Database not initialized"
+   * nulled. filterUnindexedNotes() is one db.queryOne per markdown file and
+   * checks this flag as well as its controller. The result is the "Database not initialized"
    * burst that grows with every reload, exactly as NotesIndexBuilder.stop()
    * documents for the notes index.
    */
@@ -90,11 +99,16 @@ export class IndexingQueue extends Events {
    */
   private readonly MIN_SAVE_ITEMS = 10;
   private readonly CONVERSATION_YIELD_INTERVAL = 5;  // Yield every N conversations during backfill
+  /** Report the note hash check every N notes; one event per note is noise. */
+  private readonly CHECK_PROGRESS_INTERVAL = 100;
 
   private processedCount = 0;
   private totalCount = 0;
   private startTime = 0;
   private processingTimes: number[] = [];    // Rolling average for ETA
+  /** The pass in flight, so getProgress() and pause() describe it honestly. */
+  private scope: IndexingScope = 'notes';
+  private checking = false;
 
   // Domain indexers (created lazily in their start methods)
   private traceIndexer: TraceIndexer | null = null;
@@ -132,8 +146,32 @@ export class IndexingQueue extends Events {
 
     const allNotes = this.app.vault.getMarkdownFiles();
 
-    // Filter to notes not already indexed (or with changed content)
-    const needsIndexing = await this.filterUnindexedNotes(allNotes);
+    // Filter to notes not already indexed (or with changed content). On a
+    // large vault this takes minutes, so it runs as a pass of its own: it
+    // reports 'checking' with its own counts, and it can be paused and
+    // cancelled like the embedding that follows.
+    this.isRunning = true;
+    this.scope = 'notes';
+    this.abortController = this.createAbortController();
+    let needsIndexing: TFile[];
+    try {
+      needsIndexing = await this.filterUnindexedNotes(allNotes);
+    } finally {
+      this.checking = false;
+      this.isRunning = false;
+    }
+
+    if (this.destroyed || this.abortController.signal.aborted) {
+      this.emitProgress({
+        phase: 'idle',
+        totalNotes: 0,
+        processedNotes: 0,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+        scope: 'notes'
+      });
+      return;
+    }
 
     if (needsIndexing.length === 0) {
       this.emitProgress({
@@ -141,7 +179,8 @@ export class IndexingQueue extends Events {
         totalNotes: 0,
         processedNotes: 0,
         currentNote: null,
-        estimatedTimeRemaining: null
+        estimatedTimeRemaining: null,
+        scope: 'notes'
       });
       return;
     }
@@ -151,7 +190,6 @@ export class IndexingQueue extends Events {
     this.processedCount = 0;
     this.startTime = Date.now();
     this.processingTimes = [];
-    this.abortController = this.createAbortController();
 
     await this.processQueue();
   }
@@ -170,6 +208,9 @@ export class IndexingQueue extends Events {
     }
 
     this.isRunning = true;
+    this.scope = 'traces';
+    this.totalCount = 0;
+    this.processedCount = 0;
     this.abortController = this.createAbortController();
 
     this.traceIndexer = new TraceIndexer(
@@ -183,7 +224,8 @@ export class IndexingQueue extends Events {
           totalNotes: progress.totalTraces,
           processedNotes: progress.processedTraces,
           currentNote: 'traces',
-          estimatedTimeRemaining: null
+          estimatedTimeRemaining: null,
+          scope: 'traces'
         });
       },
       this.MIN_SAVE_ITEMS,
@@ -195,7 +237,8 @@ export class IndexingQueue extends Events {
       totalNotes: 0,
       processedNotes: 0,
       currentNote: 'traces',
-      estimatedTimeRemaining: null
+      estimatedTimeRemaining: null,
+      scope: 'traces'
     });
 
     try {
@@ -210,7 +253,8 @@ export class IndexingQueue extends Events {
         totalNotes: result.total,
         processedNotes: result.processed,
         currentNote: null,
-        estimatedTimeRemaining: null
+        estimatedTimeRemaining: null,
+        scope: 'traces'
       });
     } finally {
       this.isRunning = false;
@@ -232,6 +276,9 @@ export class IndexingQueue extends Events {
     }
 
     this.isRunning = true;
+    this.scope = 'conversations';
+    this.totalCount = 0;
+    this.processedCount = 0;
     this.abortController = this.createAbortController();
 
     this.conversationIndexer = new ConversationIndexer(
@@ -245,7 +292,8 @@ export class IndexingQueue extends Events {
           totalNotes: progress.totalConversations,
           processedNotes: progress.processedConversations,
           currentNote: 'conversations',
-          estimatedTimeRemaining: null
+          estimatedTimeRemaining: null,
+          scope: 'conversations'
         });
       },
       this.MIN_SAVE_ITEMS
@@ -256,7 +304,8 @@ export class IndexingQueue extends Events {
       totalNotes: 0,
       processedNotes: 0,
       currentNote: 'conversations',
-      estimatedTimeRemaining: null
+      estimatedTimeRemaining: null,
+      scope: 'conversations'
     });
 
     try {
@@ -270,7 +319,8 @@ export class IndexingQueue extends Events {
         totalNotes: result.total,
         processedNotes: result.processed,
         currentNote: null,
-        estimatedTimeRemaining: null
+        estimatedTimeRemaining: null,
+        scope: 'conversations'
       });
     } finally {
       this.isRunning = false;
@@ -396,7 +446,8 @@ export class IndexingQueue extends Events {
       totalNotes: this.totalCount,
       processedNotes: this.processedCount,
       currentNote: null,
-      estimatedTimeRemaining: null
+      estimatedTimeRemaining: null,
+      scope: this.scope
     });
   }
 
@@ -427,9 +478,10 @@ export class IndexingQueue extends Events {
   }
 
   cancel(): void {
-    // Deliberately NOT gated on isRunning: the gap between phases, and the whole
-    // of filterUnindexedNotes(), run with isRunning === false, and those are
-    // precisely the windows an unload has to be able to interrupt.
+    // Deliberately NOT gated on isRunning: the gap between phases runs with
+    // isRunning === false, and that is precisely a window an unload has to be
+    // able to interrupt. The note hash check is a running pass of its own and
+    // stops on this abort.
     this.abortController?.abort();
     this.queue = [];
   }
@@ -475,12 +527,24 @@ export class IndexingQueue extends Events {
       };
     }
 
+    if (this.checking) {
+      return {
+        phase: this.isPaused ? 'paused' : 'checking',
+        totalNotes: this.totalCount,
+        processedNotes: this.processedCount,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+        scope: this.scope
+      };
+    }
+
     return {
       phase: this.isPaused ? 'paused' : 'indexing',
       totalNotes: this.totalCount,
       processedNotes: this.processedCount,
       currentNote: this.queue.length > 0 ? this.queue[0] : null,
-      estimatedTimeRemaining: this.calculateETA()
+      estimatedTimeRemaining: this.calculateETA(),
+      scope: this.scope
     };
   }
 
@@ -489,13 +553,30 @@ export class IndexingQueue extends Events {
   // ---------------------------------------------------------------------------
 
   /**
-   * Filter to only notes that need (re)indexing
+   * Filter to only notes that need (re)indexing.
+   *
+   * Reports phase 'checking' with notes compared so far over the vault's note
+   * count, every CHECK_PROGRESS_INTERVAL notes. Without it the status bar
+   * showed nothing (or a stale "Indexing: 0/N") for the minutes this takes on
+   * a large vault, then jumped to a much smaller count of notes that changed.
    */
   private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
     const needsIndexing: TFile[] = [];
+    this.checking = true;
+    this.totalCount = notes.length;
+    this.processedCount = 0;
+    this.emitCheckingProgress();
 
     for (const note of notes) {
-      if (this.destroyed) break;
+      if (this.destroyed || this.abortController?.signal.aborted) break;
+      if (this.isPaused) {
+        await this.waitForResume();
+        if (this.abortController?.signal.aborted) break;
+      }
+      this.processedCount++;
+      if (this.processedCount % this.CHECK_PROGRESS_INTERVAL === 0) {
+        this.emitCheckingProgress();
+      }
       try {
         const content = await this.app.vault.cachedRead(note);
         const contentHash = hashContent(preprocessContent(content) ?? '');
@@ -516,6 +597,17 @@ export class IndexingQueue extends Events {
     return needsIndexing;
   }
 
+  private emitCheckingProgress(): void {
+    this.emitProgress({
+      phase: 'checking',
+      totalNotes: this.totalCount,
+      processedNotes: this.processedCount,
+      currentNote: null,
+      estimatedTimeRemaining: null,
+      scope: 'notes'
+    });
+  }
+
   /**
    * Process the note queue with memory-conscious batching
    */
@@ -526,7 +618,8 @@ export class IndexingQueue extends Events {
       totalNotes: this.totalCount,
       processedNotes: 0,
       currentNote: null,
-      estimatedTimeRemaining: null
+      estimatedTimeRemaining: null,
+      scope: 'notes'
     });
 
     try {
@@ -546,7 +639,8 @@ export class IndexingQueue extends Events {
         totalNotes: this.totalCount,
         processedNotes: 0,
         currentNote: null,
-        estimatedTimeRemaining: null
+        estimatedTimeRemaining: null,
+        scope: 'notes'
       });
 
       const saveCadence = new SaveCadence({ minItems: this.MIN_SAVE_ITEMS, db: this.db });
@@ -558,7 +652,8 @@ export class IndexingQueue extends Events {
             totalNotes: this.totalCount,
             processedNotes: this.processedCount,
             currentNote: null,
-            estimatedTimeRemaining: null
+            estimatedTimeRemaining: null,
+            scope: 'notes'
           });
           break;
         }
@@ -580,7 +675,8 @@ export class IndexingQueue extends Events {
             totalNotes: this.totalCount,
             processedNotes: this.processedCount,
             currentNote: notePath,
-            estimatedTimeRemaining: this.calculateETA()
+            estimatedTimeRemaining: this.calculateETA(),
+            scope: 'notes'
           });
 
           await this.embeddingService.embedNote(notePath);
@@ -621,7 +717,8 @@ export class IndexingQueue extends Events {
         totalNotes: this.totalCount,
         processedNotes: this.processedCount,
         currentNote: null,
-        estimatedTimeRemaining: null
+        estimatedTimeRemaining: null,
+        scope: 'notes'
       });
 
     } catch (error: unknown) {
@@ -632,6 +729,7 @@ export class IndexingQueue extends Events {
         processedNotes: this.processedCount,
         currentNote: null,
         estimatedTimeRemaining: null,
+        scope: 'notes',
         error: error instanceof Error ? error.message : String(error)
       });
     } finally {

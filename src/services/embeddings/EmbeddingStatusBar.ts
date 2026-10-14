@@ -14,7 +14,41 @@
  */
 
 import { Plugin, Notice, Platform, setIcon } from 'obsidian';
-import { IndexingQueue, IndexingProgress } from './IndexingQueue';
+import { IndexingQueue, IndexingProgress, IndexingScope } from './IndexingQueue';
+
+/** What the status bar calls each pass, so a trace backfill does not read as notes. */
+const SCOPE_LABEL: Record<IndexingScope, string> = {
+  notes: 'notes',
+  conversations: 'chats',
+  traces: 'memory'
+};
+
+/** The noun in the completion notice: "12 notes indexed", "3 chats indexed". */
+const SCOPE_NOUN: Record<IndexingScope, [string, string]> = {
+  notes: ['note', 'notes'],
+  conversations: ['chat', 'chats'],
+  traces: ['memory trace', 'memory traces']
+};
+
+/** "Indexing notes: 3/117", or "Indexing: 3/117" for an event without a scope. */
+export function describeProgress(progress: IndexingProgress): string {
+  const counts = `${progress.processedNotes}/${progress.totalNotes}`;
+  const scope = progress.scope ? ` ${SCOPE_LABEL[progress.scope]}` : '';
+  switch (progress.phase) {
+    case 'checking':
+      return `Checking${scope || ' notes'}: ${counts}`;
+    case 'paused':
+      return `Paused: ${counts}`;
+    default:
+      return `Indexing${scope}: ${counts}`;
+  }
+}
+
+/** "Embedding complete! 117 notes indexed." */
+export function describeCompletion(progress: IndexingProgress): string {
+  const [one, many] = SCOPE_NOUN[progress.scope ?? 'notes'];
+  return `Embedding complete! ${progress.processedNotes} ${progress.processedNotes === 1 ? one : many} indexed.`;
+}
 
 /**
  * Status bar for embedding progress
@@ -93,25 +127,22 @@ export class EmbeddingStatusBar {
         this.setControlIcon('');
         break;
 
+      case 'checking':
       case 'indexing':
         this.show();
-        this.setText(
-          `Indexing: ${progress.processedNotes}/${progress.totalNotes}`
-        );
+        this.setText(describeProgress(progress));
         this.setControlIcon('pause', () => this.indexingQueue.pause());
         break;
 
       case 'paused':
         this.show();
-        this.setText(
-          `Paused: ${progress.processedNotes}/${progress.totalNotes}`
-        );
+        this.setText(describeProgress(progress));
         this.setControlIcon('play', () => this.indexingQueue.resume());
         break;
 
       case 'complete':
         if (progress.processedNotes > 0) {
-          new Notice(`Embedding complete! ${progress.processedNotes} notes indexed.`);
+          new Notice(describeCompletion(progress));
         }
         this.hide();
         break;

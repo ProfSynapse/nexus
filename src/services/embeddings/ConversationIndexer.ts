@@ -42,6 +42,29 @@ interface BackfillStateRow {
 /** Primary key used in the embedding_backfill_state table */
 const CONVERSATION_BACKFILL_ID = 'conversation_backfill';
 
+/** The conversation columns the backfill reads. */
+interface ConversationRow {
+  id: string;
+  metadataJson: string | null;
+  workspaceId: string | null;
+  sessionId: string | null;
+}
+
+/**
+ * Branch conversations (metadata carries parentConversationId) are variants of
+ * their parent and are not indexed on their own. Malformed metadata counts as
+ * a non-branch.
+ */
+function isNotBranch(conv: ConversationRow): boolean {
+  if (!conv.metadataJson) return true;
+  try {
+    const metadata = JSON.parse(conv.metadataJson) as Record<string, unknown>;
+    return !metadata.parentConversationId;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Progress callback signature emitted by the indexer to the owning queue.
  */
@@ -140,39 +163,30 @@ export class ConversationIndexer {
       checkpointProcessed = existingState?.processedConversations ?? 0;
       checkpointTotal = existingState?.totalConversations ?? 0;
 
-      // If already completed, nothing to do
+      // A completed backfill is not the end of the story. Conversations can
+      // reach this cache after the backfill finished: replayed from the event
+      // store after a cache rebuild, arrived by sync from another device, or
+      // simply not yet replayed when the backfill ran. Index exactly those,
+      // found by an anti-join, rather than walking the whole history again.
       if (existingState && existingState.status === 'completed') {
-        return { total: 0, processed: 0 };
+        return await this.catchUp(existingState, saveCadence, yieldInterval);
       }
 
       // Get all non-branch conversations, newest first
-      const allConversations = await this.db.query<{
-        id: string;
-        metadataJson: string | null;
-        workspaceId: string | null;
-        sessionId: string | null;
-      }>(
+      const allConversations = await this.db.query<ConversationRow>(
         'SELECT id, metadataJson, workspaceId, sessionId FROM conversations ORDER BY created DESC'
       );
 
       // Filter out branch conversations (those with parentConversationId)
-      const nonBranchConversations = allConversations.filter(conv => {
-        if (!conv.metadataJson) return true;
-        try {
-          const metadata = JSON.parse(conv.metadataJson) as Record<string, unknown>;
-          return !metadata.parentConversationId;
-        } catch {
-          return true;
-        }
-      });
+      const nonBranchConversations = allConversations.filter(isNotBranch);
 
+      // An empty table is not a finished backfill. It is far more often a cache
+      // whose conversations have not been replayed yet (a fresh or rebuilding
+      // cache) than a vault with no chats at all. Recording 'completed' here
+      // used to block history from ever being indexed: every later start saw
+      // the completed row and returned before looking at a single
+      // conversation. Leave the state as it is and look again next time.
       if (nonBranchConversations.length === 0) {
-        await this.updateBackfillState({
-          status: 'completed',
-          totalConversations: 0,
-          processedConversations: 0,
-          lastProcessedConversationId: null,
-        });
         return { total: 0, processed: 0 };
       }
 
@@ -294,6 +308,90 @@ export class ConversationIndexer {
     } finally {
       this.isRunning = false;
     }
+  }
+
+  /**
+   * Index the conversations a completed backfill never saw.
+   *
+   * Candidates are non-branch conversations that have at least one message
+   * and no row at all in conversation_embedding_metadata. That is one indexed
+   * anti-join, so a start with nothing to do costs a single query and writes
+   * nothing. Embedding stays idempotent per QA pair, so a conversation the
+   * live watcher already covered in part is never re-embedded at full cost.
+   *
+   * Resuming needs no checkpoint: a conversation that was indexed before an
+   * interruption has rows and drops out of the next run's anti-join. A
+   * conversation that yields no QA pairs (a question with no reply yet) stays
+   * a candidate, which costs one message read per start and no embedding.
+   */
+  private async catchUp(
+    existingState: BackfillStateRow,
+    saveCadence: SaveCadence,
+    yieldInterval: number
+  ): Promise<{ total: number; processed: number }> {
+    const missing = await this.db.query<ConversationRow>(
+      `SELECT c.id, c.metadataJson, c.workspaceId, c.sessionId
+       FROM conversations c
+       WHERE NOT EXISTS (
+               SELECT 1 FROM conversation_embedding_metadata m
+               WHERE m.conversationId = c.id
+             )
+         AND EXISTS (
+               SELECT 1 FROM messages msg
+               WHERE msg.conversationId = c.id
+             )
+       ORDER BY c.created DESC`
+    );
+    const candidates = missing.filter(isNotBranch);
+    if (candidates.length === 0) {
+      return { total: 0, processed: 0 };
+    }
+
+    this.isRunning = true;
+    const total = candidates.length;
+    let processed = 0;
+    this.onProgress({ totalConversations: total, processedConversations: 0 });
+
+    for (let i = 0; i < total; i++) {
+      if (this.abortSignal?.aborted) {
+        break;
+      }
+      const conv = candidates[i];
+      try {
+        await this.backfillConversation(
+          conv.id,
+          conv.workspaceId ?? undefined,
+          conv.sessionId ?? undefined
+        );
+      } catch (error) {
+        console.error(
+          `[ConversationIndexer] Failed to backfill conversation ${conv.id}:`,
+          error
+        );
+      }
+      processed++;
+      saveCadence.recordItem();
+      this.onProgress({ totalConversations: total, processedConversations: processed });
+
+      if (saveCadence.shouldSave()) {
+        await this.persistCache(saveCadence, 'periodic');
+      }
+      if (i > 0 && i % yieldInterval === 0) {
+        await new Promise(r => window.setTimeout(r, 0));
+      }
+    }
+
+    // The row stays 'completed' and keeps its checkpoint; only the counts
+    // move, so they describe how much history the backfill has covered.
+    await this.updateBackfillState({
+      status: 'completed',
+      totalConversations: (existingState.totalConversations ?? 0) + processed,
+      processedConversations: (existingState.processedConversations ?? 0) + processed,
+      lastProcessedConversationId: existingState.lastProcessedConversationId,
+    });
+    await this.persistCache(saveCadence, 'final');
+
+    return { total, processed };
   }
 
   /**
