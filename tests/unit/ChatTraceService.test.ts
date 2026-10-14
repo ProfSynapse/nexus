@@ -2,27 +2,20 @@ import { ChatTraceService } from '../../src/services/chat/ChatTraceService';
 
 type WorkspaceServiceLike = {
   getWorkspace: jest.Mock;
-  getWorkspaceByNameOrId: jest.Mock;
-  createWorkspace: jest.Mock;
-  addSession: jest.Mock;
-};
-
-type WorkspaceServiceLike = {
-  getWorkspace: jest.Mock;
-  getWorkspaceByNameOrId: jest.Mock;
+  ensureWorkspace: jest.Mock;
   createWorkspace: jest.Mock;
   addSession: jest.Mock;
 };
 
 describe('ChatTraceService', () => {
-  it('creates the default workspace with the canonical id when it is missing', async () => {
+  it('ensures the default workspace with the canonical id when the lookup misses it', async () => {
     const workspaceService = {
       getWorkspace: jest.fn().mockResolvedValue(null),
-      getWorkspaceByNameOrId: jest.fn().mockResolvedValue(null),
-      createWorkspace: jest.fn().mockResolvedValue({
+      ensureWorkspace: jest.fn().mockResolvedValue({
         id: 'default',
         name: 'Default Workspace'
       }),
+      createWorkspace: jest.fn(),
       addSession: jest.fn().mockResolvedValue({
         id: 'session-1'
       })
@@ -31,7 +24,9 @@ describe('ChatTraceService', () => {
     const service = new ChatTraceService({ workspaceService });
     const context = await service.initializeSession('conv-1', 'default', 'session-1');
 
-    expect(workspaceService.createWorkspace).toHaveBeenCalledWith(
+    // Never a bare create: the miss above may be the startup legacy fallback.
+    expect(workspaceService.createWorkspace).not.toHaveBeenCalled();
+    expect(workspaceService.ensureWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'default',
         name: 'Default Workspace'
@@ -44,10 +39,10 @@ describe('ChatTraceService', () => {
     expect(context.workspaceId).toBe('default');
   });
 
-  it('reuses a legacy default workspace found by name instead of creating a duplicate', async () => {
+  it('uses the legacy default workspace ensureWorkspace adopted by name', async () => {
     const workspaceService = {
       getWorkspace: jest.fn().mockResolvedValue(null),
-      getWorkspaceByNameOrId: jest.fn().mockResolvedValue({
+      ensureWorkspace: jest.fn().mockResolvedValue({
         id: 'ws_legacy_default',
         name: 'Default Workspace'
       }),

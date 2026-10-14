@@ -75,3 +75,25 @@ export interface IWorkspaceRepository extends IRepository<WorkspaceMetadata> {
    */
   search(query: string): Promise<WorkspaceMetadata[]>;
 }
+
+/**
+ * `create` was asked for a workspace whose id or name is already taken.
+ *
+ * Thrown BEFORE the `workspace_created` event is appended, so a rejected create
+ * leaves nothing in the event store. The message keeps SQLite's
+ * `UNIQUE constraint failed: workspaces.<column>` wording for callers that
+ * still match on it.
+ */
+export class WorkspaceConflictError extends Error {
+  constructor(
+    readonly column: 'id' | 'name',
+    readonly existingId: string,
+    readonly requestedName: string
+  ) {
+    super(
+      `Workspace ${column === 'id' ? `id "${existingId}"` : `name "${requestedName}"`} already exists `
+      + `(UNIQUE constraint failed: workspaces.${column})`
+    );
+    this.name = 'WorkspaceConflictError';
+  }
+}

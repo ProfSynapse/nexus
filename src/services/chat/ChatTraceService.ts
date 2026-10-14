@@ -73,19 +73,18 @@ export class ChatTraceService {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    const legacyDefaultWorkspace = await this.workspaceService.getWorkspaceByNameOrId(DEFAULT_WORKSPACE_NAME);
-    if (legacyDefaultWorkspace) {
-      return legacyDefaultWorkspace.id;
-    }
-
-    const createdWorkspace = await this.workspaceService.createWorkspace({
+    // The lookup above can miss a default that exists (during startup it reads
+    // the legacy index, not the event store), so it must not decide a create.
+    // ensureWorkspace re-checks the store it writes to, and adopts a legacy
+    // default found by name.
+    const defaultWorkspace = await this.workspaceService.ensureWorkspace({
       id: DEFAULT_WORKSPACE_ID,
       name: DEFAULT_WORKSPACE_NAME,
       description: DEFAULT_WORKSPACE_DESCRIPTION,
       rootFolder: '/'
     });
 
-    return createdWorkspace.id;
+    return defaultWorkspace.id;
   }
 
   /**
