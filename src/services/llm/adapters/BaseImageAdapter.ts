@@ -90,10 +90,17 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       const finalParams = { ...params, ...validation.adjustedParams };
 
       // Generate the image with timeout
-      const response = await Promise.race([
-        this.generateImage(finalParams),
-        this.createTimeoutPromise(120000) // 2 minute timeout
-      ]);
+      const timeout = this.createTimeout(120000); // 2 minute timeout
+      let response: ImageGenerationResponse;
+      try {
+        response = await Promise.race([
+          this.generateImage(finalParams),
+          timeout.promise
+        ]);
+      } finally {
+        // Without this the timer outlives a finished generation by up to two minutes.
+        timeout.cancel();
+      }
 
       const generationTime = Date.now() - startTime;
 
@@ -155,14 +162,20 @@ export abstract class BaseImageAdapter extends BaseAdapter {
   }
 
   /**
-   * Create a timeout promise that rejects after specified milliseconds
+   * Create a promise that rejects after the given milliseconds, and a cancel
+   * that clears its timer once the race it guards has settled.
    */
-  private createTimeoutPromise(timeoutMs: number): Promise<never> {
-    return new Promise((_, reject) => {
-      window.setTimeout(() => {
+  private createTimeout(timeoutMs: number): { promise: Promise<never>; cancel: () => void } {
+    let timer: number | undefined;
+    const promise = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => {
         reject(new Error('Image generation timed out'));
       }, timeoutMs);
     });
+    return {
+      promise,
+      cancel: () => window.clearTimeout(timer)
+    };
   }
 
   /**

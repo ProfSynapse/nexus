@@ -21,7 +21,9 @@
  * prototype-patch capture (mirrors PR2 ConfirmModalCallSites pattern).
  */
 
-import { App, ButtonComponent, Component, DropdownComponent, TextComponent, Notice } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, TextComponent, Notice, type TFile } from 'obsidian';
+import type { EmbeddingService } from '../../src/services/embeddings/EmbeddingService';
+import type { NoteInputSuggester } from '../../src/ui/tasks/NoteInputSuggester';
 import { TaskDetailRenderer, TaskDetailCallbacks, TaskDetailEditorState, TaskDeps } from '../../src/components/workspace/TaskDetailRenderer';
 import type { TaskMetadata, TaskPriority, TaskStatus, NoteLink } from '../../src/database/repositories/interfaces/ITaskRepository';
 
@@ -347,12 +349,55 @@ describe('TaskDetailRenderer — add-control + note-link wiring (§10 gap)', () 
       getTextSpy.mockRestore();
     });
 
-    // FIX 2 (PR3 UAT): the add-control reuses the NoteInputSuggester autocomplete,
-    // sourcing the embeddingService via the getEmbeddingService callback.
-    it('add-note control sources the embeddingService for the autocomplete suggester', () => {
-      const getEmbeddingService = jest.fn().mockReturnValue(null);
-      renderWith(makeCallbacks({ getLinkedNotes: () => [], getEmbeddingService }));
-      expect(getEmbeddingService).toHaveBeenCalled();
+    // FIX 2 (PR3 UAT): the add-control reuses the NoteInputSuggester autocomplete.
+    // The embedding service is resolved on every query, never captured at render:
+    // embeddings can be turned on, off or rebuilt while the task view stays open.
+    describe('add-note suggester embedding source', () => {
+      const linked = { path: 'notes/linked.md', basename: 'linked' } as TFile;
+      const other = { path: 'notes/other.md', basename: 'other' } as TFile;
+
+      function renderSuggester(getEmbeddingService: TaskDetailCallbacks['getEmbeddingService']): NoteInputSuggester {
+        const app = new App() as App & { vault: { getMarkdownFiles(): TFile[]; getFileByPath(path: string): TFile | null } };
+        app.vault.getMarkdownFiles = () => [linked, other];
+        app.vault.getFileByPath = (path: string) => [linked, other].find(file => file.path === path) ?? null;
+        const renderer = new TaskDetailRenderer(app, new Component());
+        renderer.render(makeEl() as unknown as HTMLElement, makeCallbacks({ getLinkedNotes: () => [], getEmbeddingService }));
+        const suggesters = (renderer as unknown as { noteSuggesters: NoteInputSuggester[] }).noteSuggesters;
+        expect(suggesters).toHaveLength(1);
+        return suggesters[0];
+      }
+
+      function enabledService(paths: string[]) {
+        return {
+          isServiceEnabled: () => true,
+          semanticSearch: jest.fn().mockResolvedValue(paths.map(notePath => ({ notePath })))
+        } as unknown as EmbeddingService;
+      }
+
+      it('asks for the embedding service on each query, not at render', async () => {
+        const getEmbeddingService = jest.fn().mockReturnValue(null);
+        const suggester = renderSuggester(getEmbeddingService);
+        expect(getEmbeddingService).not.toHaveBeenCalled();
+
+        await suggester.getSuggestions('other');
+        await suggester.getSuggestions('linked');
+        expect(getEmbeddingService).toHaveBeenCalledTimes(2);
+      });
+
+      it('picks up embeddings turned on after the view rendered', async () => {
+        let current: EmbeddingService | null = null;
+        const suggester = renderSuggester(() => current);
+
+        // Off: keyword match on the file name.
+        expect(await suggester.getSuggestions('other')).toEqual([other]);
+
+        // Turned on while the view is open: the semantic result wins even
+        // though the query does not match its name.
+        const service = enabledService(['notes/linked.md']);
+        current = service;
+        expect(await suggester.getSuggestions('other')).toEqual([linked]);
+        expect(service.semanticSearch).toHaveBeenCalledWith('other', 10);
+      });
     });
   });
 

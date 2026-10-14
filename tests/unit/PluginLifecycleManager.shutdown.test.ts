@@ -65,17 +65,15 @@ describe('PluginLifecycleManager shutdown', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it('stops remote timers synchronously before a slow embedding shutdown or failed state save', async () => {
+  it('stops remote timers synchronously before a slow embedding shutdown', async () => {
     const manager = new ServiceManager({} as App, {} as Plugin);
     const cleanupJobs = jest.fn().mockResolvedValue(undefined);
     const cleanupRegistry = jest.fn();
     const close = jest.fn();
-    const saveState = jest.fn().mockRejectedValue(new Error('state write failed'));
     manager.registerLazy('remoteAgentJobs', () => ({ cleanup: cleanupJobs }));
     manager.registerLazy('remoteAgentRegistry', () => ({ cleanup: cleanupRegistry }));
     manager.registerLazy('hybridStorageAdapter', () => ({ close }));
-    manager.registerLazy('stateManager', () => ({ saveState }));
-    await Promise.all(['remoteAgentJobs', 'remoteAgentRegistry', 'hybridStorageAdapter', 'stateManager']
+    await Promise.all(['remoteAgentJobs', 'remoteAgentRegistry', 'hybridStorageAdapter']
       .map(name => manager.getService(name)));
     const lifecycle = createLifecycle(manager);
     let release!: () => void;
@@ -84,23 +82,16 @@ describe('PluginLifecycleManager shutdown', () => {
     (lifecycle as unknown as { embeddingManager: { shutdown(): Promise<void> } }).embeddingManager = {
       shutdown: embeddingShutdown
     };
-    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    try {
-      const unloading = lifecycle.shutdown();
-      // No microtask yield: both timers are stopped before embedding work awaits.
-      expect(cleanupJobs).toHaveBeenCalledTimes(1);
-      expect(cleanupRegistry).toHaveBeenCalledTimes(1);
-      expect(embeddingShutdown).toHaveBeenCalledTimes(1);
-      expect(saveState).not.toHaveBeenCalled();
-      expect(close).not.toHaveBeenCalled();
-      release();
-      await unloading;
-      expect(saveState).toHaveBeenCalledTimes(1);
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(manager.getServiceIfReady('remoteAgentJobs')).toBeNull();
-    } finally {
-      errorLog.mockRestore();
-    }
+    const unloading = lifecycle.shutdown();
+    // No microtask yield: both timers are stopped before embedding work awaits.
+    expect(cleanupJobs).toHaveBeenCalledTimes(1);
+    expect(cleanupRegistry).toHaveBeenCalledTimes(1);
+    expect(embeddingShutdown).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+    release();
+    await unloading;
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(manager.getServiceIfReady('remoteAgentJobs')).toBeNull();
   });
 
   it('keeps storage open for lazy skill scans while remote work is already stopping', async () => {

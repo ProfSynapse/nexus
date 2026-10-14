@@ -2,6 +2,45 @@
 
 ## October 2026
 
+**Unreleased** — Redesigned Defaults and Chat settings, Get started pages, subagent settings, and semantic search you can turn on and off
+
+> Draft for the next release. Version number and PR links are added when it is cut.
+
+**Requires Obsidian 1.11.0**
+- Nexus now needs Obsidian 1.11.0 or later, because the redesigned settings use Obsidian's setting groups. Obsidian 1.10 keeps offering Nexus 5.20.x.
+
+**Redesigned Defaults tab and Chat settings**
+- Defaults and Chat settings share one layout: Provider, Model and Thinking at the top, then collapsed sections (Chat options, Context, Subagents, Images, Voice, and on Defaults also Video, File conversion and Semantic search). Each section summarizes its settings in one line, and Nexus remembers which ones you left open on each device.
+- The rows follow the selected model. **Thinking** lists only the levels the model distinguishes, and thinking is not sent to models without reasoning support. **Creativity** is disabled for models that set their own temperature. **Context window** snaps to preset sizes (32K up to 1M) below the model's maximum, plus the maximum itself.
+- The **Context window** in Chat settings now applies only to that conversation and no longer changes your Defaults. Changing Defaults no longer alters chats that are already open; new chats use them. Chat settings saved before any chat is open carry into the next new chat.
+- Choosing a workspace on Defaults selects the prompt bound to that workspace. Switching models on Defaults keeps each model's saved context window.
+- With no provider set up, **Open settings** on the chat welcome screen opens the Providers tab.
+
+**Subagents use their own model and settings**
+- Subagents and `executePrompt` runs use the configured subagent model even when the chat model is a cloud model. Before, they inherited the chat model. Without a subagent model, they fall back to the cloud chat model, or to the first cloud provider with a default model when the chat model is local.
+- The Subagents section has its own **Creativity** and **Context window**. Set them on Defaults, or for one conversation in Chat settings. The context window also limits how much workspace data and context files a subagent receives. Items that do not fit are dropped and listed in its prompt.
+
+**Get started**
+- **Get started** is a row at the top of Nexus settings that opens setup pages inside the tab: **Chat inside Obsidian** and, on desktop, **Connect an external agent**. It opens by itself the first time settings are shown with nothing set up.
+- **Connect an external agent** checks for Node.js first and shows the version and path it found, warns when the path belongs to nvm, and offers **Install Node.js** and **Check again** when it is missing.
+- Claude Desktop, Claude Code, Codex and Antigravity connect with one click. Claude Code is added through `claude mcp add-json --scope user`, and Antigravity's config is written to `~/.gemini/config/mcp_config.json`. **Reconnect** repairs a connection whose Node.js or connector path has moved and keeps your other settings in that entry. An unreadable config is backed up before it is replaced, and the notice names the backup. Claude Desktop shows **Not found** with a download link when it is not installed.
+- **Other agents** walks through four steps (create the connector, copy the config, add it to your app, restart) with paths for your computer.
+- The Google sign-in provider and MCP client are called **Antigravity** everywhere in the app and guides; the old "Gemini CLI" name is gone.
+
+**Semantic search**
+- Turning semantic search on or off takes effect immediately; no restart. Turning it off asks for confirmation first. A change synced from another device is also applied without a reload.
+- While semantic search is on, the Semantic search section shows note and chat counts and indexing progress with an estimate and pause/resume. While it is off, **Delete index** removes the stored vectors and shrinks the cache file. Your notes and conversations are not touched.
+- Each indexing pass removes entries for notes that were deleted or renamed and chats that were deleted while semantic search was off.
+- With semantic search off, a semantic content search returns keyword results with a note that semantic search is turned off in Nexus settings, and the tool description stops advertising it.
+- A model that fails to load is reported as an indexing error instead of finishing "complete" over an empty index.
+
+**Fixes**
+- The semantic search model never finished loading when Settings or a popout window had focus at the moment it started, which is usually the case when you turn semantic search on. Initialization timed out, semantic search switched itself off, and indexing reported success with nothing stored. This also affects 5.20.4. Turning semantic search off no longer waits 30 seconds for the model to shut down.
+- Semantic search of past conversations, semantic `[[` note suggestions in the chat composer, and semantic note suggestions when linking notes to tasks never used the index. They looked for an embedding service that was never registered and always fell back to keyword matching. They now reach the live index and pick up semantic search being turned on or off without reopening.
+- Cache saves no longer fail after you close a popout or the Settings window that had focus when Nexus loaded (for example, when you enable Nexus from Settings).
+
+---
+
 **v5.20.4** — Gemini 4 Argon and a unified thinking accordion
 
 - Thinking appears in one accordion with typed words, cycling dots, a pulsing icon and a silver sweep. The header stays animated through tool use and answer streaming, then settles to a brain icon and **Reasoning** when the response finishes. Tool activity remains in the status bar ([#413](https://github.com/ProfSynapse/nexus/pull/413), [#415](https://github.com/ProfSynapse/nexus/pull/415)).

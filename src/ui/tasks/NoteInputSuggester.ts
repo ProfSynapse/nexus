@@ -1,25 +1,25 @@
 import { App, AbstractInputSuggest, TFile, setIcon } from 'obsidian';
-import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
-import { searchNotes } from '../../utils/noteSearch';
+import { searchNotes, type EmbeddingServiceSource } from '../../utils/noteSearch';
 
 export class NoteInputSuggester extends AbstractInputSuggest<TFile> {
-    private embeddingService: EmbeddingService | null;
+    /** Resolved on every query; see EmbeddingServiceSource. */
+    private embeddingSource: EmbeddingServiceSource;
     private onSelectCallback: (file: TFile) => void;
 
     constructor(
         app: App,
         inputEl: HTMLInputElement,
-        embeddingService: EmbeddingService | null,
+        embeddingSource: EmbeddingServiceSource,
         onSelect: (file: TFile) => void
     ) {
         super(app, inputEl);
-        this.embeddingService = embeddingService;
+        this.embeddingSource = embeddingSource;
         this.onSelectCallback = onSelect;
         this.limit = 10;
     }
 
     async getSuggestions(query: string): Promise<TFile[]> {
-        return searchNotes(this.app, query, this.embeddingService, 10);
+        return searchNotes(this.app, query, this.embeddingSource, 10);
     }
 
     renderSuggestion(file: TFile, el: HTMLElement): void {

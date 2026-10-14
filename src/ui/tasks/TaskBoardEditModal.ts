@@ -1,7 +1,7 @@
 import { ButtonComponent, DropdownComponent, Modal, Notice, TextAreaComponent, TextComponent } from 'obsidian';
 import type { App, TFile } from 'obsidian';
 import type { NoteLink } from '../../database/repositories/interfaces/ITaskRepository';
-import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
+import type { EmbeddingServiceSource } from '../../utils/noteSearch';
 import { NoteInputSuggester } from './NoteInputSuggester';
 
 export interface TaskBoardProjectOption {
@@ -34,7 +34,8 @@ interface TaskBoardEditModalOptions {
   task: TaskBoardEditableTask;
   projects: TaskBoardProjectOption[];
   parentTasks: TaskBoardParentTaskOption[];
-  embeddingService?: EmbeddingService;
+  /** Resolved on every note-link query, so turning embeddings on or off while the modal is open is picked up. */
+  embeddingSource?: EmbeddingServiceSource;
   onSave: (task: TaskBoardEditableTask) => Promise<void>;
   onClose?: () => void;
 }
@@ -267,7 +268,7 @@ export class TaskBoardEditModal extends Modal {
           const suggester = new NoteInputSuggester(
             this.app,
             input.inputEl,
-            this.options.embeddingService ?? null,
+            this.options.embeddingSource,
             (file: TFile) => {
               this.draft.noteLinks[index] = { ...this.draft.noteLinks[index], notePath: file.path };
             }
