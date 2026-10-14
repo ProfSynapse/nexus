@@ -12,8 +12,9 @@
  *
  * Status comes from the embedding runtime (EmbeddingManager) through a narrow
  * interface, resolved on every use: the runtime is created only once storage is
- * ready, so it can appear after the fold was first drawn. The fold subscribes
- * to its state while mounted and unsubscribes on destroy.
+ * ready, so it can appear after the fold was first drawn. Until it does, the
+ * fold checks for it once a second and redraws when it arrives. The fold
+ * subscribes to its state while mounted and unsubscribes on destroy.
  */
 
 import { Notice, Setting, type ProgressBarComponent } from 'obsidian';
@@ -76,6 +77,9 @@ type FoldView =
 /** Phases in which a pass is running and its progress is worth showing. */
 const ACTIVE_PHASES = new Set<IndexingProgress['phase']>(['loading_model', 'indexing', 'paused']);
 
+/** How often a fold drawn before the runtime existed checks for it. */
+const RUNTIME_POLL_MS = 1000;
+
 function percentOf(progress: IndexingProgress): number {
   if (progress.totalNotes <= 0) return 0;
   return Math.min(100, Math.max(0, (progress.processedNotes / progress.totalNotes) * 100));
@@ -97,6 +101,8 @@ export class SemanticSearchSettings implements FoldDefinition {
   private indexingRow: { setting: Setting; bar: ProgressBarComponent | null; valueEl: HTMLElement } | null = null;
   private deleting = false;
   private destroyed = false;
+  /** Interval that watches for the runtime to appear; null when not waiting. */
+  private runtimeWait: number | null = null;
 
   constructor(private readonly deps: SemanticSearchDeps) {}
 
@@ -117,6 +123,7 @@ export class SemanticSearchSettings implements FoldDefinition {
     this.host = host;
     this.indexingRow = null;
     this.subscribe();
+    this.waitForRuntime();
 
     const view = this.view();
     this.drawnKey = view.key;
@@ -142,6 +149,7 @@ export class SemanticSearchSettings implements FoldDefinition {
 
   destroy(): void {
     this.destroyed = true;
+    this.stopWaitingForRuntime();
     this.subscription?.unsubscribe();
     this.subscription = null;
     this.host = null;
@@ -295,6 +303,32 @@ export class SemanticSearchSettings implements FoldDefinition {
     if (!runtime || this.subscription?.runtime === runtime) return;
     this.subscription?.unsubscribe();
     this.subscription = { runtime, unsubscribe: runtime.onStateChange(() => this.onStateChange()) };
+  }
+
+  /**
+   * The runtime is created in the background once storage is ready, and
+   * nothing announces it. Without this a fold drawn first would read
+   * "Starting" (and keep Delete index disabled) until settings were reopened.
+   */
+  private waitForRuntime(): void {
+    if (this.runtimeWait !== null || this.destroyed || this.deps.getRuntime()) return;
+    this.runtimeWait = window.setInterval(() => {
+      if (this.destroyed) {
+        this.stopWaitingForRuntime();
+        return;
+      }
+      if (!this.deps.getRuntime()) return;
+      this.stopWaitingForRuntime();
+      // redraw() runs render(), which subscribes and loads the counts.
+      this.invalidateCounts();
+      this.redraw();
+    }, RUNTIME_POLL_MS);
+  }
+
+  private stopWaitingForRuntime(): void {
+    if (this.runtimeWait === null) return;
+    window.clearInterval(this.runtimeWait);
+    this.runtimeWait = null;
   }
 
   private onStateChange(): void {

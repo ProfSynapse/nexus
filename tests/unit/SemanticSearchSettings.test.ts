@@ -123,6 +123,8 @@ async function settle(): Promise<void> {
 async function render(options: { enabled?: boolean; runtime?: FakeRuntime | null } = {}) {
   const enabled = options.enabled ?? true;
   const runtime = options.runtime === undefined ? new FakeRuntime(enabled) : options.runtime;
+  /** What getRuntime() answers; a test may set it later, as the plugin does once storage is ready. */
+  const live = { runtime };
   const container = createFakeRoot();
   const saveSettings = jest.fn(async () => undefined);
   const pluginSettings = { enableEmbeddings: enabled } as Record<string, unknown>;
@@ -132,7 +134,7 @@ async function render(options: { enabled?: boolean; runtime?: FakeRuntime | null
     settings: { settings: pluginSettings, saveSettings } as never,
     llmProviderSettings: llmSettings(),
     semanticSearch: {
-      getRuntime: () => runtime as never,
+      getRuntime: () => live.runtime as never,
       applyEnabled
     }
   });
@@ -140,7 +142,7 @@ async function render(options: { enabled?: boolean; runtime?: FakeRuntime | null
   const root = container.children[0];
   const items = () => foldItems(root, FOLD_TITLES.semanticSearch);
   const summary = () => foldSummary(root, FOLD_TITLES.semanticSearch);
-  return { tab, root, items, summary, runtime: runtime as FakeRuntime, pluginSettings, saveSettings, applyEnabled };
+  return { tab, root, items, summary, runtime: runtime as FakeRuntime, live, pluginSettings, saveSettings, applyEnabled };
 }
 
 function value(row: FakeElement): string {
@@ -321,6 +323,84 @@ describe('Semantic search fold', () => {
       expect(value(findRow(items(), COPY.index))).toBe(COPY.indexPausedUnknown);
       expect(control(findRow(items(), COPY.deleteIndex), 'button').disabled).toBe(true);
       expect(summary()).toBe('Off · index kept');
+    } finally {
+      tab.destroy();
+    }
+  });
+});
+
+describe('Semantic search fold drawn before the runtime exists', () => {
+  let setIntervalSpy: jest.SpyInstance;
+  let clearIntervalSpy: jest.SpyInstance;
+  const ticks = new Map<number, () => void>();
+  let nextId = 1;
+
+  beforeEach(() => {
+    ticks.clear();
+    setIntervalSpy = jest.spyOn(window, 'setInterval').mockImplementation(((callback: () => void) => {
+      const id = nextId++;
+      ticks.set(id, callback);
+      return id;
+    }) as never);
+    clearIntervalSpy = jest.spyOn(window, 'clearInterval').mockImplementation(((id: number) => {
+      ticks.delete(id);
+    }) as never);
+  });
+
+  afterEach(() => {
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
+  const tick = (): void => { for (const callback of [...ticks.values()]) callback(); };
+
+  it('picks the runtime up when it appears, then subscribes and shows the counts', async () => {
+    const { tab, items, summary, live } = await render({ runtime: null });
+    try {
+      expect(value(findRow(items(), COPY.index))).toBe(COPY.starting);
+      expect(ticks.size).toBe(1);
+
+      tick();
+      await settle();
+      expect(value(findRow(items(), COPY.index))).toBe(COPY.starting);
+
+      const runtime = new FakeRuntime(true);
+      live.runtime = runtime;
+      tick();
+      await settle();
+      expect(ticks.size).toBe(0);
+      expect(runtime.listeners.size).toBe(1);
+      expect(value(findRow(items(), COPY.index))).toBe(COPY.indexCounts(4512, 318));
+      expect(summary()).not.toBe('On');
+    } finally {
+      tab.destroy();
+    }
+  });
+
+  it('enables Delete index once the runtime appears while search is off', async () => {
+    const { tab, items, live } = await render({ enabled: false, runtime: null });
+    try {
+      expect(control(findRow(items(), COPY.deleteIndex), 'button').disabled).toBe(true);
+      live.runtime = new FakeRuntime(false);
+      tick();
+      await settle();
+      expect(control(findRow(items(), COPY.deleteIndex), 'button').disabled).toBe(false);
+    } finally {
+      tab.destroy();
+    }
+  });
+
+  it('stops waiting when destroyed', async () => {
+    const { tab } = await render({ runtime: null });
+    expect(ticks.size).toBe(1);
+    tab.destroy();
+    expect(ticks.size).toBe(0);
+  });
+
+  it('does not poll when the runtime is already there', async () => {
+    const { tab } = await render();
+    try {
+      expect(ticks.size).toBe(0);
     } finally {
       tab.destroy();
     }
