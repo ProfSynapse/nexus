@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .jest-cache/
 
 # Runtime-vendored engine assets (downloaded once at runtime from the pinned CDN,
