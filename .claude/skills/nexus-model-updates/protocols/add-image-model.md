@@ -74,6 +74,14 @@ endpoint actually accepts, proven by one live generation through the adapter.
    moderation flags abstract prompts ("a red circle on white") as violence, and
    the resulting 400 looks like a broken model.
 
+7. **Retiring a model.** Remove the catalog entry and the `ImageModel` union
+   member, and add the id to `src/services/llm/types/RetiredMediaModels.ts`
+   with the provider's documented successor and every provider that served
+   it. Saved defaults, conversation settings and `generateImage` calls that
+   still name it are mapped there. If the removed entry was a catalog's first,
+   put the adapter default first instead: the tool and the chat picker fall
+   back to the first entry.
+
 ## Guidelines
 - Pattern: Google's image docs show only Interactions API samples, but
   `GeminiImageAdapter` calls `generateContent`. Before you add a Gemini image

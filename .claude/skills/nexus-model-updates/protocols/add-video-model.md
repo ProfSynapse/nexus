@@ -14,12 +14,13 @@ provider accepts, on a transport the adapter already uses.
 
 ## Steps
 
-1. **Check the transport first.** `GoogleVideoAdapter` uses
-   `models/<id>:predictLongRunning`. Google's newer video models are served
-   only by the Interactions API (`POST /v1beta/interactions`), and that is
-   new adapter work, not a catalog entry. `OpenRouterVideoAdapter` speaks
-   OpenRouter's unified `POST /api/v1/videos`, so any model in its video
-   catalog uses the same request shape.
+1. **Check the transport first.** `GoogleVideoAdapter` speaks Google's
+   Interactions API (`POST /v1beta/interactions` with `background: true`, then
+   `GET /v1beta/interactions/{id}`), which is how Gemini Omni Flash is served.
+   A Google video model on another surface (Veo's `predictLongRunning`, or a
+   Vertex-only id) is new adapter work, not a catalog entry.
+   `OpenRouterVideoAdapter` speaks OpenRouter's unified `POST /api/v1/videos`,
+   so any model in its video catalog uses the same request shape.
 
 2. **Source the facts.**
 
@@ -32,14 +33,15 @@ provider accepts, on a transport the adapter already uses.
              "frames", m.get("supported_frame_images"))'
    ```
 
-   For Google direct, the parameter table on ai.google.dev/gemini-api/docs/video
-   is the source, and `/docs/deprecations` gives shutdown dates. Read it per
-   model: Veo on the Gemini API accepts `16:9`/`9:16` only, even though other
-   routes add `1:1`.
+   For Google direct, the model's guide (for Omni, ai.google.dev/gemini-api/docs/omni)
+   and the `VideoResponseFormat` schema in
+   https://ai.google.dev/static/api/interactions.openapi.json are the source,
+   and `/docs/deprecations` gives shutdown dates. Omni accepts `16:9`/`9:16`
+   only and a `duration` in google-duration format (`"8s"`).
 
 3. **Fit the entry to the unions.** `VideoAspectRatio` and `VideoResolution`
-   are narrow, closed unions. Declare the intersection of the listing and the
-   union. A model with no value in the intersection (for example a `2K`-only
+   are narrow, closed unions (`360p` exists for Omni; OpenRouter's parser
+   still drops it). Declare the intersection of the listing and the union. A model with no value in the intersection (for example a `2K`-only
    model) needs a type change and is not a catalog-only addition. OpenRouter's
    resolution enum is case-sensitive (`4K`), and the adapter maps the internal
    `4k` to it. Keep that mapping when you touch `submitJob`.
@@ -57,8 +59,15 @@ provider accepts, on a transport the adapter already uses.
    `tests/unit/VideoGenerationService.test.ts` must still pass.
 
 6. **Live call.** `tests/debug/video-generation-live-smoke.test.ts` drives the
-   real adapters. Video generation is billed per second, so run it only with
+   real adapters (OpenRouter by default; add `VIDEO_SMOKE_GOOGLE=1` and a
+   `GEMINI_API_KEY` for Gemini Omni Flash — see the file header). Video generation is billed per second, so run it only with
    the owner's go-ahead. Without that run, report the entry as unverified.
+
+7. **Retiring a model.** Remove its entry and add it to
+   `src/services/llm/types/RetiredMediaModels.ts` with the provider-documented
+   successor. Saved defaults, conversations and tool calls that still name it
+   are mapped there at load and call time; the catalog alone would turn them
+   into "not available" errors.
 
 ## Next
 `verify-model.md` steps 1–3, then `self-refine.md`.
