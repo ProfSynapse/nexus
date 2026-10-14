@@ -2,7 +2,6 @@ import type { App, Vault } from 'obsidian';
 import { TFolder, __setRequestUrlMock } from '../mocks/obsidian';
 import { VideoGenerationService } from '../../src/services/video/VideoGenerationService';
 import { VideoGenerationTimeoutError } from '../../src/services/video/VideoGenerationTypes';
-import type { PendingVideoGenerationJob } from '../../src/services/video/VideoGenerationTypes';
 import { GoogleVideoAdapter } from '../../src/services/video/adapters/GoogleVideoAdapter';
 import { OpenRouterVideoAdapter } from '../../src/services/video/adapters/OpenRouterVideoAdapter';
 import { GenerateVideoTool } from '../../src/agents/promptManager/tools/generateVideo';
@@ -37,7 +36,7 @@ function makeSettings(provider: 'google' | 'openrouter'): LLMProviderSettings {
     defaultVideoModel: provider === 'google'
       ? {
         provider: 'google',
-        model: 'veo-3.1-generate-preview',
+        model: 'gemini-omni-1.1-flash',
         aspectRatio: '16:9',
         resolution: '720p',
       }
@@ -94,7 +93,7 @@ describe('VideoGenerationService', () => {
     jest.spyOn(GoogleVideoAdapter.prototype, 'generate').mockResolvedValue({
       videoData: new Uint8Array([1, 2, 3, 4]).buffer,
       mimeType: 'video/mp4',
-      providerJobId: 'operations/video-1',
+      providerJobId: 'v1_video-1',
       durationSeconds: 8,
     });
 
@@ -115,10 +114,10 @@ describe('VideoGenerationService', () => {
       status: 'completed',
       path: 'video/sunrise.mp4',
       provider: 'google',
-      model: 'veo-3.1-generate-preview',
+      model: 'gemini-omni-1.1-flash',
       mimeType: 'video/mp4',
       videoSize: 4,
-      providerJobId: 'operations/video-1',
+      providerJobId: 'v1_video-1',
       note: 'Video generation completed and saved to video/sunrise.mp4.',
     });
   });
@@ -148,12 +147,12 @@ describe('VideoGenerationService', () => {
   it('returns structured in-progress details when the tool times out', async () => {
     jest.spyOn(GoogleVideoAdapter.prototype, 'generate').mockRejectedValue(
       new VideoGenerationTimeoutError(
-        'Google video generation timed out after 1 seconds. Operation name: operations/video-1.',
+        'Google video generation timed out after 1 seconds. Interaction id: v1_video-1.',
         {
           provider: 'google',
-          model: 'veo-3.1-generate-preview',
-          providerJobId: 'operations/video-1',
-          pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-1',
+          model: 'gemini-omni-1.1-flash',
+          providerJobId: 'v1_video-1',
+          pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/interactions/v1_video-1',
           timeoutMs: 1000,
         }
       )
@@ -179,9 +178,9 @@ describe('VideoGenerationService', () => {
       jobId: expect.stringMatching(/^artifact_/),
       path: 'video/sunrise.mp4',
       provider: 'google',
-      model: 'veo-3.1-generate-preview',
-      providerJobId: 'operations/video-1',
-      pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-1',
+      model: 'gemini-omni-1.1-flash',
+      providerJobId: 'v1_video-1',
+      pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/interactions/v1_video-1',
       note: expect.stringContaining('video/sunrise.mp4'),
     });
     expect(vault.adapter.append).toHaveBeenCalledWith(
@@ -194,12 +193,12 @@ describe('VideoGenerationService', () => {
     const vault = makeVault();
     jest.spyOn(GoogleVideoAdapter.prototype, 'generate').mockRejectedValue(
       new VideoGenerationTimeoutError(
-        'Google video generation timed out after 1 seconds. Operation name: operations/video-2.',
+        'Google video generation timed out after 1 seconds. Interaction id: v1_video-2.',
         {
           provider: 'google',
-          model: 'veo-3.1-generate-preview',
-          providerJobId: 'operations/video-2',
-          pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-2',
+          model: 'gemini-omni-1.1-flash',
+          providerJobId: 'v1_video-2',
+          pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/interactions/v1_video-2',
           timeoutMs: 1000,
           request: {
             seconds: 8,
@@ -214,8 +213,8 @@ describe('VideoGenerationService', () => {
       result: {
         videoData: new Uint8Array([9, 8, 7]).buffer,
         mimeType: 'video/mp4',
-        providerJobId: 'operations/video-2',
-        pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-2',
+        providerJobId: 'v1_video-2',
+        pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/interactions/v1_video-2',
         durationSeconds: 8,
       },
     });
@@ -251,10 +250,111 @@ describe('VideoGenerationService', () => {
       status: 'completed',
       jobId,
       path: 'video/sunrise.mp4',
-      providerJobId: 'operations/video-2',
+      providerJobId: 'v1_video-2',
       note: 'Video generation completed and saved to video/sunrise.mp4.',
     });
     expect(vault.createBinary).toHaveBeenCalledWith('video/sunrise.mp4', expect.any(ArrayBuffer));
+  });
+});
+
+describe('VideoGenerationService retired model ids', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it.each([
+    ['google', 'veo-3.1-generate-preview'],
+    ['google', 'veo-3.1-fast-generate-preview'],
+    ['google', 'veo-3.1-lite-generate-preview'],
+    [undefined, 'veo-3.1-generate-preview'],
+  ])('runs a %s/%s tool call on gemini-omni-1.1-flash and says so', async (provider, model) => {
+    const generate = jest.spyOn(GoogleVideoAdapter.prototype, 'generate').mockResolvedValue({
+      videoData: new Uint8Array([1, 2]).buffer,
+      mimeType: 'video/mp4',
+      providerJobId: 'v1_x',
+    });
+    const service = new VideoGenerationService(makeApp(), makeVault(), {
+      llmSettings: makeSettings('google'),
+    });
+
+    const result = await service.generate({
+      prompt: 'A paper boat on a pond.',
+      provider: provider as 'google' | undefined,
+      model,
+      outputPath: 'video/boat.mp4',
+    });
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ provider: 'google', model: 'gemini-omni-1.1-flash' }));
+    expect(result).toMatchObject({ provider: 'google', model: 'gemini-omni-1.1-flash', requestedModel: model });
+    expect(result.note).toContain(`"${model}" was retired`);
+    expect(result.note).toContain('"gemini-omni-1.1-flash"');
+  });
+
+  it('does not offer a Veo 3.1 preview id in the Google catalog', () => {
+    for (const model of ['veo-3.1-generate-preview', 'veo-3.1-fast-generate-preview', 'veo-3.1-lite-generate-preview']) {
+      expect(getVideoModel('google', model)).toBeUndefined();
+    }
+    expect(getVideoModel('google', 'gemini-omni-1.1-flash')).toMatchObject({
+      aspectRatios: ['16:9', '9:16'],
+      resolutions: ['360p', '720p', '1080p', '4k'],
+      durations: [3, 4, 5, 6, 7, 8, 9, 10],
+    });
+  });
+
+  it('keeps OpenRouter Veo models untouched', async () => {
+    jest.spyOn(OpenRouterVideoAdapter.prototype, 'generate').mockResolvedValue({
+      videoData: new Uint8Array([1]).buffer,
+      mimeType: 'video/mp4',
+    });
+    const service = new VideoGenerationService(makeApp(), makeVault(), {
+      llmSettings: makeSettings('openrouter'),
+    });
+
+    const result = await service.generate({
+      prompt: 'A paper boat on a pond.',
+      provider: 'openrouter',
+      model: 'google/veo-3.1',
+      outputPath: 'video/boat.mp4',
+    });
+
+    expect(result.model).toBe('google/veo-3.1');
+    expect(result).not.toHaveProperty('requestedModel');
+    expect(result.note).not.toContain('retired');
+  });
+
+  it('generates through the real Google adapter, then saves the downloaded bytes to the vault', async () => {
+    const mp4 = new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]);
+    __setRequestUrlMock(async (request) => {
+      if (request.method === 'POST') {
+        return { status: 200, headers: {}, text: '', json: { id: 'v1_e2e', status: 'in_progress' }, arrayBuffer: new ArrayBuffer(0) };
+      }
+      return {
+        status: 200,
+        headers: {},
+        text: '',
+        json: {
+          id: 'v1_e2e',
+          status: 'completed',
+          steps: [{ type: 'model_output', content: [{ type: 'video', mime_type: 'video/mp4', data: Buffer.from(mp4).toString('base64') }] }],
+        },
+        arrayBuffer: new ArrayBuffer(0),
+      };
+    });
+    const vault = makeVault();
+    const tool = new GenerateVideoTool({ app: makeApp(), vault, llmSettings: makeSettings('google') });
+
+    const result = await tool.execute({
+      prompt: 'A paper boat on a pond.',
+      outputPath: 'video/boat.mp4',
+      pollIntervalMs: 1,
+      timeoutMs: 5_000,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ status: 'completed', provider: 'google', model: 'gemini-omni-1.1-flash', videoSize: mp4.byteLength });
+    const [path, bytes] = vault.createBinary.mock.calls[0];
+    expect(path).toBe('video/boat.mp4');
+    expect(Array.from(new Uint8Array(bytes))).toEqual(Array.from(mp4));
   });
 });
 
@@ -634,139 +734,6 @@ describe('OpenRouterVideoAdapter', () => {
       pollIntervalMs: 1,
       timeoutMs: 1000,
     })).rejects.toThrow('does not support resolution "1080p"');
-  });
-});
-
-describe('GoogleVideoAdapter credential allowlist', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  function makeJob(): PendingVideoGenerationJob {
-    return {
-      provider: 'google',
-      providerJobId: 'operations/video-1',
-      pollingUrl: 'https://generativelanguage.googleapis.com/v1beta/operations/video-1',
-      request: { seconds: 8, aspectRatio: '16:9', resolution: '720p' },
-    } as unknown as PendingVideoGenerationJob;
-  }
-
-  it('does not attach x-goog-api-key when the download URI is off-allowlist', async () => {
-    const keyByUrl: Record<string, string | undefined> = {};
-    __setRequestUrlMock(async (request) => {
-      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
-
-      // pollOperation → completed, with a poisoned attacker-controlled download URI.
-      if (request.url.endsWith('/operations/video-1')) {
-        return {
-          status: 200,
-          headers: {},
-          text: '{}',
-          json: {
-            name: 'operations/video-1',
-            done: true,
-            response: { generatedVideos: [{ video: { uri: 'https://evil.example.com/steal.mp4' } }] },
-          },
-          arrayBuffer: new ArrayBuffer(0),
-        };
-      }
-
-      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1, 2, 3]).buffer };
-    });
-
-    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
-    await adapter.checkJob(makeJob());
-
-    // The poll endpoint (generativelanguage.googleapis.com) legitimately gets the key.
-    expect(keyByUrl['https://generativelanguage.googleapis.com/v1beta/operations/video-1']).toBe('test-key');
-    // The off-allowlist download host must NOT receive the credential.
-    expect(keyByUrl['https://evil.example.com/steal.mp4']).toBeUndefined();
-  });
-
-  it('attaches x-goog-api-key when the download URI is on generativelanguage.googleapis.com', async () => {
-    const downloadUrl = 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media';
-    const keyByUrl: Record<string, string | undefined> = {};
-    __setRequestUrlMock(async (request) => {
-      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
-
-      if (request.url.endsWith('/operations/video-1')) {
-        return {
-          status: 200,
-          headers: {},
-          text: '{}',
-          json: {
-            name: 'operations/video-1',
-            done: true,
-            response: { generatedVideos: [{ video: { uri: downloadUrl } }] },
-          },
-          arrayBuffer: new ArrayBuffer(0),
-        };
-      }
-
-      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1, 2, 3]).buffer };
-    });
-
-    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
-    await adapter.checkJob(makeJob());
-
-    expect(keyByUrl[downloadUrl]).toBe('test-key');
-  });
-
-  it('ignores a download URI hidden in an undocumented response location', async () => {
-    __setRequestUrlMock(async (request) => {
-      if (request.url.endsWith('/operations/video-1')) {
-        return {
-          status: 200,
-          headers: {},
-          text: '{}',
-          // uri buried under an undocumented key — previously the recursive
-          // findFirstStringKey scrape would have picked this up.
-          json: {
-            name: 'operations/video-1',
-            done: true,
-            response: { metadata: { attacker: { uri: 'https://evil.example.com/steal.mp4' } } },
-          },
-          arrayBuffer: new ArrayBuffer(0),
-        };
-      }
-
-      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
-    });
-
-    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
-
-    await expect(adapter.checkJob(makeJob())).rejects.toThrow('no downloadable video was found');
-  });
-
-  it('does not attach x-goog-api-key to a userinfo-trick download URI', async () => {
-    // Resolves to host evil.com despite the generativelanguage prefix; the
-    // hostname-equality check must reject it (substring/startsWith would not).
-    const trickUrl = 'https://generativelanguage.googleapis.com@evil.com/steal.mp4';
-    const keyByUrl: Record<string, string | undefined> = {};
-    __setRequestUrlMock(async (request) => {
-      keyByUrl[request.url] = request.headers?.['x-goog-api-key'];
-
-      if (request.url.endsWith('/operations/video-1')) {
-        return {
-          status: 200,
-          headers: {},
-          text: '{}',
-          json: {
-            name: 'operations/video-1',
-            done: true,
-            response: { generatedVideos: [{ video: { uri: trickUrl } }] },
-          },
-          arrayBuffer: new ArrayBuffer(0),
-        };
-      }
-
-      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
-    });
-
-    const adapter = new GoogleVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
-    await adapter.checkJob(makeJob());
-
-    expect(keyByUrl[trickUrl]).toBeUndefined();
   });
 });
 

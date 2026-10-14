@@ -61,11 +61,20 @@ describe('Settings', () => {
     });
   });
 
-  it('moves a saved gemini-2.5-flash-image default to gemini-3.1-flash-image and keeps the provider', async () => {
+  it.each([
+    ['openrouter', 'gemini-2.5-flash-image', 'gemini-3.1-flash-lite-image'],
+    ['google', 'gemini-3.1-flash-image-preview', 'gemini-nano-banana-2.1'],
+    ['google', 'gemini-3-pro-image-preview', 'gemini-3-pro-image'],
+    ['openai', 'gpt-image-1', 'gpt-image-2.5-sunburst'],
+    ['openai', 'gpt-image-1.5', 'gpt-image-2.5-sunburst'],
+    ['openai', 'gpt-image-1-mini', 'gpt-image-2.5-flare'],
+    ['openrouter', 'gpt-5-image', 'gpt-image-2.5-sunburst'],
+    ['openrouter', 'gpt-5-image-mini', 'gpt-image-2.5-flare'],
+  ])('moves a saved %s/%s image default to the documented successor %s and keeps the provider', async (provider, model, replacement) => {
     const plugin = {
       loadData: jest.fn(async () => ({
         llmProviders: {
-          defaultImageModel: { provider: 'openrouter', model: 'gemini-2.5-flash-image' }
+          defaultImageModel: { provider, model }
         }
       })),
       saveData: jest.fn(async () => undefined)
@@ -74,10 +83,81 @@ describe('Settings', () => {
     const settings = new Settings(plugin);
     await settings.loadSettings();
 
-    expect(settings.settings.llmProviders.defaultImageModel).toEqual({
-      provider: 'openrouter',
-      model: 'gemini-3.1-flash-image'
+    expect(settings.settings.llmProviders.defaultImageModel).toEqual({ provider, model: replacement });
+    // Normalized in memory only: loading never writes the synced data.json.
+    expect(plugin.saveData).not.toHaveBeenCalled();
+  });
+
+  it('moves a saved Google Veo 3.1 preview video default to Gemini Omni Flash, keeping ratio and resolution', async () => {
+    const plugin = {
+      loadData: jest.fn(async () => ({
+        llmProviders: {
+          defaultVideoModel: { provider: 'google', model: 'veo-3.1-generate-preview', aspectRatio: '9:16', resolution: '1080p' }
+        }
+      })),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect(settings.settings.llmProviders.defaultVideoModel).toEqual({
+      provider: 'google',
+      model: 'gemini-omni-1.1-flash',
+      aspectRatio: '9:16',
+      resolution: '1080p'
     });
+    expect(plugin.saveData).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the successor default for a saved video aspect ratio it does not support', async () => {
+    const plugin = {
+      loadData: jest.fn(async () => ({
+        llmProviders: {
+          defaultVideoModel: { provider: 'google', model: 'veo-3.1-fast-generate-preview', aspectRatio: '1:1', resolution: '4k' }
+        }
+      })),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect(settings.settings.llmProviders.defaultVideoModel).toEqual({
+      provider: 'google',
+      model: 'gemini-omni-1.1-flash',
+      aspectRatio: '16:9',
+      resolution: '4k'
+    });
+  });
+
+  it('leaves an OpenRouter Veo video default alone', async () => {
+    const saved = { provider: 'openrouter', model: 'google/veo-3.1', aspectRatio: '16:9', resolution: '720p' };
+    const plugin = {
+      loadData: jest.fn(async () => ({ llmProviders: { defaultVideoModel: saved } })),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect(settings.settings.llmProviders.defaultVideoModel).toEqual(saved);
+  });
+
+  it('normalizes a retired video default that arrives through sync without rewriting data.json', async () => {
+    let disk: Record<string, unknown> = { llmProviders: { defaultVideoModel: { provider: 'openrouter', model: 'google/veo-3.1-fast' } } };
+    const plugin = {
+      loadData: jest.fn(async () => disk),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+    disk = { llmProviders: { defaultVideoModel: { provider: 'google', model: 'veo-3.1-generate-preview', aspectRatio: '16:9', resolution: '720p' } } };
+    await settings.reconcileExternalSettings();
+
+    expect(settings.settings.llmProviders.defaultVideoModel).toMatchObject({ provider: 'google', model: 'gemini-omni-1.1-flash' });
+    expect(plugin.saveData).not.toHaveBeenCalled();
   });
 
   it('leaves a saved image default alone when it is not the retired model', async () => {

@@ -213,7 +213,7 @@ export class PromptManagerAgent extends BaseAgent {
       const artifactJobsPath = this.getArtifactJobsPath();
       this.registerLazyTool({
         slug: 'generateVideo', name: 'Generate Video',
-        description: 'Generate text-to-video MP4 files in the vault using Google Veo or OpenRouter video models.',
+        description: 'Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.',
         version: '1.0.0',
         factory: () => new GenerateVideoTool({
           app: this.app,

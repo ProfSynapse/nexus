@@ -139,5 +139,5 @@ function parseAspectRatio(value: unknown): VideoAspectRatio | undefined {
 }
 
 function parseResolution(value: unknown): VideoResolution | undefined {
-  return value === '720p' || value === '1080p' || value === '4k' ? value : undefined;
+  return value === '360p' || value === '720p' || value === '1080p' || value === '4k' ? value : undefined;
 }

@@ -5,6 +5,7 @@ import { LLMSettingsNotifier } from './services/llm/LLMSettingsNotifier';
 import { cloneSettings, mergeSettingsChanges, reconcileSettingsInPlace, settingsEqual } from './services/settings/SettingsMerge';
 import { SecretStore } from './services/secrets/SecretStore';
 import { normalizeInstructionLibrarySettings } from './services/instructions/InstructionMetadataService';
+import { normalizeRetiredMediaDefaults } from './services/llm/types/RetiredMediaModels';
 import {
     clearStoredSecrets,
     hydrateSecrets,
@@ -115,29 +116,15 @@ export class Settings {
                     // Ensure providers exists with all default providers
                     providers
                 };
-                this.migrateRetiredImageModel(settings);
+                // Saved image/video defaults naming a retired model id move to
+                // the documented successor, in memory only; see
+                // normalizeRetiredMediaDefaults for why data.json is not rewritten.
+                normalizeRetiredMediaDefaults(settings.llmProviders);
             }
         } catch {
             // Continue with defaults - plugin should still function
         }
         return settings;
-    }
-
-    /**
-     * gemini-2.5-flash-image shuts down on 2026-10-02. A saved default that
-     * still names it would start failing on that date, so it moves to the
-     * current Nano Banana 2 id, which both Google direct and OpenRouter serve.
-     * The provider is kept.
-     */
-    private migrateRetiredImageModel(settings: MCPSettings): void {
-        const llmProviders = settings.llmProviders;
-        const selection = llmProviders?.defaultImageModel;
-        if (llmProviders && selection?.model === 'gemini-2.5-flash-image') {
-            llmProviders.defaultImageModel = {
-                ...selection,
-                model: 'gemini-3.1-flash-image'
-            };
-        }
     }
 
     /**

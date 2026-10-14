@@ -1,4 +1,5 @@
 import type { VideoAspectRatio, VideoProvider, VideoResolution } from '../llm/types/VideoTypes';
+import type { RetiredModel } from '../llm/types/RetiredMediaModels';
 
 export interface GenerateVideoRequest {
   prompt: string;
@@ -14,6 +15,8 @@ export interface GenerateVideoRequest {
   negativePrompt?: string;
   pollIntervalMs?: number;
   timeoutMs?: number;
+  /** Aborts polling; the adapter asks the provider to cancel the job where it can. */
+  signal?: AbortSignal;
 }
 
 export interface ResolvedVideoGenerationRequest {
@@ -28,6 +31,9 @@ export interface ResolvedVideoGenerationRequest {
   negativePrompt?: string;
   pollIntervalMs: number;
   timeoutMs: number;
+  signal?: AbortSignal;
+  /** Set when the caller named a retired model and it was swapped for its successor. */
+  retiredModel?: RetiredModel;
 }
 
 export interface VideoGenerationAdapterResult {
@@ -51,6 +57,8 @@ export interface GenerateVideoResult {
   resolution: VideoResolution;
   providerJobId?: string;
   pollingUrl?: string;
+  /** The retired model id the caller asked for, when it was replaced. */
+  requestedModel?: string;
   note: string;
 }
 

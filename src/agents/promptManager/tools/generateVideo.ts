@@ -39,7 +39,7 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
     super(
       'generateVideo',
       'Generate Video',
-      'Generate text-to-video MP4 files in the vault using Google Veo or OpenRouter video models.',
+      'Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.',
       '1.0.0'
     );
 
@@ -131,7 +131,7 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
         },
         model: {
           type: 'string',
-          description: 'Optional video model ID. Defaults to Video generation settings or the first available model for the provider.',
+          description: 'Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Google: gemini-omni-1.1-flash (retired Veo 3.1 preview ids are mapped to it). OpenRouter: e.g. google/veo-3.1-fast, google/veo-3.1.',
         },
         outputPath: {
           type: 'string',
@@ -148,12 +148,12 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
         },
         resolution: {
           type: 'string',
-          enum: ['720p', '1080p', '4k'],
-          description: 'Optional output resolution. Defaults to Video generation settings or model default.',
+          enum: ['360p', '720p', '1080p', '4k'],
+          description: 'Optional output resolution. Defaults to Video generation settings or model default. 360p is Google Gemini Omni Flash only.',
         },
         seconds: {
           type: 'number',
-          description: 'Optional clip duration in seconds. Provider/model support varies.',
+          description: 'Optional clip duration in seconds. Provider/model support varies; Google Gemini Omni Flash accepts whole seconds from 3 to 10.',
         },
         referenceImage: {
           type: 'string',
@@ -161,11 +161,11 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
         },
         generateAudio: {
           type: 'boolean',
-          description: 'Whether to ask the provider to generate audio when the selected model supports it.',
+          description: 'Whether to ask the provider to generate audio when the selected model supports it. Google Gemini Omni Flash always generates audio and rejects false.',
         },
         negativePrompt: {
           type: 'string',
-          description: 'Optional negative prompt for providers/models that support it.',
+          description: 'Optional negative prompt for providers/models that support it. Google Gemini Omni Flash has no negative prompt, so it is appended to the prompt as "Do not include: ...".',
         },
         pollIntervalMs: {
           type: 'number',

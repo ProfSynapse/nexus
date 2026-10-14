@@ -3,7 +3,7 @@ import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 export type VideoProvider = 'google' | 'openrouter';
 export type VideoExecution = 'long-running-operation';
 export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
-export type VideoResolution = '720p' | '1080p' | '4k';
+export type VideoResolution = '360p' | '720p' | '1080p' | '4k';
 
 export interface VideoModelDeclaration {
   provider: VideoProvider;
@@ -36,25 +36,31 @@ export interface ResolvedVideoSelection {
 
 /**
  * Video model catalog. Google direct facts come from
- * https://ai.google.dev/gemini-api/docs/video and /docs/deprecations;
- * OpenRouter facts from https://openrouter.ai/api/v1/videos/models, which the
- * OpenRouter adapter also re-reads at request time to validate a request.
+ * https://ai.google.dev/gemini-api/docs/omni, /docs/models/gemini-omni-flash
+ * and /docs/deprecations; OpenRouter facts from
+ * https://openrouter.ai/api/v1/videos/models, which the OpenRouter adapter
+ * also re-reads at request time to validate a request.
+ *
+ * Retired ids (the Google Veo 3.1 previews) are not listed here; saved
+ * settings and tool calls that still name one are mapped to the successor by
+ * RetiredMediaModels.
  */
 const VIDEO_MODELS: VideoModelDeclaration[] = [
   {
-    // Google shuts down all Veo 3.1 preview ids on 2026-10-22 and names
-    // gemini-omni-1.1-flash as the replacement. That model is served only by
-    // the Interactions API, which GoogleVideoAdapter does not speak yet, so
-    // there is no Google-direct successor in this catalog.
+    // GA 2026-08-27; Google's documented replacement for every Veo 3.1 preview
+    // id. Served only by the Interactions API (POST /v1beta/interactions).
+    // Always generates audio; no negative-prompt or audio-off parameter. Up to
+    // two input images (first frame, optional last frame) or reference images.
+    // 1080p and 4k are upscaled from the native render.
     provider: 'google',
-    id: 'veo-3.1-generate-preview',
-    name: 'Veo 3.1 preview (shuts down 2026-10-22)',
+    id: 'gemini-omni-1.1-flash',
+    name: 'Gemini Omni Flash',
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
     aspectRatios: ['16:9', '9:16'],
-    resolutions: ['720p', '1080p', '4k'],
-    durations: [4, 6, 8],
+    resolutions: ['360p', '720p', '1080p', '4k'],
+    durations: [3, 4, 5, 6, 7, 8, 9, 10],
     defaultAspectRatio: '16:9',
     defaultResolution: '720p',
   },

@@ -4,8 +4,15 @@
  * Default:
  *   RUN_LIVE_VIDEO_SMOKE=1 npx jest tests/debug/video-generation-live-smoke.test.ts --runInBand
  *
- * Paid generation:
+ * Paid generation (OpenRouter, needs OPENROUTER_API_KEY):
  *   RUN_LIVE_VIDEO_SMOKE=1 RUN_PAID_VIDEO_SMOKE=1 npx jest tests/debug/video-generation-live-smoke.test.ts --runInBand
+ *
+ * Paid generation (Google Gemini Omni Flash, needs GEMINI_API_KEY on a paid-tier
+ * project; one 3-second 360p clip):
+ *   RUN_LIVE_VIDEO_SMOKE=1 RUN_PAID_VIDEO_SMOKE=1 VIDEO_SMOKE_GOOGLE=1 \
+ *     npx jest tests/debug/video-generation-live-smoke.test.ts --runInBand -t 'Gemini Omni'
+ *
+ * Keys are read from the environment or the repo's .env.
  */
 
 import * as fs from 'fs';
@@ -19,6 +26,7 @@ import { DEFAULT_LLM_PROVIDER_SETTINGS, type LLMProviderSettings } from '../../s
 
 const RUN_LIVE = process.env.RUN_LIVE_VIDEO_SMOKE === '1';
 const RUN_PAID = process.env.RUN_PAID_VIDEO_SMOKE === '1';
+const RUN_GOOGLE = process.env.VIDEO_SMOKE_GOOGLE === '1';
 
 const describeLive = RUN_LIVE ? describe : describe.skip;
 
@@ -50,6 +58,26 @@ function getEnv(name: string): string | undefined {
     .split(/\r?\n/)
     .find(candidate => candidate.startsWith(`${name}=`));
   return line?.slice(name.length + 1).replace(/^['"]|['"]$/g, '');
+}
+
+function makeGoogleSettings(apiKey: string): LLMProviderSettings {
+  return {
+    ...DEFAULT_LLM_PROVIDER_SETTINGS,
+    providers: {
+      ...DEFAULT_LLM_PROVIDER_SETTINGS.providers,
+      google: {
+        ...DEFAULT_LLM_PROVIDER_SETTINGS.providers.google,
+        apiKey,
+        enabled: true,
+      },
+    },
+    defaultVideoModel: {
+      provider: 'google',
+      model: 'gemini-omni-1.1-flash',
+      aspectRatio: '16:9',
+      resolution: '360p',
+    },
+  };
 }
 
 function makeSettings(): LLMProviderSettings {
@@ -297,5 +325,56 @@ describeLive('generateVideo live smoke', () => {
     const stat = fs.statSync(outputPath);
     expect(stat.size).toBeGreaterThan(1000);
     console.log(`Generated video smoke artifact: ${outputPath}`);
+  });
+
+  it('generates and saves a real short Google Gemini Omni Flash video when Google paid smoke is enabled', async () => {
+    if (!RUN_PAID || !RUN_GOOGLE) {
+      console.log('Skipping paid Google video generation. Set RUN_PAID_VIDEO_SMOKE=1 and VIDEO_SMOKE_GOOGLE=1 to enable.');
+      return;
+    }
+
+    const apiKey = getEnv('GEMINI_API_KEY') || getEnv('GOOGLE_API_KEY');
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) is required for paid Google video smoke.');
+    }
+
+    setRealRequestUrl();
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-video-google-live-'));
+    const tool = new GenerateVideoTool({
+      app: makeApp(),
+      vault: makeFileBackedVault(root),
+      llmSettings: makeGoogleSettings(apiKey),
+    });
+
+    const result = await tool.execute({
+      prompt: 'A three second static shot of a small glass prism on a wooden desk splitting morning sunlight into a rainbow. Realistic, no text, quiet room tone.',
+      provider: 'google',
+      model: 'gemini-omni-1.1-flash',
+      outputPath: 'video/google-omni-smoke.mp4',
+      aspectRatio: '16:9',
+      resolution: '360p',
+      seconds: 3,
+      pollIntervalMs: 5_000,
+      timeoutMs: 8 * 60_000,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'generateVideo tool returned failure without an error message.');
+    }
+
+    expect(result.data).toMatchObject({
+      path: 'video/google-omni-smoke.mp4',
+      provider: 'google',
+      model: 'gemini-omni-1.1-flash',
+      mimeType: 'video/mp4',
+    });
+
+    const outputPath = path.join(root, 'video/google-omni-smoke.mp4');
+    const bytes = fs.readFileSync(outputPath);
+    expect(bytes.length).toBeGreaterThan(1000);
+    // An MP4 starts with a size word and an 'ftyp' box.
+    expect(bytes.subarray(4, 8).toString('latin1')).toBe('ftyp');
+    console.log(`Generated Google video smoke artifact: ${outputPath} (${bytes.length} bytes)`);
   });
 });

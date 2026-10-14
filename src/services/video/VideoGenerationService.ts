@@ -9,6 +9,11 @@ import {
   type VideoProvider,
   type VideoResolution,
 } from '../llm/types/VideoTypes';
+import {
+  describeRetiredModelSubstitution,
+  findRetiredVideoModelProvider,
+  getRetiredVideoModel,
+} from '../llm/types/RetiredMediaModels';
 import { GoogleVideoAdapter } from './adapters/GoogleVideoAdapter';
 import { OpenRouterVideoAdapter } from './adapters/OpenRouterVideoAdapter';
 import { sleep } from './adapters/videoAdapterUtils';
@@ -75,7 +80,10 @@ export class VideoGenerationService {
       resolution: resolved.resolution,
       providerJobId: result.providerJobId,
       pollingUrl: result.pollingUrl,
-      note: `Video generation completed and saved to ${outputPath}.`,
+      ...(resolved.retiredModel ? { requestedModel: resolved.retiredModel.id } : {}),
+      note: resolved.retiredModel
+        ? `Video generation completed and saved to ${outputPath}. ${describeRetiredModelSubstitution(resolved.retiredModel)}`
+        : `Video generation completed and saved to ${outputPath}.`,
     };
   }
 
@@ -187,11 +195,16 @@ export class VideoGenerationService {
       throw new Error('Prompt is required.');
     }
 
+    // A caller (saved prompt, agent, older workflow) may still name a retired
+    // id. Swap it for the provider's documented successor and say so in the
+    // result, rather than failing on an id the catalog no longer lists.
+    const requestedProvider = request.provider || findRetiredVideoModelProvider(request.model);
+    const retiredModel = getRetiredVideoModel(requestedProvider, request.model);
     const availability = buildVideoProviderAvailability(this.options.llmSettings);
     const selection = resolveDefaultVideoSelection(
       this.options.llmSettings,
-      request.provider,
-      request.model,
+      retiredModel ? requestedProvider : request.provider,
+      retiredModel ? retiredModel.replacement : request.model,
       availability
     );
 
@@ -223,6 +236,8 @@ export class VideoGenerationService {
       negativePrompt: request.negativePrompt,
       pollIntervalMs: request.pollIntervalMs ?? 10_000,
       timeoutMs: request.timeoutMs ?? 10 * 60_000,
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(retiredModel ? { retiredModel } : {}),
     };
   }
 
