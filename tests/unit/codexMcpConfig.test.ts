@@ -3,7 +3,7 @@ import {
   buildCodexMcpTomlSnippet,
   hasCodexMcpServerConfig,
   readCodexMcpServerConfig,
-  replaceCodexMcpServerConfig
+  upsertCodexMcpServerConfig
 } from '../../src/utils/codexMcpConfig';
 
 describe('codexMcpConfig', () => {
@@ -76,21 +76,46 @@ describe('codexMcpConfig', () => {
     expect(readCodexMcpServerConfig(content, 'nexus-missing')).toBeNull();
   });
 
-  it('replaces only the Nexus table and keeps every other setting', () => {
+  it('updates only command and args, keeping the table\'s other keys and every other table', () => {
     const old = buildCodexMcpTomlSnippet('nexus-vault', '/old/node', ['/vault/connector.js']);
-    const content = `model = "o4"\n\n${old}\nenv = { A = "1" }\n\n[mcp_servers.other]\ncommand = "python"\n`;
-    const fresh = buildCodexMcpTomlSnippet('nexus-vault', '/new/node', ['/vault/connector.js']);
-    const updated = replaceCodexMcpServerConfig(content, 'nexus-vault', fresh);
+    const content = `model = "o4"\n\n${old}\nenv = { NODE_OPTIONS = "--max-old-space-size=4096" }\nstartup_timeout_sec = 60\n# the next table is mine\n\n[mcp_servers.other]\ncommand = "python"\n`;
+    const updated = upsertCodexMcpServerConfig(content, 'nexus-vault', '/new/node', ['/vault/connector.js']);
 
     expect(updated.match(/\[mcp_servers\.nexus-vault\]/g)).toHaveLength(1);
-    expect(readCodexMcpServerConfig(updated, 'nexus-vault')?.command).toBe('/new/node');
+    expect(readCodexMcpServerConfig(updated, 'nexus-vault')).toEqual({ command: '/new/node', args: ['/vault/connector.js'] });
     expect(updated).not.toContain('/old/node');
-    expect(updated).toContain('model = "o4"');
-    expect(updated).toContain('[mcp_servers.other]\ncommand = "python"');
+    expect(updated).toBe(content.replace('/old/node', '/new/node'));
   });
 
-  it('appends when there is no Nexus table to replace', () => {
+  it('replaces a multi-line args array and keeps trailing comments', () => {
+    const content = [
+      '[mcp_servers.nexus-vault]',
+      'command = "/old/node" # pinned',
+      'args = [',
+      '  "/old/connector.js", # was here',
+      '  "--flag]"',
+      ']',
+      'enabled = true',
+      ''
+    ].join('\n');
+    const updated = upsertCodexMcpServerConfig(content, 'nexus-vault', '/new/node', ['/new/connector.js']);
+    expect(updated).toBe([
+      '[mcp_servers.nexus-vault]',
+      'command = "/new/node" # pinned',
+      'args = ["/new/connector.js"]',
+      'enabled = true',
+      ''
+    ].join('\n'));
+  });
+
+  it('adds command and args to a table that lacks them', () => {
+    const content = '[mcp_servers.nexus-vault]\nenabled = true\n';
+    const updated = upsertCodexMcpServerConfig(content, 'nexus-vault', '/new/node', ['/c.js']);
+    expect(updated).toBe('[mcp_servers.nexus-vault]\ncommand = "/new/node"\nargs = ["/c.js"]\nenabled = true\n');
+  });
+
+  it('appends when there is no Nexus table to update', () => {
     const fresh = buildCodexMcpTomlSnippet('nexus-vault', '/new/node', []);
-    expect(replaceCodexMcpServerConfig('model = "o4"\n', 'nexus-vault', fresh)).toBe(`model = "o4"\n\n${fresh}\n`);
+    expect(upsertCodexMcpServerConfig('model = "o4"\n', 'nexus-vault', '/new/node', [])).toBe(`model = "o4"\n\n${fresh}\n`);
   });
 });

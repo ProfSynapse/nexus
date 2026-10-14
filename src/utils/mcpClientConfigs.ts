@@ -10,9 +10,8 @@ import { Platform } from 'obsidian';
 import { desktopRequire } from './desktopRequire';
 import { CONNECTOR_JS_CONTENT } from './connectorContent';
 import {
-    buildCodexMcpTomlSnippet,
     readCodexMcpServerConfig,
-    replaceCodexMcpServerConfig
+    upsertCodexMcpServerConfig
 } from './codexMcpConfig';
 
 type FsModule = typeof import('node:fs');
@@ -49,8 +48,10 @@ export interface McpConfigStatus {
 
 export interface WriteResult {
     configPath: string;
-    /** The previous file was not valid JSON; it was copied to `<file>.bak` and replaced. */
+    /** The previous file was not valid JSON; it was copied to `backupPath` and replaced. */
     replacedInvalid: boolean;
+    /** Where the unreadable previous file was saved, when `replacedInvalid`. */
+    backupPath?: string;
 }
 
 function fs(): FsModule {
@@ -146,7 +147,7 @@ export function getMcpJsonStatus(configPath: string, serverKeys: string[]): McpC
 
     let parsed: unknown;
     try {
-        const content = nodeFs.readFileSync(configPath, 'utf-8');
+        const content = stripBom(nodeFs.readFileSync(configPath, 'utf-8'));
         if (!content.trim()) {
             return { state: 'invalid-config', stale: false };
         }
@@ -167,14 +168,24 @@ export function getMcpJsonStatus(configPath: string, serverKeys: string[]): McpC
     return { state: 'nexus-configured', stale: hasMissingPath(command, args) };
 }
 
-/** Add or replace the Nexus entry in a JSON `mcpServers` config, keeping every other server. */
-export function writeMcpJsonServer(configPath: string, serverKey: string, entry: McpServerEntry): WriteResult {
+/**
+ * Add or update the Nexus entry in a JSON `mcpServers` config, keeping every
+ * other server.
+ *
+ * `serverKeys` lists the vault's keys, current one first. An existing entry
+ * under any of them is updated in place (only `command` and `args` change, so
+ * `env` and other fields stay), which also repairs an entry left under a
+ * legacy key instead of adding a second server beside it.
+ */
+export function writeMcpJsonServer(configPath: string, serverKeys: string[], entry: McpServerEntry): WriteResult {
     const nodeFs = fs();
     let config: Record<string, unknown> = {};
     let replacedInvalid = false;
+    let backupPath: string | undefined;
 
     if (nodeFs.existsSync(configPath)) {
-        const content = nodeFs.readFileSync(configPath, 'utf-8');
+        const raw = nodeFs.readFileSync(configPath, 'utf-8');
+        const content = stripBom(raw);
         if (content.trim()) {
             try {
                 const parsed = JSON.parse(content) as unknown;
@@ -184,7 +195,8 @@ export function writeMcpJsonServer(configPath: string, serverKey: string, entry:
                     throw new Error('not an object');
                 }
             } catch {
-                nodeFs.writeFileSync(`${configPath}.bak`, content, 'utf-8');
+                backupPath = uniqueBackupPath(configPath);
+                nodeFs.writeFileSync(backupPath, raw, 'utf-8');
                 replacedInvalid = true;
                 config = {};
             }
@@ -192,14 +204,19 @@ export function writeMcpJsonServer(configPath: string, serverKey: string, entry:
     }
 
     const servers = isRecord(config.mcpServers) ? config.mcpServers : {};
-    config.mcpServers = { ...servers, [serverKey]: entry };
+    const key = serverKeys.find(candidate => isRecord(servers[candidate])) ?? serverKeys[0];
+    if (!key) {
+        throw new Error('No server name was given.');
+    }
+    const existing = isRecord(servers[key]) ? servers[key] : {};
+    config.mcpServers = { ...servers, [key]: { ...existing, command: entry.command, args: entry.args } };
 
     const configDir = pathMod().dirname(configPath);
     if (!nodeFs.existsSync(configDir)) {
         nodeFs.mkdirSync(configDir, { recursive: true });
     }
     nodeFs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
-    return { configPath, replacedInvalid };
+    return { configPath, replacedInvalid, backupPath };
 }
 
 /** Status of the Codex `config.toml` for any of the vault's server keys. */
@@ -226,11 +243,14 @@ export function getCodexStatus(serverKeys: string[]): McpConfigStatus {
     return { state: 'config-exists', stale: false };
 }
 
-/** Add the Nexus table to Codex's config.toml, replacing an older copy of it. */
-export function writeCodexServer(serverKey: string, entry: McpServerEntry): WriteResult {
+/**
+ * Add the Nexus table to Codex's config.toml, or point an existing one (under
+ * any of `serverKeys`, current one first) at the new command and args. Other
+ * keys in that table, such as env and timeouts, are kept.
+ */
+export function writeCodexServer(serverKeys: string[], entry: McpServerEntry): WriteResult {
     const nodeFs = fs();
     const configPath = getCodexConfigPath();
-    const snippet = buildCodexMcpTomlSnippet(serverKey, entry.command, entry.args);
     const configDir = pathMod().dirname(configPath);
 
     if (!nodeFs.existsSync(configDir)) {
@@ -238,7 +258,11 @@ export function writeCodexServer(serverKey: string, entry: McpServerEntry): Writ
     }
 
     const existing = nodeFs.existsSync(configPath) ? nodeFs.readFileSync(configPath, 'utf-8') : '';
-    nodeFs.writeFileSync(configPath, replaceCodexMcpServerConfig(existing, serverKey, snippet), 'utf-8');
+    const key = serverKeys.find(candidate => readCodexMcpServerConfig(existing, candidate) !== null) ?? serverKeys[0];
+    if (!key) {
+        throw new Error('No server name was given.');
+    }
+    nodeFs.writeFileSync(configPath, upsertCodexMcpServerConfig(existing, key, entry.command, entry.args), 'utf-8');
     return { configPath, replacedInvalid: false };
 }
 
@@ -249,6 +273,21 @@ function hasMissingPath(command: string, args: string[]): boolean {
     return [command, args[0] ?? '']
         .filter(candidate => candidate && path.isAbsolute(candidate))
         .some(candidate => !nodeFs.existsSync(candidate));
+}
+
+/** Windows editors often save JSON with a byte order mark, which JSON.parse rejects. */
+function stripBom(content: string): string {
+    return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
+}
+
+/** `<file>.bak`, or `<file>.<n>.bak` when earlier backups exist, so none is overwritten. */
+function uniqueBackupPath(configPath: string): string {
+    const nodeFs = fs();
+    let candidate = `${configPath}.bak`;
+    for (let n = 1; nodeFs.existsSync(candidate); n++) {
+        candidate = `${configPath}.${n}.bak`;
+    }
+    return candidate;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

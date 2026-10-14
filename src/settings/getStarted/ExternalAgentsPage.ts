@@ -9,7 +9,7 @@
 import { App, Component, Notice, Platform, Setting, setIcon } from 'obsidian';
 import type { SettingsRouter } from '../SettingsRouter';
 import { createSettingGroup } from '../../components/shared/settings/settingGroup';
-import { getPrimaryServerKey } from '../../constants/branding';
+import { getPrimaryServerKey, getServerKeyCandidates } from '../../constants/branding';
 import { desktopRequire } from '../../utils/desktopRequire';
 import { NodeRuntime, resolveNodeRuntime } from '../../utils/nodeRuntime';
 import {
@@ -187,11 +187,12 @@ export class ExternalAgentsPage {
     try {
       const connectorPath = ensureConnectorFile(this.context.pluginPath);
       const entry = buildMcpServerEntry(node.path, connectorPath);
-      const serverKey = this.serverKey();
+      // Current key first; an entry left under a legacy key is updated in place.
+      const serverKeys = getServerKeyCandidates(this.context.app.vault.getName());
       const result = client.id === 'codex'
-        ? writeCodexServer(serverKey, entry)
-        : writeMcpJsonServer(client.configPath, serverKey, entry);
-      const backup = result.replacedInvalid ? ' The old file was not valid JSON and was saved with a .bak extension.' : '';
+        ? writeCodexServer(serverKeys, entry)
+        : writeMcpJsonServer(client.configPath, serverKeys, entry);
+      const backup = result.replacedInvalid ? ` The old file was not valid JSON and was saved as ${result.backupPath}.` : '';
       new Notice(`Nexus added to ${client.label}. Restart it to load Nexus.${backup}`);
     } catch (error) {
       console.error(`[ExternalAgentsPage] Could not connect ${client.label}:`, error);
