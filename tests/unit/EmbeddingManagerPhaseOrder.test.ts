@@ -108,6 +108,7 @@ describe('EmbeddingManager background indexing order', () => {
     expect(calls.filter(call => !call.startsWith('prune-'))[0]).toBe('conversations');
     expect(calls).toContain('traces');
     expect(calls).toContain('notes');
+    await manager.shutdown();
   });
 
   it('cancels the in-flight walk so the re-index is not swallowed by isRunning', async () => {
@@ -123,5 +124,6 @@ describe('EmbeddingManager background indexing order', () => {
     // rebuild would silently leave conversation embeddings at zero.
     expect(cancel).toHaveBeenCalled();
     expect(calls.filter(call => !call.startsWith('prune-'))[0]).toBe('conversations');
+    await manager.shutdown();
   });
 });
