@@ -84,7 +84,7 @@ export class DefaultsTab {
     const workspaces = await this.loadWorkspaces();
     const prompts = this.loadPrompts();
 
-    await this.render(workspaces, prompts);
+    this.render(workspaces, prompts);
   }
 
   private async loadWorkspaces(): Promise<ChatSettingsOptions['workspaces']> {
@@ -203,10 +203,10 @@ export class DefaultsTab {
   /**
    * Main render method
    */
-  private async render(
+  private render(
     workspaces: ChatSettingsOptions['workspaces'],
     prompts: Array<{ id: string; name: string }>
-  ): Promise<void> {
+  ): void {
     this.container.empty();
 
     if (!this.services.llmProviderSettings) {
@@ -232,9 +232,15 @@ export class DefaultsTab {
       showVoiceSection: false,
       showTranscriptionSection: false,
       showWebSearch: false,
+      // Every Defaults-only section renders inside this hook: render() empties the
+      // container on each redraw, so anything appended outside it would vanish.
       renderAfterImageSection: (parent) => {
         this.renderVideoSection(parent);
         void this.renderVoiceSection(parent);
+        void this.renderIngestionSection(parent);
+        if (!Platform.isMobile) {
+          this.renderEmbeddingsSection(parent);
+        }
       },
       callbacks: {
         onSettingsChange: (settings) => {
@@ -248,31 +254,31 @@ export class DefaultsTab {
     });
 
     this.renderer.render();
+  }
 
-    await this.renderIngestionSection(rendererContainer);
+  /**
+   * Render the embeddings toggle (desktop only).
+   */
+  private renderEmbeddingsSection(parentEl: HTMLElement): void {
+    const embeddingsSection = createDiv({ cls: 'csr-section' });
+    const embeddingsHeader = embeddingsSection.createDiv({ cls: 'csr-section-header' });
+    embeddingsHeader.setText('Embeddings');
+    const embeddingsContent = embeddingsSection.createDiv({ cls: 'csr-section-content' });
 
-    // Embeddings section (desktop only)
-    if (!Platform.isMobile) {
-      const embeddingsSection = createDiv({ cls: 'csr-section' });
-      const embeddingsHeader = embeddingsSection.createDiv({ cls: 'csr-section-header' });
-      embeddingsHeader.setText('Embeddings');
-      const embeddingsContent = embeddingsSection.createDiv({ cls: 'csr-section-content' });
+    new Setting(embeddingsContent)
+      .setName('Enable')
+      .setDesc('Local embeddings for semantic search (~23 megabytes download). Restart to apply.')
+      .addToggle(toggle => {
+        toggle
+          .setValue(this.services.settings.settings.enableEmbeddings ?? true)
+          .onChange(async (value) => {
+            this.services.settings.settings.enableEmbeddings = value;
+            await this.services.settings.saveSettings();
+            new Notice(`Embeddings ${value ? 'enabled' : 'disabled'}. Restart Obsidian to apply.`);
+          });
+      });
 
-      new Setting(embeddingsContent)
-        .setName('Enable')
-        .setDesc('Local embeddings for semantic search (~23 megabytes download). Restart to apply.')
-        .addToggle(toggle => {
-          toggle
-            .setValue(this.services.settings.settings.enableEmbeddings ?? true)
-            .onChange(async (value) => {
-              this.services.settings.settings.enableEmbeddings = value;
-              await this.services.settings.saveSettings();
-              new Notice(`Embeddings ${value ? 'enabled' : 'disabled'}. Restart Obsidian to apply.`);
-            });
-        });
-
-      rendererContainer.appendChild(embeddingsSection);
-    }
+    parentEl.appendChild(embeddingsSection);
   }
 
   /**
@@ -1039,55 +1045,49 @@ export class DefaultsTab {
   }
 
   /**
-   * Render the ingestion defaults section
+   * Render the ingestion defaults section. Rows are created synchronously in
+   * order (toggle first, dependent rows inside a container hidden while it is
+   * off); only the vision model dropdowns wait for the capability lookup.
    */
   private async renderIngestionSection(parentEl: HTMLElement): Promise<void> {
     const llmSettings = this.services.llmProviderSettings;
     if (!llmSettings) return;
     const pluginSettings = this.services.settings.settings;
 
-    const providerManager = new LLMProviderManager(llmSettings, this.services.app.vault);
-    const capabilities = await getIngestCapabilityOptions(providerManager);
-    const normalizedOcrSelection = normalizeIngestSelection(
-      capabilities.ocrProviders,
-      llmSettings.defaultOcrModel?.provider,
-      llmSettings.defaultOcrModel?.model
-    );
-
-    if (normalizedOcrSelection.provider && normalizedOcrSelection.model) {
-      llmSettings.defaultOcrModel = {
-        provider: normalizedOcrSelection.provider,
-        model: normalizedOcrSelection.model
-      };
-    }
-
     const section = createDiv({ cls: 'csr-section' });
     const header = section.createDiv({ cls: 'csr-section-header' });
     header.setText('Ingestion');
     const content = section.createDiv({ cls: 'csr-section-content' });
-    const ingestionSettingsContainer = content.createDiv();
+    parentEl.appendChild(section);
+
     const isEnabled = pluginSettings.enableIngestion !== false;
+    let ingestionSettingsContainer: HTMLElement | null = null;
 
     new Setting(content)
-      .setName('Enable ingestion')
-      .setDesc('Show PDF ingestion settings and enable drag-and-drop ingestion in chat.')
+      .setName('File import')
+      .setDesc('Drop PDFs or audio into chat to turn them into notes.')
       .addToggle(toggle => {
         toggle
           .setValue(isEnabled)
           .onChange(async (value) => {
             pluginSettings.enableIngestion = value;
             if (value) {
-              ingestionSettingsContainer.removeClass('nexus-ingest-confirm-hidden');
+              ingestionSettingsContainer?.removeClass('nexus-ingest-confirm-hidden');
             } else {
-              ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
+              ingestionSettingsContainer?.addClass('nexus-ingest-confirm-hidden');
             }
             await this.services.settings.saveSettings();
           });
       });
 
-    new Setting(content)
-      .setName('Auto-convert new files')
-      .setDesc('When supported PDF files are added to the vault, automatically convert them to sibling Markdown files using the defaults below.')
+    ingestionSettingsContainer = content.createDiv();
+    if (!isEnabled) {
+      ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
+    }
+
+    new Setting(ingestionSettingsContainer)
+      .setName('Convert new files automatically')
+      .setDesc('Adds a Markdown note next to each PDF, document or audio file added to the vault.')
       .addToggle(toggle => {
         toggle
           .setValue(pluginSettings.autoIngestion === true)
@@ -1096,10 +1096,6 @@ export class DefaultsTab {
             await this.services.settings.saveSettings();
           });
       });
-
-    if (!isEnabled) {
-      ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
-    }
 
     // PDF processing mode
     let ocrSettingsContainer: HTMLElement | null = null;
@@ -1132,6 +1128,31 @@ export class DefaultsTab {
       ocrSettingsContainer.addClass('nexus-ingest-confirm-hidden');
     }
 
+    const providerManager = new LLMProviderManager(llmSettings, this.services.app.vault);
+    let capabilities: Awaited<ReturnType<typeof getIngestCapabilityOptions>>;
+    try {
+      capabilities = await getIngestCapabilityOptions(providerManager);
+    } catch (error) {
+      console.error('[DefaultsTab] Failed to load ingestion models:', error);
+      ocrSettingsContainer.createDiv({
+        cls: 'setting-item-description',
+        text: 'Vision models could not be loaded.'
+      });
+      return;
+    }
+    const normalizedOcrSelection = normalizeIngestSelection(
+      capabilities.ocrProviders,
+      llmSettings.defaultOcrModel?.provider,
+      llmSettings.defaultOcrModel?.model
+    );
+
+    if (normalizedOcrSelection.provider && normalizedOcrSelection.model) {
+      llmSettings.defaultOcrModel = {
+        provider: normalizedOcrSelection.provider,
+        model: normalizedOcrSelection.model
+      };
+    }
+
     renderIngestModelDropdowns(
       ocrSettingsContainer,
       {
@@ -1147,8 +1168,6 @@ export class DefaultsTab {
         }
       }
     );
-
-    parentEl.appendChild(section);
   }
 
   /**
