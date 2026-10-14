@@ -12,6 +12,8 @@ import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import type { ModelOption, PromptOption } from '../types/SelectionTypes';
 import type { ModelAgentWorkspaceContextService, ModelAgentWorkspaceState } from './ModelAgentWorkspaceContextService';
 import { buildOpenAICompatibleModels, OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import { resolveAgentTemperature } from '../../../services/llm/utils/SubagentModelResolver';
+import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
 
 interface PluginWithSettings {
   settings?: {
@@ -22,6 +24,8 @@ interface PluginWithSettings {
         defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
         agentThinking?: ThinkingSettings;
+        agentTemperature?: number;
+        agentContextWindowOverrides?: Record<string, number>;
         defaultImageModel?: { provider: 'google' | 'openrouter' | 'openai'; model: string };
         defaultTranscriptionModel?: { provider: string; model: string };
         defaultSpeechModel?: DefaultSpeechModelSettings;
@@ -44,6 +48,10 @@ export interface ModelAgentDefaultState {
   agentProvider: string | null;
   agentModel: string | null;
   agentThinkingSettings: ThinkingSettings;
+  /** Subagent Creativity a new chat starts with. */
+  agentTemperature: number;
+  /** Subagent context budget a new chat starts with; null uses the model's default. */
+  agentContextWindow: number | null;
   imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   speechProvider: DefaultSpeechModelSettings['provider'] | null;
@@ -113,6 +121,8 @@ export class ModelAgentDefaultsResolver {
       agentProvider: llmProviders?.agentModel?.provider || null,
       agentModel: llmProviders?.agentModel?.model || null,
       agentThinkingSettings,
+      agentTemperature: resolveAgentTemperature(null, llmProviders),
+      agentContextWindow: this.resolveAgentContextWindowDefault(llmProviders),
       imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
       imageModel: llmProviders?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: llmProviders?.defaultSpeechModel?.provider || null,
@@ -182,6 +192,16 @@ export class ModelAgentDefaultsResolver {
       contextWindow: 128000,
       supportsThinking: false
     };
+  }
+
+  /** The saved subagent limit for the default subagent model, if any. */
+  private resolveAgentContextWindowDefault(
+    llmProviders: { agentModel?: { provider: string; model: string }; agentContextWindowOverrides?: Record<string, number> } | undefined
+  ): number | null {
+    const agentModel = llmProviders?.agentModel;
+    if (!agentModel?.provider || !agentModel.model) return null;
+    const value = llmProviders?.agentContextWindowOverrides?.[getContextWindowOverrideKey(agentModel.provider, agentModel.model)];
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
   }
 
   private getPlugin(): PluginWithSettings | null {

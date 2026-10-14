@@ -1,4 +1,6 @@
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { ToolRuntimeContext } from '../../../../types/tools/ToolRuntimeContext';
+import type { ConversationAgentSettings } from '../../../../services/llm/utils/SubagentModelResolver';
 import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { getErrorMessage } from '../../../../utils/errorUtils';
@@ -52,7 +54,16 @@ function addBatchRecommendations(
  * - Coordinate specialized services
  * - Handle high-level error management
  */
+/** The chat view's current conversation and its subagent settings. */
+export type AgentConversationContextProvider = () => {
+  conversationId: string;
+  conversationAgent?: ConversationAgentSettings;
+} | null | undefined;
+
 export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, BatchExecutePromptResult> {
+  /** Receives the caller's runtime identity so a chat's subagent settings apply. */
+  readonly acceptsToolRuntimeContext = true as const;
+  private agentContextProvider: AgentConversationContextProvider | null = null;
   // Core services (injected)
   private obsidianApp: App | null = null;
   private llmService: LLMService | null = null;
@@ -167,7 +178,23 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   /**
    * Execute multiple LLM prompts with orchestrated workflow
    */
-  async execute(params: BatchExecutePromptParams): Promise<BatchExecutePromptResult> {
+  /**
+   * Supply the chat view's subagent settings. They are used only for calls
+   * whose runtime identity is that same conversation in internal chat.
+   */
+  setAgentContextProvider(provider: AgentConversationContextProvider): void {
+    this.agentContextProvider = provider;
+  }
+
+  private resolveConversationAgentSettings(runtimeContext?: ToolRuntimeContext): ConversationAgentSettings | undefined {
+    if (!runtimeContext || runtimeContext.source !== 'internal' || !runtimeContext.conversationId) {
+      return undefined;
+    }
+    const view = this.agentContextProvider?.();
+    return view && view.conversationId === runtimeContext.conversationId ? view.conversationAgent : undefined;
+  }
+
+  async execute(params: BatchExecutePromptParams, runtimeContext?: ToolRuntimeContext): Promise<BatchExecutePromptResult> {
     try {
       // Try to wait for dependencies if not available
       if (!this.llmService || !this.providerManager || !this.promptStorage) {
@@ -219,6 +246,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
         'default',
         ''
       );
+      executionContext.agentSettings = this.resolveConversationAgentSettings(runtimeContext);
 
       // Execute prompts with sequence and parallel group support
       const results = await this.sequenceManager.executePromptsWithSequencing(

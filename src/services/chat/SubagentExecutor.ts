@@ -33,6 +33,12 @@ import type { DirectToolExecutor } from './DirectToolExecutor';
 import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
 import { isTextOnlyProvider } from '../llm/utils/ToolSchemaSupport';
 import type { ChatRuntimeEvent } from '../llm/runtime/ChatRuntimeEvent';
+import type { ThinkingEffort } from '../../types/llm/ProviderTypes';
+import {
+  fitInheritedContext,
+  formatOmittedContextLine,
+  type InheritedContextItem
+} from './subagentContextBudget';
 import {
   createInitialChatTurnState,
   reduceChatTurn,
@@ -54,6 +60,9 @@ export interface SubagentExecutorDependencies {
       sessionId?: string;
       operationOrigin?: import('../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
       operationScopeId?: string;
+      enableThinking?: boolean;
+      thinkingEffort?: ThinkingEffort;
+      temperature?: number;
     }
   ) => AsyncGenerator<ChatRuntimeEvent, void, unknown>;
   // Tool list service for pre-fetching schemas
@@ -259,15 +268,18 @@ export class SubagentExecutor {
 
     // 2. Read context files if provided (inherited from parent + tool params)
     // These go into the SYSTEM PROMPT so the subagent has full context
-    let contextFilesContent = '';
-    if (params.contextFiles?.length) {
-      contextFilesContent = await this.readContextFiles(params.contextFiles);
-    }
+    const contextFiles = params.contextFiles?.length
+      ? await this.readContextFiles(params.contextFiles)
+      : [];
 
-    // 3. Build system prompt WITH tool schemas + context files included
-    const systemPrompt = this.buildSystemPrompt(params, toolSchemasText, contextFilesContent);
+    // 3. Fit the inherited context (workspace data, then files) into the
+    // subagent's context window, dropping whole items that do not fit.
+    const inheritedContext = this.assembleInheritedContext(params, contextFiles);
 
-    // 4. Build initial user message (just task + any additional context string)
+    // 4. Build system prompt WITH tool schemas + inherited context included
+    const systemPrompt = this.buildSystemPrompt(params, toolSchemasText, inheritedContext);
+
+    // 5. Build initial user message (just task + any additional context string)
     const initialMessage = this.buildInitialMessage(params.task, params.context || '');
 
     // 5. Add initial messages to branch
@@ -370,6 +382,9 @@ export class SubagentExecutor {
       sessionId: params.sessionId,
       provider: params.provider,
       model: params.model,
+      enableThinking: params.thinkingEnabled,
+      thinkingEffort: params.thinkingEffort,
+      temperature: params.temperature,
       operationOrigin: 'subagent',
       operationScopeId: branchId,
     })) {
@@ -501,15 +516,42 @@ export class SubagentExecutor {
   }
 
   /**
+   * Decide which inherited context goes into the subagent's system prompt.
+   * Without a context window everything is kept, as before.
+   */
+  private assembleInheritedContext(
+    params: SubagentParams,
+    contextFiles: InheritedContextItem[]
+  ): { workspaceContext?: string; contextFilesContent?: string; omittedLine?: string } {
+    const items: InheritedContextItem[] = [];
+    const workspaceText = params.workspaceData ? this.formatWorkspaceData(params.workspaceData) : '';
+    const workspaceItem: InheritedContextItem | null = workspaceText
+      ? { label: 'workspace context', text: workspaceText }
+      : null;
+    if (workspaceItem) items.push(workspaceItem);
+    items.push(...contextFiles);
+
+    const fitted = fitInheritedContext(items, params.contextWindow);
+    const includedFiles = fitted.included.filter(item => item !== workspaceItem);
+    return {
+      workspaceContext: workspaceItem && fitted.included.includes(workspaceItem) ? workspaceItem.text : undefined,
+      contextFilesContent: includedFiles.length > 0 ? includedFiles.map(item => item.text).join('\n\n') : undefined,
+      omittedLine: fitted.omitted.length > 0 && params.contextWindow !== undefined
+        ? formatOmittedContextLine(fitted.omitted, params.contextWindow)
+        : undefined
+    };
+  }
+
+  /**
    * Build system prompt for subagent
    * @param params Subagent parameters
    * @param toolSchemas Pre-fetched tool schemas to include (optional)
-   * @param contextFilesContent Content from context files to include (optional)
+   * @param inherited Workspace context, context files and the omitted-items line, already budgeted
    */
   private buildSystemPrompt(
     params: SubagentParams,
     toolSchemas?: string,
-    contextFilesContent?: string
+    inherited: { workspaceContext?: string; contextFilesContent?: string; omittedLine?: string } = {}
   ): string {
     // Determine if tools were pre-loaded by parent
     const hasPreloadedTools = toolSchemas && toolSchemas.length > 0;
@@ -549,17 +591,16 @@ ${params.task}
 
 5. **Use thinking/reasoning internally** - Deliberate in your thinking, not in your text output.`);
 
-    // 3. Add workspace context if available
-    if (params.workspaceData) {
-      const workspaceContext = this.formatWorkspaceData(params.workspaceData);
-      if (workspaceContext) {
-        promptParts.push(`## Workspace Context\n${workspaceContext}`);
-      }
+    // 3. Add workspace context if available (and within the context budget)
+    if (inherited.workspaceContext) {
+      promptParts.push(`## Workspace Context\n${inherited.workspaceContext}`);
     }
 
     // 4. Add context files content if available (from parent's notes + tool params)
-    if (contextFilesContent) {
-      promptParts.push(`## Reference Files\nThe following files have been provided as context:\n\n${contextFilesContent}`);
+    if (inherited.contextFilesContent) {
+      promptParts.push(`## Reference Files\nThe following files have been provided as context:\n\n${inherited.contextFilesContent}${inherited.omittedLine ? `\n\n${inherited.omittedLine}` : ''}`);
+    } else if (inherited.omittedLine) {
+      promptParts.push(`## Reference Files\n${inherited.omittedLine}`);
     }
 
     // 5. Add tool section based on whether tools were pre-loaded
@@ -668,8 +709,8 @@ BEGIN - Start by calling getTools to discover available tools.`);
   /**
    * Read context files
    */
-  private async readContextFiles(files: string[]): Promise<string> {
-    const contents: string[] = [];
+  private async readContextFiles(files: string[]): Promise<InheritedContextItem[]> {
+    const contents: InheritedContextItem[] = [];
 
     for (const file of files) {
       try {
@@ -683,16 +724,16 @@ BEGIN - Start by calling getTools to discover available tools.`);
         const result = results[0];
 
         if (result?.success && (result.result as { content?: string })?.content) {
-          contents.push(`--- ${file} ---\n${(result.result as { content: string }).content}`);
+          contents.push({ label: file, text: `--- ${file} ---\n${(result.result as { content: string }).content}` });
         } else {
-          contents.push(`--- ${file} --- (failed to read)`);
+          contents.push({ label: file, text: `--- ${file} --- (failed to read)` });
         }
       } catch {
-        contents.push(`--- ${file} --- (error reading file)`);
+        contents.push({ label: file, text: `--- ${file} --- (error reading file)` });
       }
     }
 
-    return contents.join('\n\n');
+    return contents;
   }
 
   /**

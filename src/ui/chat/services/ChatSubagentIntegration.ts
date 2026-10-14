@@ -17,6 +17,7 @@ import {
   type SubagentControllerEvents,
 } from '../controllers/SubagentController';
 import type { ConversationData } from '../../../types/chat/ChatTypes';
+import type { ConversationAgentSettings } from '../../../services/llm/utils/SubagentModelResolver';
 
 interface ConversationManagerLike {
   getCurrentConversation(): ConversationData | null;
@@ -24,12 +25,13 @@ interface ConversationManagerLike {
 }
 
 interface ModelAgentManagerLike {
-  getSelectedModel(): { providerId?: string; modelId?: string } | null;
+  getSelectedModel(): { providerId?: string; modelId?: string; contextWindow?: number } | null;
   getSelectedPrompt(): { name?: string; systemPrompt?: string } | null;
   getLoadedWorkspaceData(): Record<string, unknown> | null;
   getContextNotes(): string[];
   getThinkingSettings(): { enabled?: boolean; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } | null;
   getSelectedWorkspaceId(): string | null;
+  getAgentSettings?(): ConversationAgentSettings;
 }
 
 interface NavigationTarget {
@@ -123,6 +125,7 @@ export class ChatSubagentIntegration {
       getContextNotes: () => this.deps.getModelAgentManager()?.getContextNotes() || [],
       getThinkingSettings: () => this.deps.getModelAgentManager()?.getThinkingSettings() ?? null,
       getSelectedWorkspaceId: () => this.deps.getModelAgentManager()?.getSelectedWorkspaceId() ?? null,
+      getAgentSettings: () => this.deps.getModelAgentManager()?.getAgentSettings?.() ?? null,
     };
   }
 

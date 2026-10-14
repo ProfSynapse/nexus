@@ -25,6 +25,10 @@ export interface ConversationSettingsMetadata {
   agentProvider?: string | null;
   agentModel?: string | null;
   agentThinking?: ThinkingSettings;
+  /** Subagent Creativity for this chat (0-1). */
+  agentTemperature?: number;
+  /** Subagent context budget for this chat; null uses the subagent model's default. */
+  agentContextWindow?: number | null;
   imageProvider?: 'google' | 'openrouter' | 'openai';
   imageModel?: string;
   speechProvider?: DefaultSpeechModelSettings['provider'] | null;

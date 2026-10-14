@@ -96,9 +96,9 @@ export interface SubagentParams {
   sessionId?: string;
   maxIterations?: number;
   continueBranchId?: string;
-  // Inherited from parent conversation - Model settings
-  provider?: string;  // LLM provider (inherits parent's model)
-  model?: string;     // LLM model (inherits parent's model)
+  // Model settings, resolved with the agent precedence (subagent model, then a cloud chat model)
+  provider?: string;  // LLM provider for the subagent run
+  model?: string;     // LLM model for the subagent run
   // Inherited from parent conversation - Agent settings
   agentPrompt?: string;  // Custom agent's full system prompt (merged into subagent prompt)
   agentName?: string;    // Custom agent name for reference
@@ -106,9 +106,16 @@ export interface SubagentParams {
   workspaceData?: Record<string, unknown>;   // Full comprehensive workspace data (sessions, states, files, etc.)
   // Inherited from parent conversation - Context notes (file paths)
   inheritedContextNotes?: string[];  // Note paths from parent's context notes
-  // Inherited from parent conversation - Thinking settings
+  // Subagent thinking settings (already gated for the resolved model)
   thinkingEnabled?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Subagent Creativity; undefined when the model rejects sampling parameters. */
+  temperature?: number;
+  /**
+   * Token budget for the inherited context (context files and workspace data)
+   * assembled into the subagent's system prompt. Undefined means no budget.
+   */
+  contextWindow?: number;
 }
 
 /**
