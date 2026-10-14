@@ -1950,6 +1950,11 @@ body.is-mobile .setting-item.nexus-semantic-progress .setting-progress-bar {
     color: var(--text-muted);
 }
 
+/* The embedding model did not load: the row's name reads as an error. */
+.setting-item.nexus-semantic-error .setting-item-name {
+    color: var(--text-error);
+}
+
 body.is-mobile .nexus-accordion-toggle {
     min-height: 44px;
 }

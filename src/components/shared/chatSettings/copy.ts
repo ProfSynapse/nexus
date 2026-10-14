@@ -132,6 +132,11 @@ export const SEMANTIC_COPY = {
   deleteIndex: 'Delete index',
   deleteIndexDesc: 'Frees the space it uses. Turning search back on re-indexes the whole vault.',
   deleteFailed: 'The search index could not be deleted.',
+  loadFailed: "Couldn't load the search model",
+  /** Description of the load-failure row when the queue gave no detail. */
+  loadFailedDesc: 'Semantic search is on, but nothing can be indexed or searched until the model loads.',
+  tryAgain: 'Try again',
+  retryFailed: 'Semantic search could not start. Restart Obsidian to try again.',
   applyFailed: 'The semantic search setting could not be applied. Restart Obsidian to apply it.'
 } as const;
 

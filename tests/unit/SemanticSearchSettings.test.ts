@@ -64,6 +64,12 @@ class FakeRuntime {
     this.emit();
   });
 
+  /** Starts over from fresh components, as EmbeddingManager.retry() does. */
+  retry = jest.fn(async () => {
+    this.status = { enabled: this.enabled, initialized: this.enabled, indexing: false, paused: false, progress: null };
+    this.emit();
+  });
+
   constructor(enabled = true) {
     this.enabled = enabled;
     this.status = { enabled, initialized: enabled, indexing: false, paused: false, progress: null };
@@ -106,6 +112,17 @@ class FakeRuntime {
         estimatedTimeRemaining: 240,
         ...progress
       }
+    };
+    this.emit();
+  }
+
+  /** End the note pass the way IndexingQueue does when the model does not load. */
+  failToLoadModel(error = 'The embedding model could not be loaded'): void {
+    this.status = {
+      ...this.status,
+      indexing: false,
+      paused: false,
+      progress: { phase: 'error', totalNotes: 4512, processedNotes: 0, currentNote: null, estimatedTimeRemaining: null, error }
     };
     this.emit();
   }
@@ -207,6 +224,66 @@ describe('Semantic search fold', () => {
       expect(rowNames(items())).toEqual([COPY.toggle, COPY.index]);
       expect(summary()).toBe('On · 4,512 notes');
     } finally {
+      tab.destroy();
+    }
+  });
+
+  it('says the model did not load, with the detail, instead of claiming an index', async () => {
+    const { tab, items, summary, runtime } = await render();
+    try {
+      runtime.indexing({ phase: 'loading_model', processedNotes: 0 });
+      await settle();
+      runtime.failToLoadModel();
+      await settle();
+
+      expect(rowNames(items())).toEqual([COPY.toggle, COPY.loadFailed]);
+      const row = findRow(items(), COPY.loadFailed);
+      expect(rowDesc(row)).toBe('The embedding model could not be loaded');
+      const button = control(row, 'button');
+      expect(button.textContent).toBe(COPY.tryAgain);
+      expect(button.disabled).toBe(false);
+      expect(toggleOf(items()).hasClass('is-enabled')).toBe(true);
+      expect(summary()).toBe("On · couldn't load");
+    } finally {
+      tab.destroy();
+    }
+  });
+
+  it('starts the runtime over from Try again, and shows the index once it does', async () => {
+    const { tab, items, summary, runtime } = await render();
+    try {
+      runtime.failToLoadModel();
+      await settle();
+
+      control(findRow(items(), COPY.loadFailed), 'button').click();
+      await settle();
+
+      expect(runtime.retry).toHaveBeenCalledTimes(1);
+      expect(runtime.setEnabled).not.toHaveBeenCalled();
+      expect(rowNames(items())).toEqual([COPY.toggle, COPY.index]);
+      expect(summary()).toBe('On · 4,512 notes');
+    } finally {
+      tab.destroy();
+    }
+  });
+
+  it('keeps the failure row and says so when Try again cannot start the runtime', async () => {
+    const { tab, items, summary, runtime } = await render();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      runtime.failToLoadModel();
+      await settle();
+      runtime.retry.mockRejectedValueOnce(new Error('Semantic search could not start.'));
+
+      control(findRow(items(), COPY.loadFailed), 'button').click();
+      await settle();
+
+      expect(runtime.retry).toHaveBeenCalledTimes(1);
+      expect(rowNames(items())).toEqual([COPY.toggle, COPY.loadFailed]);
+      expect(control(findRow(items(), COPY.loadFailed), 'button').disabled).toBe(false);
+      expect(summary()).toBe("On · couldn't load");
+    } finally {
+      errorSpy.mockRestore();
       tab.destroy();
     }
   });

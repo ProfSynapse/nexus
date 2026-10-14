@@ -114,8 +114,11 @@ export function semanticSearchSummary(input: {
   indexingPercent?: number;
   /** While off: false once the index was deleted. Unknown counts as kept. */
   indexKept?: boolean;
+  /** While on: the embedding model failed to load, so nothing is indexed. */
+  loadFailed?: boolean;
 }): string {
   if (!input.enabled) return input.indexKept === false ? 'Off · no index' : 'Off · index kept';
+  if (input.loadFailed) return "On · couldn't load";
   if (typeof input.indexingPercent === 'number') return `Indexing · ${Math.round(input.indexingPercent)}%`;
   if (typeof input.noteCount === 'number') return `On · ${input.noteCount.toLocaleString()} notes`;
   return 'On';
