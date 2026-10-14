@@ -65,7 +65,7 @@ export class WorkflowScheduleService {
     try {
       const workspaces = await this.deps.workspaceService.getAllWorkspaces();
       if (this.stopped) return;
-      const lastCheckAt = this.deps.settings.settings.workflowScheduler?.lastCheckAt;
+      const lastCheckAt = this.deps.settings.getWorkflowSchedulerWatermark();
 
       for (const workspace of workspaces) {
         if (workspace.isActive === false) {

@@ -1,4 +1,9 @@
-/** A scheduler tick must not re-upload this device's stale API keys after Obsidian Sync updates data.json. */
+/**
+ * The workflow scheduler ticks every minute on every device. Its watermark must
+ * live in device-local storage: writing it to data.json made Obsidian Sync
+ * upload the file continuously and every other device reload it. A tick also
+ * must never re-upload this device's stale settings.
+ */
 import type { Plugin } from 'obsidian';
 import { Settings } from '../../src/settings';
 import { WorkflowScheduleService, type WorkflowScheduleServiceDeps } from '../../src/services/workflows/WorkflowScheduleService';
@@ -20,13 +25,19 @@ function fixture() {
   const loadData = jest.fn(async () => JSON.parse(JSON.stringify(disk)) as unknown);
   const saveData = jest.fn(async (data: typeof disk) => { disk = JSON.parse(JSON.stringify(data)) as typeof disk; });
   const registerInterval = jest.fn();
-  const plugin = { loadData, saveData, register: (callback: () => void) => { unload.push(callback); }, registerInterval } as unknown as Plugin;
+  const local = new Map<string, unknown>();
+  const app = {
+    loadLocalStorage: jest.fn((key: string) => (local.has(key) ? JSON.parse(JSON.stringify(local.get(key))) as unknown : null)),
+    saveLocalStorage: jest.fn((key: string, value: unknown) => { local.set(key, JSON.parse(JSON.stringify(value))); }),
+  };
+  const plugin = { app, loadData, saveData, register: (callback: () => void) => { unload.push(callback); }, registerInterval } as unknown as Plugin;
   const settings = new Settings(plugin);
   const getAllWorkspaces = jest.fn(async () => []);
   const scheduler = new WorkflowScheduleService({
     plugin, settings, workspaceService: { getAllWorkspaces }, conversationService: {}, workflowRunService: {},
   } as unknown as WorkflowScheduleServiceDeps);
-  return { settings, scheduler, getAllWorkspaces, loadData, saveData, registerInterval, unload,
+  return { settings, scheduler, getAllWorkspaces, loadData, saveData, registerInterval, unload, app,
+    localWatermark: () => (local.get('nexus-workflow-scheduler') as { lastCheckAt?: number } | undefined)?.lastCheckAt,
     get disk() { return disk; },
     syncNewSettings() {
       disk.llmProviders.providers.anthropic.apiKey = 'new-key';
@@ -40,32 +51,33 @@ describe('Workflow scheduler settings persistence', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(60_000); });
   afterEach(() => jest.useRealTimers());
 
-  it('preserves synced credentials and unrelated settings through real Settings on the next minute tick', async () => {
+  it('never writes data.json on a tick, so synced settings are neither uploaded nor overwritten', async () => {
     const h = fixture();
     await h.settings.loadSettings();
     await h.scheduler.start();
-    h.settings.settings.llmProviders.providers.anthropic.userDescription = 'Unsaved local edit';
     h.syncNewSettings();
-    await jest.advanceTimersByTimeAsync(60_000);
-    expect(h.settings.settings.llmProviders.providers.anthropic.apiKey).toBe('new-key');
-    expect(h.settings.settings.llmProviders.providers.anthropic.userDescription).toBe('Unsaved local edit');
-    expect(h.disk.llmProviders.providers.anthropic).not.toHaveProperty('userDescription');
+    await jest.advanceTimersByTimeAsync(180_000);
+    expect(h.saveData).not.toHaveBeenCalled();
     expect(h.disk.llmProviders.providers.anthropic.apiKey).toBe('new-key');
-    expect(h.disk.llmProviders.defaultModel.model).toBe('new-model');
     expect(h.disk.enableEmbeddings).toBe(false);
-    expect(h.disk.pluginStorage).toEqual({ retained: true });
-    expect(h.disk.workflowScheduler.lastCheckAt).toBe(120_000);
-    await h.settings.saveSettings();
-    expect(h.disk.llmProviders.providers.anthropic).toMatchObject({ apiKey: 'new-key', userDescription: 'Unsaved local edit' });
+    expect(h.disk.workflowScheduler.lastCheckAt).toBe(100);
+    expect(h.localWatermark()).toBe(240_000);
     await h.scheduler.cleanup();
   });
 
-  it('does not rewrite an unchanged or newer persisted watermark', async () => {
+  it('honours a watermark older versions saved in data.json as a floor, and never moves backwards', async () => {
     const h = fixture();
-    await h.settings.saveWorkflowSchedulerState(100);
-    await h.settings.saveWorkflowSchedulerState(50);
+    h.disk.workflowScheduler.lastCheckAt = 500_000;
+    await h.settings.loadSettings();
+    expect(h.settings.getWorkflowSchedulerWatermark()).toBe(500_000);
+    await h.settings.saveWorkflowSchedulerState(120_000);
+    expect(h.settings.getWorkflowSchedulerWatermark()).toBe(500_000);
+    await h.settings.saveWorkflowSchedulerState(600_000);
+    expect(h.localWatermark()).toBe(600_000);
+    expect(h.settings.getWorkflowSchedulerWatermark()).toBe(600_000);
+    await h.settings.saveWorkflowSchedulerState(550_000);
+    expect(h.localWatermark()).toBe(600_000);
     expect(h.saveData).not.toHaveBeenCalled();
-    expect(h.settings.settings.workflowScheduler?.lastCheckAt).toBe(100);
   });
 
   it('keeps advancing the watermark without enabled schedules so later enablement cannot backfill an idle gap', async () => {
@@ -73,8 +85,16 @@ describe('Workflow scheduler settings persistence', () => {
     await h.settings.loadSettings();
     await h.scheduler.start();
     await jest.advanceTimersByTimeAsync(180_000);
-    expect(h.disk.workflowScheduler.lastCheckAt).toBe(240_000);
+    expect(h.localWatermark()).toBe(240_000);
+    expect(h.settings.getWorkflowSchedulerWatermark()).toBe(240_000);
     await h.scheduler.cleanup();
+  });
+
+  it('does not rewrite local storage when the watermark has not moved', async () => {
+    const h = fixture();
+    await h.settings.saveWorkflowSchedulerState(100);
+    await h.settings.saveWorkflowSchedulerState(100);
+    expect(h.app.saveLocalStorage).toHaveBeenCalledTimes(1);
   });
 
   it('does not persist or register a late timer when unload interrupts startup', async () => {
@@ -87,23 +107,9 @@ describe('Workflow scheduler settings persistence', () => {
     await start;
     await h.scheduler.cleanup();
     expect(h.saveData).not.toHaveBeenCalled();
+    expect(h.app.saveLocalStorage).not.toHaveBeenCalled();
     expect(h.registerInterval).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
-  });
-
-  it('cancels an in-flight settings read before it can write after unload', async () => {
-    const h = fixture();
-    const read = deferred<unknown>();
-    h.loadData.mockReturnValueOnce(read.promise);
-    const scan = h.scheduler.scanDueWorkflows(false);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(h.loadData).toHaveBeenCalledTimes(1);
-    h.unload.forEach(callback => callback());
-    read.resolve(h.disk);
-    await scan;
-    await h.scheduler.cleanup();
-    expect(h.saveData).not.toHaveBeenCalled();
   });
 
   it('clears the running interval and prevents scans after cleanup', async () => {

@@ -25,6 +25,9 @@ function setOptionalKey<K extends keyof MCPSettings>(target: MCPSettings, key: K
  * Settings manager
  * Handles loading and saving plugin settings
  */
+/** Vault-scoped localStorage key for the workflow scheduler's device-local watermark. */
+const WORKFLOW_SCHEDULER_STORAGE_KEY = 'nexus-workflow-scheduler';
+
 export class Settings {
     private plugin: Plugin;
     private secretStore: SecretStore;
@@ -229,30 +232,38 @@ export class Settings {
         if (providersChanged && this.settings.llmProviders) LLMSettingsNotifier.notify(this.settings.llmProviders);
     }
 
-    /** Persist only the scheduler watermark; a background tick must not upload stale provider settings. */
-    async saveWorkflowSchedulerState(lastCheckAt: number, signal?: AbortSignal): Promise<void> {
-        await pluginDataLock.acquire(async () => {
-            if (signal?.aborted) return;
-            const loadedData: unknown = await this.plugin.loadData();
-            if (signal?.aborted) return;
-            const persisted = loadedData && typeof loadedData === 'object'
-                ? loadedData as Record<string, unknown>
-                : {};
-            const scheduler = persisted.workflowScheduler && typeof persisted.workflowScheduler === 'object'
-                ? persisted.workflowScheduler as Record<string, unknown>
-                : {};
-            const previousCheck = scheduler.lastCheckAt;
-            const nextCheck = typeof previousCheck === 'number' ? Math.max(previousCheck, lastCheckAt) : lastCheckAt;
-            if (nextCheck !== previousCheck) {
-                await this.plugin.saveData({ ...persisted, workflowScheduler: { ...scheduler, lastCheckAt: nextCheck } });
-            }
-            if (signal?.aborted) return;
-            // loadData can acknowledge Obsidian's external-change timestamp.
-            // Reconcile providers here too, in case this read precedes its callback.
-            this.reconcileProviders(this.readIncoming(loadedData));
-            this.settings.workflowScheduler = { ...this.settings.workflowScheduler, lastCheckAt: nextCheck };
-            this.baseline.workflowScheduler = { ...this.baseline.workflowScheduler, lastCheckAt: nextCheck };
-        });
+    /**
+     * The workflow scheduler's watermark: when this device last checked for due
+     * runs. It is device-local (vault-scoped localStorage), never data.json: the
+     * scheduler ticks every minute on every device, and writing a synced file that
+     * often made Obsidian Sync upload data.json continuously and every other
+     * device reload it. Duplicate runs across devices are prevented by each run's
+     * runKey, not by this value. A watermark still saved in data.json by older
+     * versions is honoured as a floor until the local one passes it.
+     */
+    getWorkflowSchedulerWatermark(): number | undefined {
+        const local = this.readLocalSchedulerWatermark();
+        const legacy = this.settings.workflowScheduler?.lastCheckAt;
+        const candidates = [local, legacy].filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        return candidates.length ? Math.max(...candidates) : undefined;
+    }
+
+    /** Advance the device-local scheduler watermark. Never touches data.json. */
+    saveWorkflowSchedulerState(lastCheckAt: number, signal?: AbortSignal): Promise<void> {
+        if (signal?.aborted) return Promise.resolve();
+        const previous = this.getWorkflowSchedulerWatermark();
+        const next = typeof previous === 'number' ? Math.max(previous, lastCheckAt) : lastCheckAt;
+        if (next !== this.readLocalSchedulerWatermark()) {
+            this.plugin.app?.saveLocalStorage?.(WORKFLOW_SCHEDULER_STORAGE_KEY, { v: 1, lastCheckAt: next });
+        }
+        return Promise.resolve();
+    }
+
+    private readLocalSchedulerWatermark(): number | undefined {
+        const stored: unknown = this.plugin.app?.loadLocalStorage?.(WORKFLOW_SCHEDULER_STORAGE_KEY);
+        if (!stored || typeof stored !== 'object') return undefined;
+        const value = (stored as { lastCheckAt?: unknown }).lastCheckAt;
+        return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
     }
 
     /**
