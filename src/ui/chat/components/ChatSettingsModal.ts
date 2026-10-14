@@ -27,7 +27,6 @@ export class ChatSettingsModal extends Modal {
   private conversationId: string | null;
   private renderer: ChatSettingsRenderer | null = null;
   private pendingSettings: ChatSettings | null = null;
-  private displayedContextWindowOverrides: Record<string, number> | null = null;
   private saveButton: ButtonComponent | null = null;
   private saveStatus: HTMLElement | null = null;
   private saving = false;
@@ -148,7 +147,6 @@ export class ChatSettingsModal extends Modal {
       const key = getContextWindowOverrideKey(model.providerId, model.modelId);
       contextWindowOverrides[key] = this.modelAgentManager.getEffectiveContextWindow();
     }
-    this.displayedContextWindowOverrides = { ...contextWindowOverrides };
 
     return {
       provider: model?.providerId || llmSettings?.defaultModel?.provider || '',
@@ -231,31 +229,7 @@ export class ChatSettingsModal extends Modal {
         if (!committed) return;
       }
 
-      const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
-      const llmProviders = plugin?.settings?.settings?.llmProviders;
-      if (llmProviders && settings.contextWindowOverrides) {
-        const displayed = this.displayedContextWindowOverrides ?? {};
-        const changedKeys = new Set([...Object.keys(displayed), ...Object.keys(settings.contextWindowOverrides)]);
-        const oldOverrides = llmProviders.contextWindowOverrides;
-        const nextOverrides = { ...oldOverrides };
-        let changed = false;
-        for (const key of changedKeys) {
-          if (displayed[key] === settings.contextWindowOverrides[key]) continue;
-          changed = true;
-          if (settings.contextWindowOverrides[key] === undefined) delete nextOverrides[key];
-          else nextOverrides[key] = settings.contextWindowOverrides[key];
-        }
-        if (changed) {
-          llmProviders.contextWindowOverrides = nextOverrides;
-          try {
-            await plugin?.settings?.saveSettings();
-          } catch (error) {
-            llmProviders.contextWindowOverrides = oldOverrides;
-            const reason = error instanceof Error ? error.message : 'Unknown error';
-            throw new Error(`Context change was saved, but default context settings could not be saved: ${reason}`);
-          }
-        }
-      }
+      // The context window applies to this conversation only; Defaults own the value for new chats.
       if (this.closed) return;
 
       // Update prompt
@@ -346,7 +320,6 @@ export class ChatSettingsModal extends Modal {
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;
-    this.displayedContextWindowOverrides = null;
     this.contentEl.empty();
   }
 }

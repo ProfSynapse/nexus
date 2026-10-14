@@ -56,7 +56,6 @@ import { ChatEventBinder } from './utils/ChatEventBinder';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { generateUUID } from '../../utils/uuid';
-import { getContextWindowOverrideKey } from './utils/ContextWindowSettings';
 
 // Nexus Lifecycle
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
@@ -1139,19 +1138,6 @@ export class ChatView extends ItemView {
           this.chatService.getToolCallMessagesForConversation(conversationId, options),
       },
     }, this).open();
-  }
-
-  /** Apply a changed default only to this active chat, through the normal handoff. */
-  async applyContextWindowDefault(overrides: Record<string, number>, changedKeys: ReadonlySet<string>): Promise<boolean> {
-    const model = this.modelAgentManager?.getSelectedModel();
-    if (!model) return true;
-    const key = getContextWindowOverrideKey(model.providerId, model.modelId);
-    if (!changedKeys.has(key)) return true;
-    return this.modelAgentManager.requestContextChange({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      contextWindowOverride: overrides[key]
-    });
   }
 
   private async ensurePreservationServiceAndCompact(): Promise<void> {

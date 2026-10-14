@@ -51,7 +51,6 @@ import {
 } from '../../services/llm/types/VideoTypes';
 import { SpeechModelCatalogService } from '../../services/readAloud/SpeechModelCatalogService';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
-import { ChatView } from '../../ui/chat/ChatView';
 
 export interface DefaultsTabServices {
   app: App;
@@ -150,15 +149,8 @@ export class DefaultsTab {
     const llmSettings = this.services.llmProviderSettings;
     const pluginSettings = this.services.settings.settings;
 
+    // Defaults apply to new chats only; an open chat keeps its own context budget.
     if (llmSettings) {
-      const previousOverrides = llmSettings.contextWindowOverrides ?? {};
-      const nextOverrides = settings.contextWindowOverrides ?? {};
-      const changedKeys = new Set([...Object.keys(previousOverrides), ...Object.keys(nextOverrides)]
-        .filter(key => previousOverrides[key] !== nextOverrides[key]));
-      if (changedKeys.size > 0) {
-        const activeChat = this.services.app.workspace.getActiveViewOfType(ChatView);
-        if (activeChat && !await activeChat.applyContextWindowDefault(nextOverrides, changedKeys)) return;
-      }
       llmSettings.defaultModel = {
         provider: settings.provider,
         model: settings.model
