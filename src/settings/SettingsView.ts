@@ -293,8 +293,16 @@ export class SettingsView extends PluginSettingTab {
         });
     }
 
+    /**
+     * Tear down what the body holds. The Defaults tab subscribes to provider
+     * and indexing events, so it goes with the body; renderBody() builds a new
+     * one. (Tabs that may hold an unsaved edit, such as Workspaces, keep their
+     * existing lifetime.)
+     */
     private unloadBody(): void {
         this.bodyRenderToken++;
+        this.defaultsTab?.destroy();
+        this.defaultsTab = undefined;
         this.bodyComponent?.unload();
         this.bodyComponent = undefined;
     }
@@ -339,7 +347,8 @@ export class SettingsView extends PluginSettingTab {
             onTabChange: (tabKey) => {
                 this.router.setTab(tabKey as SettingsTab);
             },
-            component: this.plugin
+            // The body's own component, so the tab listeners go when the body does.
+            component
         });
 
         this.renderTabContent(state);

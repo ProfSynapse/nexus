@@ -109,3 +109,29 @@ it('navigates at once when settings are already on screen', () => {
   expect(tabs.activateTab).toHaveBeenCalledWith('providers', false);
   expect(mockProvidersTab).toHaveBeenCalledTimes(1);
 });
+
+it('closing settings tears down the Defaults tab, so its event subscriptions do not outlive the UI', () => {
+  const view = buildView();
+  view.display();
+  const defaults = mockDefaultsTab.mock.results[0].value as { destroy: jest.Mock };
+  expect(defaults.destroy).not.toHaveBeenCalled();
+
+  view.hide();
+  expect(defaults.destroy).toHaveBeenCalledTimes(1);
+
+  // Reopening builds a fresh one.
+  view.display();
+  expect(mockDefaultsTab).toHaveBeenCalledTimes(2);
+});
+
+it('registers tab listeners on the body component, not the plugin, so each rebuild releases them', () => {
+  const view = buildView();
+  const plugin = (view as unknown as { plugin: unknown }).plugin;
+  view.display();
+  const component = unifiedTabs().mock.calls[0][0].component as { _loaded?: boolean; unload(): void };
+  expect(component).toBeDefined();
+  expect(component).not.toBe(plugin);
+  expect(component).toBe((view as unknown as { bodyComponent: unknown }).bodyComponent);
+  view.hide();
+  expect((view as unknown as { bodyComponent: unknown }).bodyComponent).toBeUndefined();
+});
