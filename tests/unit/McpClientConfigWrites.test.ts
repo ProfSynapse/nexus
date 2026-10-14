@@ -20,7 +20,7 @@ jest.mock('../../src/utils/desktopRequire', () => ({
   desktopRequire: (name: string) => jest.requireActual(name)
 }));
 
-import { getMcpJsonStatus, writeCodexServer, writeMcpJsonServer } from '../../src/utils/mcpClientConfigs';
+import { getMcpJsonStatus, writeClaudeCodeServer, writeCodexServer, writeMcpJsonServer } from '../../src/utils/mcpClientConfigs';
 import { buildCodexMcpTomlSnippet, readCodexMcpServerConfig } from '../../src/utils/codexMcpConfig';
 
 const KEYS = ['nexus-vault', 'claudesidian-mcp-vault'];
@@ -111,5 +111,39 @@ describe('Codex config.toml', () => {
   it('adds the current key when no table exists', () => {
     writeCodexServer(KEYS, ENTRY);
     expect(readCodexMcpServerConfig(readFileSync(codexPath(), 'utf-8'), 'nexus-vault')).toEqual(ENTRY);
+  });
+});
+
+
+describe('Claude Code (written through the claude CLI)', () => {
+  // A stand-in `claude` that appends its argv to a log, so the test sees exactly what Nexus asked for.
+  function fakeClaude(): { bin: string; calls: () => string[][] } {
+    const log = join(home, 'claude-calls.jsonl');
+    const bin = join(home, 'claude');
+    writeFileSync(bin, `#!/usr/bin/env node\nrequire('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o755 });
+    return { bin, calls: () => readFileSync(log, 'utf-8').trim().split('\n').map(line => JSON.parse(line) as string[]) };
+  }
+
+  it('adds the server in user scope with add-json and never edits ~/.claude.json itself', () => {
+    if (process.platform === 'win32') return;
+    writeFileSync(join(home, '.claude.json'), JSON.stringify({ numStartups: 9 }));
+    const claude = fakeClaude();
+    writeClaudeCodeServer(claude.bin, KEYS, ENTRY);
+    expect(claude.calls()).toEqual([
+      ['mcp', 'add-json', 'nexus-vault', JSON.stringify({ type: 'stdio', command: '/new/node', args: ['/vault/connector.js'] }), '--scope', 'user']
+    ]);
+    expect(JSON.parse(readFileSync(join(home, '.claude.json'), 'utf-8'))).toEqual({ numStartups: 9 });
+  });
+
+  it('Reconnect removes the entry under every vault key before adding, so a legacy key leaves no second server', () => {
+    if (process.platform === 'win32') return;
+    writeFileSync(join(home, '.claude.json'), JSON.stringify({ mcpServers: { 'claudesidian-mcp-vault': { command: '/old/node', args: ['/old.js'] } } }));
+    const claude = fakeClaude();
+    writeClaudeCodeServer(claude.bin, KEYS, ENTRY);
+    expect(claude.calls().map(args => args.slice(0, 3))).toEqual([
+      ['mcp', 'remove', 'nexus-vault'],
+      ['mcp', 'remove', 'claudesidian-mcp-vault'],
+      ['mcp', 'add-json', 'nexus-vault']
+    ]);
   });
 });

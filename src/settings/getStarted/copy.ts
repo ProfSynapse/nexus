@@ -100,6 +100,9 @@ export const AGENTS_PAGE = {
 /** Claude Desktop's download page, offered when the app is not found. */
 export const CLAUDE_DESKTOP_DOWNLOAD_URL = 'https://claude.ai/download';
 
+/** Claude Code's install guide, offered when the `claude` command is not found. */
+export const CLAUDE_CODE_INSTALL_URL = 'https://docs.claude.com/en/docs/claude-code/setup';
+
 /** Install page for Node.js, opened by the "Install Node.js" button. */
 export const NODE_DOWNLOAD_URL = 'https://nodejs.org/';
 

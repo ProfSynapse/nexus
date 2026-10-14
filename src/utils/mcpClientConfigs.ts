@@ -77,6 +77,42 @@ export function getAntigravityLegacyConfigPath(): string {
     return pathMod().join(getUserHome(), ...ANTIGRAVITY_LEGACY_CONFIG_SEGMENTS);
 }
 
+/**
+ * Claude Code keeps user-scope MCP servers in `~/.claude.json` (top-level
+ * `mcpServers`). Nexus only reads that file; writes go through the `claude`
+ * CLI because Claude Code rewrites the file itself while it runs.
+ */
+export function getClaudeCodeConfigPath(): string {
+    return pathMod().join(getUserHome(), '.claude.json');
+}
+
+type ChildProcessModule = typeof import('node:child_process');
+
+/**
+ * Add or replace the Nexus server in Claude Code's user scope with
+ * `claude mcp add-json --scope user`. An entry under any of the vault's keys
+ * is removed first so a legacy key does not leave a second, broken server.
+ */
+export function writeClaudeCodeServer(claudeBin: string, serverKeys: string[], entry: McpServerEntry): WriteResult {
+    const configPath = getClaudeCodeConfigPath();
+    const key = serverKeys[0];
+    if (!key) {
+        throw new Error('No server name was given.');
+    }
+    const { execFileSync } = desktopRequire<ChildProcessModule>('node:child_process');
+    const run = (args: string[]): void => {
+        execFileSync(claudeBin, args, { encoding: 'utf-8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    };
+    const existing = getMcpJsonStatus(configPath, serverKeys);
+    if (existing.state === 'nexus-configured') {
+        for (const candidate of serverKeys) {
+            try { run(['mcp', 'remove', candidate, '--scope', 'user']); } catch { /* not registered under this key */ }
+        }
+    }
+    run(['mcp', 'add-json', key, JSON.stringify({ type: 'stdio', command: entry.command, args: entry.args }), '--scope', 'user']);
+    return { configPath, replacedInvalid: false };
+}
+
 export function getCodexConfigPath(): string {
     const path = pathMod();
     const codexHome = process.env.CODEX_HOME || path.join(getUserHome(), '.codex');

@@ -18,14 +18,17 @@ import {
   ensureConnectorFile,
   getConnectorPath,
   isConnectorCurrent,
+  writeClaudeCodeServer,
   writeCodexServer,
   writeMcpJsonServer
 } from '../../utils/mcpClientConfigs';
+import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 import { ExternalClientStatus, getExternalClientStatuses } from '../getStartedStatus';
 import { CliInstallStatus, CliInstallTargets, CliPathFix, CliProviderId, LocalCliInstaller } from '../../services/cli/LocalCliInstaller';
 import {
   AGENTS_PAGE,
   BACK_TO_GET_STARTED,
+  CLAUDE_CODE_INSTALL_URL,
   CLAUDE_DESKTOP_DOWNLOAD_URL,
   MCP_SETUP_GUIDE_URL,
   NODE_DOWNLOAD_URL,
@@ -164,6 +167,18 @@ export class ExternalAgentsPage {
       return;
     }
 
+    // Claude Code is set up through its own CLI, so Connect needs the `claude` command.
+    if (client.id === 'claude-code' && !resolveDesktopBinaryPath('claude')) {
+      addStatus(row, AGENTS_PAGE.notFound);
+      row.addButton(button => button
+        .setButtonText(AGENTS_PAGE.install)
+        .onClick(() => { window.open(CLAUDE_CODE_INSTALL_URL, '_blank'); }));
+      row.addButton(button => button
+        .setButtonText(AGENTS_PAGE.checkAgain)
+        .onClick(() => this.render()));
+      return;
+    }
+
     if (configured) {
       addStatus(row, AGENTS_PAGE.reconnect);
     } else if (state === 'invalid-config') {
@@ -189,11 +204,18 @@ export class ExternalAgentsPage {
       const entry = buildMcpServerEntry(node.path, connectorPath);
       // Current key first; an entry left under a legacy key is updated in place.
       const serverKeys = getServerKeyCandidates(this.context.app.vault.getName());
+      const claudeBin = client.id === 'claude-code' ? resolveDesktopBinaryPath('claude') : null;
+      if (client.id === 'claude-code' && !claudeBin) {
+        throw new Error('The claude command was not found.');
+      }
       const result = client.id === 'codex'
         ? writeCodexServer(serverKeys, entry)
-        : writeMcpJsonServer(client.configPath, serverKeys, entry);
+        : client.id === 'claude-code' && claudeBin
+          ? writeClaudeCodeServer(claudeBin, serverKeys, entry)
+          : writeMcpJsonServer(client.configPath, serverKeys, entry);
       const backup = result.replacedInvalid ? ` The old file was not valid JSON and was saved as ${result.backupPath}.` : '';
-      new Notice(`Nexus added to ${client.label}. Restart it to load Nexus.${backup}`);
+      const restart = client.id === 'claude-code' ? 'Start a new Claude Code session to load it.' : 'Restart it to load Nexus.';
+      new Notice(`Nexus added to ${client.label}. ${restart}${backup}`);
     } catch (error) {
       console.error(`[ExternalAgentsPage] Could not connect ${client.label}:`, error);
       new Notice(`Could not connect ${client.label}: ${(error as Error).message}`);

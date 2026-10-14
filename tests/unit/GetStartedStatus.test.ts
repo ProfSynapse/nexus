@@ -83,10 +83,11 @@ it('counts every connected client plus the command line', () => {
   const json = JSON.stringify({ mcpServers: { [key]: { command: 'node', args: ['connector.js'] } } });
   write(getClaudeDesktopConfigPath()!, json);
   write(join(mockHome, '.gemini/config/mcp_config.json'), json);
+  write(join(mockHome, '.claude.json'), JSON.stringify({ numStartups: 3, mcpServers: { [key]: { type: 'stdio', command: 'node', args: ['connector.js'] } } }));
   write(join(process.env.CODEX_HOME!, 'config.toml'), buildCodexMcpTomlSnippet(key, 'node', ['connector.js']));
   write(new LocalCliInstaller().getPaths().cliJsPath, '// installed CLI');
-  expect(getExternalClientStatuses(app).map(client => client.label)).toEqual(['Claude Desktop', 'Codex', 'Antigravity']);
-  expect(countExternalConnections(app)).toBe(4);
+  expect(getExternalClientStatuses(app).map(client => client.label)).toEqual(['Claude Desktop', 'Claude Code', 'Codex', 'Antigravity']);
+  expect(countExternalConnections(app)).toBe(5);
 });
 
 it('reports a configured client whose saved node path is gone as stale', () => {

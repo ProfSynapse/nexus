@@ -8,6 +8,7 @@ import {
   type McpConfigStatus,
   getAntigravityConfigPath,
   getAntigravityLegacyConfigPath,
+  getClaudeCodeConfigPath,
   getCodexConfigPath,
   getCodexStatus,
   getMcpJsonStatus
@@ -72,7 +73,7 @@ export function getClaudeDesktopConfigPath(): string | null {
   return joinPath(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
 }
 
-export type ExternalClientId = 'claude-desktop' | 'codex' | 'antigravity';
+export type ExternalClientId = 'claude-desktop' | 'claude-code' | 'codex' | 'antigravity';
 
 export interface ExternalClientStatus {
   id: ExternalClientId;
@@ -121,6 +122,13 @@ export function getExternalClientStatuses(app: App): ExternalClientStatus[] {
   }
 
   try {
+    const claudeCodePath = getClaudeCodeConfigPath();
+    add('claude-code', 'Claude Code', claudeCodePath, () => getMcpJsonStatus(claudeCodePath, keys));
+  } catch (error) {
+    console.error('[getStartedStatus] Could not resolve the Claude Code config path:', error);
+  }
+
+  try {
     const codexPath = getCodexConfigPath();
     add('codex', 'Codex', codexPath, () => getCodexStatus(keys));
   } catch (error) {
@@ -162,7 +170,7 @@ function isLocalCliInstalled(): boolean {
   }
 }
 
-/** Claude Desktop, Codex and Antigravity configs that name this vault, plus the command line when installed. */
+/** Claude Desktop, Claude Code, Codex and Antigravity configs that name this vault, plus the command line when installed. */
 export function countExternalConnections(app: App): number {
   const clients = getExternalClientStatuses(app).filter(client => client.status.state === 'nexus-configured').length;
   return clients + (isLocalCliInstalled() ? 1 : 0);
