@@ -165,8 +165,12 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     supportsArbitrarySize: true,
     lastUpdated: '2026-09-08'
   },
+  // Deprecated: OpenAI shuts down gpt-image-1.5 and gpt-image-1-mini on
+  // 2026-12-01 and gpt-image-1 on 2026-10-23; the recommended replacement is
+  // gpt-image-2.5-sunburst or gpt-image-2.5-flare.
+  // https://developers.openai.com/api/docs/deprecations
   'gpt-image-1.5': {
-    displayName: 'GPT Image 1.5',
+    displayName: 'GPT Image 1.5 (shuts down 2026-12-01)',
     costPerImage: 0.034,
     pricingNote: '1056 output tokens at $32/M for 1024x1024 medium; auto picks high (4160 tokens, $0.133)',
     inputTokenPricePerMillion: 8,
@@ -175,7 +179,7 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     lastUpdated: '2026-09-02'
   },
   'gpt-image-1': {
-    displayName: 'GPT Image 1',
+    displayName: 'GPT Image 1 (shuts down 2026-10-23)',
     costPerImage: 0.042,
     pricingNote: '1056 output tokens at $40/M for 1024x1024 medium',
     inputTokenPricePerMillion: 10,
@@ -184,7 +188,7 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     lastUpdated: '2026-09-02'
   },
   'gpt-image-1-mini': {
-    displayName: 'GPT Image 1 Mini',
+    displayName: 'GPT Image 1 Mini (shuts down 2026-12-01)',
     costPerImage: 0.008,
     pricingNote: '1056 output tokens at $8/M for 1024x1024 medium',
     inputTokenPricePerMillion: 2.5,

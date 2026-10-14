@@ -75,6 +75,11 @@ endpoint actually accepts, proven by one live generation through the adapter.
    the resulting 400 looks like a broken model.
 
 ## Guidelines
+- Pattern: Google's image docs show only Interactions API samples, but
+  `GeminiImageAdapter` calls `generateContent`. Before you add a Gemini image
+  id, check that `supportedGenerationMethods` in the keyed Google listing
+  (`references/provider-listings.md`) includes `generateContent`. Without a
+  key, record the entry as unverified.
 - Pattern: take the output format from the response's `media_type`, not from
   what was requested — Gemini returns JPEG regardless.
 - Pattern: read the wire enum, not the UI enum. Google's `imageConfig.imageSize`

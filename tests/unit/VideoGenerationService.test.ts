@@ -8,6 +8,7 @@ import { OpenRouterVideoAdapter } from '../../src/services/video/adapters/OpenRo
 import { GenerateVideoTool } from '../../src/agents/promptManager/tools/generateVideo';
 import { CheckGeneratedArtifactTool } from '../../src/agents/promptManager/tools/checkGeneratedArtifact';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, type LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
+import { getVideoModel } from '../../src/services/llm/types/VideoTypes';
 
 type MockVault = Vault & {
   getAbstractFileByPath: jest.Mock<unknown, [string]>;
@@ -357,6 +358,53 @@ describe('OpenRouterVideoAdapter', () => {
     ]);
     expect(result.videoData.byteLength).toBe(3);
     expect(result.providerJobId).toBe('job-1');
+  });
+
+  it('sends 4K in the case OpenRouter accepts when the internal resolution is 4k', async () => {
+    let submitted: Record<string, unknown> | undefined;
+    __setRequestUrlMock(async (request) => {
+      if (request.url.endsWith('/videos/models')) {
+        return {
+          status: 200,
+          headers: {},
+          text: '{}',
+          json: {
+            data: [{
+              id: 'google/veo-3.1',
+              supported_resolutions: ['720p', '1080p', '4K'],
+              supported_aspect_ratios: ['16:9', '9:16'],
+              supported_durations: [4, 6, 8],
+            }]
+          },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+      if (request.url.endsWith('/videos')) {
+        submitted = JSON.parse(String(request.body)) as Record<string, unknown>;
+        return {
+          status: 202,
+          headers: {},
+          text: '{}',
+          json: { id: 'job-4k', status: 'completed', unsigned_urls: ['https://cdn.example.com/4k.mp4'] },
+          arrayBuffer: new ArrayBuffer(0),
+        };
+      }
+      return { status: 200, headers: {}, text: '', json: null, arrayBuffer: new Uint8Array([1]).buffer };
+    });
+
+    const adapter = new OpenRouterVideoAdapter({ apiKey: 'test-key', vault: makeVault() });
+    await adapter.generate({
+      prompt: 'A lighthouse at dusk.',
+      provider: 'openrouter',
+      model: 'google/veo-3.1',
+      aspectRatio: '16:9',
+      resolution: '4k',
+      seconds: 8,
+      pollIntervalMs: 1,
+      timeoutMs: 1000,
+    });
+
+    expect(submitted?.resolution).toBe('4K');
   });
 
   it('does not attach the Bearer key when polling an off-allowlist polling_url', async () => {
@@ -719,5 +767,16 @@ describe('GoogleVideoAdapter credential allowlist', () => {
     await adapter.checkJob(makeJob());
 
     expect(keyByUrl[trickUrl]).toBeUndefined();
+  });
+});
+
+describe('shipped video default', () => {
+  it('names a catalog model that offers the shipped aspect ratio and resolution', () => {
+    const shipped = DEFAULT_LLM_PROVIDER_SETTINGS.defaultVideoModel;
+    expect(shipped).toMatchObject({ provider: 'openrouter', model: 'google/veo-3.1-fast' });
+    const declaration = getVideoModel(shipped?.provider, shipped?.model);
+    expect(declaration).toBeDefined();
+    expect(declaration?.aspectRatios).toContain(shipped?.aspectRatio);
+    expect(declaration?.resolutions).toContain(shipped?.resolution);
   });
 });

@@ -148,6 +148,21 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
+  // GA 2026-10-06; Google's recommended successor to gemini-3.1-flash-image.
+  // Half the image-token price of Nano Banana 2 and no 512 size. The Gemini
+  // docs now show only Interactions API samples; the model page lists Batch
+  // API support, which is a generateContent-only feature.
+  // https://ai.google.dev/gemini-api/docs/models/gemini-nano-banana-2.1
+  'gemini-nano-banana-2.1': {
+    displayName: 'Nano Banana 2.1',
+    costPerImage: 0.0336,
+    pricingNote: '1120 image tokens at $30/M for 1K; 2K is $0.0504 (1680 tokens), 4K $0.113 (3780 tokens)',
+    imageTokenPricePerMillion: 30,
+    maxReferenceImages: 14,
+    imageSizes: ['1K', '2K', '4K'],
+    contextWindow: 131072,
+    lastUpdated: '2026-10-14'
+  },
   'gemini-3-pro-image': {
     displayName: 'Nano Banana Pro',
     costPerImage: 0.134,
@@ -180,8 +195,10 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     contextWindow: 131072,
     lastUpdated: '2026-09-02'
   },
+  // Deprecated. Google's deprecations page (updated 2026-10-12) moved the
+  // shutdown to 2027-03-15; the pricing page still says 2026-10-02.
   'gemini-2.5-flash-image': {
-    displayName: 'Nano Banana legacy, shuts down 2026-10-02',
+    displayName: 'Nano Banana legacy (deprecated)',
     costPerImage: 0.039,
     pricingNote: '1290 image tokens at $30/M; no imageSize parameter',
     imageTokenPricePerMillion: 30,
@@ -211,8 +228,8 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
   private vault: Vault | null = null;
-  // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02; Google
-  // recommends Nano Banana 2 Lite as the transition.
+  // gemini-2.5-flash-image is deprecated; Google recommends Nano Banana 2
+  // Lite as the transition.
   private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Supported aspect ratios for Nano Banana models

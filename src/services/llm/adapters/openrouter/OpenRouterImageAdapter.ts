@@ -129,7 +129,8 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
     // now answers "No endpoints found".
     openRouterId: 'google/gemini-2.5-flash-image',
-    displayName: 'Nano Banana legacy, shuts down 2026-10-02 (via OpenRouter)',
+    // Deprecated; Google's deprecations page now lists a 2027-03-15 shutdown.
+    displayName: 'Nano Banana legacy, deprecated (via OpenRouter)',
     costPerImage: 0.039,
     pricingNote: '1290 output tokens at $30/M',
     maxReferenceImages: 3,
@@ -281,6 +282,70 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     resolutions: ['2K', '4K'],
     contextWindow: 32000,
     lastUpdated: '2026-09-02'
+  },
+  // Added 2026-10-14 from /api/v1/images/models/<id>/endpoints.
+  'gemini-nano-banana-2.1': {
+    openRouterId: 'google/gemini-nano-banana-2.1',
+    displayName: 'Nano Banana 2.1 (via OpenRouter)',
+    costPerImage: 0.0336,
+    pricingNote: '1120 output tokens at $30/M for 1K; 2K and 4K use more tokens; no 512',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-10-14'
+  },
+  'gpt-image-2.5-sunburst': {
+    openRouterId: 'openai/gpt-image-2.5-sunburst',
+    displayName: 'GPT Image 2.5 Sunburst (via OpenRouter)',
+    costPerImage: 0.0132,
+    pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; quality is left at auto, so a 1024x1024 image is ~439 tokens at medium and more at higher qualities',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 32000,
+    lastUpdated: '2026-10-14'
+  },
+  'gpt-image-2.5-flare': {
+    openRouterId: 'openai/gpt-image-2.5-flare',
+    displayName: 'GPT Image 2.5 Flare (via OpenRouter)',
+    costPerImage: 0.0132,
+    pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; quality is left at auto, so a 1024x1024 image is ~439 tokens at medium and more at higher qualities',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 32000,
+    lastUpdated: '2026-10-14'
+  },
+  'flux-3-image': {
+    openRouterId: 'black-forest-labs/flux-3-image',
+    displayName: 'FLUX.3 Image (via OpenRouter)',
+    costPerImage: 0.048,
+    // The endpoint also lists 768 and 1.5K tiers, which imageSize cannot express.
+    pricingNote: 'Per image by resolution tier: 1K $0.048, 2K $0.10, 4K $0.607',
+    maxReferenceImages: 10,
+    resolutions: ['1K', '2K', '4K'],
+    contextWindow: 4096,
+    lastUpdated: '2026-10-14'
+  },
+  // BytePlus documents a 921,600-pixel minimum for Seedream 5.0 Pro and Flash,
+  // so 1K is real here, unlike Seedream 4.5 and 5.0 Lite.
+  'seedream-5-pro': {
+    openRouterId: 'bytedance-seed/seedream-5-0-pro',
+    displayName: 'Seedream 5.0 Pro (via OpenRouter)',
+    costPerImage: 0.045,
+    pricingNote: '$0.045 per image, $0.09 at high resolution; $0.003 per reference image',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K'],
+    contextWindow: 32000,
+    lastUpdated: '2026-10-14'
+  },
+  'seedream-5-flash': {
+    openRouterId: 'bytedance-seed/seedream-5-0-flash',
+    displayName: 'Seedream 5.0 Flash (via OpenRouter)',
+    costPerImage: 0.018,
+    pricingNote: '$0.018 per image; reference images free',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K'],
+    contextWindow: 32000,
+    lastUpdated: '2026-10-14'
   }
 };
 
@@ -305,7 +370,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private httpReferer: string;
   private xTitle: string;
 
-  // gemini-2.5-flash-image is scheduled for shutdown on 2026-10-02.
+  // gemini-2.5-flash-image is deprecated.
   private readonly defaultModel = 'gemini-3.1-flash-image';
 
   // Aspect ratios accepted across the catalog. Individual endpoints may
