@@ -37,6 +37,11 @@ export class Modal {
     this.onOpen();
   }
 
+  setTitle(title: string): this {
+    (this.titleEl as unknown as { setText?: (text: string) => void }).setText?.(title);
+    return this;
+  }
+
   close(): void {
     this.onClose();
     // Mirror Obsidian cleanup on close
