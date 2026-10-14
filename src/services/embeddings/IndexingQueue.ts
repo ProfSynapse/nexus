@@ -279,6 +279,108 @@ export class IndexingQueue extends Events {
   }
 
   // ---------------------------------------------------------------------------
+  // Prune passes
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Remove the vectors of notes that no longer exist in the vault.
+   *
+   * The watcher removes a vector when a note is deleted or renamed, but only
+   * while semantic search is running. A note deleted or renamed while it was
+   * off keeps its old vector forever otherwise: the note walk only visits
+   * files that exist, so nothing ever asks about the old path again.
+   *
+   * Refuses to prune when the vault reports no markdown files at all. That
+   * is far more likely to be a vault that has not finished loading than one
+   * whose every note was deleted, and pruning then would throw away the
+   * whole index.
+   *
+   * @returns The number of note vectors removed.
+   */
+  async pruneMissingNotes(): Promise<number> {
+    if (this.destroyed || !this.embeddingService.isServiceEnabled()) {
+      return 0;
+    }
+
+    const rows = await this.db.query<{ notePath: string }>(
+      'SELECT notePath FROM embedding_metadata'
+    );
+    if (rows.length === 0 || this.app.vault.getMarkdownFiles().length === 0) {
+      return 0;
+    }
+
+    let removed = 0;
+    for (const row of rows) {
+      if (this.destroyed) break;
+      if (this.app.vault.getAbstractFileByPath(row.notePath)) continue;
+      try {
+        await this.embeddingService.removeEmbedding(row.notePath);
+        removed++;
+      } catch (error) {
+        console.error(`[IndexingQueue] Failed to prune the vector for ${row.notePath}:`, error);
+      }
+    }
+
+    if (removed > 0) {
+      await this.saveAfterPrune('notes');
+    }
+    return removed;
+  }
+
+  /**
+   * Remove the vectors of conversations that no longer exist in the cache.
+   *
+   * Same reasoning as pruneMissingNotes: a conversation deleted while
+   * semantic search was off never reached onConversationDeleted. Skipped when
+   * the conversations table is empty, which means the cache has not been
+   * replayed yet rather than that every chat was deleted.
+   *
+   * @returns The number of conversations whose vectors were removed.
+   */
+  async pruneMissingConversations(): Promise<number> {
+    if (this.destroyed || !this.embeddingService.isServiceEnabled()) {
+      return 0;
+    }
+
+    const known = await this.db.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM conversations'
+    );
+    if (!known || Number(known.count) === 0) {
+      return 0;
+    }
+
+    const rows = await this.db.query<{ conversationId: string }>(
+      `SELECT DISTINCT conversationId FROM conversation_embedding_metadata
+       WHERE conversationId NOT IN (SELECT id FROM conversations)`
+    );
+
+    let removed = 0;
+    for (const row of rows) {
+      if (this.destroyed) break;
+      try {
+        await this.embeddingService.removeConversationEmbeddings(row.conversationId);
+        removed++;
+      } catch (error) {
+        console.error(`[IndexingQueue] Failed to prune vectors for conversation ${row.conversationId}:`, error);
+      }
+    }
+
+    if (removed > 0) {
+      await this.saveAfterPrune('conversations');
+    }
+    return removed;
+  }
+
+  /** Persist a prune. Never throws: the rows are gone from memory either way. */
+  private async saveAfterPrune(kind: 'notes' | 'conversations'): Promise<void> {
+    try {
+      await this.db.save();
+    } catch (error) {
+      console.error(`[IndexingQueue] Saving after pruning ${kind} failed:`, error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Queue controls
   // ---------------------------------------------------------------------------
 
