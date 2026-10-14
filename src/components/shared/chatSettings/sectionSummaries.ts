@@ -88,12 +88,38 @@ export function subagentsSummary(input: {
   ]);
 }
 
-export function imagesSummary(modelName?: string | null): string {
-  return modelName || 'Not set';
+/**
+ * Whether the media provider behind a summary can run at all. Both default to
+ * usable, so a caller that does not know yet does not blank the summary.
+ */
+export interface MediaProviderUsability {
+  /** False when the selected provider has no API key or is turned off. */
+  providerUsable?: boolean;
+  /** False when no provider of this kind has a key and is turned on. */
+  anyProviderUsable?: boolean;
 }
 
-export function videoSummary(input: { modelName?: string | null; aspectRatio?: string | null; resolution?: string | null }): string {
-  return join([input.modelName || 'Not set', input.aspectRatio, input.resolution]);
+/**
+ * Naming a model whose provider cannot run claimed a setting that does not
+ * work: the Images summary said "Nano Banana 2" while its Model dropdown said
+ * "No models available". The model id stays saved; the summary just stops
+ * presenting it as the active choice.
+ */
+function unusableMediaSummary(input: MediaProviderUsability, noneLabel: string): string | null {
+  if (input.anyProviderUsable === false) return noneLabel;
+  if (input.providerUsable === false) return COPY.notSet;
+  return null;
+}
+
+export function imagesSummary(input: { modelName?: string | null } & MediaProviderUsability): string {
+  return unusableMediaSummary(input, COPY.noImageProvider) ?? (input.modelName || COPY.notSet);
+}
+
+export function videoSummary(
+  input: { modelName?: string | null; aspectRatio?: string | null; resolution?: string | null } & MediaProviderUsability
+): string {
+  return unusableMediaSummary(input, COPY.noVideoProvider)
+    ?? join([input.modelName || COPY.notSet, input.aspectRatio, input.resolution]);
 }
 
 export function voiceSummary(input: { transcriptionModel?: string | null; readAloudModel?: string | null; voice?: string | null }): string {

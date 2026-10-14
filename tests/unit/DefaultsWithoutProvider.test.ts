@@ -108,14 +108,67 @@ describe('Defaults with no provider set up', () => {
     }
   });
 
-  it('names the default image model rather than showing its id', async () => {
+  it('does not name the default image model when no image provider is set up', async () => {
     const h = await renderDefaults(freshInstall());
     try {
       const { provider, model } = DEFAULT_LLM_PROVIDER_SETTINGS.defaultImageModel!;
       const name = getImageModelDisplayName(provider, model);
+      // The premise: the catalog can name it without a key, which is how the
+      // summary used to show it.
       expect(name).toBeTruthy();
+      // Pre-fix: the summary was that name while Model said "No models available".
+      expect(foldSummary(h.root, FOLD_TITLES.images)).toBe(COPY.noImageProvider);
+      expect(optionLabels(control(findRow(foldItems(h.root, FOLD_TITLES.images), COPY.model), 'select')))
+        .toEqual(['No models available']);
+    } finally {
+      h.tab.destroy();
+    }
+  });
+
+  it('says "Not set" when another image provider is set up but the selected one is not', async () => {
+    const settings = freshInstall();
+    settings.providers.openai = { ...settings.providers.openai, enabled: true, apiKey: 'sk-test' };
+    const h = await renderDefaults(settings);
+    try {
+      expect(DEFAULT_LLM_PROVIDER_SETTINGS.defaultImageModel!.provider).not.toBe('openai');
+      expect(foldSummary(h.root, FOLD_TITLES.images)).toBe(COPY.notSet);
+    } finally {
+      h.tab.destroy();
+    }
+  });
+
+  it('names the default image model, not its id, once its provider is set up', async () => {
+    const { provider, model } = DEFAULT_LLM_PROVIDER_SETTINGS.defaultImageModel!;
+    const settings = freshInstall();
+    settings.providers[provider] = { ...settings.providers[provider], enabled: true, apiKey: 'test-key' };
+    const h = await renderDefaults(settings);
+    try {
+      const name = getImageModelDisplayName(provider, model);
       expect(name).not.toBe(model);
       expect(foldSummary(h.root, FOLD_TITLES.images)).toBe(name);
+    } finally {
+      h.tab.destroy();
+    }
+  });
+
+  it('does not name a video model when no video provider is set up', async () => {
+    const h = await renderDefaults(freshInstall());
+    try {
+      expect(foldSummary(h.root, FOLD_TITLES.video)).toBe(COPY.noVideoProvider);
+    } finally {
+      h.tab.destroy();
+    }
+  });
+
+  it('says "Not set" for a saved video provider whose key was removed', async () => {
+    const settings = freshInstall();
+    const saved = DEFAULT_LLM_PROVIDER_SETTINGS.defaultVideoModel!;
+    const other = saved.provider === 'google' ? 'openrouter' : 'google';
+    settings.providers[other] = { ...settings.providers[other], enabled: true, apiKey: 'test-key' };
+    const h = await renderDefaults(settings);
+    try {
+      // Pre-fix: "<model> · 16:9 · 720p" while Provider read "(unavailable)".
+      expect(foldSummary(h.root, FOLD_TITLES.video)).toBe(COPY.notSet);
     } finally {
       h.tab.destroy();
     }

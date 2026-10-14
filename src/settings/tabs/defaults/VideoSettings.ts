@@ -54,12 +54,22 @@ export class VideoSettings implements FoldDefinition {
       };
     };
 
+    const isUsable = (item: ReturnType<typeof availability>[number]): boolean =>
+      item.enabled && item.configured && item.models.length > 0;
+
     const updateSummary = (): void => {
       const current = selection();
+      const all = availability();
+      // A saved provider whose key was removed still resolves a model from
+      // the catalog; the summary must not present that as the active choice
+      // while the Provider dropdown marks it "(unavailable)".
+      const selected = all.find(item => item.provider === current.provider);
       host.setSummary(videoSummary({
         modelName: current.modelDeclaration?.name ?? current.model,
         aspectRatio: current.aspectRatio,
-        resolution: current.resolution
+        resolution: current.resolution,
+        anyProviderUsable: all.some(isUsable),
+        providerUsable: selected ? isUsable(selected) : false
       }));
     };
 
@@ -73,7 +83,7 @@ export class VideoSettings implements FoldDefinition {
     };
 
     const current = selection();
-    const usable = availability().filter(item => item.enabled && item.configured && item.models.length > 0);
+    const usable = availability().filter(isUsable);
 
     new Setting(itemsEl)
       .setName(COPY.provider)

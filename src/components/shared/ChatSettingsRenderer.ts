@@ -155,6 +155,8 @@ export class ChatSettingsRenderer {
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private modelNames: { chat?: string; agent?: string; image?: string } = {};
+  /** The image provider whose model list last came back empty, if any. */
+  private imageProviderWithoutModels: string | null = null;
   // Registry capabilities plus context windows discovered at runtime (Ollama, LM Studio).
   private capabilities: ModelCapabilityResolver;
 
@@ -198,6 +200,7 @@ export class ChatSettingsRenderer {
       this.config.llmProviderSettings = newSettings;
       this.providerManager.updateSettings(newSettings);
       this.imageService.updateSettings(newSettings);
+      this.imageProviderWithoutModels = null;
       this.render();
     });
   }
@@ -251,7 +254,7 @@ export class ChatSettingsRenderer {
       this.createFold(FOLD_IDS.subagents, FOLD_TITLES.subagents, FOLD_ICONS.subagents,
         el => this.renderSubagents(el), () => this.subagentsSummary()),
       this.createFold(FOLD_IDS.images, FOLD_TITLES.images, FOLD_ICONS.images,
-        el => this.renderImages(el), () => imagesSummary(this.imageModelName())),
+        el => this.renderImages(el), () => this.imagesFoldSummary()),
       this.createFold(FOLD_IDS.voice, FOLD_TITLES.voice, FOLD_ICONS.voice,
         el => this.voice.render(el), () => this.voice.getSummary())
     ];
@@ -864,6 +867,21 @@ export class ChatSettingsRenderer {
 
   // ========== IMAGES ==========
 
+  /**
+   * The Images summary. A provider with no key (or turned off) has no adapter
+   * and lists no models, so naming the saved model there — the catalog knows
+   * "Nano Banana 2" without a key — described a setting that cannot run.
+   */
+  private imagesFoldSummary(): string {
+    const ready = this.imageService.getInitializedProviders();
+    const provider = this.settings.imageProvider;
+    return imagesSummary({
+      modelName: this.imageModelName(),
+      anyProviderUsable: ready.length > 0,
+      providerUsable: ready.includes(provider) && this.imageProviderWithoutModels !== provider
+    });
+  }
+
   /** The image model's name: as listed once loaded, else from the catalog, else its id. */
   private imageModelName(): string | undefined {
     const { imageProvider, imageModel } = this.settings;
@@ -916,8 +934,11 @@ export class ChatSettingsRenderer {
         const models = await this.imageService.getModelsForProvider(provider);
         if (provider !== this.settings.imageProvider) return;
 
+        this.imageProviderWithoutModels = models.length === 0 ? provider : null;
         if (models.length === 0) {
           dropdown.addOption('', 'No models available');
+          this.modelNames.image = undefined;
+          this.updateSummaries();
         } else {
           sortModelsNewestFirst(models, m => ({ provider, id: m.id })).forEach(m => {
             dropdown.addOption(m.id, m.name);

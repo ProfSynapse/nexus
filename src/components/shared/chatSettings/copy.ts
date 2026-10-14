@@ -79,6 +79,9 @@ export const COPY = {
   noModel: 'No model',
   /** Subagents summary: no subagent model and no cloud chat model to describe. */
   notSet: 'Not set',
+  /** Images/Video summaries: no provider of that kind has a key and is turned on. */
+  noImageProvider: 'No image provider',
+  noVideoProvider: 'No video provider',
   noProviders: 'No providers enabled',
   noCloudProviders: 'No cloud providers enabled',
   none: 'None'

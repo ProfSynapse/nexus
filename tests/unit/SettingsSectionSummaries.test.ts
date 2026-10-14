@@ -63,8 +63,13 @@ it('builds the subagent tuning parts the way Chat options does', () => {
 });
 
 it('summarises images, video and voice', () => {
-  expect(imagesSummary('Gemini 3.1 Flash Image')).toBe('Gemini 3.1 Flash Image');
+  expect(imagesSummary({ modelName: 'Gemini 3.1 Flash Image' })).toBe('Gemini 3.1 Flash Image');
+  expect(imagesSummary({ modelName: 'Nano Banana 2', providerUsable: false, anyProviderUsable: false })).toBe('No image provider');
+  expect(imagesSummary({ modelName: 'Nano Banana 2', providerUsable: false, anyProviderUsable: true })).toBe('Not set');
+  expect(imagesSummary({})).toBe('Not set');
   expect(videoSummary({ modelName: 'Veo 3.1', aspectRatio: '16:9', resolution: '720p' })).toBe('Veo 3.1 · 16:9 · 720p');
+  expect(videoSummary({ modelName: 'Veo 3.1', aspectRatio: '16:9', resolution: '720p', anyProviderUsable: false })).toBe('No video provider');
+  expect(videoSummary({ modelName: 'Veo 3.1', aspectRatio: '16:9', resolution: '720p', providerUsable: false })).toBe('Not set');
   expect(voiceSummary({ transcriptionModel: 'Deepgram Nova-3', readAloudModel: 'HeyGen Voice', voice: 'Alloy' }))
     .toBe('Deepgram Nova-3 · HeyGen Voice (Alloy)');
   expect(voiceSummary({ transcriptionModel: 'Deepgram Nova-3', readAloudModel: null })).toBe('Deepgram Nova-3');

@@ -62,6 +62,9 @@ export function imageServiceModule() {
       getModelsForProvider: jest.fn(async (provider: string) => provider === 'google'
         ? [{ id: 'gemini-3.1-flash-image', name: 'Gemini 3.1 Flash Image' }]
         : [{ id: `${provider}-image`, name: `${provider} image` }]),
+      // Every provider has a key here; DefaultsWithoutProvider covers the
+      // real service, which has no adapter (and no models) without one.
+      getInitializedProviders: jest.fn(() => ['google', 'openai', 'openrouter']),
       updateSettings: jest.fn()
     }))
   };
