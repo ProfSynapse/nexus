@@ -142,11 +142,13 @@ function makeApp(): App {
   } as unknown as App;
 }
 
-function setRealRequestUrl(): void {
+/** Route requestUrl to the network. `trace` receives "METHOD url status" lines, never headers. */
+function setRealRequestUrl(trace?: string[]): void {
   __setRequestUrlMock(async (request) => {
     const headers = request.headers as Record<string, string> | undefined;
     const body = typeof request.body === 'string' ? request.body : undefined;
     const response = await requestRaw(request.url, request.method || 'GET', headers, body);
+    trace?.push(`${request.method || 'GET'} ${request.url.replace(/([?&]key=)[^&]+/, '$1REDACTED')} ${response.status}`);
     const text = response.buffer.toString('utf8');
     const contentType = response.headers['content-type'] || '';
     const json = contentType.includes('application/json') || text.trim().startsWith('{')
@@ -338,7 +340,8 @@ describeLive('generateVideo live smoke', () => {
       throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) is required for paid Google video smoke.');
     }
 
-    setRealRequestUrl();
+    const trace: string[] = [];
+    setRealRequestUrl(trace);
 
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-video-google-live-'));
     const tool = new GenerateVideoTool({
@@ -359,6 +362,8 @@ describeLive('generateVideo live smoke', () => {
       timeoutMs: 8 * 60_000,
     });
 
+    // Shows whether background polling or the synchronous fallback ran.
+    console.log(`Google video requests:\n${trace.join('\n')}`);
     if (!result.success) {
       throw new Error(result.error || 'generateVideo tool returned failure without an error message.');
     }

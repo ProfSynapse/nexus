@@ -37,7 +37,10 @@ provider accepts, on a transport the adapter already uses.
    and the `VideoResponseFormat` schema in
    https://ai.google.dev/static/api/interactions.openapi.json are the source,
    and `/docs/deprecations` gives shutdown dates. Omni accepts `16:9`/`9:16`
-   only and a `duration` in google-duration format (`"8s"`).
+   only and a `duration` in google-duration format (`"8s"`). Do not infer the
+   transport from the keyed model listing: it reports Omni with
+   `generateContent`, and it keeps listing preview ids past their shutdown
+   date. The guide names the transport; the deprecations page decides removal.
 
 3. **Fit the entry to the unions.** `VideoAspectRatio` and `VideoResolution`
    are narrow, closed unions (`360p` exists for Omni; OpenRouter's parser
