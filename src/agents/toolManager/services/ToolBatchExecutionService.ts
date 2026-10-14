@@ -11,8 +11,14 @@ import { WorkspaceService } from '../../../services/WorkspaceService';
 import { matchWorkspaces } from '../../memoryManager/services/WorkspaceMatcher';
 import { toKebabCase } from './ToolCliNormalizer';
 import type { ToolExecutionOrigin } from '../../../types/tools/ToolOperationTypes';
+import { acceptsToolRuntimeContext, type ToolRuntimeContext } from '../../../types/tools/ToolRuntimeContext';
 import { ToolOperationService } from './ToolOperationService';
 import { getRegisteredToolExecutionPolicy } from '../../policy/ToolExecutionPolicyCatalog';
+
+/** A tool that opted into receiving its caller's runtime identity. */
+type RuntimeContextTool = {
+  execute(params: Record<string, unknown>, runtimeContext: ToolRuntimeContext): Promise<CommonResult>;
+};
 
 /**
  * The slice of NexusPlugin this service needs. Declared structurally to avoid
@@ -465,16 +471,19 @@ export class ToolBatchExecutionService {
     }
 
     try {
+      const runtimeContext: ToolRuntimeContext = {
+        conversationId: options.conversationId || '',
+        messageId: options.messageId || '',
+        workspaceId: context.workspaceId,
+        sessionId: context.sessionId,
+        source: options.operationOrigin === 'external-mcp' || !options.operationOrigin ? 'mcp' : 'internal',
+        isSubagentBranch: options.operationOrigin === 'subagent',
+      };
       const toolResult = toolInstance instanceof SubagentTool
-        ? await toolInstance.execute(params as unknown as SubagentToolParams, {
-            conversationId: options.conversationId || '',
-            messageId: options.messageId || '',
-            workspaceId: context.workspaceId,
-            sessionId: context.sessionId,
-            source: options.operationOrigin === 'external-mcp' || !options.operationOrigin ? 'mcp' : 'internal',
-            isSubagentBranch: options.operationOrigin === 'subagent',
-          })
-        : await toolInstance.execute(params || {}) as CommonResult;
+        ? await toolInstance.execute(params as unknown as SubagentToolParams, runtimeContext)
+        : acceptsToolRuntimeContext(toolInstance)
+          ? await (toolInstance as unknown as RuntimeContextTool).execute(params || {}, runtimeContext)
+          : await toolInstance.execute(params || {}) as CommonResult;
 
       const result: ToolCallResult = {
         agent: agentName,

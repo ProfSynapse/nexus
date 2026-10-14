@@ -16,6 +16,7 @@ import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils'
 import { CommonParameters, CommonResult } from '../../../types';
 import type { RemoteAgentJobService } from '../../../services/remoteAgents/RemoteAgentJobService';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
+import type { ConversationAgentSettings } from '../../../services/llm/utils/SubagentModelResolver';
 
 export interface SubagentToolParams extends CommonParameters {
   /** Clear description of what the subagent should accomplish */
@@ -64,7 +65,8 @@ export interface SubagentToolContext {
   sessionId?: string;
   source?: 'internal' | 'mcp';
   isSubagentBranch?: boolean;
-  // Inherited model settings
+  // Model for the subagent run, resolved with the agent precedence
+  // (this chat's subagent model, the default, then a cloud chat model)
   provider?: string;
   model?: string;
   // Inherited agent settings
@@ -74,9 +76,15 @@ export interface SubagentToolContext {
   workspaceData?: Record<string, unknown>;   // Full comprehensive workspace data (sessions, states, files, etc.)
   // Inherited context notes (file paths - subagent will read content)
   contextNotes?: string[];
-  // Inherited thinking settings
+  // Subagent thinking, already gated for the resolved model
   thinkingEnabled?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  /** Subagent Creativity; undefined when the model rejects sampling parameters. */
+  temperature?: number;
+  /** Token budget for the context the subagent inherits (notes, workspace). */
+  contextWindow?: number;
+  /** This chat's raw subagent settings, for other agent runs such as executePrompt. */
+  conversationAgent?: ConversationAgentSettings;
 }
 
 export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResult> {
@@ -229,7 +237,7 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
         sessionId: context.sessionId,
         maxIterations: params.maxIterations,
         continueBranchId: params.continueBranchId,
-        // Inherit parent's model settings
+        // Subagent model settings (resolved by the chat view)
         provider: context.provider,
         model: context.model,
         // Inherit parent's agent settings
@@ -238,9 +246,11 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
         // Inherit parent's workspace data
         workspaceData: context.workspaceData,
         // Context notes already merged above via contextFiles
-        // Inherit parent's thinking settings
+        // Subagent thinking, Creativity and context budget
         thinkingEnabled: context.thinkingEnabled,
         thinkingEffort: context.thinkingEffort,
+        temperature: context.temperature,
+        contextWindow: context.contextWindow,
       });
 
       const isContinuing = !!params.continueBranchId;

@@ -88,6 +88,11 @@ export class PromptManagerAgent extends BaseAgent {
   private subagentTool: SubagentTool;
 
   /**
+   * Prompt execution tool - stored so the chat view can supply its subagent settings
+   */
+  private executePromptsTool: ExecutePromptsTool;
+
+  /**
    * Create a new PromptManagerAgent with dependency injection
    * @param settings Settings instance for prompt storage
    * @param providerManager LLM Provider Manager for model operations
@@ -163,13 +168,14 @@ export class PromptManagerAgent extends BaseAgent {
     });
 
     // Register unified prompt execution tool (handles single and batch) - eager (complex dependencies)
-    this.registerTool(new ExecutePromptsTool(
+    this.executePromptsTool = new ExecutePromptsTool(
       this.app,
       this.providerManager.getLLMService(),
       this.providerManager,
       this.parentAgentManager,
       this.storageService
-    ));
+    );
+    this.registerTool(this.executePromptsTool);
 
     // Register image generation tool only if an image-capable provider key is configured
     const llmProviders = settings.settings.llmProviders;
@@ -452,6 +458,8 @@ export class PromptManagerAgent extends BaseAgent {
   ): void {
     this.subagentTool.setSubagentExecutor(executor);
     this.subagentTool.setContextProvider(contextProvider);
+    // Saved prompts run from this chat use the same subagent settings.
+    this.executePromptsTool.setAgentContextProvider(() => contextProvider());
   }
 
   /**

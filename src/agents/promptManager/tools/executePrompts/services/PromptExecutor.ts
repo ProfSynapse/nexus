@@ -10,6 +10,12 @@ import {
   ExecutionContext
 } from '../types';
 import { getErrorMessage } from '../../../../../utils/errorUtils';
+import {
+  resolveAgentModel,
+  resolveAgentRunSettings,
+  type ConversationAgentSettings,
+  type ResolvedAgentModel
+} from '../../../../../services/llm/utils/SubagentModelResolver';
 
 /**
  * Service responsible for executing individual LLM prompts
@@ -58,7 +64,10 @@ export class PromptExecutor {
       const textConfig = promptConfig;
 
       // Validate and determine provider and model
-      const { provider, model, validationError } = await this.validateAndSelectProviderModel(textConfig);
+      const { provider, model, validationError } = await this.validateAndSelectProviderModel(
+        textConfig,
+        executionContext.agentSettings
+      );
       if (validationError) {
         const executionTime = performance.now() - startTime;
         return {
@@ -86,6 +95,16 @@ export class PromptExecutor {
         executionContext
       );
       
+      // Agent Creativity and thinking travel with the agent run. Both are
+      // gated for the selected model: no temperature for models that reject
+      // sampling, no thinking for models that cannot reason.
+      const runSettings = resolveAgentRunSettings({
+        provider: provider ?? '',
+        model: model ?? '',
+        conversation: executionContext.agentSettings,
+        defaults: this.llmService.getAgentDefaults()
+      });
+
       // Build execution parameters with validated provider and model
       const executeParams: PromptExecutionParams = {
         systemPrompt,
@@ -94,7 +113,10 @@ export class PromptExecutor {
         provider,
         model,
         workspace: textConfig.workspace,
-        sessionId: executionContext.sessionId
+        sessionId: executionContext.sessionId,
+        temperature: runSettings.temperature,
+        enableThinking: runSettings.thinking.enabled,
+        thinkingEffort: runSettings.thinking.effort
       };
       
       // Check budget before executing
@@ -165,7 +187,10 @@ export class PromptExecutor {
   /**
    * Validate and select provider and model for execution
    */
-  private async validateAndSelectProviderModel(textConfig: TextPromptConfig): Promise<{
+  private async validateAndSelectProviderModel(
+    textConfig: TextPromptConfig,
+    agentSettings?: ConversationAgentSettings
+  ): Promise<{
     provider?: string;
     model?: string;
     validationError?: string;
@@ -180,12 +205,14 @@ export class PromptExecutor {
         };
       }
 
+      // Agent precedence: tool parameter, this chat's subagent model, the
+      // default subagent model, a cloud chat model, then any cloud provider.
+      const agentModel = this.resolveAgentModel(textConfig, agentSettings, availableProviders);
+
       // Determine provider
       let selectedProvider = textConfig.provider;
 
-      // If no provider specified, use the agent model (handles local provider fallback)
       if (!selectedProvider) {
-        const agentModel = this.llmService.getAgentModel();
         selectedProvider = agentModel.provider;
         
         // If default provider isn't available, use first available provider
@@ -216,8 +243,6 @@ export class PromptExecutor {
 
       // If no model specified, use agent model or first available for provider
       if (!selectedModel) {
-        const agentModel = this.llmService.getAgentModel();
-
         // If agent model's provider matches, use agent model's model
         if (agentModel.provider === selectedProvider && agentModel.model) {
           selectedModel = agentModel.model;
@@ -246,6 +271,20 @@ export class PromptExecutor {
         validationError: `Failed to validate provider/model: ${getErrorMessage(error)}`
       };
     }
+  }
+
+  private resolveAgentModel(
+    textConfig: TextPromptConfig,
+    agentSettings: ConversationAgentSettings | undefined,
+    availableProviders: string[]
+  ): ResolvedAgentModel {
+    return resolveAgentModel({
+      explicit: { provider: textConfig.provider },
+      conversation: agentSettings,
+      defaultAgent: this.llmService.getAgentDefaults().model,
+      chat: this.llmService.getDefaultModel(),
+      availableProviders
+    });
   }
 
   /**
