@@ -110,8 +110,13 @@ export class SyncCoordinator {
 
   /** Guards against overlapping sync() calls. */
   private syncing = false;
-  /** Set when a sync() call arrives while another is in-flight. */
-  private syncQueued = false;
+  /**
+   * The follow-up run owed to callers that arrived while a sync was in flight.
+   * They all wait on it, so a caller's `await sync()` means its changes are in
+   * the cache — the "Refresh synced data" command clears the query cache right
+   * after that await, and an early return used to let it clear too soon.
+   */
+  private queuedSync: { promise: Promise<SyncResult>; resolve: (result: SyncResult) => void } | null = null;
 
   constructor(jsonlWriter: IJSONLWriter, sqliteCache: ISQLiteCacheManager) {
     this.jsonlWriter = jsonlWriter;
@@ -166,8 +171,12 @@ export class SyncCoordinator {
    */
   async sync(options: SyncOptions = {}): Promise<SyncResult> {
     if (this.syncing) {
-      this.syncQueued = true;
-      return this.createResult(true, 0, 0, [], Date.now(), []);
+      if (!this.queuedSync) {
+        let resolve!: (result: SyncResult) => void;
+        const promise = new Promise<SyncResult>(r => { resolve = r; });
+        this.queuedSync = { promise, resolve };
+      }
+      return this.queuedSync.promise;
     }
 
     this.syncing = true;
@@ -175,12 +184,18 @@ export class SyncCoordinator {
       return await this.syncInner(options);
     } finally {
       this.syncing = false;
-      if (this.syncQueued) {
-        this.syncQueued = false;
-        // Re-run to pick up changes that landed during the previous sync.
-        // Don't await — callers of the queued sync already got their
-        // early-return result above.
-        void this.sync(options);
+      const queued = this.queuedSync;
+      if (queued) {
+        this.queuedSync = null;
+        // Re-run to pick up changes that landed during the previous sync, and
+        // settle every caller that queued behind it with that run's result.
+        // Not awaited here: this run's own caller should not wait for it.
+        void this.sync(options).then(
+          queued.resolve,
+          (error: unknown) => queued.resolve(
+            this.createResult(false, 0, 0, [`Sync failed: ${String(error)}`], Date.now(), [])
+          )
+        );
       }
     }
   }

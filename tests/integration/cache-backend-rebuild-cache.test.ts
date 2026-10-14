@@ -86,7 +86,8 @@ async function buildRebuildHarness(): Promise<RebuildHarness> {
     initLifecycle,
     sqliteCache: cacheLifecycle as unknown,
     syncCoordinator: syncCoordinator as unknown,
-    cacheBlobStore: blobStore
+    cacheBlobStore: blobStore,
+    queryCache: { clear: jest.fn() }
   });
 
   return { adapter, blobStore, cacheLifecycle, syncCoordinator, callOrder };

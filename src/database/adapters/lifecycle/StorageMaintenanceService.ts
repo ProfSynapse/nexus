@@ -160,6 +160,11 @@ export class StorageMaintenanceService {
         // succeeds; a failed rebuild throws above and never reaches here.
         this.externalEvents.trigger('cache-rebuilt');
       } finally {
+        // The repositories' query cache still holds rows read from the
+        // database this rebuild threw away (`getWorkspace` answered with the
+        // pre-rebuild workspace until its TTL ran out or the plugin reloaded).
+        // Cleared on failure too: the database was wiped either way.
+        this.deps.getQueryCache().clear();
         // Clear on both success and failure so a follow-up rebuild can
         // re-run; the original error (if any) still rejects this promise.
         try { await this.afterCacheRebuild?.(); }

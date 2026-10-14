@@ -316,6 +316,9 @@ export class HybridStorageAdapter implements IStorageAdapter {
         await this.runReconcile('conversation', () => this.reconcileMissingConversations());
         await this.runReconcile('task', () => this.reconcileMissingTasks());
       }
+      // The adapter is usable before replay finishes, so reads made during it
+      // cached a partial picture. Drop them now that the cache is complete.
+      this.queryCache.clear();
 
       // Fill in the state columns denormalized in schema v16 (issue #219) for
       // rows that came over from a pre-v16 cache. Costs one indexed SELECT once

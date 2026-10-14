@@ -58,6 +58,7 @@ function makeMaintenance(rebuildSucceeds: boolean) {
     getSqliteCache: () => sqliteCache,
     getCacheBlobStore: () => cacheBlobStore,
     getSyncCoordinator: () => syncCoordinator,
+    getQueryCache: () => ({ clear: () => undefined }),
     getInitLifecycle: () => ({ isInitialized: () => true })
   } as unknown as StorageMaintenanceDeps;
 

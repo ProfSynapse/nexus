@@ -98,6 +98,7 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
       adapter.syncCoordinator = {
         fullRebuild: jest.fn().mockResolvedValue(successfulSyncResult)
       };
+      (adapter as unknown as { queryCache: unknown }).queryCache = { clear: jest.fn() };
       return adapter;
     }
 

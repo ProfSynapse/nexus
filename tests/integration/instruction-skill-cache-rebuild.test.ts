@@ -62,7 +62,8 @@ catch { /* Node >=22 lane; the plugin itself supports Node >=18 and mobile. */ }
       const maintenance = new StorageMaintenanceService({
         getSqliteCache: () => sqlite, getCacheBlobStore: () => ({ remove: () => Promise.resolve() }),
         getInitLifecycle: () => ({ isInitialized: () => true }),
-        getSyncCoordinator: () => ({ fullRebuild: () => Promise.resolve({ success: true, errors: [] }) })
+        getSyncCoordinator: () => ({ fullRebuild: () => Promise.resolve({ success: true, errors: [] }) }),
+        getQueryCache: () => ({ clear: () => undefined })
       } as unknown as StorageMaintenanceDeps);
       maintenance.setBeforeCacheRebuild(async () => { const result = await skills.pauseForRebuild(); if (!result.ok) throw new Error(result.error.message); });
       maintenance.setAfterCacheRebuild(async () => { const result = await skills.resumeAfterRebuild(); if (!result.ok) throw new Error(result.error.message); });
