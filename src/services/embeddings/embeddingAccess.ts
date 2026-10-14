@@ -17,7 +17,18 @@
  * this file never pulls in the embedding engine or any Node built-in.
  */
 
+import { Platform } from 'obsidian';
 import type { EmbeddingService } from './EmbeddingService';
+
+/**
+ * Whether agents can be offered semantic search, as configured.
+ *
+ * - `available`: turned on, on a platform that supports it. The engine may
+ *   still be starting; callers check resolveEmbeddingService for that.
+ * - `off`: turned off in Nexus settings.
+ * - `unsupported`: this device cannot run it (mobile).
+ */
+export type SemanticSearchState = 'available' | 'off' | 'unsupported';
 
 /** The parts of EmbeddingManager this accessor relies on. */
 interface EmbeddingManagerView {
@@ -54,5 +65,27 @@ export function resolveEmbeddingService(plugin: unknown): EmbeddingService | nul
     return manager.getService() ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Derive the semantic search state from the plugin's settings and platform.
+ *
+ * Reads `plugin.settings.settings.enableEmbeddings`, which defaults to on.
+ * Anything that is not a Nexus plugin (the headless schema exporter, test
+ * stubs) therefore reads as `available`, which keeps generated tool
+ * descriptions stable.
+ */
+export function resolveSemanticSearchState(plugin: unknown): SemanticSearchState {
+  if (Platform.isMobile) {
+    return 'unsupported';
+  }
+
+  try {
+    const settings = (plugin as { settings?: { settings?: { enableEmbeddings?: unknown } } } | null)
+      ?.settings?.settings;
+    return settings?.enableEmbeddings === false ? 'off' : 'available';
+  } catch {
+    return 'available';
   }
 }

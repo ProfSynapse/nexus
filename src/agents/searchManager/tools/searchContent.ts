@@ -4,7 +4,11 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
 import { isGlobPattern, globToRegex, normalizePath, isWithinPathScope } from '../../../utils/pathUtils';
 import type { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
-import { resolveEmbeddingService } from '../../../services/embeddings/embeddingAccess';
+import {
+  resolveEmbeddingService,
+  resolveSemanticSearchState,
+  type SemanticSearchState
+} from '../../../services/embeddings/embeddingAccess';
 import { CommonParameters } from '../../../types';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelQuery, verbs } from '../../utils/toolStatusLabels';
@@ -53,8 +57,32 @@ export interface ContentSearchResult {
     content?: string;  // Keyword search only
     matchType: SearchMatchType;
   }>;
+  /** Set when the search ran differently from what was asked, e.g. keyword instead of semantic. */
+  note?: string;
   error?: string;
 }
+
+/** Tool description while semantic search is available. Kept verbatim: the committed catalog holds it. */
+const DESCRIPTION_AVAILABLE = 'Search vault files. Set semantic=true for AI-powered conceptual search using local embeddings (best for concepts/related ideas), or semantic=false for keyword/fuzzy search (best for exact matches). Semantic search is desktop-only and becomes available once the embedding system initializes in the background (first run may take longer while the model downloads).';
+
+/** Tool descriptions while semantic search cannot be used: no pitch for it. */
+const DESCRIPTION_KEYWORD_ONLY: Record<Exclude<SemanticSearchState, 'available'>, string> = {
+  off: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search is turned off in Nexus settings, so semantic=true also runs keyword search.',
+  unsupported: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search is not available on this device, so semantic=true also runs keyword search.'
+};
+
+/** The `semantic` property description for each state. The property itself always stays, so `--semantic` never becomes an unknown flag. */
+const SEMANTIC_PARAM_DESCRIPTION: Record<SemanticSearchState, string> = {
+  available: 'true = AI-powered conceptual search (desktop only, best for concepts/related ideas). false = keyword/fuzzy search (default, best for exact matches).',
+  off: 'Unavailable: semantic search is turned off in Nexus settings. true runs keyword search instead.',
+  unsupported: 'Unavailable on this device. true runs keyword search instead.'
+};
+
+/** The `note` returned when semantic=true fell back to keyword search. */
+export const SEMANTIC_FALLBACK_NOTES: Record<Exclude<SemanticSearchState, 'available'>, string> = {
+  off: 'Semantic search is turned off in Nexus settings, so this used keyword search.',
+  unsupported: 'Semantic search is not available on this device, so this used keyword search.'
+};
 
 /** Score for a verbatim occurrence of the whole query. */
 const EXACT_PHRASE_SCORE = 0.9;
@@ -220,15 +248,43 @@ function scoreTextMatch(
  */
 export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSearchResult> {
   private plugin: Plugin;
+  private readonly getSemanticState: () => SemanticSearchState;
 
-  constructor(plugin: Plugin) {
-    super(
-      'content',
-      'Content Search',
-      'Search vault files. Set semantic=true for AI-powered conceptual search using local embeddings (best for concepts/related ideas), or semantic=false for keyword/fuzzy search (best for exact matches). Semantic search is desktop-only and becomes available once the embedding system initializes in the background (first run may take longer while the model downloads).',
-      '2.0.0'
-    );
+  /**
+   * @param plugin The Nexus plugin (or a minimal stand-in carrying `app`).
+   * @param getSemanticState Reports whether semantic search can be offered.
+   *   Defaults to reading the plugin's settings and platform.
+   */
+  constructor(plugin: Plugin, getSemanticState?: () => SemanticSearchState) {
+    super('content', 'Content Search', DESCRIPTION_AVAILABLE, '2.0.0');
     this.plugin = plugin;
+    this.getSemanticState = getSemanticState ?? (() => resolveSemanticSearchState(plugin));
+
+    // The description follows the semantic search setting, which can change
+    // at any time (settings tab, or synced from another device). BaseTool
+    // declares `description` as a field, so it is turned into an accessor
+    // here: discovery reads it directly, sometimes without calling
+    // getParameterSchema(), and it must never advertise a turned-off feature.
+    Object.defineProperty(this, 'description', {
+      get: (): string => this.describe(),
+      set: (): void => undefined,
+      enumerable: true,
+      configurable: true
+    });
+  }
+
+  /** Current semantic state; a failing provider reads as available. */
+  private semanticState(): SemanticSearchState {
+    try {
+      return this.getSemanticState();
+    } catch {
+      return 'available';
+    }
+  }
+
+  private describe(): string {
+    const state = this.semanticState();
+    return state === 'available' ? DESCRIPTION_AVAILABLE : DESCRIPTION_KEYWORD_ONLY[state];
   }
 
   getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
@@ -264,6 +320,15 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
 
       // Use semantic search if requested
       if (searchParams.semantic) {
+        const state = this.semanticState();
+        if (state !== 'available') {
+          // Turned off, or not possible on this device: answer with keyword
+          // search and say so, rather than failing a harmless request.
+          const keyword = await this.performKeywordFuzzySearch(searchParams, startTime);
+          return keyword.success
+            ? this.withNote(keyword, SEMANTIC_FALLBACK_NOTES[state])
+            : keyword;
+        }
         return await this.performSemanticSearch(searchParams, startTime);
       }
 
@@ -274,6 +339,12 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       console.error(`[${BRAND_NAME}] Content search failed:`, error);
       return this.prepareResult(false, undefined, `Search failed: ${getErrorMessage(error)}`);
     }
+  }
+
+  /** Attach a note next to the results of a successful search. */
+  private withNote(result: ContentSearchResult, note: string): ContentSearchResult {
+    const data = (result as unknown as { data?: Record<string, unknown> }).data ?? {};
+    return this.prepareResult(true, { ...data, note });
   }
 
   /**
@@ -287,7 +358,9 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     const embeddingService = this.getEmbeddingService();
 
     if (!embeddingService) {
-      return this.prepareResult(false, undefined, 'Semantic search is not available yet. The embedding system may still be initializing (and may need to download the embedding model on first run). Try again in a moment, or use semantic=false for keyword search.');
+      // Turned on but not running yet: the engine starts a few seconds after
+      // load (and downloads its model on first run). "Off" never gets here.
+      return this.prepareResult(false, undefined, 'Semantic search is still initializing (the first run may need to download the embedding model). Try again in a moment, or use semantic=false for keyword search.');
     }
 
     if (!embeddingService.isServiceEnabled()) {
@@ -632,10 +705,13 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
    * Get parameter schema for MCP tool definition
    */
   getParameterSchema(): SearchContentSchema {
+    const state = this.semanticState();
     const toolSchema = {
       type: 'object',
       title: 'Content Search Params',
-      description: 'Search vault files. REQUIRED: Set "semantic" parameter to choose search mode.',
+      description: state === 'available'
+        ? 'Search vault files. REQUIRED: Set "semantic" parameter to choose search mode.'
+        : 'Search vault files by keyword.',
       properties: {
         query: {
           type: 'string',
@@ -643,7 +719,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         },
         semantic: {
           type: 'boolean',
-          description: 'true = AI-powered conceptual search (desktop only, best for concepts/related ideas). false = keyword/fuzzy search (default, best for exact matches).',
+          description: SEMANTIC_PARAM_DESCRIPTION[state],
           default: false
         },
         limit: {
@@ -716,6 +792,10 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
             },
             required: ['filePath', 'matchType']
           }
+        },
+        note: {
+          type: 'string',
+          description: 'Present when the search ran differently from what was asked, for example keyword search because semantic search is turned off'
         },
         error: {
           type: 'string',

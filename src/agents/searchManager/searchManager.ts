@@ -14,6 +14,7 @@ import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { ServiceManager } from '../../core/ServiceManager';
 import type { StorageAdapterResolver } from './services/ServiceAccessors';
+import { resolveSemanticSearchState } from '../../services/embeddings/embeddingAccess';
 
 const noop = (): void => {
   return;
@@ -130,8 +131,13 @@ export class SearchManagerAgent extends BaseAgent {
     const pluginOrFallback: Plugin = pluginRef || this.createMinimalPlugin(app);
 
     // Register ContentSearchTool (fuzzy + keyword + semantic search). The tool
-    // resolves the embedding service from the plugin on every semantic call.
-    this.searchContentTool = new SearchContentTool(pluginOrFallback);
+    // resolves the embedding service from the plugin on every semantic call,
+    // and reads the semantic search setting whenever it describes itself, so
+    // turning semantic search off stops it being offered without a reload.
+    this.searchContentTool = new SearchContentTool(
+      pluginOrFallback,
+      () => resolveSemanticSearchState(pluginOrFallback)
+    );
     this.registerTool(this.searchContentTool);
 
     // Register focused search tools - lazy loaded
