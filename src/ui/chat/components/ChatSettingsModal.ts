@@ -296,9 +296,11 @@ export class ChatSettingsModal extends Modal {
         settings.transcriptionModel || null
       );
 
-      // Save to conversation metadata
+      // Save to conversation metadata; with no conversation open, the next new one adopts them.
       if (this.conversationId) {
         await this.modelAgentManager.saveToConversation(this.conversationId);
+      } else {
+        this.modelAgentManager.carrySelectionsIntoNextConversation();
       }
 
       if (!this.closed) this.close();

@@ -127,6 +127,8 @@ export class ModelAgentManager {
   private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
   private compactionFrontier: CompactionFrontierRecord[] = []; // Active bounded compaction frontier
   private compactionFrontierService = new CompactionFrontierService();
+  // Settings saved with no conversation open, held for the next new conversation.
+  private carriedSelections: { contextWindow: number | null } | null = null;
 
   constructor(
     private app: App, // Obsidian App
@@ -186,8 +188,21 @@ export class ModelAgentManager {
    * Call this when no conversation exists (e.g., welcome state)
    */
   async initializeDefaults(): Promise<void> {
+    this.carriedSelections = null;
     this.clearCompactionFrontier();
     await this.initializeDefaultModel();
+  }
+
+  /**
+   * Keep the current selections for the next new conversation. Used when chat
+   * settings are saved while no conversation is open: there is nothing to
+   * persist them to yet, so the first conversation created afterwards adopts
+   * and stores them instead of starting from the plugin defaults.
+   */
+  carrySelectionsIntoNextConversation(): void {
+    this.carriedSelections = this.currentConversationId === null
+      ? { contextWindow: this.committedContextWindow }
+      : null;
   }
 
   /**
@@ -207,9 +222,20 @@ export class ModelAgentManager {
    * Initialize from conversation metadata (if available), otherwise use plugin default
    */
   async initializeFromConversation(conversationId: string): Promise<void> {
+    const carried = this.carriedSelections;
+    this.carriedSelections = null;
     try {
       const { conversationMetadata, chatSettings } =
         await this.conversationSettingsStore.load(conversationId);
+
+      if (carried && !this.hasSavedSelections(chatSettings)) {
+        // A brand-new conversation adopts the selections saved while none was open.
+        this.clearCompactionFrontier();
+        this.restoreCompactionFrontierFromMetadata(conversationMetadata);
+        if (carried.contextWindow !== null) this.committedContextWindow = carried.contextWindow;
+        await this.saveToConversation(conversationId);
+        return;
+      }
 
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
@@ -223,6 +249,11 @@ export class ModelAgentManager {
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
     }
+  }
+
+  /** True once chat settings were saved to the conversation, not just its creation metadata. */
+  private hasSavedSelections(settings: ConversationSettingsMetadata | undefined): boolean {
+    return !!settings && ('temperature' in settings || 'thinking' in settings);
   }
 
   private hasStoredChatSettings(settings: ConversationSettingsMetadata | undefined): boolean {
