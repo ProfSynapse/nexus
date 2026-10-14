@@ -7,6 +7,7 @@ import type { EmbeddingService } from '../../../services/embeddings/EmbeddingSer
 import {
   resolveEmbeddingService,
   resolveSemanticSearchState,
+  resolveSemanticSearchFailure,
   type SemanticSearchState
 } from '../../../services/embeddings/embeddingAccess';
 import { CommonParameters } from '../../../types';
@@ -68,20 +69,23 @@ const DESCRIPTION_AVAILABLE = 'Search vault files. Set semantic=true for AI-powe
 /** Tool descriptions while semantic search cannot be used: no pitch for it. */
 const DESCRIPTION_KEYWORD_ONLY: Record<Exclude<SemanticSearchState, 'available'>, string> = {
   off: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search is turned off in Nexus settings, so semantic=true also runs keyword search.',
-  unsupported: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search is not available on this device, so semantic=true also runs keyword search.'
+  unsupported: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search is not available on this device, so semantic=true also runs keyword search.',
+  error: 'Search vault files by keyword, with fuzzy filename matching (best for exact words and names). Semantic search failed to start on this device, so semantic=true also runs keyword search.'
 };
 
 /** The `semantic` property description for each state. The property itself always stays, so `--semantic` never becomes an unknown flag. */
 const SEMANTIC_PARAM_DESCRIPTION: Record<SemanticSearchState, string> = {
   available: 'true = AI-powered conceptual search (desktop only, best for concepts/related ideas). false = keyword/fuzzy search (default, best for exact matches).',
   off: 'Unavailable: semantic search is turned off in Nexus settings. true runs keyword search instead.',
-  unsupported: 'Unavailable on this device. true runs keyword search instead.'
+  unsupported: 'Unavailable on this device. true runs keyword search instead.',
+  error: 'Unavailable: semantic search failed to start. true runs keyword search instead.'
 };
 
 /** The `note` returned when semantic=true fell back to keyword search. */
 export const SEMANTIC_FALLBACK_NOTES: Record<Exclude<SemanticSearchState, 'available'>, string> = {
   off: 'Semantic search is turned off in Nexus settings, so this used keyword search.',
-  unsupported: 'Semantic search is not available on this device, so this used keyword search.'
+  unsupported: 'Semantic search is not available on this device, so this used keyword search.',
+  error: 'Semantic search failed to start, so this used keyword search. Use "Try again" under Semantic search in Nexus settings to restart it.'
 };
 
 /** Score for a verbatim occurrence of the whole query. */
@@ -255,7 +259,11 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
    * @param getSemanticState Reports whether semantic search can be offered.
    *   Defaults to reading the plugin's settings and platform.
    */
-  constructor(plugin: Plugin, getSemanticState?: () => SemanticSearchState) {
+  constructor(
+    plugin: Plugin,
+    getSemanticState?: () => SemanticSearchState,
+    private readonly getSemanticFailure: () => string | null = () => resolveSemanticSearchFailure(plugin)
+  ) {
     super('content', 'Content Search', DESCRIPTION_AVAILABLE, '2.0.0');
     this.plugin = plugin;
     this.getSemanticState = getSemanticState ?? (() => resolveSemanticSearchState(plugin));
@@ -322,11 +330,13 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       if (searchParams.semantic) {
         const state = this.semanticState();
         if (state !== 'available') {
-          // Turned off, or not possible on this device: answer with keyword
-          // search and say so, rather than failing a harmless request.
+          // Turned off, failed, or not possible on this device: answer with
+          // keyword search and say so, rather than failing a harmless request
+          // — and never with "still initializing", which invites retries for
+          // something that is not starting.
           const keyword = await this.performKeywordFuzzySearch(searchParams, startTime);
           return keyword.success
-            ? this.withNote(keyword, SEMANTIC_FALLBACK_NOTES[state])
+            ? this.withNote(keyword, this.fallbackNote(state))
             : keyword;
         }
         return await this.performSemanticSearch(searchParams, startTime);
@@ -339,6 +349,21 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       console.error(`[${BRAND_NAME}] Content search failed:`, error);
       return this.prepareResult(false, undefined, `Search failed: ${getErrorMessage(error)}`);
     }
+  }
+
+  /** The note for a keyword fallback; a failure also says what failed. */
+  private fallbackNote(state: Exclude<SemanticSearchState, 'available'>): string {
+    const note = SEMANTIC_FALLBACK_NOTES[state];
+    if (state !== 'error') {
+      return note;
+    }
+    let reason: string | null = null;
+    try {
+      reason = this.getSemanticFailure();
+    } catch {
+      reason = null;
+    }
+    return reason ? `${note} Cause: ${reason.replace(/[.\s]+$/, '')}.` : note;
   }
 
   /** Attach a note next to the results of a successful search. */
@@ -358,13 +383,16 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     const embeddingService = this.getEmbeddingService();
 
     if (!embeddingService) {
-      // Turned on but not running yet: the engine starts a few seconds after
-      // load (and downloads its model on first run). "Off" never gets here.
+      // Turned on and not failed, but not running yet: the engine starts a
+      // few seconds after load (and downloads its model on first run). "Off"
+      // and "failed" are decided by the semantic state and never get here.
       return this.prepareResult(false, undefined, 'Semantic search is still initializing (the first run may need to download the embedding model). Try again in a moment, or use semantic=false for keyword search.');
     }
 
     if (!embeddingService.isServiceEnabled()) {
-      return this.prepareResult(false, undefined, 'Embedding service is disabled (mobile platform or initialization failed). Use semantic=false for keyword search.');
+      // The service turned itself off (its model did not load) and the
+      // indexing pass has not reported that yet.
+      return this.prepareResult(false, undefined, 'Semantic search is unavailable: the embedding model failed to load. Use "Try again" under Semantic search in Nexus settings, or use semantic=false for keyword search.');
     }
 
     // Check if we have any embeddings

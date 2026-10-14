@@ -239,10 +239,13 @@ describe('EmbeddingManager hot toggle', () => {
       expect(created.engine[0].dispose).toHaveBeenCalled();
       expect(h.manager.getService()).toBeNull();
       expect(h.states.at(-1)).toMatchObject({ enabled: true, initialized: false });
+      // Why it failed stays readable, so search can say so instead of
+      // "still initializing" (resolveSemanticSearchState reads this).
+      expect(h.manager.getStatus().startError).toBe('status bar failed');
 
       await h.manager.setEnabled(true);
       expect(created.engine).toHaveLength(2);
-      expect(h.states.at(-1)).toMatchObject({ enabled: true, initialized: true });
+      expect(h.states.at(-1)).toMatchObject({ enabled: true, initialized: true, startError: null });
     } finally {
       errorSpy.mockRestore();
     }

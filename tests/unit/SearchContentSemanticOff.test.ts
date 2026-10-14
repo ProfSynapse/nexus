@@ -36,7 +36,13 @@ interface SearchData {
   note?: string;
 }
 
-function createHarness(options: { enableEmbeddings?: boolean; managerReady?: boolean } = {}) {
+interface RuntimeView {
+  turnedOn: boolean;
+  startError?: string | null;
+  progress?: { phase: string; error?: string } | null;
+}
+
+function createHarness(options: { enableEmbeddings?: boolean; managerReady?: boolean; runtime?: RuntimeView } = {}) {
   const files = [
     new TFile('auth.md', 'Ideas/auth.md'),
     new TFile('cooking.md', 'Life/cooking.md')
@@ -50,10 +56,24 @@ function createHarness(options: { enableEmbeddings?: boolean; managerReady?: boo
     getStats: jest.fn(async () => ({ noteCount: 2 })),
     semanticSearch: jest.fn(async () => [{ notePath: 'Ideas/auth.md', distance: 0.1, score: 0.1 }])
   };
-  const manager = {
+  const manager: Record<string, unknown> = {
     isEmbeddingEnabled: () => options.managerReady ?? false,
     getService: () => (options.managerReady ? service : null)
   };
+  // The real EmbeddingManager's runtime view. Left off by default so the
+  // settings-only path (and stand-ins without it) stays covered.
+  const runtime = options.runtime;
+  if (runtime) {
+    manager.isTurnedOn = () => runtime.turnedOn;
+    manager.getStatus = () => ({
+      enabled: runtime.turnedOn,
+      initialized: options.managerReady ?? false,
+      indexing: false,
+      paused: false,
+      progress: runtime.progress ?? null,
+      startError: runtime.startError ?? null
+    });
+  }
 
   const settings: Record<string, unknown> = { memory: {} };
   if (options.enableEmbeddings !== undefined) settings.enableEmbeddings = options.enableEmbeddings;
@@ -87,7 +107,7 @@ function createHarness(options: { enableEmbeddings?: boolean; managerReady?: boo
     context: CONTEXT
   }) as Promise<{ success: boolean; error?: string; data?: SearchData }>;
 
-  return { agent, normalizer, tool, run, service, settings };
+  return { agent, normalizer, tool, run, service, settings, runtime };
 }
 
 describe('search content with semantic search turned off', () => {
@@ -176,5 +196,94 @@ describe('search content with semantic search turned on', () => {
   it('treats an absent setting as on (the default)', () => {
     const h = createHarness({});
     expect(h.tool().description).toContain(SEMANTIC_PITCH);
+  });
+});
+
+/**
+ * The saved setting is not the whole truth. EmbeddingManager.setEnabled(false)
+ * turns the runtime off before (or without) the setting being saved, and a
+ * model that fails to load leaves the manager "on" with nothing that can
+ * search. Reading only the setting answered both with "still initializing",
+ * which an agent retries indefinitely.
+ */
+describe('search content follows the embedding runtime, not just the setting', () => {
+  it('treats a manager turned off at runtime as off, though the setting is still on', async () => {
+    const h = createHarness({ enableEmbeddings: true, managerReady: false, runtime: { turnedOn: false } });
+
+    expect(h.tool().description).not.toContain(SEMANTIC_PITCH);
+    expect(h.tool().description).toMatch(/turned off/);
+    const result = await h.run(true);
+
+    // Pre-fix: success false, "Semantic search is still initializing".
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.data?.note).toBe(SEMANTIC_FALLBACK_NOTES.off);
+    expect(result.data?.results.map(r => r.filePath)).toContain('Ideas/auth.md');
+  });
+
+  it('still says "initializing" while the manager is on and starting', async () => {
+    const h = createHarness({ enableEmbeddings: true, managerReady: false, runtime: { turnedOn: true } });
+
+    expect(h.tool().description).toContain(SEMANTIC_PITCH);
+    const result = await h.run(true);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/still initializing/);
+  });
+
+  it('reports a model that failed to load, with its cause, instead of "initializing"', async () => {
+    const h = createHarness({
+      enableEmbeddings: true,
+      managerReady: true,
+      runtime: { turnedOn: true, progress: { phase: 'error', error: 'The embedding model could not be loaded' } }
+    });
+    h.service.isServiceEnabled.mockReturnValue(false);
+
+    expect(h.tool().description).not.toContain(SEMANTIC_PITCH);
+    expect(h.tool().description).toMatch(/failed to start/);
+    const result = await h.run(true);
+
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.data?.note).toBe(`${SEMANTIC_FALLBACK_NOTES.error} Cause: The embedding model could not be loaded.`);
+    expect(result.data?.note).not.toMatch(/initializing/);
+    expect(h.service.semanticSearch).not.toHaveBeenCalled();
+  });
+
+  it('reports an engine that failed to start (no service at all) instead of "initializing"', async () => {
+    const h = createHarness({
+      enableEmbeddings: true,
+      managerReady: false,
+      runtime: { turnedOn: true, startError: 'wasm unavailable' }
+    });
+
+    const result = await h.run(true);
+
+    // Pre-fix: "still initializing" — the engine was never going to start.
+    expect(result.success).toBe(true);
+    expect(result.data?.note).toBe(`${SEMANTIC_FALLBACK_NOTES.error} Cause: wasm unavailable.`);
+  });
+
+  it('keeps searching stored vectors when a pass errored but the service still runs', async () => {
+    const h = createHarness({
+      enableEmbeddings: true,
+      managerReady: true,
+      runtime: { turnedOn: true, progress: { phase: 'error', error: 'disk full' } }
+    });
+
+    const result = await h.run(true);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.note).toBeUndefined();
+    expect(h.service.semanticSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a runtime toggle live, without a new agent', () => {
+    const h = createHarness({ enableEmbeddings: true, managerReady: false, runtime: { turnedOn: true } });
+    expect(h.tool().description).toContain(SEMANTIC_PITCH);
+
+    h.runtime!.turnedOn = false;
+
+    expect(h.tool().description).not.toContain(SEMANTIC_PITCH);
   });
 });

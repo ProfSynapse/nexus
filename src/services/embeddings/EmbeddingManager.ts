@@ -59,6 +59,12 @@ export interface EmbeddingRuntimeStatus {
   indexing: boolean;
   paused: boolean;
   progress: IndexingProgress | null;
+  /**
+   * Why the last start failed (initialize() threw), or null. Cleared by the
+   * next start. A model that fails to load is reported by `progress` instead,
+   * with phase 'error'.
+   */
+  startError?: string | null;
 }
 
 /** Stored index sizes plus runtime state. Counts are read even while turned off. */
@@ -128,6 +134,7 @@ export class EmbeddingManager {
   private readonly events = new Events();
   private queueProgressRef: EventRef | null = null;
   private lastProgress: IndexingProgress | null = null;
+  private startError: string | null = null;
 
   constructor(
     app: App,
@@ -154,6 +161,7 @@ export class EmbeddingManager {
       return;
     }
 
+    this.startError = null;
     try {
       // Create components
       this.engine = new EmbeddingEngine();
@@ -201,6 +209,7 @@ export class EmbeddingManager {
 
     } catch (error) {
       console.error('[EmbeddingManager] Initialization failed:', error);
+      this.startError = error instanceof Error ? error.message : String(error);
       // Don't throw - embeddings are optional functionality
     }
 
@@ -486,7 +495,8 @@ export class EmbeddingManager {
       initialized: this.isInitialized,
       indexing: this.queue?.isIndexing() ?? false,
       paused: this.queue?.isIndexingPaused() ?? false,
-      progress: this.lastProgress
+      progress: this.lastProgress,
+      startError: this.startError
     };
   }
 
