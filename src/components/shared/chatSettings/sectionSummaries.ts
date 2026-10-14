@@ -6,6 +6,7 @@
 
 import type { ThinkingState } from './thinkingOptions';
 import { THINKING_LABELS } from './thinkingOptions';
+import { COPY } from './copy';
 
 const SEPARATOR = ' · ';
 
@@ -28,20 +29,31 @@ export function formatTemperature(value: number): string {
   return value.toFixed(1);
 }
 
-export interface ChatOptionsSummaryInput {
+export interface TuningSummaryInput {
   temperature: number;
   /** False when the model sets its own temperature. */
   supportsTemperature?: boolean;
   /** The context budget in tokens, when the model's window is known. */
   contextWindow?: number;
+}
+
+export interface ChatOptionsSummaryInput extends TuningSummaryInput {
   /** Chat settings only; omit on Defaults. */
   webSearch?: boolean;
 }
 
+/** "Creativity 0.5" or "Fixed temperature", then "1M context" when the window is known. */
+export function tuningSummary(input: TuningSummaryInput): string[] {
+  const parts = [
+    input.supportsTemperature === false ? COPY.fixedTemperature : `Creativity ${formatTemperature(input.temperature)}`
+  ];
+  if (input.contextWindow) parts.push(`${formatContextWindow(input.contextWindow)} context`);
+  return parts;
+}
+
 export function chatOptionsSummary(input: ChatOptionsSummaryInput): string {
   return join([
-    input.supportsTemperature === false ? 'Fixed temperature' : `Creativity ${formatTemperature(input.temperature)}`,
-    input.contextWindow ? `${formatContextWindow(input.contextWindow)} context` : null,
+    ...tuningSummary(input),
     input.webSearch === undefined ? null : `Web search ${input.webSearch ? 'on' : 'off'}`
   ]);
 }

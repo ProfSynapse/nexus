@@ -355,6 +355,13 @@ export class SliderComponent {
     this.min = min;
     this.max = max;
     this.step = step;
+    // Like Obsidian, the limits land on the range input itself.
+    const fake = asFake(this.sliderEl);
+    if (fake) {
+      fake.setAttribute('min', String(min));
+      fake.setAttribute('max', String(max));
+      fake.setAttribute('step', String(step));
+    }
     this.updateDisplay();
     return this;
   }

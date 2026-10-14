@@ -45,8 +45,15 @@ export const COPY = {
   thinking: 'Thinking',
   creativity: 'Creativity',
   creativityDesc: 'Lower is more focused, higher is more creative.',
+  /** Creativity row description for a model that rejects temperature. */
+  creativityFixedDesc: (modelName: string): string => `${modelName} sets its own temperature.`,
+  /** Creativity readout while the model sets its own temperature. */
+  creativityFixedReadout: '—',
+  fixedTemperature: 'Fixed temperature',
   contextWindow: 'Context window',
   contextWindowDesc: 'Older messages are summarized past this size.',
+  /** Screen-reader text for a Context window readout such as "200K". */
+  contextWindowValueText: (readout: string): string => `${readout} tokens`,
   webSearch: 'Web search',
   webSearchDesc: 'Let the model search the web when needed.',
   webSearchGeminiDesc: 'Available with Gemini 3 or newer when Nexus tools are enabled.',

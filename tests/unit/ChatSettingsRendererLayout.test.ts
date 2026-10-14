@@ -113,7 +113,8 @@ describe('Defaults tab', () => {
         expect(fold.querySelector('.nexus-accordion-content')?.hidden).toBe(true);
         expect(fold.querySelector('.nexus-accordion-summary')?.textContent).not.toBe('');
       }
-      expect(foldSummary(root, FOLD_TITLES.chatOptions)).toBe('Creativity 0.5 · 1M context');
+      // Claude Opus 5.5 rejects temperature.
+      expect(foldSummary(root, FOLD_TITLES.chatOptions)).toBe('Fixed temperature · 1M context');
       expect(foldSummary(root, FOLD_TITLES.context)).toBe('No workspace · No prompt · 0 notes');
       expect(foldSummary(root, FOLD_TITLES.images)).toBe('Gemini 3.1 Flash Image');
       expect(foldSummary(root, FOLD_TITLES.fileConversion)).toBe('File import on · Text extraction');
@@ -134,25 +135,27 @@ describe('Defaults tab', () => {
   });
 
   it('describes Creativity and Context window with the new copy, each value shown once', async () => {
-    const { tab, root } = await renderDefaults();
+    const { tab, root } = await renderDefaults({ defaultModel: { provider: 'anthropic', model: 'claude-opus-4-6' } });
     try {
       const options = foldItems(root, FOLD_TITLES.chatOptions);
       expect(rowDesc(findRow(options, COPY.creativity))).toBe(COPY.creativityDesc);
       expect(rowDesc(findRow(options, COPY.contextWindow))).toBe(COPY.contextWindowDesc);
       expect(findRow(options, COPY.creativity).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['0.5']);
-      expect(findRow(options, COPY.contextWindow).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['1M']);
+      expect(findRow(options, COPY.contextWindow).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['200K']);
     } finally {
       tab.destroy();
     }
   });
 
-  it('opens Subagents with the Used for note and the subagent model rows', async () => {
+  it('opens Subagents with the Used for note and the subagent model and tuning rows', async () => {
     const { tab, root } = await renderDefaults({ agentModel: { provider: 'anthropic', model: 'claude-haiku-5-5' } });
     try {
       const items = foldItems(root, FOLD_TITLES.subagents);
-      expect(rowNames(items)).toEqual([COPY.usedFor, COPY.provider, COPY.model, COPY.thinking]);
+      expect(rowNames(items)).toEqual([
+        COPY.usedFor, COPY.provider, COPY.model, COPY.thinking, COPY.creativity, COPY.contextWindow
+      ]);
       expect(rowDesc(findRow(items, COPY.usedFor))).toBe(COPY.usedForDesc);
-      expect(foldSummary(root, FOLD_TITLES.subagents)).toBe('Claude Haiku 5.5 · Thinking off');
+      expect(foldSummary(root, FOLD_TITLES.subagents)).toBe('Claude Haiku 5.5 · Thinking off · Fixed temperature · 1M context');
     } finally {
       tab.destroy();
     }
@@ -186,7 +189,7 @@ describe('Chat settings', () => {
       expect(rowDesc(findRow(options, COPY.webSearch))).toBe(COPY.webSearchDesc);
       expect(rowNames(foldItems(container, FOLD_TITLES.context))).toEqual([COPY.workspace, COPY.workflow, COPY.prompt, COPY.contextNotes]);
       expect(rowDesc(findRow(foldItems(container, FOLD_TITLES.context), COPY.workflow))).toBe(COPY.workflowDesc);
-      expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Creativity 0.5 · 1M context · Web search on');
+      expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Fixed temperature · 1M context · Web search on');
     } finally {
       renderer.destroy();
     }

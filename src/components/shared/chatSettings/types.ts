@@ -32,6 +32,14 @@ export interface ChatSettings {
     effort: ThinkingEffort;
   };
   temperature: number; // 0.0-1.0, controls randomness
+  /** Subagent Creativity (0.0-1.0). Absent inherits `temperature`. */
+  agentTemperature?: number;
+  /**
+   * Subagent context limits keyed by `getContextWindowOverrideKey(provider, model)`,
+   * kept apart from `contextWindowOverrides` so the chat and subagent sliders
+   * for the same model never share a value. Absent key means the model maximum.
+   */
+  agentContextWindowOverrides?: Record<string, number>;
   imageProvider: 'google' | 'openrouter' | 'openai';
   imageModel: string;
   speechProvider?: DefaultSpeechModelSettings['provider'];

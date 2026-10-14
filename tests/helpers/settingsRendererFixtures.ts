@@ -7,8 +7,9 @@
  *     jest.requireActual('../helpers/settingsRendererFixtures').providerManagerModule());
  *
  * The model table mirrors the registry facts the layout depends on: which
- * models reason (Thinking row), their context windows (Context window row and
- * summaries) and display names (summaries).
+ * models reason (Thinking row), which reject temperature (Creativity row),
+ * their context windows (Context window row and summaries) and display names
+ * (summaries). Tests about capabilities themselves use the real registry.
  */
 import type { ChatSettings } from '../../src/components/shared/ChatSettingsRenderer';
 import type { LLMProviderSettings } from '../../src/types/llm/ProviderTypes';
@@ -19,13 +20,18 @@ export interface FixtureModel {
   name: string;
   contextWindow: number;
   supportsThinking: boolean;
+  /** False when the registry says the model rejects temperature. */
+  supportsSamplingParams?: boolean;
 }
 
 export const FIXTURE_MODELS: FixtureModel[] = [
-  { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5', contextWindow: 1_000_000, supportsThinking: true },
-  { provider: 'anthropic', id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', contextWindow: 1_000_000, supportsThinking: true },
+  { provider: 'anthropic', id: 'claude-opus-5-5', name: 'Claude Opus 5.5', contextWindow: 1_000_000, supportsThinking: true, supportsSamplingParams: false },
+  { provider: 'anthropic', id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', contextWindow: 1_000_000, supportsThinking: true, supportsSamplingParams: false },
   { provider: 'anthropic', id: 'claude-opus-4-6', name: 'Claude Opus 4.6', contextWindow: 200_000, supportsThinking: true },
-  { provider: 'mistral', id: 'mistral-large-latest', name: 'Mistral Large Latest', contextWindow: 128_000, supportsThinking: false }
+  { provider: 'mistral', id: 'mistral-large-latest', name: 'Mistral Large Latest', contextWindow: 128_000, supportsThinking: false },
+  { provider: 'mistral', id: 'magistral-medium-latest', name: 'Magistral Medium', contextWindow: 40_000, supportsThinking: true },
+  // A small local model: below the smallest Context window preset.
+  { provider: 'lmstudio', id: 'tiny-local', name: 'Tiny Local', contextWindow: 4096, supportsThinking: false }
 ];
 
 export function providerManagerModule() {

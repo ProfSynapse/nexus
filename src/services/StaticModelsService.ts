@@ -38,6 +38,11 @@ export interface ModelWithProvider {
     supportsStreaming: boolean;
     supportsThinking: boolean;
   };
+  /**
+   * False when the model rejects temperature and other sampling parameters
+   * (the registry's `supportsSamplingParams`). Absent means it accepts them.
+   */
+  supportsSamplingParams?: boolean;
   userDescription?: string; // User-defined description
   isDefault?: boolean;
 }
@@ -220,7 +225,8 @@ export class StaticModelsService {
         supportsFunctions: model.capabilities.supportsFunctions,
         supportsStreaming: model.capabilities.supportsStreaming,
         supportsThinking: model.capabilities.supportsThinking
-      }
+      },
+      ...(model.supportsSamplingParams !== undefined ? { supportsSamplingParams: model.supportsSamplingParams } : {})
     };
   }
 

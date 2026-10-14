@@ -10,6 +10,7 @@ import {
   imagesSummary,
   semanticSearchSummary,
   subagentsSummary,
+  tuningSummary,
   videoSummary,
   voiceSummary
 } from '../../src/components/shared/chatSettings/sectionSummaries';
@@ -47,6 +48,18 @@ it('summarises subagents with thinking only for reasoning models', () => {
   expect(subagentsSummary({ modelName: 'Mistral Large Latest', thinking: null })).toBe('Mistral Large Latest');
   expect(subagentsSummary({ modelName: 'Claude Haiku 5.5', thinking: null, tuning: ['Fixed temperature', '1M context'] }))
     .toBe('Claude Haiku 5.5 · Fixed temperature · 1M context');
+});
+
+it('builds the subagent tuning parts the way Chat options does', () => {
+  expect(tuningSummary({ temperature: 0.3, contextWindow: 200_000 })).toEqual(['Creativity 0.3', '200K context']);
+  expect(tuningSummary({ temperature: 0.3, supportsTemperature: false, contextWindow: 1_000_000 }))
+    .toEqual(['Fixed temperature', '1M context']);
+  expect(tuningSummary({ temperature: 0.5 })).toEqual(['Creativity 0.5']);
+  expect(subagentsSummary({
+    modelName: 'Claude Haiku 5.5',
+    thinking: { enabled: false, effort: 'medium' },
+    tuning: tuningSummary({ temperature: 0.5, supportsTemperature: false, contextWindow: 1_000_000 })
+  })).toBe('Claude Haiku 5.5 · Thinking off · Fixed temperature · 1M context');
 });
 
 it('summarises images, video and voice', () => {

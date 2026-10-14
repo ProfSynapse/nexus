@@ -166,7 +166,7 @@ it('changing the subagent model redraws Subagents only', async () => {
     choose(control(findRow(foldItems(container, FOLD_TITLES.subagents), COPY.model), 'select'), 'anthropic::claude-opus-4-6');
     await flush();
     expect(rowsOf(topItems(container))).toEqual(topRows);
-    expect(foldSummary(container, FOLD_TITLES.subagents)).toBe('Claude Opus 4.6 · Thinking off');
+    expect(foldSummary(container, FOLD_TITLES.subagents)).toBe('Claude Opus 4.6 · Thinking off · Creativity 0.5 · 200K context');
   } finally {
     renderer.destroy();
   }

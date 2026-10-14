@@ -15,6 +15,13 @@
  *
  * The surfaces differ only in which rows appear (Web search and Workflow are
  * chat-only) and where data is saved (via callbacks).
+ *
+ * The selected model decides its rows: Thinking appears only for models that
+ * reason and offers only the levels the model distinguishes; Creativity is
+ * disabled for models that set their own temperature; Context window snaps to
+ * preset sizes up to the model's maximum, and a newly picked model starts at
+ * that maximum. The Subagents fold applies the same rules to the subagent
+ * model (or, when none is set, the cloud chat model subagents fall back to).
  */
 
 import { App, Component, EventRef, Setting, setIcon } from 'obsidian';
@@ -32,6 +39,11 @@ import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
 import { getContextWindowOverrideKey, resolveContextWindowLimit } from '../../ui/chat/utils/ContextWindowSettings';
+import { normalizeThinkingEffortForModel } from '../../services/llm/utils/thinkingLevels';
+import { contextWindowStopIndex, contextWindowStops } from './chatSettings/contextWindowStops';
+import { resolveSubagentTarget } from './chatSettings/subagentTarget';
+import { isLocalProvider } from '../../services/llm/utils/SubagentModelResolver';
+import { ModelCapabilityResolver, type ModelCapabilities } from './chatSettings/modelCapabilities';
 import { Accordion } from '../Accordion';
 import { FoldStateStore } from './settings/FoldStateStore';
 import { createSettingGroup, type SettingGroupHandle } from './settings/settingGroup';
@@ -43,7 +55,8 @@ import {
   formatContextWindow,
   formatTemperature,
   imagesSummary,
-  subagentsSummary
+  subagentsSummary,
+  tuningSummary
 } from './chatSettings/sectionSummaries';
 import {
   getThinkingLevels,
@@ -62,10 +75,6 @@ import type {
 
 export type { ChatSettings, ChatSettingsOptions, FoldDefinition, FoldHost, SettingsSurface } from './chatSettings/types';
 
-/**
- * Local providers that can't be used for executePrompt
- */
-const LOCAL_PROVIDERS = ['webllm', 'ollama', 'lmstudio'];
 
 /**
  * Callbacks for when settings change
@@ -103,6 +112,14 @@ interface PluginWithAppSettings {
 
 const TOP_GROUP = 'top';
 
+/** The chat model (top block, Chat options) or the subagent model (Subagents fold). */
+type ModelVariant = 'chat' | 'agent';
+
+interface ModelTarget {
+  provider?: string;
+  model?: string;
+}
+
 interface FoldRecord {
   id: string;
   accordion: Accordion;
@@ -132,9 +149,8 @@ export class ChatSettingsRenderer {
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private modelNames: { chat?: string; agent?: string; image?: string } = {};
-  // Context windows discovered at runtime (Ollama, LM Studio), keyed by provider/model.
-  private discoveredContextWindows = new Map<string, number>();
-  private pendingContextLookups = new Set<string>();
+  // Registry capabilities plus context windows discovered at runtime (Ollama, LM Studio).
+  private capabilities: ModelCapabilityResolver;
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
@@ -142,9 +158,11 @@ export class ChatSettingsRenderer {
     this.settings = {
       ...config.initialSettings,
       contextNotes: [...(config.initialSettings.contextNotes ?? [])],
-      contextWindowOverrides: { ...(config.initialSettings.contextWindowOverrides ?? config.llmProviderSettings.contextWindowOverrides ?? {}) }
+      contextWindowOverrides: { ...(config.initialSettings.contextWindowOverrides ?? config.llmProviderSettings.contextWindowOverrides ?? {}) },
+      agentContextWindowOverrides: { ...(config.initialSettings.agentContextWindowOverrides ?? config.llmProviderSettings.agentContextWindowOverrides ?? {}) }
     };
     this.staticModelsService = StaticModelsService.getInstance();
+    this.capabilities = new ModelCapabilityResolver(this.staticModelsService, () => this.providerManager);
     this.foldStore = config.foldStore ?? new FoldStateStore(config.app);
 
     this.providerManager = new LLMProviderManager(
@@ -421,11 +439,11 @@ export class ChatSettingsRenderer {
     return !!geminiCliConfig?.oauth?.connected;
   }
 
-  private modelDropdownConfig(variant: 'chat' | 'agent'): ModelDropdownConfig {
+  private modelDropdownConfig(variant: ModelVariant): ModelDropdownConfig {
     const isAgent = variant === 'agent';
     return {
       getProviders: () => isAgent
-        ? this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id))
+        ? this.getEnabledProviders().filter(id => !isLocalProvider(id))
         : this.getEnabledProviders(),
       getCurrentProvider: () => isAgent ? this.settings.agentProvider : this.settings.provider,
       getCurrentModel: () => isAgent ? this.settings.agentModel : this.settings.model,
@@ -441,6 +459,8 @@ export class ChatSettingsRenderer {
           this.settings.model = model ?? '';
           if (provider !== undefined) this.settings.provider = provider;
         }
+        // A newly picked model starts at its full window.
+        this.clearContextWindowOverride(variant);
       },
       noProvidersText: isAgent ? COPY.noCloudProviders : COPY.noProviders,
       modelOptionMap: isAgent ? this.agentModelOptionMap : this.modelOptionMap,
@@ -475,22 +495,51 @@ export class ChatSettingsRenderer {
     this.renderThinkingSetting(itemsEl, 'chat');
   }
 
-  private supportsThinking(provider: string | undefined, model: string | undefined): boolean {
-    if (!provider || !model) return false;
-    return this.staticModelsService.findModel(provider, model)?.capabilities?.supportsThinking === true;
+  // ========== MODEL CAPABILITIES ==========
+
+  /**
+   * The model a variant's tuning rows describe. Subagents use their own model
+   * when one is set; otherwise they run on the chat model when it is a cloud
+   * model (the runtime precedence), so the rows and summary describe that one.
+   */
+  private modelTarget(variant: ModelVariant): ModelTarget {
+    if (variant === 'chat') return { provider: this.settings.provider, model: this.settings.model };
+    const { provider, model } = resolveSubagentTarget(this.settings);
+    return { provider, model };
+  }
+
+  private hasAgentModel(): boolean {
+    return !!(this.settings.agentProvider && this.settings.agentModel);
+  }
+
+  private capabilitiesFor(variant: ModelVariant): ModelCapabilities {
+    const { provider, model } = this.modelTarget(variant);
+    return this.capabilities.get(provider, model, () =>
+      this.redrawGroups([FOLD_IDS.chatOptions, FOLD_IDS.subagents]));
+  }
+
+  private modelNameFor(variant: ModelVariant): string | undefined {
+    const { provider, model } = this.modelTarget(variant);
+    const loaded = variant === 'agent' && this.hasAgentModel() ? this.modelNames.agent : this.modelNames.chat;
+    return this.modelDisplayName(provider, model, loaded);
+  }
+
+  private thinkingFor(variant: ModelVariant): ChatSettings['thinking'] {
+    if (variant === 'chat') return this.settings.thinking;
+    return this.settings.agentThinking ?? { enabled: false, effort: 'medium' };
   }
 
   /**
-   * The Thinking dropdown (Off, Low … Max). Present only when the model can
-   * reason; Off keeps the stored effort so switching back restores it.
+   * The Thinking dropdown (Off plus the levels this model distinguishes).
+   * Present only when the model can reason; Off keeps the stored effort so
+   * switching back restores it.
    */
-  private renderThinkingSetting(itemsEl: HTMLElement, variant: 'chat' | 'agent'): void {
+  private renderThinkingSetting(itemsEl: HTMLElement, variant: ModelVariant): void {
     const isAgent = variant === 'agent';
-    const provider = isAgent ? this.settings.agentProvider : this.settings.provider;
-    const model = isAgent ? this.settings.agentModel : this.settings.model;
-    if (!this.supportsThinking(provider, model)) return;
+    const { provider, model } = this.modelTarget(variant);
+    if (!this.capabilitiesFor(variant).supportsThinking) return;
 
-    const current = isAgent ? this.settings.agentThinking : this.settings.thinking;
+    const current = this.thinkingFor(variant);
     new Setting(itemsEl)
       .setName(COPY.thinking)
       .addDropdown(dropdown => {
@@ -498,7 +547,7 @@ export class ChatSettingsRenderer {
         for (const level of getThinkingLevels(provider, model)) {
           dropdown.addOption(level, THINKING_LABELS[level]);
         }
-        dropdown.setValue(thinkingToOption(current));
+        dropdown.setValue(thinkingToOption(current, provider, model));
         dropdown.onChange(value => {
           const next = optionToThinking(value, isAgent ? this.settings.agentThinking : this.settings.thinking);
           if (isAgent) this.settings.agentThinking = next;
@@ -511,95 +560,130 @@ export class ChatSettingsRenderer {
   // ========== CHAT OPTIONS ==========
 
   private renderChatOptions(itemsEl: HTMLElement): void {
-    const events = this.events(FOLD_IDS.chatOptions);
+    this.renderCreativitySetting(itemsEl, 'chat');
+    this.renderContextWindowSetting(itemsEl, 'chat');
+    if (this.surface === 'chat') this.renderWebSearchSetting(itemsEl);
+  }
 
-    const creativity = new Setting(itemsEl)
-      .setName(COPY.creativity)
-      .setDesc(COPY.creativityDesc);
-    creativity.addSlider(slider => {
+  /** The fold whose listeners own a variant's tuning rows. */
+  private tuningGroup(variant: ModelVariant): string {
+    return variant === 'agent' ? FOLD_IDS.subagents : FOLD_IDS.chatOptions;
+  }
+
+  private temperatureFor(variant: ModelVariant): number {
+    if (variant === 'agent') return this.settings.agentTemperature ?? this.settings.temperature;
+    return this.settings.temperature;
+  }
+
+  /**
+   * Creativity follows the model: a model that rejects temperature gets a
+   * disabled row saying so, with "—" for the value. The stored value is kept
+   * for the next model that accepts it.
+   */
+  private renderCreativitySetting(itemsEl: HTMLElement, variant: ModelVariant): void {
+    const events = this.events(this.tuningGroup(variant));
+    const supportsTemperature = this.capabilitiesFor(variant).supportsSamplingParams;
+    const modelName = this.modelNameFor(variant);
+    const setting = new Setting(itemsEl).setName(COPY.creativity);
+
+    if (!supportsTemperature) {
+      setting.setDesc(COPY.creativityFixedDesc(modelName ?? 'This model'));
+      setting.setDisabled(true);
+      setting.addSlider(slider => {
+        slider
+          .setLimits(0, 1, 0.1)
+          .setValue(this.temperatureFor(variant))
+          .setDisabled(true);
+        bindSliderReadout(events, setting, slider, () => COPY.creativityFixedReadout, {
+          ariaValueText: () => COPY.fixedTemperature
+        });
+        return slider;
+      });
+      return;
+    }
+
+    setting.setDesc(COPY.creativityDesc);
+    setting.addSlider(slider => {
       slider
         .setLimits(0, 1, 0.1)
-        .setValue(this.settings.temperature);
-      bindSliderReadout(events, creativity, slider, formatTemperature);
+        .setValue(this.temperatureFor(variant));
+      bindSliderReadout(events, setting, slider, formatTemperature);
       slider.onChange((value: number) => {
-        this.settings.temperature = value;
+        if (variant === 'agent') this.settings.agentTemperature = value;
+        else this.settings.temperature = value;
         this.notifyChange();
       });
       return slider;
     });
-
-    this.renderContextWindowSetting(itemsEl);
-
-    if (this.surface === 'chat') this.renderWebSearchSetting(itemsEl);
   }
 
-  /** The chat model's advertised window, from the registry or a runtime lookup. */
-  private getChatContextWindow(): number | undefined {
-    const { provider, model } = this.settings;
-    if (!provider || !model) return undefined;
-    const staticWindow = this.staticModelsService.findModel(provider, model)?.contextWindow;
-    if (staticWindow && staticWindow > 0) return staticWindow;
-    const key = getContextWindowOverrideKey(provider, model);
-    const discovered = this.discoveredContextWindows.get(key);
-    if (discovered) return discovered;
-    this.lookupContextWindow(provider, model);
-    return undefined;
+  private overridesFor(variant: ModelVariant): Record<string, number> {
+    if (variant === 'agent') {
+      if (!this.settings.agentContextWindowOverrides) this.settings.agentContextWindowOverrides = {};
+      return this.settings.agentContextWindowOverrides;
+    }
+    if (!this.settings.contextWindowOverrides) this.settings.contextWindowOverrides = {};
+    return this.settings.contextWindowOverrides;
   }
 
-  private lookupContextWindow(provider: string, model: string): void {
-    const key = getContextWindowOverrideKey(provider, model);
-    if (this.pendingContextLookups.has(key)) return;
-    this.pendingContextLookups.add(key);
-    void this.providerManager.getModelsForProvider(provider).then(models => {
-      const discovered = models.find(candidate => candidate.id === model)?.contextWindow;
-      if (!discovered || discovered <= 0) return;
-      this.discoveredContextWindows.set(key, discovered);
-      if (provider === this.settings.provider && model === this.settings.model) {
-        this.redrawGroups([FOLD_IDS.chatOptions]);
-      }
-    }).catch(() => {
-      // An unavailable provider has no reliable advertised limit to adjust.
-    });
+  /** Forget the pending limit for the variant's selected model, so it shows its maximum. */
+  private clearContextWindowOverride(variant: ModelVariant): void {
+    const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
+    const model = variant === 'agent' ? this.settings.agentModel : this.settings.model;
+    if (!provider || !model) return;
+    delete this.overridesFor(variant)[getContextWindowOverrideKey(provider, model)];
   }
 
-  /** The budget the chat will use: the override when set, else the model maximum. */
-  private getChatContextBudget(): number | undefined {
-    const advertised = this.getChatContextWindow();
+  /** The budget a variant will use: the override when set, else the model maximum. */
+  private getContextBudget(variant: ModelVariant): number | undefined {
+    const advertised = this.capabilitiesFor(variant).contextWindow;
     if (!advertised) return undefined;
+    const { provider, model } = this.modelTarget(variant);
+    if (!provider || !model) return undefined;
     const maximum = resolveContextWindowLimit(advertised);
-    const key = getContextWindowOverrideKey(this.settings.provider, this.settings.model);
-    return resolveContextWindowLimit(maximum, this.settings.contextWindowOverrides?.[key]);
+    return resolveContextWindowLimit(maximum, this.overridesFor(variant)[getContextWindowOverrideKey(provider, model)]);
   }
 
-  private renderContextWindowSetting(itemsEl: HTMLElement): void {
-    const advertised = this.getChatContextWindow();
-    if (!advertised) return;
-    this.addContextWindowSlider(itemsEl, this.settings.provider, this.settings.model, advertised);
-  }
-
-  private addContextWindowSlider(itemsEl: HTMLElement, provider: string, model: string, advertised: number): void {
+  /**
+   * Context window snaps to preset sizes below the model's maximum plus the
+   * maximum itself. A model with one stop gets a disabled slider. A saved
+   * size between stops (older settings) is shown as saved until moved.
+   */
+  private renderContextWindowSetting(itemsEl: HTMLElement, variant: ModelVariant): void {
+    const advertised = this.capabilitiesFor(variant).contextWindow;
+    const { provider, model } = this.modelTarget(variant);
+    if (!advertised || !provider || !model) return;
     const maximum = resolveContextWindowLimit(advertised);
     if (maximum <= 0) return;
+
+    const stops = contextWindowStops(maximum);
     const key = getContextWindowOverrideKey(provider, model);
-    const selected = resolveContextWindowLimit(maximum, this.settings.contextWindowOverrides?.[key]);
+    const selected = resolveContextWindowLimit(maximum, this.overridesFor(variant)[key]);
+    const onStop = stops.includes(selected);
     const setting = new Setting(itemsEl)
       .setName(COPY.contextWindow)
       .setDesc(COPY.contextWindowDesc);
 
     setting.addSlider(slider => {
       slider
-        .setLimits(Math.min(1024, maximum), maximum, 1)
-        .setValue(selected);
-      const format = (value: number): string => formatContextWindow(resolveContextWindowLimit(maximum, value));
-      bindSliderReadout(this.events(FOLD_IDS.chatOptions), setting, slider, format, {
-        ariaValueText: value => `${format(value)} tokens`,
+        .setLimits(0, stops.length - 1, 1)
+        .setValue(contextWindowStopIndex(stops, selected));
+      if (stops.length < 2) slider.setDisabled(true);
+      const stopAt = (index: number): number => stops[Math.max(0, Math.min(stops.length - 1, Math.round(index)))];
+      const format = (index: number): string => formatContextWindow(stopAt(index));
+      bindSliderReadout(this.events(this.tuningGroup(variant)), setting, slider, format, {
+        ariaValueText: index => COPY.contextWindowValueText(format(index)),
+        initialText: onStop ? undefined : formatContextWindow(selected),
         cls: 'nexus-ctx-value'
       });
-      slider.onChange(value => {
-        const limit = resolveContextWindowLimit(maximum, value);
-        if (!this.settings.contextWindowOverrides) this.settings.contextWindowOverrides = {};
-        if (limit === maximum) delete this.settings.contextWindowOverrides[key];
-        else this.settings.contextWindowOverrides[key] = limit;
+      if (!onStop) {
+        slider.sliderEl.setAttribute('aria-valuetext', COPY.contextWindowValueText(formatContextWindow(selected)));
+      }
+      slider.onChange(index => {
+        const limit = stopAt(index);
+        const overrides = this.overridesFor(variant);
+        if (limit === maximum) delete overrides[key];
+        else overrides[key] = limit;
         this.notifyChange();
       });
       return slider;
@@ -632,7 +716,8 @@ export class ChatSettingsRenderer {
   private chatOptionsSummary(): string {
     return chatOptionsSummary({
       temperature: this.settings.temperature,
-      contextWindow: this.getChatContextBudget(),
+      supportsTemperature: this.capabilitiesFor('chat').supportsSamplingParams,
+      contextWindow: this.getContextBudget('chat'),
       webSearch: this.surface === 'chat' ? this.settings.webSearch === true : undefined
     });
   }
@@ -657,32 +742,41 @@ export class ChatSettingsRenderer {
     const modelSetting = renderModelSetting(itemsEl, this.modelDropdownConfig('agent'));
     this.applyTextOnlyProviderWarning(modelSetting, 'agent');
     this.renderThinkingSetting(itemsEl, 'agent');
+    this.renderCreativitySetting(itemsEl, 'agent');
+    this.renderContextWindowSetting(itemsEl, 'agent');
   }
 
+  /** "<model> · <thinking> · <creativity> · <window>" for the model subagents will run on. */
   private subagentsSummary(): string {
-    const hasAgentModel = !!(this.settings.agentProvider && this.settings.agentModel);
-    const provider = hasAgentModel ? this.settings.agentProvider : this.settings.provider;
-    const model = hasAgentModel ? this.settings.agentModel : this.settings.model;
-    const name = hasAgentModel
-      ? this.modelDisplayName(provider, model, this.modelNames.agent)
-      : this.modelDisplayName(provider, model, this.modelNames.chat);
-    const thinking = hasAgentModel ? this.settings.agentThinking : this.settings.thinking;
+    const { provider, model } = this.modelTarget('agent');
+    const capabilities = this.capabilitiesFor('agent');
+    const thinking = this.thinkingFor('agent');
     return subagentsSummary({
-      modelName: name,
-      thinking: this.supportsThinking(provider, model) ? thinking : null
+      modelName: this.modelNameFor('agent'),
+      // The level that is really sent, when the model folds the stored one onto a neighbour.
+      thinking: capabilities.supportsThinking
+        ? { enabled: thinking.enabled, effort: normalizeThinkingEffortForModel(provider, model, thinking.effort) }
+        : null,
+      tuning: provider && model
+        ? tuningSummary({
+          temperature: this.temperatureFor('agent'),
+          supportsTemperature: capabilities.supportsSamplingParams,
+          contextWindow: this.getContextBudget('agent')
+        })
+        : []
     });
   }
 
   private modelDisplayName(provider: string | undefined, model: string | undefined, loadedName?: string): string | undefined {
     if (!provider || !model) return undefined;
-    return this.staticModelsService.findModel(provider, model)?.name ?? loadedName ?? model;
+    return this.capabilities.get(provider, model).name ?? loadedName ?? model;
   }
 
   /**
    * A text-completion-only provider is explained in the Model row's
    * description, title in bold, rather than in a separate warning box.
    */
-  private applyTextOnlyProviderWarning(setting: Setting, variant: 'chat' | 'agent'): void {
+  private applyTextOnlyProviderWarning(setting: Setting, variant: ModelVariant): void {
     const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
     if (!isTextOnlyProvider(provider)) return;
     const { title, message } = this.getTextOnlyProviderWarningCopy(provider, variant);
