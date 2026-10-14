@@ -201,7 +201,9 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
     const body: Record<string, unknown> = {
       model: request.model,
       prompt: request.prompt,
-      resolution: request.resolution,
+      // The internal value is '4k' (Google's spelling); OpenRouter's resolution
+      // enum is case-sensitive and spells it '4K'.
+      resolution: request.resolution === '4k' ? '4K' : request.resolution,
       aspect_ratio: request.aspectRatio,
     };
 

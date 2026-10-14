@@ -34,15 +34,25 @@ export interface ResolvedVideoSelection {
   reason?: string;
 }
 
+/**
+ * Video model catalog. Google direct facts come from
+ * https://ai.google.dev/gemini-api/docs/video and /docs/deprecations;
+ * OpenRouter facts from https://openrouter.ai/api/v1/videos/models, which the
+ * OpenRouter adapter also re-reads at request time to validate a request.
+ */
 const VIDEO_MODELS: VideoModelDeclaration[] = [
   {
+    // Google shuts down all Veo 3.1 preview ids on 2026-10-22 and names
+    // gemini-omni-1.1-flash as the replacement. That model is served only by
+    // the Interactions API, which GoogleVideoAdapter does not speak yet, so
+    // there is no Google-direct successor in this catalog.
     provider: 'google',
     id: 'veo-3.1-generate-preview',
-    name: 'Veo 3.1',
+    name: 'Veo 3.1 preview (shuts down 2026-10-22)',
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
-    aspectRatios: ['16:9', '9:16', '1:1'],
+    aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p', '1080p', '4k'],
     durations: [4, 6, 8],
     defaultAspectRatio: '16:9',
@@ -55,7 +65,7 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
-    aspectRatios: ['16:9', '9:16', '1:1'],
+    aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p', '1080p', '4k'],
     durations: [4, 6, 8],
     defaultAspectRatio: '16:9',
@@ -82,8 +92,64 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
     aspectRatios: ['16:9', '9:16'],
-    resolutions: ['720p', '1080p'],
+    resolutions: ['720p', '1080p', '4k'],
     durations: [4, 6, 8],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-10-14 from /api/v1/videos/models. Listing also offers 480p and 4:3/3:4/21:9, outside the internal unions.
+    provider: 'openrouter',
+    id: 'bytedance/seedance-2.5',
+    name: 'ByteDance: Seedance 2.5 via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: true,
+    supportsAudioPrompting: true,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['720p'],
+    durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-10-14 from /api/v1/videos/models. First/last-frame control only; no input_references.
+    provider: 'openrouter',
+    id: 'kwaivgi/kling-v3.0-pro',
+    name: 'Kling: Video v3.0 Pro via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: false,
+    supportsAudioPrompting: true,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['720p'],
+    durations: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-10-14 from /api/v1/videos/models. Starting-frame image only; the listing does not declare generate_audio.
+    provider: 'openrouter',
+    id: 'x-ai/grok-imagine-video-1.5',
+    name: 'xAI: Grok Imagine Video 1.5 via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: false,
+    supportsAudioPrompting: false,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['720p', '1080p'],
+    durations: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-10-14 from /api/v1/videos/models. First-frame image only; no audio.
+    provider: 'openrouter',
+    id: 'runway/gen-4.5',
+    name: 'Runway: Gen-4.5 via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: false,
+    supportsAudioPrompting: false,
+    aspectRatios: ['16:9', '9:16'],
+    resolutions: ['720p'],
+    durations: [2, 3, 4, 5, 6, 7, 8, 9, 10],
     defaultAspectRatio: '16:9',
     defaultResolution: '720p',
   },

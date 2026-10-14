@@ -241,10 +241,10 @@ export type ImageProvider = 'openai' | 'google' | 'openrouter';
 export type ImageModel =
   | 'gpt-image-2.5-sunburst'  // OpenAI GPT Image 2.5 Sunburst (OpenAI direct)
   | 'gpt-image-2.5-flare'     // OpenAI GPT Image 2.5 Flare (OpenAI direct)
-  | 'gpt-image-1'              // OpenAI GPT Image 1 (OpenAI direct)
-  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (OpenAI direct)
-  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (OpenAI direct)
-  | 'gemini-2.5-flash-image'   // Google Nano Banana legacy, shuts down 2026-10-02
+  | 'gpt-image-1'              // OpenAI GPT Image 1 (OpenAI direct), shuts down 2026-10-23
+  | 'gpt-image-1.5'            // OpenAI GPT Image 1.5 (OpenAI direct), shuts down 2026-12-01
+  | 'gpt-image-1-mini'         // OpenAI GPT Image 1 Mini (OpenAI direct), shuts down 2026-12-01
+  | 'gemini-2.5-flash-image'   // Google Nano Banana legacy, deprecated (shutdown 2027-03-15)
   | 'gemini-3-pro-image-preview' // Google Nano Banana Pro preview id
   | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 preview id
   | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
@@ -258,7 +258,11 @@ export type ImageModel =
   | 'gpt-5-image-mini'               // OpenAI GPT-5 Image Mini (OpenRouter only)
   | 'gpt-image-2'                    // OpenAI GPT Image 2 (OpenRouter, and the OpenAI adapter)
   | 'seedream-4.5'                   // ByteDance Seedream 4.5 (OpenRouter only)
-  | 'seedream-5-lite';               // ByteDance Seedream 5.0 Lite (OpenRouter only)
+  | 'seedream-5-lite'                // ByteDance Seedream 5.0 Lite (OpenRouter only)
+  | 'gemini-nano-banana-2.1'         // Google Nano Banana 2.1 (Google direct and OpenRouter)
+  | 'flux-3-image'                   // Black Forest Labs FLUX.3 Image (OpenRouter only)
+  | 'seedream-5-pro'                 // ByteDance Seedream 5.0 Pro (OpenRouter only)
+  | 'seedream-5-flash';              // ByteDance Seedream 5.0 Flash (OpenRouter only)
 
 // Aspect ratio constants for Nano Banana models
 export enum AspectRatio {
