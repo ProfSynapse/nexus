@@ -51,10 +51,12 @@ export class ChatTraceService {
   }
 
   /**
-   * Set the embedding service (can be set after construction)
+   * Set the embedding service (can be set after construction). Null clears it
+   * when semantic search is turned off, so traces stop being embedded through
+   * a stopped service.
    */
-  setEmbeddingService(embeddingService: EmbeddingService): void {
-    this.embeddingService = embeddingService;
+  setEmbeddingService(embeddingService: EmbeddingService | null): void {
+    this.embeddingService = embeddingService ?? undefined;
   }
 
   /**

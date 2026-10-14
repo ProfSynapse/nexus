@@ -72,6 +72,13 @@ export default class NexusPlugin extends Plugin {
         if (this.unloading || !this.settings) return;
         try {
             const needsReload = await this.settings.reconcileExternalSettings(this.settingsSyncAbort.signal);
+            if (this.unloading) return;
+            // Semantic search is applied live rather than by reload. The call is
+            // idempotent, so it also catches a value adopted by an earlier read
+            // (the workflow scheduler reconciles synced settings too).
+            if (this.lifecycleManager) {
+                await this.lifecycleManager.setEmbeddingsEnabled(this.settings.settings.enableEmbeddings ?? true);
+            }
             if (needsReload && !this.unloading && !this.syncedSettingsNeedReload) {
                 this.syncedSettingsNeedReload = true;
                 new Notice(`${BRAND_NAME}: Settings changed on another device. Reload Nexus to apply changes outside AI providers.`);

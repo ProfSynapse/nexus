@@ -12,6 +12,15 @@ import {
     stripSecretsForPersist
 } from './services/secrets/SettingsSecrets';
 
+/** Assign an optional key, removing it rather than storing an explicit undefined. */
+function setOptionalKey<K extends keyof MCPSettings>(target: MCPSettings, key: K, value: MCPSettings[K]): void {
+    if (value === undefined) {
+        delete target[key];
+    } else {
+        target[key] = value;
+    }
+}
+
 /**
  * Settings manager
  * Handles loading and saving plugin settings
@@ -163,7 +172,13 @@ export class Settings {
         });
     }
 
-    /** Refresh live providers only; storage roots and other service configuration require reload. */
+    /**
+     * Refresh live providers and the semantic search switch; storage roots and
+     * other service configuration require reload. Returns whether a reload is
+     * needed. A synced `enableEmbeddings` change is adopted here and applied by
+     * the plugin at runtime (see NexusPlugin.onExternalSettingsChange), so it
+     * never asks for a reload.
+     */
     async reconcileExternalSettings(signal?: AbortSignal): Promise<boolean> {
         if (!this.loaded || signal?.aborted) return false;
         return pluginDataLock.acquire(async () => {
@@ -179,8 +194,10 @@ export class Settings {
         const merged = mergeSettingsChanges(this.baseline, cloneSettings(this.settings), normalized);
         const next = cloneSettings(this.settings);
         next.llmProviders = merged.llmProviders;
+        setOptionalKey(next, 'enableEmbeddings', merged.enableEmbeddings);
         const requiresReload = !settingsEqual(this.reloadSettings(this.baseline), this.reloadSettings(normalized));
         this.baseline.llmProviders = cloneSettings(normalized.llmProviders);
+        setOptionalKey(this.baseline, 'enableEmbeddings', normalized.enableEmbeddings);
         this.adoptSettings(next);
         return requiresReload;
     }
@@ -192,11 +209,13 @@ export class Settings {
         return incoming;
     }
 
-    private reloadSettings(settings: MCPSettings): Omit<MCPSettings, 'llmProviders' | 'workflowScheduler' | 'pluginStorage'> {
+    /** The settings whose synced change needs a reload: everything not applied live. */
+    private reloadSettings(settings: MCPSettings): Omit<MCPSettings, 'llmProviders' | 'workflowScheduler' | 'pluginStorage' | 'enableEmbeddings'> {
         const other = cloneSettings(settings);
         delete other.llmProviders;
         delete other.workflowScheduler;
         delete other.pluginStorage;
+        delete other.enableEmbeddings;
         return other;
     }
 

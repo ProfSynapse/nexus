@@ -77,6 +77,7 @@ export class PluginLifecycleManager {
     private readAloudCommandManager: ReadAloudCommandManager;
     private vaultIngestionManager: VaultIngestionManager;
     private embeddingManager: EmbeddingManager | null = null;
+    private embeddingStateUnsubscribe: (() => void) | null = null;
 
     // Pending timer handles for cleanup on shutdown
     private pendingTimers: number[] = [];
@@ -386,18 +387,33 @@ export class PluginLifecycleManager {
                 })
             );
 
-            // Wire embedding service into ChatTraceService
-            const embeddingService = this.embeddingManager.getService();
-            if (embeddingService) {
-                const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
-                if (this.shuttingDown) return;
-                if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
-                    chatTraceService.setEmbeddingService(embeddingService);
-                }
+            // Wire the embedding service into ChatTraceService, and keep it
+            // wired as semantic search is turned off and on: each start builds
+            // a new service, and a stop must not leave the old one in use.
+            const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
+            if (this.shuttingDown) return;
+            if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
+                const syncTraceEmbeddings = (): void => {
+                    chatTraceService.setEmbeddingService(manager.getService());
+                };
+                syncTraceEmbeddings();
+                this.embeddingStateUnsubscribe = manager.onStateChange(syncTraceEmbeddings);
             }
         } catch (error) {
             console.error('[PluginLifecycleManager] Background embedding initialization failed:', error);
         }
+    }
+
+    /**
+     * Apply the semantic search setting at runtime, without a restart.
+     *
+     * Called by the settings UI and for a change synced from another device.
+     * Before the embedding manager exists (the first seconds after load) this
+     * does nothing: the manager reads the setting when it is created.
+     */
+    async setEmbeddingsEnabled(enabled: boolean): Promise<void> {
+        if (this.shuttingDown || !this.embeddingManager) return;
+        await this.embeddingManager.setEnabled(enabled);
     }
 
     /**
@@ -449,6 +465,8 @@ export class PluginLifecycleManager {
             }
 
             // Shutdown embedding system first (before database closes)
+            this.embeddingStateUnsubscribe?.();
+            this.embeddingStateUnsubscribe = null;
             if (this.embeddingManager) {
                 try {
                     await this.embeddingManager.shutdown();
