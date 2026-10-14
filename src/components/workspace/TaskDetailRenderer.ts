@@ -420,7 +420,9 @@ export class TaskDetailRenderer {
         const suggester = new NoteInputSuggester(
             this.app,
             pathInput.inputEl,
-            callbacks.getEmbeddingService?.() ?? null,
+            // A resolver, not an instance: embeddings can be turned on, off or
+            // rebuilt while this view stays open.
+            () => callbacks.getEmbeddingService?.() ?? null,
             (file: TFile) => { pathInput.setValue(file.path); }
         );
         this.noteSuggesters.push(suggester);

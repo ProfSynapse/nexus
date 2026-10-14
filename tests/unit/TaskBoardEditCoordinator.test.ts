@@ -128,6 +128,35 @@ describe('TaskBoardEditCoordinator', () => {
     expect(onEditModalClose).toHaveBeenCalledTimes(1);
   });
 
+  it('hands the modal an embedding resolver, so embeddings turned on after it opens are used', () => {
+    let current: { id: string } | undefined;
+    const getEmbeddingService = jest.fn(() => current);
+    const coordinator = new TaskBoardEditCoordinator({
+      app: {} as never,
+      getTaskService: () => null,
+      getProjects: () => [createProject()],
+      getTasks: () => [createTask()],
+      getEmbeddingService: getEmbeddingService as never,
+      reloadBoard: jest.fn().mockResolvedValue(undefined),
+      renderBoard: jest.fn(),
+      onEditModalStateChange: jest.fn(),
+      onEditModalClose: jest.fn(),
+      toDateInputValue: () => '',
+      fromDateInputValue: () => undefined
+    });
+
+    coordinator.openEditModal(createTask());
+
+    // Nothing is captured when the modal opens.
+    expect(getEmbeddingService).not.toHaveBeenCalled();
+    const source = lastModalOptions?.embeddingSource as (() => unknown) | undefined;
+    expect(typeof source).toBe('function');
+    expect(source?.()).toBeUndefined();
+
+    current = { id: 'turned-on-later' };
+    expect(source?.()).toBe(current);
+  });
+
   it('saves task changes, moves the task, and syncs linked notes', async () => {
     const taskService = {
       updateTask: jest.fn().mockResolvedValue(undefined),

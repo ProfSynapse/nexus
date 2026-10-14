@@ -36,7 +36,7 @@ export class TaskBoardEditCoordinator {
       task: this.buildEditableTask(task),
       projects: this.buildProjectOptions(task),
       parentTasks: this.buildParentTaskOptions(task),
-      embeddingService: this.deps.getEmbeddingService(),
+      embeddingSource: () => this.deps.getEmbeddingService(),
       onSave: async (updatedTask) => {
         await this.saveTaskChanges(task, updatedTask);
       },
