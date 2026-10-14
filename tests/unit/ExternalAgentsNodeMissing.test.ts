@@ -10,7 +10,7 @@
  * (injected), the local CLI installer (it probes shells) and the Setting mocks
  * rendering a FakeElement tree.
  */
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Component, Platform } from 'obsidian';
@@ -145,7 +145,8 @@ it('Check again finds Node.js and unblocks the page', () => {
   expect(nodeRow.querySelector('.setting-item-description')?.textContent).toBe(AGENTS_PAGE.nodeFound(node.version, node.path));
   expect(nodeRow.querySelector('.setting-item-description code')?.textContent).toBe(node.path);
   expect(nodeRow.querySelector('.nexus-status')?.textContent).toBe(AGENTS_PAGE.nodeFoundStatus);
-  for (const app of APPS) {
+  // Claude Desktop is not installed in this home folder; it has its own test below.
+  for (const app of APPS.filter(name => name !== 'Claude Desktop')) {
     const row = rowByName(container, app);
     expect(row.querySelector('.nexus-status')?.textContent).toBe(AGENTS_PAGE.ready);
     const connect = buttons(row).find(el => el.textContent === AGENTS_PAGE.connect)!;
@@ -156,6 +157,22 @@ it('Check again finds Node.js and unblocks the page', () => {
   const config = JSON.parse(container.querySelectorAll('pre.nexus-code')[0].textContent);
   const key = getServerKeyCandidates('Vault')[0];
   expect(config).toEqual({ mcpServers: { [key]: { command: node.path, args: [join(pluginPath, 'connector.js')] } } });
+});
+
+it('shows Claude Desktop as Not found, with no Connect, when its folder is missing', () => {
+  const claudeDir = join(home, 'Library', 'Application Support', 'Claude');
+  const { container } = render(() => node);
+  let row = rowByName(container, 'Claude Desktop');
+  expect(row.querySelector('.nexus-status')?.textContent).toBe(AGENTS_PAGE.notFound);
+  expect(buttons(row).map(el => el.textContent)).toEqual([AGENTS_PAGE.download, AGENTS_PAGE.checkAgain]);
+  expect(existsSync(claudeDir)).toBe(false);
+
+  // Installing the app creates the folder; Check again then offers Connect.
+  mkdirSync(claudeDir, { recursive: true });
+  buttons(row)[1].dispatch('click');
+  row = rowByName(container, 'Claude Desktop');
+  expect(row.querySelector('.nexus-status')?.textContent).toBe(AGENTS_PAGE.ready);
+  expect(buttons(row).map(el => el.textContent)).toEqual([AGENTS_PAGE.connect]);
 });
 
 it('warns that an nvm path moves when the Node version changes', () => {
@@ -196,21 +213,29 @@ it('links the MCP setup guide to the real page, not "#"', () => {
   expect(container.querySelectorAll('a').some(el => el.getAttribute('href') === '#')).toBe(false);
 });
 
-it('expands and collapses the Other agents steps from the row', () => {
+it('expands and collapses the Other agents steps in place, with the row as the only control', () => {
   const { container } = render(() => node);
-  const row = () => rowByName(container, AGENTS_PAGE.otherName);
-  expect(container.querySelector('.nexus-other-steps')).toBeNull();
-  expect(row().getAttribute('aria-expanded')).toBe('false');
-  expect(row().querySelector('.extra-setting-button')?.getAttribute('aria-label')).toBe(AGENTS_PAGE.showSteps);
+  const row = rowByName(container, AGENTS_PAGE.otherName);
+  const steps = container.querySelector('.nexus-other-steps')!;
+  expect(steps.isShown()).toBe(false);
+  expect(row.getAttribute('aria-expanded')).toBe('false');
+  expect(row.getAttribute('role')).toBe('button');
+  expect(row.getAttribute('aria-controls')).toBe(steps.getAttribute('id'));
+  // No focusable control nested inside the role=button row.
+  expect(row.querySelectorAll('button, .extra-setting-button, [tabindex]')).toHaveLength(0);
+  expect(row.querySelector('.setting-item-chevron')?.getAttribute('aria-hidden')).toBe('true');
 
-  row().dispatch('keydown', { key: ' ' });
-  expect(row().getAttribute('aria-expanded')).toBe('true');
-  expect(row().querySelector('.extra-setting-button')?.getAttribute('aria-label')).toBe(AGENTS_PAGE.hideSteps);
-  const steps = container.querySelector('.nexus-other-steps')!.children
+  row.dispatch('keydown', { key: ' ' });
+  // Toggled in place: the same row element, so keyboard focus is not lost.
+  expect(rowByName(container, AGENTS_PAGE.otherName)).toBe(row);
+  expect(row.getAttribute('aria-expanded')).toBe('true');
+  expect(steps.isShown()).toBe(true);
+  const numbers = steps.children
     .filter(item => item.hasClass('setting-item'))
     .map(item => item.querySelector('.nexus-step')?.textContent);
-  expect(steps).toEqual(['1', '2', '3', '4']);
+  expect(numbers).toEqual(['1', '2', '3', '4']);
 
-  row().dispatch('click');
-  expect(container.querySelector('.nexus-other-steps')).toBeNull();
+  row.dispatch('click');
+  expect(row.getAttribute('aria-expanded')).toBe('false');
+  expect(steps.isShown()).toBe(false);
 });

@@ -6,7 +6,7 @@
  * Node.js first, then one card of apps (Claude Desktop, Codex, Antigravity and
  * the expandable "Other agents" steps), then the command line.
  */
-import { App, Component, Notice, Platform, Setting } from 'obsidian';
+import { App, Component, Notice, Platform, Setting, setIcon } from 'obsidian';
 import type { SettingsRouter } from '../SettingsRouter';
 import { createSettingGroup } from '../../components/shared/settings/settingGroup';
 import { getPrimaryServerKey } from '../../constants/branding';
@@ -26,6 +26,7 @@ import { CliInstallStatus, CliInstallTargets, CliPathFix, CliProviderId, LocalCl
 import {
   AGENTS_PAGE,
   BACK_TO_GET_STARTED,
+  CLAUDE_DESKTOP_DOWNLOAD_URL,
   MCP_SETUP_GUIDE_URL,
   NODE_DOWNLOAD_URL,
   buildAgentSetupPrompt
@@ -50,6 +51,8 @@ const CLI_TARGETS: Array<{ id: CliProviderId; label: string; path: string }> = [
   { id: 'cursor', label: 'Cursor skills', path: '~/.cursor/skills' },
   { id: 'codex', label: 'Codex AGENTS.md', path: '~/.codex/AGENTS.md' }
 ];
+
+const OTHER_STEPS_ID = 'nexus-other-agents-steps';
 
 export class ExternalAgentsPage {
   private node: NodeRuntime | null;
@@ -144,7 +147,20 @@ export class ExternalAgentsPage {
       addStatus(row, AGENTS_PAGE.connected, true);
       row.addButton(button => button
         .setButtonText(AGENTS_PAGE.openConfig)
-        .onClick(() => this.openPath(client.configPath)));
+        .onClick(() => this.openPath(client.statusPath)));
+      return;
+    }
+
+    // No Claude folder means the app is not installed (or never opened). Writing
+    // a config there would report a connection to an app that does not exist.
+    if (client.id === 'claude-desktop' && state === 'no-config-dir') {
+      addStatus(row, AGENTS_PAGE.notFound);
+      row.addButton(button => button
+        .setButtonText(AGENTS_PAGE.download)
+        .onClick(() => { window.open(CLAUDE_DESKTOP_DOWNLOAD_URL, '_blank'); }));
+      row.addButton(button => button
+        .setButtonText(AGENTS_PAGE.checkAgain)
+        .onClick(() => this.render()));
       return;
     }
 
@@ -154,7 +170,7 @@ export class ExternalAgentsPage {
       addStatus(row, AGENTS_PAGE.invalidConfig);
       row.addButton(button => button
         .setButtonText(AGENTS_PAGE.openConfig)
-        .onClick(() => this.openPath(client.configPath)));
+        .onClick(() => this.openPath(client.statusPath)));
     } else {
       addStatus(row, AGENTS_PAGE.ready);
     }
@@ -185,24 +201,27 @@ export class ExternalAgentsPage {
   }
 
   private renderOtherAgents(itemsEl: HTMLElement): void {
-    const open = this.otherOpen;
     const row = new Setting(itemsEl)
       .setName(AGENTS_PAGE.otherName)
       .setDesc(AGENTS_PAGE.otherDesc)
       .setClass('nexus-other-row');
-    // The chevron is a visual cue; the whole row (including it) toggles the steps.
-    row.addExtraButton(button => button
-      .setIcon(open ? 'chevron-up' : 'chevron-down')
-      .setTooltip(open ? AGENTS_PAGE.hideSteps : AGENTS_PAGE.showSteps));
-    row.settingEl.setAttribute('aria-expanded', String(open));
+    // The whole row is the one control. The chevron is decoration, not a second
+    // tab stop, and the steps open in place so focus stays on the row.
+    const chevron = row.controlEl.createDiv({ cls: 'setting-item-chevron', attr: { 'aria-hidden': 'true' } });
+    const steps = itemsEl.createDiv({ cls: 'nexus-other-steps', attr: { id: OTHER_STEPS_ID } });
+    row.settingEl.setAttribute('aria-controls', OTHER_STEPS_ID);
+    const sync = (): void => {
+      const open = this.otherOpen;
+      setIcon(chevron, open ? 'chevron-up' : 'chevron-down');
+      row.settingEl.setAttribute('aria-expanded', String(open));
+      steps.hidden = !open;
+    };
+    sync();
     makeRowActivatable(row.settingEl, () => {
       this.otherOpen = !this.otherOpen;
-      this.render();
+      sync();
     }, this.context.component);
 
-    if (!open) return;
-
-    const steps = itemsEl.createDiv({ cls: 'nexus-other-steps' });
     const node = this.node;
     const connectorPath = this.connectorPath();
     const ready = Boolean(node && connectorPath);

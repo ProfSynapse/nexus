@@ -74,6 +74,8 @@ it.each([
   expect(antigravity?.status.state).toBe('nexus-configured');
   // The status may come from either file, but the path Nexus writes is always the current one.
   expect(antigravity?.configPath).toBe(join(mockHome, '.gemini/config/mcp_config.json'));
+  // Open config opens the file that actually names Nexus.
+  expect(antigravity?.statusPath).toBe(join(mockHome, relative));
 });
 
 it('counts every connected client plus the command line', () => {

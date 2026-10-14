@@ -77,7 +77,10 @@ export type ExternalClientId = 'claude-desktop' | 'codex' | 'antigravity';
 export interface ExternalClientStatus {
   id: ExternalClientId;
   label: string;
+  /** The file Connect writes. */
   configPath: string;
+  /** The file that produced `status`, which Open config opens. Usually `configPath`. */
+  statusPath: string;
   status: McpConfigStatus;
 }
 
@@ -92,15 +95,24 @@ export function getExternalClientStatuses(app: App): ExternalClientStatus[] {
 
   const keys = getServerKeyCandidates(app.vault.getName());
   const statuses: ExternalClientStatus[] = [];
-  const add = (id: ExternalClientId, label: string, configPath: string, read: () => McpConfigStatus): void => {
+  /** `read` names `statusPath` when another file than `configPath` produced the status. */
+  type Read = () => McpConfigStatus | { status: McpConfigStatus; statusPath: string };
+  const add = (id: ExternalClientId, label: string, configPath: string, read: Read): void => {
     let status: McpConfigStatus;
+    let path = configPath;
     try {
-      status = read();
+      const result = read();
+      if ('status' in result) {
+        status = result.status;
+        path = result.statusPath;
+      } else {
+        status = result;
+      }
     } catch (error) {
       console.error(`[getStartedStatus] Could not read the ${label} config:`, error);
       status = { state: 'invalid-config', stale: false };
     }
-    statuses.push({ id, label, configPath, status });
+    statuses.push({ id, label, configPath, statusPath: path, status });
   };
 
   const claudePath = getClaudeDesktopConfigPath();
@@ -120,8 +132,11 @@ export function getExternalClientStatuses(app: App): ExternalClientStatus[] {
     add('antigravity', 'Antigravity', antigravityPath, () => {
       const current = getMcpJsonStatus(antigravityPath, keys);
       if (current.state === 'nexus-configured') return current;
-      const legacy = getMcpJsonStatus(getAntigravityLegacyConfigPath(), keys);
-      return legacy.state === 'nexus-configured' ? legacy : current;
+      // Older builds kept the file elsewhere. When only that copy names Nexus,
+      // let Open config open it; Connect still writes the current file.
+      const legacyPath = getAntigravityLegacyConfigPath();
+      const legacy = getMcpJsonStatus(legacyPath, keys);
+      return legacy.state === 'nexus-configured' ? { status: legacy, statusPath: legacyPath } : current;
     });
   } catch (error) {
     console.error('[getStartedStatus] Could not resolve the Antigravity config path:', error);

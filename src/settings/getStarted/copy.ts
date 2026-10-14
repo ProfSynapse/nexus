@@ -62,14 +62,13 @@ export const AGENTS_PAGE = {
   connected: 'Connected',
   ready: 'Ready',
   notFound: 'Not found',
+  download: 'Download',
   invalidConfig: 'Invalid config',
   reconnect: 'Reconnect',
   connect: 'Connect',
   openConfig: 'Open config',
   otherName: 'Other agents',
   otherDesc: 'Cursor, Cline, Copilot, Windsurf and others. Four steps.',
-  showSteps: 'Show steps',
-  hideSteps: 'Hide steps',
   step1Name: 'Create the connector file',
   step1Desc: 'connector.js lets the app talk to this vault. It goes in the Nexus plugin folder.',
   create: 'Create',
@@ -97,6 +96,9 @@ export const AGENTS_PAGE = {
   uninstall: 'Uninstall',
   addToPath: 'Add to path'
 } as const;
+
+/** Claude Desktop's download page, offered when the app is not found. */
+export const CLAUDE_DESKTOP_DOWNLOAD_URL = 'https://claude.ai/download';
 
 /** Install page for Node.js, opened by the "Install Node.js" button. */
 export const NODE_DOWNLOAD_URL = 'https://nodejs.org/';
