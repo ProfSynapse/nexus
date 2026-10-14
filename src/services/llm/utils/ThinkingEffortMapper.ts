@@ -66,6 +66,15 @@ export function mapOpenAIThinkingEffort(effort: ThinkingEffort, modelId: string)
   return 'high';
 }
 
+/**
+ * Claude 4.6+ (and Haiku 5.5) take `thinking: adaptive` with an effort level;
+ * older Claude models take a manual token budget instead.
+ */
+export function isAnthropicAdaptiveThinkingModel(modelId: string): boolean {
+  const normalized = modelId.replace(':1m', '');
+  return /^claude-(?:(?:fable|mythos|opus|sonnet)-(?:5(?:-|$)|4-(?:6|7|8)(?:-|$))|haiku-5-5(?:-|$))/.test(normalized);
+}
+
 export function mapAnthropicAdaptiveEffort(effort: ThinkingEffort, modelId: string): ThinkingEffort {
   if (effort !== 'xhigh' && effort !== 'max') return effort;
   const model = modelId.replace(':1m', '');

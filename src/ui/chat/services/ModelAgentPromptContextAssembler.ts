@@ -5,6 +5,7 @@ import type { CompactedContext } from '../../../services/chat/ContextCompactionS
 import type { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
 import { shouldPassToolSchemasToProvider } from '../../../services/llm/utils/ToolSchemaSupport';
 import type { ThinkingSettings } from '../../../types/llm/ProviderTypes';
+import { resolveThinkingForModel } from '../../../services/llm/utils/resolveThinkingForModel';
 import type { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import type { ModelOption } from '../types/SelectionTypes';
 import type {
@@ -110,6 +111,13 @@ export class ModelAgentPromptContextAssembler {
     snapshot: ModelAgentPromptContextSnapshot
   ): Promise<ModelAgentMessageOptions> {
     const sessionId = await this.deps.getSessionId();
+    // The stored preference survives a switch to a non-reasoning model; it is
+    // only the request that must not carry it.
+    const thinking = resolveThinkingForModel(
+      snapshot.selectedModel?.providerId,
+      snapshot.selectedModel?.modelId,
+      snapshot.thinkingSettings
+    );
 
     return {
       provider: snapshot.selectedModel?.providerId,
@@ -117,13 +125,13 @@ export class ModelAgentPromptContextAssembler {
       systemPrompt: await this.buildSystemPrompt(snapshot) || undefined,
       workspaceId: snapshot.selectedWorkspaceId || undefined,
       sessionId,
-      enableThinking: snapshot.thinkingSettings.enabled,
+      enableThinking: thinking.enabled,
       webSearch: snapshot.webSearch && (
         ['anthropic', 'openai', 'openrouter'].includes(snapshot.selectedModel?.providerId || '')
         || (snapshot.selectedModel?.providerId === 'google'
           && snapshot.selectedModel.modelId.startsWith('gemini-3'))
       ),
-      thinkingEffort: snapshot.thinkingSettings.effort,
+      thinkingEffort: thinking.effort,
       temperature: snapshot.temperature,
       imageProvider: snapshot.imageProvider,
       imageModel: snapshot.imageModel,
