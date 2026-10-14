@@ -6,7 +6,9 @@
  *   off asks first (SemanticSearchOffModal); Cancel or Escape leaves it on.
  * - while on: "Index" with the stored note and chat counts, or, while a pass
  *   runs, "Indexing" with a progress bar, the done / total count, an estimate
- *   and a pause / resume button.
+ *   and a pause / resume button. When the last pass ended with phase 'error'
+ *   (the embedding model did not load), a row saying so, with the queue's
+ *   detail and "Try again", which starts the runtime over.
  * - while off: "Index" with what is being kept, and "Delete index", which asks
  *   for confirmation and then deletes the stored vectors only.
  *
@@ -26,10 +28,10 @@ import type { IndexingProgress } from '../../../services/embeddings/IndexingQueu
 
 /** The parts of EmbeddingManager the fold uses. */
 export type SemanticSearchRuntime = Pick<EmbeddingManager,
-  'getStatus' | 'getStats' | 'onStateChange' | 'pauseIndexing' | 'resumeIndexing' | 'deleteIndex' | 'setEnabled'>;
+  'getStatus' | 'getStats' | 'onStateChange' | 'pauseIndexing' | 'resumeIndexing' | 'deleteIndex' | 'setEnabled' | 'retry'>;
 
 const RUNTIME_METHODS: Array<keyof SemanticSearchRuntime> = [
-  'getStatus', 'getStats', 'onStateChange', 'pauseIndexing', 'resumeIndexing', 'deleteIndex', 'setEnabled'
+  'getStatus', 'getStats', 'onStateChange', 'pauseIndexing', 'resumeIndexing', 'deleteIndex', 'setEnabled', 'retry'
 ];
 
 /**
@@ -72,6 +74,7 @@ type CountsState =
 type FoldView =
   | { mode: 'off'; key: string }
   | { mode: 'on'; key: string }
+  | { mode: 'error'; key: string; detail: string | undefined }
   | { mode: 'indexing'; key: string; paused: boolean; progress: IndexingProgress };
 
 /** Phases in which a pass is running and its progress is worth showing. */
@@ -100,6 +103,7 @@ export class SemanticSearchSettings implements FoldDefinition {
   /** The live Indexing row, updated in place on each progress event. */
   private indexingRow: { setting: Setting; bar: ProgressBarComponent | null; valueEl: HTMLElement } | null = null;
   private deleting = false;
+  private retrying = false;
   private destroyed = false;
   /** Interval that watches for the runtime to appear; null when not waiting. */
   private runtimeWait: number | null = null;
@@ -115,6 +119,7 @@ export class SemanticSearchSettings implements FoldDefinition {
     if (view.mode === 'indexing') {
       return semanticSearchSummary({ enabled: true, indexingPercent: percentOf(view.progress) });
     }
+    if (view.mode === 'error') return semanticSearchSummary({ enabled: true, loadFailed: true });
     return semanticSearchSummary({ enabled: true, noteCount: this.readyCounts()?.notes });
   }
 
@@ -137,6 +142,8 @@ export class SemanticSearchSettings implements FoldDefinition {
 
     if (view.mode === 'indexing') {
       this.renderIndexing(itemsEl, view.progress, view.paused);
+    } else if (view.mode === 'error') {
+      this.renderLoadFailed(itemsEl, view.detail);
     } else if (view.mode === 'on') {
       this.renderIndexOn(itemsEl);
     } else {
@@ -164,6 +171,9 @@ export class SemanticSearchSettings implements FoldDefinition {
       const paused = status.paused || progress.phase === 'paused';
       return { mode: 'indexing', key: paused ? 'indexing-paused' : 'indexing', paused, progress };
     }
+    if (!status?.indexing && progress?.phase === 'error') {
+      return { mode: 'error', key: 'error', detail: progress.error };
+    }
     return { mode: 'on', key: 'on' };
   }
 
@@ -178,6 +188,21 @@ export class SemanticSearchSettings implements FoldDefinition {
       : this.deps.getRuntime() ? '' : COPY.starting;
     const setting = new Setting(itemsEl).setName(COPY.index).setDesc(COPY.indexOnDesc);
     if (value) setting.controlEl.createDiv({ cls: 'nexus-semantic-value', text: value });
+  }
+
+  /**
+   * The last pass ended with phase 'error': the embedding model did not load,
+   * so nothing was indexed. "Try again" starts the runtime over.
+   */
+  private renderLoadFailed(itemsEl: HTMLElement, detail: string | undefined): void {
+    new Setting(itemsEl)
+      .setName(COPY.loadFailed)
+      .setDesc(detail || COPY.loadFailedDesc)
+      .setClass('nexus-semantic-error')
+      .addButton(button => button
+        .setButtonText(COPY.tryAgain)
+        .setDisabled(this.retrying || !this.deps.getRuntime())
+        .onClick(() => { void this.onRetry(); }));
   }
 
   private renderIndexing(itemsEl: HTMLElement, progress: IndexingProgress, paused: boolean): void {
@@ -248,6 +273,24 @@ export class SemanticSearchSettings implements FoldDefinition {
     }
     this.invalidateCounts();
     this.redraw();
+  }
+
+  private async onRetry(): Promise<void> {
+    const runtime = this.deps.getRuntime();
+    if (this.retrying || !runtime) return;
+
+    this.retrying = true;
+    this.redraw();
+    try {
+      await runtime.retry();
+    } catch (error) {
+      console.error('[SemanticSearchSettings] Failed to start semantic search again:', error);
+      new Notice(COPY.retryFailed);
+    } finally {
+      this.retrying = false;
+      this.invalidateCounts();
+      this.redraw();
+    }
   }
 
   private async onDeleteIndex(): Promise<void> {

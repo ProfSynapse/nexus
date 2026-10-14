@@ -22,19 +22,25 @@
  * preset sizes up to the model's maximum, and a newly picked model starts at
  * that maximum. The Subagents fold applies the same rules to the subagent
  * model (or, when none is set, the cloud chat model subagents fall back to).
+ *
+ * A chat model counts only when its provider can be used: a fresh install
+ * carries a default model for a provider nobody has set up, and the rows and
+ * summaries must not describe it. Without a model, Thinking is hidden and
+ * Creativity and Context window show a disabled placeholder.
  */
 
 import { App, Component, EventRef, Setting, setIcon } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
 import { ImageGenerationService } from '../../services/llm/ImageGenerationService';
+import { getImageModelDisplayName } from '../../services/llm/imageModelNames';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import type { AppsSettings } from '../../types/apps/AppTypes';
 import { isTextOnlyProvider } from '../../services/llm/utils/ToolSchemaSupport';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
-import { renderModelSetting, renderProviderSetting, type ModelDropdownConfig } from './ModelDropdownRenderer';
+import { renderModelSetting, renderProviderSetting, toDisplayProvider, type ModelDropdownConfig } from './ModelDropdownRenderer';
 import { ProviderUtils } from '../../ui/chat/utils/ProviderUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
@@ -245,7 +251,7 @@ export class ChatSettingsRenderer {
       this.createFold(FOLD_IDS.subagents, FOLD_TITLES.subagents, FOLD_ICONS.subagents,
         el => this.renderSubagents(el), () => this.subagentsSummary()),
       this.createFold(FOLD_IDS.images, FOLD_TITLES.images, FOLD_ICONS.images,
-        el => this.renderImages(el), () => imagesSummary(this.modelNames.image ?? this.settings.imageModel)),
+        el => this.renderImages(el), () => imagesSummary(this.imageModelName())),
       this.createFold(FOLD_IDS.voice, FOLD_TITLES.voice, FOLD_ICONS.voice,
         el => this.voice.render(el), () => this.voice.getSummary())
     ];
@@ -365,62 +371,16 @@ export class ChatSettingsRenderer {
 
   // ========== PROVIDERS ==========
 
+  /**
+   * Providers shown in the Provider dropdowns. Merged sign-in providers
+   * (ChatGPT, Claude Code, Antigravity CLI) appear under their API provider.
+   */
   private getEnabledProviders(): string[] {
-    const llmSettings = this.config.llmProviderSettings;
+    const settings = this.config.llmProviderSettings;
     const providers = new Set<string>();
-
-    for (const id of Object.keys(llmSettings.providers)) {
-      if (id === 'openai-codex') {
-        const config = llmSettings.providers[id];
-        if (config?.enabled && config?.oauth?.connected && config?.apiKey) {
-          providers.add('openai');
-        }
-        continue;
-      }
-
-      if (id === 'anthropic-claude-code') {
-        const config = llmSettings.providers[id];
-        if (config?.enabled && config?.oauth?.connected) {
-          providers.add('anthropic');
-        }
-        continue;
-      }
-
-      if (id === 'google-gemini-cli') {
-        const config = llmSettings.providers[id];
-        if (config?.enabled && config?.oauth?.connected) {
-          providers.add('google');
-        }
-        continue;
-      }
-
-      if (id === 'github-copilot') {
-        const config = llmSettings.providers[id];
-        if (config?.enabled && config?.oauth?.connected && config?.apiKey) {
-          providers.add('github-copilot');
-        }
-        continue;
-      }
-
-      const config = llmSettings.providers[id];
-      if (!config?.enabled) continue;
-      if (!isProviderCompatible(config.driverKind ?? id)) continue;
-
-      if (config.driverKind === 'openai-compatible') {
-        if (config.openaiCompatible?.baseUrl.trim()) providers.add(id);
-        continue;
-      }
-
-      if (id === 'webllm') {
-        providers.add(id);
-        continue;
-      }
-
-      if (config.apiKey) {
-        providers.add(id);
-      }
+    for (const id of Object.keys(settings.providers)) {
+      if (isProviderUsable(settings, id)) providers.add(toDisplayProvider(id) ?? id);
     }
-
     return Array.from(providers);
   }
 
@@ -465,6 +425,8 @@ export class ChatSettingsRenderer {
         if (this.surface !== 'defaults') this.clearContextWindowOverride(variant);
       },
       noProvidersText: isAgent ? COPY.noCloudProviders : COPY.noProviders,
+      inheritOptionText: isAgent && this.subagentsCanInheritChat() ? COPY.sameAsChat : undefined,
+      getUnsetModelText: isAgent ? () => this.inheritedSubagentModelText() : undefined,
       modelOptionMap: isAgent ? this.agentModelOptionMap : this.modelOptionMap,
       providerManager: this.providerManager,
       getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
@@ -505,9 +467,28 @@ export class ChatSettingsRenderer {
    * model (the runtime precedence), so the rows and summary describe that one.
    */
   private modelTarget(variant: ModelVariant): ModelTarget {
-    if (variant === 'chat') return { provider: this.settings.provider, model: this.settings.model };
-    const { provider, model } = resolveSubagentTarget(this.settings);
+    const chat = this.chatTarget();
+    if (variant === 'chat') return chat;
+    const { provider, model } = resolveSubagentTarget({
+      ...this.settings,
+      provider: chat.provider ?? '',
+      model: chat.model ?? ''
+    });
     return { provider, model };
+  }
+
+  /**
+   * The chat model, or nothing when none is picked or its provider cannot be
+   * used (no key, turned off). The runtime skips such a model too.
+   */
+  private chatTarget(): ModelTarget {
+    const { provider, model } = this.settings;
+    return provider && model && isProviderUsable(this.config.llmProviderSettings, provider) ? { provider, model } : {};
+  }
+
+  private hasModel(variant: ModelVariant): boolean {
+    const { provider, model } = this.modelTarget(variant);
+    return !!(provider && model);
   }
 
   private hasAgentModel(): boolean {
@@ -583,6 +564,10 @@ export class ChatSettingsRenderer {
    * for the next model that accepts it.
    */
   private renderCreativitySetting(itemsEl: HTMLElement, variant: ModelVariant): void {
+    if (!this.hasModel(variant)) {
+      this.renderNoModelTuningRow(itemsEl, COPY.creativity, variant);
+      return;
+    }
     const events = this.events(this.tuningGroup(variant));
     const supportsTemperature = this.capabilitiesFor(variant).supportsSamplingParams;
     const modelName = this.modelNameFor(variant);
@@ -614,6 +599,24 @@ export class ChatSettingsRenderer {
         if (variant === 'agent') this.settings.agentTemperature = value;
         else this.settings.temperature = value;
         this.notifyChange();
+      });
+      return slider;
+    });
+  }
+
+  /**
+   * Creativity or Context window before a model is picked: nothing to tune
+   * and no value to show, so a disabled slider reading "—".
+   */
+  private renderNoModelTuningRow(itemsEl: HTMLElement, name: string, variant: ModelVariant): void {
+    const setting = new Setting(itemsEl)
+      .setName(name)
+      .setDesc(COPY.noModelTuningDesc);
+    setting.setDisabled(true);
+    setting.addSlider(slider => {
+      slider.setLimits(0, 1, 1).setValue(0).setDisabled(true);
+      bindSliderReadout(this.events(this.tuningGroup(variant)), setting, slider, () => COPY.noValueReadout, {
+        ariaValueText: () => COPY.noModelValueText
       });
       return slider;
     });
@@ -652,6 +655,10 @@ export class ChatSettingsRenderer {
    * size between stops (older settings) is shown as saved until moved.
    */
   private renderContextWindowSetting(itemsEl: HTMLElement, variant: ModelVariant): void {
+    if (!this.hasModel(variant)) {
+      this.renderNoModelTuningRow(itemsEl, COPY.contextWindow, variant);
+      return;
+    }
     const advertised = this.capabilitiesFor(variant).contextWindow;
     const { provider, model } = this.modelTarget(variant);
     if (!advertised || !provider || !model) return;
@@ -726,6 +733,8 @@ export class ChatSettingsRenderer {
   }
 
   private chatOptionsSummary(): string {
+    // No model, no capabilities: say what is missing rather than invent them.
+    if (!this.hasModel('chat')) return COPY.pickModelFirst;
     return chatOptionsSummary({
       temperature: this.settings.temperature,
       supportsTemperature: this.capabilitiesFor('chat').supportsSamplingParams,
@@ -758,9 +767,28 @@ export class ChatSettingsRenderer {
     this.renderContextWindowSetting(itemsEl, 'agent');
   }
 
+  /**
+   * Whether an empty subagent provider means "run on the chat model". On
+   * Defaults it always does. In a chat it means "use the default subagent
+   * model", which is the chat model only when no default is saved.
+   */
+  private subagentsCanInheritChat(): boolean {
+    if (this.surface === 'defaults') return true;
+    const saved = this.config.llmProviderSettings.agentModel;
+    return !(saved?.provider && saved.model);
+  }
+
+  /** The subagent Model row while "Same as chat" is selected. */
+  private inheritedSubagentModelText(): string | undefined {
+    if (!this.subagentsCanInheritChat()) return undefined;
+    const name = this.modelNameFor('agent');
+    return name ? COPY.sameAsChatModel(name) : undefined;
+  }
+
   /** "<model> · <thinking> · <creativity> · <window>" for the model subagents will run on. */
   private subagentsSummary(): string {
     const { provider, model } = this.modelTarget('agent');
+    if (!provider || !model) return this.subagentsWithoutModelSummary();
     const capabilities = this.capabilitiesFor('agent');
     const thinking = this.thinkingFor('agent');
     return subagentsSummary({
@@ -777,6 +805,16 @@ export class ChatSettingsRenderer {
         })
         : []
     });
+  }
+
+  /**
+   * No subagent model, and no usable cloud chat model to run on. Without any
+   * cloud provider nothing can run them; otherwise the runtime picks a cloud
+   * provider. Either way, never name a model nobody configured.
+   */
+  private subagentsWithoutModelSummary(): string {
+    const hasCloudProvider = this.getEnabledProviders().some(id => !isLocalProvider(id));
+    return hasCloudProvider ? COPY.notSet : COPY.noModel;
   }
 
   private modelDisplayName(provider: string | undefined, model: string | undefined, loadedName?: string): string | undefined {
@@ -825,6 +863,14 @@ export class ChatSettingsRenderer {
   }
 
   // ========== IMAGES ==========
+
+  /** The image model's name: as listed once loaded, else from the catalog, else its id. */
+  private imageModelName(): string | undefined {
+    const { imageProvider, imageModel } = this.settings;
+    return this.modelNames.image
+      ?? getImageModelDisplayName(imageProvider, imageModel)
+      ?? (imageModel || undefined);
+  }
 
   private renderImages(itemsEl: HTMLElement): void {
     new Setting(itemsEl)
@@ -1036,6 +1082,24 @@ export class ChatSettingsRenderer {
   getSettings(): ChatSettings {
     return { ...this.settings, contextNotes: [...this.settings.contextNotes] };
   }
+}
+
+/** Whether a provider, by its own id, is set up well enough to send a request. */
+function isProviderUsable(settings: LLMProviderSettings, id: string): boolean {
+  const config = settings.providers[id];
+  if (!config?.enabled) return false;
+
+  if (id === 'openai-codex' || id === 'github-copilot') {
+    return !!(config.oauth?.connected && config.apiKey);
+  }
+  if (id === 'anthropic-claude-code' || id === 'google-gemini-cli') {
+    return !!config.oauth?.connected;
+  }
+
+  if (!isProviderCompatible(config.driverKind ?? id)) return false;
+  if (config.driverKind === 'openai-compatible') return !!config.openaiCompatible?.baseUrl.trim();
+  if (id === 'webllm') return true;
+  return !!config.apiKey;
 }
 
 function noteBasename(path: string): string {

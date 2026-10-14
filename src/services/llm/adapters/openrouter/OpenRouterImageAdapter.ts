@@ -43,7 +43,7 @@ type OpenRouterResolution = '512' | '1K' | '2K' | '4K';
  * /api/v1/images/models/<id>/endpoints. `resolutions` is null when the
  * endpoint has no `resolution` parameter — sending one is a hard 400.
  */
-interface OpenRouterImageModelSpec {
+export interface OpenRouterImageModelSpec {
   openRouterId: string;
   displayName: string;
   /** USD for one image at the default resolution (1K / 1 megapixel). */
@@ -118,6 +118,172 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
   '8:1': [1024, 128]
 };
 
+/**
+ * Model catalog. Every value comes from the model's own
+ * /api/v1/images/models/<id>/endpoints entry. Gemini bills per output token
+ * (a 1K image is 1120 tokens); FLUX bills per megapixel; OpenAI bills per
+ * output token at the provider's default (high) quality.
+ */
+export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterImageModelSpec>> = {
+  'gemini-2.5-flash-image': {
+    // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
+    // now answers "No endpoints found".
+    openRouterId: 'google/gemini-2.5-flash-image',
+    displayName: 'Nano Banana legacy, shuts down 2026-10-02 (via OpenRouter)',
+    costPerImage: 0.039,
+    pricingNote: '1290 output tokens at $30/M',
+    maxReferenceImages: 3,
+    resolutions: null,
+    contextWindow: 32768,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3-pro-image-preview': {
+    openRouterId: 'google/gemini-3-pro-image-preview',
+    displayName: 'Nano Banana Pro preview (via OpenRouter)',
+    costPerImage: 0.134,
+    pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3.1-flash-image-preview': {
+    openRouterId: 'google/gemini-3.1-flash-image-preview',
+    displayName: 'Nano Banana 2 preview (via OpenRouter)',
+    costPerImage: 0.067,
+    pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
+    maxReferenceImages: 14,
+    resolutions: ['512', '1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-5-image': {
+    openRouterId: 'openai/gpt-5-image',
+    displayName: 'GPT-5 Image (via OpenRouter)',
+    costPerImage: 0.167,
+    pricingNote: '4160 output tokens at $40/M at the default high quality',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 400000,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-5.4-image-2': {
+    openRouterId: 'openai/gpt-5.4-image-2',
+    displayName: 'GPT-5.4 Image 2 (via OpenRouter)',
+    costPerImage: 0.125,
+    pricingNote: '4160 output tokens at $30/M at the default high quality',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 272000,
+    lastUpdated: '2026-09-02'
+  },
+  'flux-2-pro': {
+    openRouterId: 'black-forest-labs/flux.2-pro',
+    displayName: 'FLUX.2 Pro (via OpenRouter)',
+    costPerImage: 0.03,
+    pricingNote: '$0.03 per output megapixel',
+    maxReferenceImages: 8,
+    resolutions: null,
+    contextWindow: 4096,
+    lastUpdated: '2026-09-02'
+  },
+  'flux-2-flex': {
+    openRouterId: 'black-forest-labs/flux.2-flex',
+    displayName: 'FLUX.2 Flex (via OpenRouter)',
+    costPerImage: 0.06,
+    pricingNote: '$0.06 per output megapixel, plus $0.06 per input megapixel',
+    maxReferenceImages: 8,
+    resolutions: null,
+    contextWindow: 4096,
+    lastUpdated: '2026-09-02'
+  },
+  'flux-2-klein-4b': {
+    openRouterId: 'black-forest-labs/flux.2-klein-4b',
+    displayName: 'FLUX.2 Klein 4B (via OpenRouter)',
+    costPerImage: 0.014,
+    pricingNote: '$0.014 per output megapixel; exactly one image per request',
+    maxReferenceImages: 4,
+    resolutions: null,
+    contextWindow: 4096,
+    lastUpdated: '2026-09-02'
+  },
+  // GA ids for the Gemini image family. The -preview ids above still resolve
+  // but Google retires previews (2.5's is already gone), so prefer these.
+  'gemini-3.1-flash-image': {
+    openRouterId: 'google/gemini-3.1-flash-image',
+    displayName: 'Nano Banana 2 (via OpenRouter)',
+    costPerImage: 0.067,
+    pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
+    maxReferenceImages: 14,
+    resolutions: ['512', '1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3.1-flash-lite-image': {
+    openRouterId: 'google/gemini-3.1-flash-lite-image',
+    displayName: 'Nano Banana 2 Lite (via OpenRouter)',
+    costPerImage: 0.034,
+    pricingNote: '1120 output tokens at $30/M; 1K only',
+    maxReferenceImages: 14,
+    resolutions: ['1K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3-pro-image': {
+    openRouterId: 'google/gemini-3-pro-image',
+    displayName: 'Nano Banana Pro (via OpenRouter)',
+    costPerImage: 0.134,
+    pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
+    maxReferenceImages: 14,
+    resolutions: ['1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-5-image-mini': {
+    openRouterId: 'openai/gpt-5-image-mini',
+    displayName: 'GPT-5 Image Mini (via OpenRouter)',
+    costPerImage: 0.033,
+    pricingNote: '4160 output tokens at $8/M at the default high quality',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 400000,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-image-2': {
+    // OpenRouter's recommended replacement for the gpt-5-image chat models.
+    openRouterId: 'openai/gpt-image-2',
+    displayName: 'GPT Image 2 (via OpenRouter)',
+    costPerImage: 0.125,
+    pricingNote: '4160 output tokens at $30/M at the default high quality',
+    maxReferenceImages: 16,
+    resolutions: null,
+    contextWindow: 32000,
+    lastUpdated: '2026-09-02'
+  },
+  'seedream-4.5': {
+    openRouterId: 'bytedance-seed/seedream-4.5',
+    displayName: 'Seedream 4.5 (via OpenRouter)',
+    costPerImage: 0.04,
+    pricingNote: '$0.04 per image at any resolution',
+    maxReferenceImages: 14,
+    // The endpoint lists 1K, but OpenRouter rejects it: the model needs at
+    // least 3,686,400 output pixels, so 2K is the real minimum.
+    resolutions: ['2K', '4K'],
+    contextWindow: 32000,
+    lastUpdated: '2026-09-02'
+  },
+  'seedream-5-lite': {
+    openRouterId: 'bytedance-seed/seedream-5-0-lite',
+    displayName: 'Seedream 5.0 Lite (via OpenRouter)',
+    costPerImage: 0.035,
+    pricingNote: '$0.035 per image; 2K and 4K only',
+    maxReferenceImages: 14,
+    resolutions: ['2K', '4K'],
+    contextWindow: 32000,
+    lastUpdated: '2026-09-02'
+  }
+};
+
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
@@ -129,171 +295,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   readonly name = 'openrouter-image';
   readonly baseUrl = 'https://openrouter.ai/api/v1';
 
-  /**
-   * Model catalog. Every value comes from the model's own
-   * /api/v1/images/models/<id>/endpoints entry. Gemini bills per output token
-   * (a 1K image is 1120 tokens); FLUX bills per megapixel; OpenAI bills per
-   * output token at the provider's default (high) quality.
-   */
-  private readonly modelSpecs: Record<string, OpenRouterImageModelSpec> = {
-    'gemini-2.5-flash-image': {
-      // The earlier `google/gemini-2.5-flash-image-preview` id was retired and
-      // now answers "No endpoints found".
-      openRouterId: 'google/gemini-2.5-flash-image',
-      displayName: 'Nano Banana legacy, shuts down 2026-10-02 (via OpenRouter)',
-      costPerImage: 0.039,
-      pricingNote: '1290 output tokens at $30/M',
-      maxReferenceImages: 3,
-      resolutions: null,
-      contextWindow: 32768,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3-pro-image-preview': {
-      openRouterId: 'google/gemini-3-pro-image-preview',
-      displayName: 'Nano Banana Pro preview (via OpenRouter)',
-      costPerImage: 0.134,
-      pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
-      maxReferenceImages: 14,
-      resolutions: ['1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3.1-flash-image-preview': {
-      openRouterId: 'google/gemini-3.1-flash-image-preview',
-      displayName: 'Nano Banana 2 preview (via OpenRouter)',
-      costPerImage: 0.067,
-      pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
-      maxReferenceImages: 14,
-      resolutions: ['512', '1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-5-image': {
-      openRouterId: 'openai/gpt-5-image',
-      displayName: 'GPT-5 Image (via OpenRouter)',
-      costPerImage: 0.167,
-      pricingNote: '4160 output tokens at $40/M at the default high quality',
-      maxReferenceImages: 16,
-      resolutions: null,
-      contextWindow: 400000,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-5.4-image-2': {
-      openRouterId: 'openai/gpt-5.4-image-2',
-      displayName: 'GPT-5.4 Image 2 (via OpenRouter)',
-      costPerImage: 0.125,
-      pricingNote: '4160 output tokens at $30/M at the default high quality',
-      maxReferenceImages: 16,
-      resolutions: null,
-      contextWindow: 272000,
-      lastUpdated: '2026-09-02'
-    },
-    'flux-2-pro': {
-      openRouterId: 'black-forest-labs/flux.2-pro',
-      displayName: 'FLUX.2 Pro (via OpenRouter)',
-      costPerImage: 0.03,
-      pricingNote: '$0.03 per output megapixel',
-      maxReferenceImages: 8,
-      resolutions: null,
-      contextWindow: 4096,
-      lastUpdated: '2026-09-02'
-    },
-    'flux-2-flex': {
-      openRouterId: 'black-forest-labs/flux.2-flex',
-      displayName: 'FLUX.2 Flex (via OpenRouter)',
-      costPerImage: 0.06,
-      pricingNote: '$0.06 per output megapixel, plus $0.06 per input megapixel',
-      maxReferenceImages: 8,
-      resolutions: null,
-      contextWindow: 4096,
-      lastUpdated: '2026-09-02'
-    },
-    'flux-2-klein-4b': {
-      openRouterId: 'black-forest-labs/flux.2-klein-4b',
-      displayName: 'FLUX.2 Klein 4B (via OpenRouter)',
-      costPerImage: 0.014,
-      pricingNote: '$0.014 per output megapixel; exactly one image per request',
-      maxReferenceImages: 4,
-      resolutions: null,
-      contextWindow: 4096,
-      lastUpdated: '2026-09-02'
-    },
-    // GA ids for the Gemini image family. The -preview ids above still resolve
-    // but Google retires previews (2.5's is already gone), so prefer these.
-    'gemini-3.1-flash-image': {
-      openRouterId: 'google/gemini-3.1-flash-image',
-      displayName: 'Nano Banana 2 (via OpenRouter)',
-      costPerImage: 0.067,
-      pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
-      maxReferenceImages: 14,
-      resolutions: ['512', '1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3.1-flash-lite-image': {
-      openRouterId: 'google/gemini-3.1-flash-lite-image',
-      displayName: 'Nano Banana 2 Lite (via OpenRouter)',
-      costPerImage: 0.034,
-      pricingNote: '1120 output tokens at $30/M; 1K only',
-      maxReferenceImages: 14,
-      resolutions: ['1K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3-pro-image': {
-      openRouterId: 'google/gemini-3-pro-image',
-      displayName: 'Nano Banana Pro (via OpenRouter)',
-      costPerImage: 0.134,
-      pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
-      maxReferenceImages: 14,
-      resolutions: ['1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-5-image-mini': {
-      openRouterId: 'openai/gpt-5-image-mini',
-      displayName: 'GPT-5 Image Mini (via OpenRouter)',
-      costPerImage: 0.033,
-      pricingNote: '4160 output tokens at $8/M at the default high quality',
-      maxReferenceImages: 16,
-      resolutions: null,
-      contextWindow: 400000,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-image-2': {
-      // OpenRouter's recommended replacement for the gpt-5-image chat models.
-      openRouterId: 'openai/gpt-image-2',
-      displayName: 'GPT Image 2 (via OpenRouter)',
-      costPerImage: 0.125,
-      pricingNote: '4160 output tokens at $30/M at the default high quality',
-      maxReferenceImages: 16,
-      resolutions: null,
-      contextWindow: 32000,
-      lastUpdated: '2026-09-02'
-    },
-    'seedream-4.5': {
-      openRouterId: 'bytedance-seed/seedream-4.5',
-      displayName: 'Seedream 4.5 (via OpenRouter)',
-      costPerImage: 0.04,
-      pricingNote: '$0.04 per image at any resolution',
-      maxReferenceImages: 14,
-      // The endpoint lists 1K, but OpenRouter rejects it: the model needs at
-      // least 3,686,400 output pixels, so 2K is the real minimum.
-      resolutions: ['2K', '4K'],
-      contextWindow: 32000,
-      lastUpdated: '2026-09-02'
-    },
-    'seedream-5-lite': {
-      openRouterId: 'bytedance-seed/seedream-5-0-lite',
-      displayName: 'Seedream 5.0 Lite (via OpenRouter)',
-      costPerImage: 0.035,
-      pricingNote: '$0.035 per image; 2K and 4K only',
-      maxReferenceImages: 14,
-      resolutions: ['2K', '4K'],
-      contextWindow: 32000,
-      lastUpdated: '2026-09-02'
-    }
-  };
+  private readonly modelSpecs = OPENROUTER_IMAGE_MODEL_SPECS;
 
   readonly supportedModels: ImageModel[] = Object.keys(this.modelSpecs) as ImageModel[];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];

@@ -66,6 +66,19 @@ export const COPY = {
   removeNote: (name: string): string => `Remove ${name}`,
   usedFor: 'Used for',
   usedForDesc: 'Subagents, saved prompts and automations. Must be a cloud model.',
+  /** Chat options summary while no chat model is picked. */
+  pickModelFirst: 'Pick a model first',
+  /** Creativity and Context window rows while no model is picked. */
+  noModelTuningDesc: 'Pick a model to adjust this.',
+  noValueReadout: '—',
+  noModelValueText: 'No model selected',
+  /** Subagent Provider option: no model of their own, run on the chat model. */
+  sameAsChat: 'Same as chat',
+  sameAsChatModel: (modelName: string): string => `Same as chat (${modelName})`,
+  /** Subagents summary: no cloud provider, so nothing they could run on. */
+  noModel: 'No model',
+  /** Subagents summary: no subagent model and no cloud chat model to describe. */
+  notSet: 'Not set',
   noProviders: 'No providers enabled',
   noCloudProviders: 'No cloud providers enabled',
   none: 'None'
@@ -132,6 +145,11 @@ export const SEMANTIC_COPY = {
   deleteIndex: 'Delete index',
   deleteIndexDesc: 'Frees the space it uses. Turning search back on re-indexes the whole vault.',
   deleteFailed: 'The search index could not be deleted.',
+  loadFailed: "Couldn't load the search model",
+  /** Description of the load-failure row when the queue gave no detail. */
+  loadFailedDesc: 'Semantic search is on, but nothing can be indexed or searched until the model loads.',
+  tryAgain: 'Try again',
+  retryFailed: 'Semantic search could not start. Restart Obsidian to try again.',
   applyFailed: 'The semantic search setting could not be applied. Restart Obsidian to apply it.'
 } as const;
 

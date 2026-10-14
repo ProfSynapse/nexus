@@ -33,6 +33,7 @@ import {
   type IngestProviderOption,
 } from '../../../agents/ingestManager/tools/services/IngestCapabilityService';
 import { renderIngestModelDropdowns } from '../IngestModelDropdownRenderer';
+import { getTranscriptionModel } from '../../../services/llm/types/VoiceTypes';
 import { VoiceCatalogService } from '../../../services/readAloud/VoiceCatalogService';
 import { SpeechModelCatalogService } from '../../../services/readAloud/SpeechModelCatalogService';
 import { sortModelsNewestFirst } from '../../../utils/modelOrdering';
@@ -111,10 +112,21 @@ export class VoiceSettings {
     this.updateSummary();
   }
 
+  /**
+   * Model names as listed once loaded; before that, from the static
+   * catalogs, and the raw id only for a model neither knows.
+   */
   getSummary(): string {
+    const { transcriptionProvider, transcriptionModel, speechProvider, speechModel } = this.settings;
     return voiceSummary({
-      transcriptionModel: this.names.transcriptionModel ?? this.settings.transcriptionModel,
-      readAloudModel: this.names.speechModel ?? this.settings.speechModel,
+      transcriptionModel: this.names.transcriptionModel
+        ?? (transcriptionProvider && transcriptionModel
+          ? getTranscriptionModel(transcriptionProvider, transcriptionModel)?.name
+          : undefined)
+        ?? transcriptionModel,
+      readAloudModel: this.names.speechModel
+        ?? getSpeechModel(speechProvider, speechModel)?.name
+        ?? speechModel,
       voice: this.names.speechVoice
     });
   }

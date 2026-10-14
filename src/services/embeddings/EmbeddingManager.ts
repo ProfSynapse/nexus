@@ -259,6 +259,36 @@ export class EmbeddingManager {
   }
 
   /**
+   * Start semantic search over, from fresh components, while it stays turned
+   * on. For a pass that ended with phase 'error' (the embedding model did not
+   * load): the manager still counts as running then, so setEnabled(true) is a
+   * no-op, and the service has turned itself off for good.
+   *
+   * A no-op while turned off, on mobile and after shutdown(). Serialized with
+   * setEnabled and deleteIndex.
+   *
+   * @throws when the components could not be started again.
+   */
+  retry(): Promise<void> {
+    const next = this.transition.then(async () => {
+      if (this.shuttingDown || Platform.isMobile || !this.isEnabled) {
+        return;
+      }
+      await this.teardown();
+      this.initialize();
+      if (!this.isInitialized) {
+        await this.teardown();
+        this.emitState();
+        throw new Error('Semantic search could not start.');
+      }
+    });
+    this.transition = next.catch((error) => {
+      console.error('[EmbeddingManager] Failed to start semantic search again:', error);
+    });
+    return next;
+  }
+
+  /**
    * Delete the stored note, trace and conversation vectors on this device.
    *
    * Allowed only while semantic search is turned off, so it can never race the

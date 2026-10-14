@@ -83,4 +83,6 @@ it('summarises semantic search', () => {
   expect(semanticSearchSummary({ enabled: true })).toBe('On');
   expect(semanticSearchSummary({ enabled: true, noteCount: 4512 })).toBe('On · 4,512 notes');
   expect(semanticSearchSummary({ enabled: true, indexingPercent: 42.4 })).toBe('Indexing · 42%');
+  expect(semanticSearchSummary({ enabled: true, loadFailed: true, noteCount: 0 })).toBe("On · couldn't load");
+  expect(semanticSearchSummary({ enabled: false, loadFailed: true })).toBe('Off · index kept');
 });

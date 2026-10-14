@@ -323,6 +323,39 @@ describe('EmbeddingManager hot toggle', () => {
     expect(h.states).toEqual([]);
   });
 
+  it('retry() starts over from fresh components after the model failed to load', async () => {
+    const h = createManager();
+    h.manager.initialize();
+    const [queue] = created.queue;
+    const [engine] = created.engine;
+    const failed = {
+      phase: 'error', totalNotes: 7, processedNotes: 0, currentNote: null,
+      estimatedTimeRemaining: null, error: 'The embedding model could not be loaded'
+    };
+    (queue as unknown as { trigger(name: string, data: unknown): void }).trigger('progress', failed);
+    expect(h.manager.getStatus().progress?.phase).toBe('error');
+    // The manager still counts as running, so turning on again does nothing.
+    await h.manager.setEnabled(true);
+    expect(created.engine).toHaveLength(1);
+
+    await h.manager.retry();
+
+    expect(engine.dispose).toHaveBeenCalled();
+    expect(created.engine).toHaveLength(2);
+    expect(created.queue).toHaveLength(2);
+    expect(h.manager.getStatus()).toMatchObject({ enabled: true, initialized: true, progress: null });
+    jest.advanceTimersByTime(3_000);
+    await flushMicrotasks();
+    expect(created.queue[1].startFullIndex).toHaveBeenCalled();
+  });
+
+  it('retry() does nothing while semantic search is turned off', async () => {
+    const h = createManager(false);
+    await h.manager.retry();
+    expect(created.engine).toHaveLength(0);
+    expect(h.manager.isEmbeddingEnabled()).toBe(false);
+  });
+
   it('unsubscribes a state listener', async () => {
     const h = createManager();
     const seen: EmbeddingRuntimeStatus[] = [];
