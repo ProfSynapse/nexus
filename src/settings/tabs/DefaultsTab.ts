@@ -124,6 +124,8 @@ export class DefaultsTab {
         effort: llmSettings.agentThinking.effort ?? 'medium'
       } : undefined,
       temperature: llmSettings?.defaultTemperature ?? 0.5,
+      agentTemperature: llmSettings?.agentTemperature,
+      agentContextWindowOverrides: { ...(llmSettings?.agentContextWindowOverrides ?? {}) },
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: speechChosen ? speech?.provider : undefined,
@@ -183,6 +185,14 @@ export class DefaultsTab {
         llmSettings.agentThinking = undefined;
       }
       llmSettings.defaultTemperature = settings.temperature;
+      // Subagent Creativity is written only once set; until then it follows the chat default.
+      if (typeof settings.agentTemperature === 'number') {
+        llmSettings.agentTemperature = settings.agentTemperature;
+      }
+      const agentOverrides = { ...(settings.agentContextWindowOverrides ?? {}) };
+      if (Object.keys(agentOverrides).length > 0 || llmSettings.agentContextWindowOverrides) {
+        llmSettings.agentContextWindowOverrides = agentOverrides;
+      }
       llmSettings.defaultImageModel = {
         provider: settings.imageProvider,
         model: settings.imageModel
@@ -314,7 +324,8 @@ export class DefaultsTab {
           const snapshot = {
             ...settings,
             contextNotes: [...settings.contextNotes],
-            contextWindowOverrides: { ...settings.contextWindowOverrides }
+            contextWindowOverrides: { ...settings.contextWindowOverrides },
+            agentContextWindowOverrides: { ...settings.agentContextWindowOverrides }
           };
           this.settingsSaveQueue = this.settingsSaveQueue.then(() => this.saveSettings(snapshot)).catch(error => {
             new Notice(error instanceof Error ? error.message : 'Defaults could not be saved');

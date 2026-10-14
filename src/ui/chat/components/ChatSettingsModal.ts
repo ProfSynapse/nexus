@@ -12,6 +12,8 @@ import { ChatSettingsRenderer, ChatSettings, ChatSettingsOptions } from '../../.
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { Settings } from '../../../settings';
 import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
+import { resolveSubagentTarget } from '../../../components/shared/chatSettings/subagentTarget';
+import { getRegistryContextWindow } from '../../../services/llm/utils/modelCapabilityLookup';
 
 /**
  * Type for the NexusPlugin with settings property
@@ -150,11 +152,29 @@ export class ChatSettingsModal extends Modal {
       contextWindowOverrides[key] = this.modelAgentManager.getEffectiveContextWindow();
     }
 
+    const provider = model?.providerId || llmSettings?.defaultModel?.provider || '';
+    const modelId = model?.modelId || llmSettings?.defaultModel?.model || '';
+    const agentProvider = this.modelAgentManager.getAgentProvider() || llmSettings?.agentModel?.provider || undefined;
+    const agentModel = this.modelAgentManager.getAgentModel() || llmSettings?.agentModel?.model || undefined;
+
+    // This chat's subagent limit is one number; the renderer keys it by the
+    // model the Subagents rows describe. A chat without its own limit shows
+    // the default limit, which is what its subagents would use.
+    const agentContextWindowOverrides: Record<string, number> = {};
+    const agentTarget = resolveSubagentTarget({ provider, model: modelId, agentProvider, agentModel });
+    if (agentTarget.provider && agentTarget.model) {
+      const key = getContextWindowOverrideKey(agentTarget.provider, agentTarget.model);
+      const agentContextWindow = this.modelAgentManager.getAgentContextWindow()
+        ?? llmSettings?.agentContextWindowOverrides?.[key]
+        ?? null;
+      if (agentContextWindow !== null) agentContextWindowOverrides[key] = agentContextWindow;
+    }
+
     return {
-      provider: model?.providerId || llmSettings?.defaultModel?.provider || '',
-      model: model?.modelId || llmSettings?.defaultModel?.model || '',
-      agentProvider: this.modelAgentManager.getAgentProvider() || llmSettings?.agentModel?.provider || undefined,
-      agentModel: this.modelAgentManager.getAgentModel() || llmSettings?.agentModel?.model || undefined,
+      provider,
+      model: modelId,
+      agentProvider,
+      agentModel,
       thinking: {
         enabled: thinking?.enabled ?? false,
         effort: thinking?.effort ?? 'medium'
@@ -166,6 +186,8 @@ export class ChatSettingsModal extends Modal {
         effort: agentThinking?.effort ?? 'medium'
       },
       temperature: temperature,
+      agentTemperature: this.modelAgentManager.getAgentTemperature(),
+      agentContextWindowOverrides,
       imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: this.modelAgentManager.getSpeechProvider() || llmSettings?.defaultSpeechModel?.provider,
@@ -268,6 +290,12 @@ export class ChatSettingsModal extends Modal {
         this.modelAgentManager.setAgentThinkingSettings(settings.agentThinking);
       }
 
+      // Subagent Creativity and context limit for this chat
+      if (typeof settings.agentTemperature === 'number') {
+        this.modelAgentManager.setAgentTemperature(settings.agentTemperature);
+      }
+      this.modelAgentManager.setAgentContextWindow(this.resolveAgentContextWindow(settings));
+
       // Update temperature
       this.modelAgentManager.setTemperature(settings.temperature);
 
@@ -316,6 +344,23 @@ export class ChatSettingsModal extends Modal {
         this.saveStatus?.setText('');
       }
     }
+  }
+
+  /**
+   * The subagent limit to keep for this chat. The model maximum is stored as
+   * "no limit", except when Defaults set a lower one for that model: then the
+   * maximum is kept explicitly so this chat does not fall back to the default.
+   */
+  private resolveAgentContextWindow(settings: ChatSettings): number | null {
+    const target = resolveSubagentTarget(settings);
+    if (!target.provider || !target.model) return null;
+    const key = getContextWindowOverrideKey(target.provider, target.model);
+    const chosen = settings.agentContextWindowOverrides?.[key];
+    if (typeof chosen === 'number') return chosen;
+    const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
+    const defaultLimit = plugin?.settings?.settings?.llmProviders?.agentContextWindowOverrides?.[key];
+    if (typeof defaultLimit !== 'number') return null;
+    return getRegistryContextWindow(target.provider, target.model) ?? null;
   }
 
   onClose(): void {
