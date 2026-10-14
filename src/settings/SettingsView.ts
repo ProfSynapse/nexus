@@ -248,8 +248,6 @@ export class SettingsView extends PluginSettingTab {
     private renderHeader(containerEl: HTMLElement): void {
         const header = containerEl.createDiv('nexus-settings-header');
 
-        // Title and description
-        ;
         header.createEl('p', {
             text: 'An assistant for your vault',
             cls: 'nexus-settings-desc'

@@ -4733,25 +4733,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     text-overflow: ellipsis;
 }
 
-/* Status badges */
-.nexus-status-badge {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    margin-left: auto;
-    flex-shrink: 0;
-}
-
-.nexus-status-badge.configured {
-    background: var(--background-modifier-success);
-    color: var(--text-on-accent);
-}
-
-.nexus-status-badge.not-configured {
-    color: var(--text-muted);
-    background: var(--background-modifier-border);
-}
-
 /* Provider defaults section */
 .nexus-provider-defaults {
     background: var(--background-secondary);
