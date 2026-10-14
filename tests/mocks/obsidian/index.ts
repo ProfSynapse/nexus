@@ -5,6 +5,7 @@
  *   core.ts       — Editor, files (TFile/TFolder), App, Vault, Workspace, Platform, requestUrl
  *   components.ts — Setting, input components, Notice, setIcon
  *   views.ts      — Modal, Scope, Component, Plugin, Menu/MenuItem
+ *   dom.ts        — FakeElement, an element tree for structure assertions
  */
 
 export {
@@ -33,6 +34,9 @@ export {
 
 export {
   Setting,
+  SettingGroup,
+  ExtraButtonComponent,
+  ProgressBarComponent,
   TextComponent,
   TextAreaComponent,
   DropdownComponent,
@@ -56,3 +60,5 @@ export {
   Menu,
   MenuItem,
 } from './views';
+
+export { FakeElement, createFakeRoot, isFakeElement } from './dom';

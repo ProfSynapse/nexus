@@ -1,9 +1,9 @@
 /**
  * tests/unit/ChatSettingsRendererTextOnlyWarning.test.ts
  *
- * Render coverage for ChatSettingsRenderer.renderTextOnlyProviderWarning — the
- * settings-panel notice that warns when a text-completion-only provider is
- * selected. Complements TextOnlyProviderSeam.test.ts (which pins the SSOT +
+ * Render coverage for ChatSettingsRenderer.applyTextOnlyProviderWarning — the
+ * Model row description that warns when a text-completion-only provider is
+ * selected (title in bold, then the explanation). Complements TextOnlyProviderSeam.test.ts (which pins the SSOT +
  * seam classification): this file pins the *rendered copy* surface.
  *
  * For Antigravity (google-gemini-cli) the copy MUST name BOTH limitations
@@ -14,70 +14,53 @@
  *
  * The renderer constructor instantiates heavy LLM services, so we exercise the
  * two private copy/render methods directly over the real prototype with a
- * minimal `this` carrying only the `settings` field they read. This keeps the
+ * minimal `this` carrying only the `settings` field they read, writing into a
+ * real-looking Setting row from the FakeElement mock. This keeps the
  * test coupled to the REAL copy SSOT (getTextOnlyProviderWarningCopy) — not a
  * re-typed fixture — so a copy change in source turns it red.
  */
+import { Setting } from 'obsidian';
 import { ChatSettingsRenderer } from '../../src/components/shared/ChatSettingsRenderer';
-import { createMockElement } from '../helpers/mockFactories';
+import { createFakeRoot, FakeElement } from '../mocks/obsidian/dom';
 
 type RendererInternals = {
   settings: { provider?: string; agentProvider?: string };
-  renderTextOnlyProviderWarning(content: unknown, variant: 'chat' | 'agent'): void;
+  applyTextOnlyProviderWarning(setting: Setting, variant: 'chat' | 'agent'): void;
 };
 
 /**
- * Build a minimal `this` for the private render method. Only `settings` is read
- * by renderTextOnlyProviderWarning / getTextOnlyProviderWarningCopy.
+ * Build a minimal `this` for the private method. Only `settings` is read by
+ * applyTextOnlyProviderWarning / getTextOnlyProviderWarningCopy.
  */
 function rendererWith(settings: { provider?: string; agentProvider?: string }): RendererInternals {
   return {
     settings,
     // Bind the real prototype methods so getTextOnlyProviderWarningCopy resolves
     // on `this` — both are private, hence the prototype indexing cast.
-    renderTextOnlyProviderWarning: (
+    applyTextOnlyProviderWarning: (
       ChatSettingsRenderer.prototype as unknown as RendererInternals
-    ).renderTextOnlyProviderWarning,
+    ).applyTextOnlyProviderWarning,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     getTextOnlyProviderWarningCopy: (ChatSettingsRenderer.prototype as any).getTextOnlyProviderWarningCopy
   } as unknown as RendererInternals;
 }
 
 /**
- * Returns the {title, message} actually rendered into `content`, or null if the
- * warning short-circuited (no warning div created). Reads the mock's recorded
- * createDiv calls: content.createDiv({cls:'csr-provider-warning'}) -> warningEl,
- * then warningEl.createDiv({cls:'...-title', text}) and (...-text, text).
+ * Returns the {title, message} rendered into the Model row's description, or
+ * null when the description stayed empty. The title is the bold lead.
  */
 function renderAndExtract(
   provider: string | undefined,
   variant: 'chat' | 'agent'
 ): { title: string; message: string } | null {
-  const content = createMockElement('div');
+  const row = new Setting(createFakeRoot() as unknown as HTMLElement).setName('Model');
   const settings = variant === 'agent' ? { agentProvider: provider } : { provider };
-  const self = rendererWith(settings);
+  rendererWith(settings).applyTextOnlyProviderWarning(row, variant);
 
-  self.renderTextOnlyProviderWarning(content, variant);
-
-  const createDiv = content.createDiv as jest.Mock;
-  // Find the warning wrapper creation; if absent the method short-circuited.
-  const wrapperCall = createDiv.mock.results.find((result, index) => {
-    const arg = createDiv.mock.calls[index]?.[0];
-    return typeof arg === 'object' && arg?.cls === 'csr-provider-warning';
-  });
-  if (!wrapperCall) {
-    return null;
-  }
-
-  const warningEl = wrapperCall.value as { createDiv: jest.Mock };
-  const childCalls = warningEl.createDiv.mock.calls.map((args) => args[0]);
-  const titleArg = childCalls.find((arg) => arg?.cls === 'csr-provider-warning-title');
-  const messageArg = childCalls.find((arg) => arg?.cls === 'csr-provider-warning-text');
-
-  return {
-    title: titleArg?.text ?? '',
-    message: messageArg?.text ?? ''
-  };
+  const desc = row.descEl as unknown as FakeElement;
+  if (desc.textContent === '') return null;
+  const title = desc.querySelector('strong')?.textContent ?? '';
+  return { title, message: desc.textContent.slice(title.length).trim() };
 }
 
 describe('ChatSettingsRenderer text-only provider warning copy', () => {

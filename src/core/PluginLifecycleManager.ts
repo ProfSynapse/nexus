@@ -24,6 +24,7 @@ import { VaultIngestionManager } from './ingest/VaultIngestionManager';
 import type { ServiceCreationContext } from './services/ServiceDefinitions';
 import type { HybridStorageAdapter } from '../database/adapters/HybridStorageAdapter';
 import type { ChatTraceService } from '../services/chat/ChatTraceService';
+import type { RouterState } from '../settings/SettingsRouter';
 
 // Type-only import to avoid bundling Node.js dependencies on mobile
 type MCPConnectorType = import('../connector').MCPConnector;
@@ -332,6 +333,11 @@ export class PluginLifecycleManager {
      */
     reloadConfiguration(): void {
         // Configuration reloading handled by individual services
+    }
+
+    /** Open Settings on the Nexus tab at the requested route. */
+    openNexusSettings(route: Partial<RouterState>): boolean {
+        return this.settingsTabManager.openNexusSettings(route);
     }
 
     /**

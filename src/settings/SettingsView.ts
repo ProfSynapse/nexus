@@ -74,6 +74,9 @@ export class SettingsView extends PluginSettingTab {
     private prefetchedWorkspaces: IndividualWorkspace[] | null = null;
     private isPrefetching = false;
 
+    // Route requested from outside settings, applied on the next display()
+    private pendingRoute: Partial<RouterState> | undefined;
+
     constructor(
         app: App,
         plugin: Plugin,
@@ -189,12 +192,39 @@ export class SettingsView extends PluginSettingTab {
     }
 
     /**
+     * Ask settings to show a particular tab (and optionally a detail view).
+     * Applied immediately when this tab is already on screen, otherwise on
+     * the next display(), which Obsidian runs when the tab is opened.
+     */
+    openTo(route: Partial<RouterState>): void {
+        if (this.tabs && this.containerEl.isConnected) {
+            this.applyRoute(route);
+            return;
+        }
+        this.pendingRoute = route;
+    }
+
+    private applyRoute(route: Partial<RouterState>): void {
+        if (route.tab) this.router.setTab(route.tab);
+        if (route.view === 'detail' && route.detailId) this.router.showDetail(route.detailId);
+    }
+
+    /**
      * Main display method - renders the settings UI
      */
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.addClass('nexus-settings');
+
+        const pendingRoute = this.pendingRoute;
+        this.pendingRoute = undefined;
+        if (pendingRoute) {
+            // Navigate before the tab strip exists, so no stale listener renders the old panes.
+            this.unsubscribeRouter?.();
+            this.unsubscribeRouter = undefined;
+            this.applyRoute(pendingRoute);
+        }
 
         this.getStartedTab?.destroy();
         this.getStartedAccordion?.unload();
@@ -248,8 +278,6 @@ export class SettingsView extends PluginSettingTab {
     private renderHeader(containerEl: HTMLElement): void {
         const header = containerEl.createDiv('nexus-settings-header');
 
-        // Title and description
-        ;
         header.createEl('p', {
             text: 'An assistant for your vault',
             cls: 'nexus-settings-desc'
@@ -536,21 +564,22 @@ export class SettingsView extends PluginSettingTab {
             return;
         }
 
-        this.getStartedAccordion = new Accordion(
-            containerEl,
-            'Get started',
-            shouldOpenGetStarted(this.app, this.settingsManager.settings),
-            (isOpen) => {
+        this.getStartedAccordion = new Accordion(containerEl, {
+            id: 'get-started',
+            title: 'Get started',
+            icon: 'rocket',
+            open: shouldOpenGetStarted(this.app, this.settingsManager.settings),
+            onToggle: (isOpen) => {
                 this.settingsManager.settings.getStartedOpen = isOpen;
                 void this.settingsManager.saveSettings().catch((error: unknown) => {
                     console.error('[SettingsView] Failed to save get started preference:', error);
                     new Notice('Could not save the get started preference.');
                 });
             }
-        );
+        });
         this.getStartedAccordion.rootEl.addClass('nexus-settings-accordion');
 
-        const accordionContent = this.getStartedAccordion.getContentEl();
+        const accordionContent = this.getStartedAccordion.itemsEl;
         accordionContent.addClass('nexus-settings-accordion-content');
 
         void this.renderGetStartedContent(accordionContent);

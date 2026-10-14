@@ -1,3 +1,5 @@
+import type { ConversationAgentSettings } from '../../../../../services/llm/utils/SubagentModelResolver';
+import type { ThinkingEffort } from '../../../../../types/llm/ProviderTypes';
 import { CommonParameters } from '../../../../../types';
 import { AspectRatio } from '../../../../../services/llm/types/ImageTypes';
 
@@ -148,6 +150,12 @@ export interface ContentAction {
 export interface ExecutionContext {
   sessionId?: string;
   context?: unknown;
+  /**
+   * Subagent settings of the internal chat that called the tool, when the
+   * call came from that chat. Absent for MCP calls and automations, which
+   * use the defaults.
+   */
+  agentSettings?: ConversationAgentSettings;
   previousResults: Map<number, InternalExecutionResult[]>;
   allResults: InternalExecutionResult[];
 }
@@ -163,6 +171,11 @@ export interface PromptExecutionParams {
   model?: string;
   workspace?: string;
   sessionId?: string;
+  /** Agent Creativity; omitted for models that reject sampling parameters. */
+  temperature?: number;
+  /** Agent thinking, already gated for models that cannot think. */
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort;
 }
 
 /**

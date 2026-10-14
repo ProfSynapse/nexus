@@ -132,8 +132,26 @@ export interface LLMProviderSettings {
   defaultModel: DefaultModelSettings;
   /** User-chosen context limits, keyed by JSON-encoded [provider, model]. */
   contextWindowOverrides?: Record<string, number>;
-  agentModel?: DefaultModelSettings; // Model for executePrompt (API-only, used when chat model is local)
+  /**
+   * Default model for subagents and executePrompt. When set it wins over the
+   * chat model; when absent, agent runs use the chat model if it is a cloud
+   * model, otherwise the first available cloud provider.
+   */
+  agentModel?: DefaultModelSettings;
   agentThinking?: DefaultThinkingSettings; // Thinking settings for agent model (separate from chat model)
+  /**
+   * Default Creativity (temperature, 0.0-1.0) for subagents and executePrompt.
+   * Absent means `defaultTemperature ?? 0.5`. Not sent to models whose
+   * registry entry has `supportsSamplingParams: false`.
+   */
+  agentTemperature?: number;
+  /**
+   * Subagent context limits keyed by `getContextWindowOverrideKey(provider, model)`.
+   * Kept apart from `contextWindowOverrides` so the chat and subagent sliders
+   * for the same model never write the same key. Absent means the model's
+   * advertised window.
+   */
+  agentContextWindowOverrides?: Record<string, number>;
   defaultImageModel?: DefaultImageModelSettings; // Default image generation model
   defaultVideoModel?: DefaultVideoModelSettings; // Default video generation model
   defaultThinking?: DefaultThinkingSettings; // Default thinking settings for chat model

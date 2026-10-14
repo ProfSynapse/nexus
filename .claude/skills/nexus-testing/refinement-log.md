@@ -223,3 +223,7 @@ Used the existing loader suite with a fake clock to check production text update
 ### 2026-10-13 — Whole-turn header activity
 
 Expanded the actual store/reducer lifecycle test to cover reasoning completion, tool execution and answer streaming before terminal settlement. The existing selector failed the new expectation before the fix. The mock does not decide phases. No protocol change needed.
+
+### 2026-10-14 — Slider readout settled statically (defaults redesign, Phase 1 step 1a)
+
+The plan asked for an in-app `obsidian eval` check of slider markup. It was settled without touching a vault by reading the installed app bundle (`obsidian.asar` → `app.js`, Obsidian 1.14.4): `SliderComponent` creates its own `span.slider-value` before the range input, refreshes it on every `input` event through `updateDisplay()`, and formats it with `setDisplayFormat(fn)` (absent from the 1.12.3 typings). It also fires the change callback from `setValue` when the value changes, so register `onChange` after `setValue`. The duplicate "High 2" / "1,000,000 tokens 1000000" readouts were the plugin's own span next to that native one. `bindSliderReadout` now writes into the native element and adds one span only when none exists. The SliderComponent mock reproduces the native element in FakeElement mode, so a reintroduced second readout fails `SliderReadout.test.ts`. Still worth one in-app glance on 1.11/1.12, where the native element may be missing. No protocol change.

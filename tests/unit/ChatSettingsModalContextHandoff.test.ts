@@ -1,4 +1,8 @@
-/** A delayed context handoff must not leak a staged model or budget through the settings modal. */
+/**
+ * A delayed context handoff must not leak a staged model or budget through the settings modal.
+ * The modal's context window applies to this conversation only: it never writes the global
+ * contextWindowOverrides defaults (owner decision, 2026-10-14, reversing PR #410's save-to-defaults).
+ */
 import { App, Notice } from 'obsidian';
 import { ChatSettingsModal } from '../../src/ui/chat/components/ChatSettingsModal';
 import type { ChatSettings } from '../../src/components/shared/ChatSettingsRenderer';
@@ -28,6 +32,8 @@ function fixture() {
     getSelectedPrompt: jest.fn(() => null),
     getThinkingSettings: jest.fn(() => ({ enabled: false, effort: 'medium' })),
     getAgentThinkingSettings: jest.fn(() => ({ enabled: false, effort: 'medium' })),
+    getAgentTemperature: jest.fn(() => 0.5),
+    getAgentContextWindow: jest.fn(() => null),
     getContextNotes: jest.fn(() => []),
     getTemperature: jest.fn(() => 0.5),
     getAgentProvider: jest.fn(() => null),
@@ -51,6 +57,8 @@ function fixture() {
     setWebSearch: jest.fn(),
     setAgentModel: jest.fn(),
     setAgentThinkingSettings: jest.fn(),
+    setAgentTemperature: jest.fn(),
+    setAgentContextWindow: jest.fn(),
     setTemperature: jest.fn(),
     setContextNotes: jest.fn(async () => undefined),
     setImageModel: jest.fn(),
@@ -84,7 +92,7 @@ it('shows the conversation pinned context budget when opening settings', () => {
   expect(llmProviders.contextWindowOverrides[oldKey]).toBe(80_000);
 });
 
-it('sends model and budget in one staged request and saves defaults only after commit', async () => {
+it('sends model and budget in one staged request and never writes global defaults', async () => {
   const { state, manager, llmProviders, saveSettings } = fixture();
   let finish!: (value: boolean) => void;
   manager.requestContextChange.mockImplementation(() => new Promise<boolean>(resolve => { finish = resolve; }));
@@ -95,11 +103,10 @@ it('sends model and budget in one staged request and saves defaults only after c
   expect(manager.requestContextChange).toHaveBeenCalledWith({ providerId: 'openai', modelId: 'next', contextWindowOverride: 64_000 });
   expect(state.saveStatus.setText).toHaveBeenCalledWith('Preparing context…');
   expect(state.saveButton.setDisabled).toHaveBeenCalledWith(true);
-  expect(saveSettings).not.toHaveBeenCalled();
-  expect(llmProviders.contextWindowOverrides).toEqual({ [oldKey]: 80_000 });
   finish(true);
   await first;
-  expect(saveSettings).toHaveBeenCalledTimes(1);
+  expect(saveSettings).not.toHaveBeenCalled();
+  expect(llmProviders.contextWindowOverrides).toEqual({ [oldKey]: 80_000 });
   expect(manager.saveToConversation).toHaveBeenCalledWith('conversation');
 });
 
@@ -124,13 +131,6 @@ it('saving an unrelated setting preserves newer global context defaults', async 
   expect(saveSettings).not.toHaveBeenCalled();
   expect(llmProviders.contextWindowOverrides[oldKey]).toBe(90_000);
   expect(manager.setTemperature).toHaveBeenCalledWith(0.7);
-});
-
-it('merges only the edited model budget into the current defaults', async () => {
-  const { state, llmProviders } = fixture();
-  llmProviders.contextWindowOverrides[oldKey] = 90_000;
-  await state.handleSave();
-  expect(llmProviders.contextWindowOverrides).toEqual({ [oldKey]: 90_000, [key]: 64_000 });
 });
 
 it('passes the advertised maximum when the slider removes an override', async () => {
@@ -165,19 +165,4 @@ it('cancels only its own pending handoff and ignores completion after closing', 
   expect(Notice).toHaveBeenCalledWith('Context change was already being saved and has been applied.');
   expect(saveSettings).not.toHaveBeenCalled();
   expect(manager.handlePromptChange).not.toHaveBeenCalled();
-});
-
-it('restores the default override map when its separate save fails', async () => {
-  const { state, manager, llmProviders, saveSettings } = fixture();
-  const original = llmProviders.contextWindowOverrides;
-  saveSettings.mockRejectedValueOnce(new Error('disk full'));
-  const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  try {
-    await state.handleSave();
-    expect(manager.requestContextChange).toHaveBeenCalledTimes(1);
-    expect(llmProviders.contextWindowOverrides).toBe(original);
-    expect(manager.handlePromptChange).not.toHaveBeenCalled();
-  } finally {
-    log.mockRestore();
-  }
 });

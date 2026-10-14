@@ -1,5 +1,5 @@
 import { DropdownComponent, createMockElement } from 'obsidian';
-import { renderModelDropdownSection } from '../../src/components/shared/ModelDropdownRenderer';
+import { renderModelSetting } from '../../src/components/shared/ModelDropdownRenderer';
 import type { LLMProviderManager } from '../../src/services/llm/providers/ProviderManager';
 import { ModelRegistry } from '../../src/services/llm/adapters/ModelRegistry';
 import { sortModelsNewestFirst } from '../../src/utils/modelOrdering';
@@ -41,8 +41,7 @@ describe('model picker ordering', () => {
         provider === 'anthropic' ? [oldModel, newModel] : [cliModel]),
     } as unknown as LLMProviderManager;
 
-    renderModelDropdownSection(createMockElement('div'), {
-      sectionTitle: 'Chat model',
+    renderModelSetting(createMockElement('div'), {
       getProviders: () => ['anthropic'],
       getCurrentProvider: () => 'anthropic',
       getCurrentModel: () => selectedModel,
@@ -56,7 +55,7 @@ describe('model picker ordering', () => {
       isGeminiCliConnected: () => false,
       getDefaultModelForProvider: async () => oldModel.id,
       notifyChange: jest.fn(),
-      reRender: jest.fn(),
+      onSelectionChanged: jest.fn(),
     });
     await new Promise(resolve => setTimeout(resolve, 0));
 

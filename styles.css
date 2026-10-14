@@ -1751,118 +1751,187 @@ body.theme-light .message-content {
     background: transparent;
 }
 
-/* =========================== */
-/* ORIGINAL ACCORDION STYLES  */
-/* =========================== */
+/* ===========================================
+   Settings: shared accordion
+   One fold component for the Defaults tab, the Chat settings modal and
+   Get started (docs/plans/defaults-settings-redesign-plan.md, Phase 1).
+   Closed: a quiet row with icon, title and a one-line summary.
+   Open: one lighter card holding the header and its settings.
+   =========================================== */
 
-/* Accordion Styles */
-.mcp-accordion {
-    margin-bottom: 1rem;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background-color: var(--background-primary);
+.nexus-accordion {
+    max-width: var(--setting-group-max-width);
+    margin: var(--space-m) auto 0;
+    border-radius: var(--setting-items-radius);
 }
 
-.mcp-accordion-container {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
+.nexus-accordion.is-open {
+    background-color: var(--setting-items-background);
 }
 
-.mcp-accordion-header {
-    order: 1; /* Header first */
-    border-bottom: 1px solid var(--background-modifier-border);
-    background-color: var(--background-secondary);
-}
-
-.mcp-accordion-content {
-    order: 2; /* Content second */
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
-}
-
-/* Handle border when accordion is open */
-.mcp-accordion-content.is-open {
-    border-top: 1px solid var(--background-modifier-border);
-    max-height: 70vh; /* Use viewport height for better responsive behavior */
-    overflow-y: auto; /* Enable vertical scrolling when content exceeds height */
-    padding: 15px;
-}
-
-.mcp-accordion-content.is-open ~ .mcp-accordion-header {
-    border-bottom: none;
-}
-
-.mcp-accordion-toggle {
-    width: 100%;
-    padding: 1rem;
-    background: none;
-    border: none;
-    cursor: pointer;
+.nexus-accordion-toggle {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--space-m);
+    width: 100%;
+    height: auto;
+    padding: var(--space-m) var(--setting-items-padding-x);
+    border: 0;
+    border-radius: var(--setting-items-radius);
+    background: transparent;
+    box-shadow: none;
     color: var(--text-normal);
+    font: inherit;
     text-align: left;
+    cursor: pointer;
 }
 
-.mcp-accordion-toggle:hover {
+.nexus-accordion:not(.is-open) .nexus-accordion-toggle:hover {
     background-color: var(--background-modifier-hover);
 }
 
-.mcp-accordion-title {
-    font-size: 1.1em;
-    font-weight: 500;
-    flex: 1;
-    text-align: left;
+.nexus-accordion-toggle:focus-visible {
+    box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
 }
 
-.mcp-accordion-icon {
-    width: 24px;
-    height: 24px;
-    position: relative;
+.nexus-accordion-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-accent);
 }
 
-.mcp-accordion-icon::before,
-.mcp-accordion-icon::after {
+.nexus-accordion-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.nexus-accordion-title {
+    font-size: var(--setting-group-heading-size);
+    font-weight: var(--font-semibold);
+}
+
+.nexus-accordion-summary {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-accordion-chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-faint);
+}
+
+.nexus-accordion-content.setting-group {
+    max-width: none;
+    margin: 0;
+}
+
+.nexus-accordion-content .setting-items {
+    padding-bottom: var(--space-xs);
+    border-radius: 0 0 var(--setting-items-radius) var(--setting-items-radius);
+    background-color: transparent;
+}
+
+/* Inside an open fold the header sits above the first row, so it gets a divider too. */
+.nexus-accordion-content .setting-items > .setting-item:not(.setting-item-heading):first-child::before {
     content: '';
-    position: absolute;
-    background-color: var(--text-normal);
-    transition: transform 0.25s ease-out;
 }
 
-.mcp-accordion-icon::before {
-    top: 11px;
-    left: 6px;
-    width: 12px;
-    height: 2px;
+/* The top block (Provider, Model, Thinking) sits a little further from the first fold than folds sit from each other. */
+.nexus-settings-folds > .setting-group + .nexus-accordion {
+    margin-top: var(--space-l);
 }
 
-.mcp-accordion-icon::after {
-    top: 6px;
-    left: 11px;
-    width: 2px;
-    height: 12px;
+.modal .nexus-accordion {
+    margin-top: var(--space-s);
 }
 
-.mcp-accordion-icon.is-open::after {
-    transform: rotate(90deg);
+.modal .nexus-settings-folds > .setting-group + .nexus-accordion {
+    margin-top: var(--space-m);
 }
 
-.mcp-accordion-content > div {
-    padding: 1rem;
+/* Subheads inside a fold (Voice: Transcription, Read aloud, Live voice). */
+.setting-group .setting-item.nexus-subhead:not(.setting-item-heading) {
+    padding-bottom: 0;
 }
 
-/* Mobile optimizations */
-@media (max-width: 768px) {
-    .mcp-accordion-toggle {
-        padding: 0.8rem;
-    }
+.nexus-subhead .setting-item-name {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
 
-    .mcp-accordion-title {
-        font-size: 1em;
-    }
+.setting-group .setting-items > .nexus-subhead + .setting-item::before {
+    content: none;
+}
+
+/* A note row that explains its fold (Subagents: "Used for"). */
+.setting-group .setting-item.nexus-note:not(.setting-item-heading) {
+    padding-bottom: 0;
+}
+
+.nexus-note .setting-item-name {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.setting-group .setting-items > .nexus-note + .setting-item::before {
+    content: none;
+}
+
+/* Context notes listed under the "Context notes" row. */
+.setting-group .setting-item.nexus-note-row:not(.setting-item-heading) {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.setting-group .setting-items > .setting-item.nexus-note-row::before {
+    content: none;
+}
+
+.nexus-note-row .setting-item-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-width: 0;
+    padding-left: var(--space-m);
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-note-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-faint);
+}
+
+.nexus-note-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* A slider readout Nexus adds itself only on Obsidian builds without a native one. */
+.nexus-slider-value {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    min-width: 30px;
+    text-align: right;
+}
+
+.nexus-ctx-value {
+    min-width: 40px;
+}
+
+body.is-mobile .nexus-accordion-toggle {
+    min-height: 44px;
 }
 
 /* Setup Prompt Styles */
@@ -3897,16 +3966,16 @@ body.is-mobile .message-action-btn.message-branch-next {
 /* CHAT SETTINGS MODAL STYLES */
 /* =========================== */
 
-.chat-settings-modal {
-    padding: 20px;
-    min-width: 500px;
-    max-width: 600px;
+.modal.chat-settings-modal {
+    width: 600px;
+    max-width: calc(100vw - 40px);
 }
 
-.chat-settings-modal h2 {
-    margin-top: 0;
-    margin-bottom: 20px;
-    color: var(--text-normal);
+.chat-settings-save-status {
+    flex: 1 1 auto;
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
 }
 
 /* =========================== */
@@ -4248,28 +4317,6 @@ body.is-mobile .message-action-btn.message-branch-next {
 }
 
 /* ===========================================
-   Chat Settings Modal - Complete Styling
-   =========================================== */
-
-/* Header */
-.chat-settings-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-}
-
-.chat-settings-header h2 {
-    margin: 0;
-}
-
-/* Button Containers */
-.chat-settings-buttons {
-    display: flex;
-    gap: 8px;
-}
-
-/* ===========================================
    Note Picker Modal - Complete Styling
    =========================================== */
 
@@ -4343,24 +4390,6 @@ body.is-mobile .message-action-btn.message-branch-next {
 }
 
 /* ===========================================
-   Thinking Section - New Styling
-   =========================================== */
-
-.thinking-settings-section {
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-/* Effort slider label */
-.thinking-effort-value {
-    min-width: 60px;
-    text-align: center;
-    font-weight: 500;
-    margin-left: 8px;
-}
-
-/* ===========================================
    Generic Utility Classes
    =========================================== */
 
@@ -4370,16 +4399,10 @@ body.is-mobile .message-action-btn.message-branch-next {
 }
 
 /* ===========================================
-   Chat Settings Renderer - Shared Component
+   Section boxes (csr-section)
+   Remaining consumer: DataTab (Export, Storage, Maintenance).
    =========================================== */
 
-.chat-settings-renderer {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-m);
-}
-
-/* Section boxes */
 .csr-section {
     background: var(--background-secondary);
     border-radius: var(--radius-m);
@@ -4405,16 +4428,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     gap: var(--space-xxs);
 }
 
-.csr-info-icon {
-    cursor: help;
-    opacity: 0.6;
-    font-size: 11px;
-}
-
-.csr-info-icon:hover {
-    opacity: 1;
-}
-
 .csr-section-content {
     padding: var(--space-s) var(--space-m) var(--space-m);
 }
@@ -4430,157 +4443,6 @@ body.is-mobile .message-action-btn.message-branch-next {
 
 .csr-section-content .setting-item:last-child {
     padding-bottom: 0;
-}
-
-.nexus-voice-section-desc {
-    padding-left: 0;
-    padding-right: 0;
-}
-
-.nexus-voice-group-label {
-    margin-top: var(--space-m);
-    padding-top: var(--space-s);
-    border-top: 1px solid var(--background-modifier-border);
-    color: var(--text-faint);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-
-.nexus-voice-section-desc + .nexus-voice-group-label {
-    margin-top: var(--space-s);
-    border-top: none;
-}
-
-.nexus-voice-warning {
-    margin-top: var(--space-s);
-    padding: var(--space-s);
-    border: 1px solid var(--background-modifier-error);
-    border-radius: var(--radius-s);
-    background: var(--background-modifier-error);
-    color: var(--text-error);
-    font-size: 12px;
-}
-
-/* Effort slider row */
-.csr-effort-row {
-    padding-left: var(--space-s);
-    border-left: 2px solid var(--background-modifier-border);
-    margin-top: var(--space-xs);
-}
-
-.csr-effort-value {
-    min-width: 50px;
-    text-align: center;
-    font-weight: 500;
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-left: var(--space-s);
-}
-
-.csr-temp-value {
-    min-width: 30px;
-    text-align: center;
-    font-weight: 500;
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-left: var(--space-s);
-}
-
-.csr-provider-warning {
-    margin-top: var(--space-s);
-    padding: var(--space-s) var(--space-m);
-    border: 1px solid var(--background-modifier-border);
-    border-left: 3px solid var(--text-warning);
-    border-radius: var(--radius-s);
-    background: var(--background-primary);
-}
-
-.csr-provider-warning-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-warning);
-    margin-bottom: var(--space-xxs);
-}
-
-.csr-provider-warning-text {
-    font-size: 12px;
-    line-height: 1.4;
-    color: var(--text-muted);
-}
-
-/* Context notes */
-.csr-notes-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-s) 0 var(--space-xs);
-    margin-top: var(--space-xs);
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-.csr-notes-header span {
-    font-size: 13px;
-    color: var(--text-normal);
-}
-
-.csr-add-btn {
-    background: transparent;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s);
-    padding: var(--space-xxs) var(--space-s);
-    font-size: 11px;
-    color: var(--text-muted);
-    cursor: pointer;
-}
-
-.csr-add-btn:hover {
-    background: var(--background-modifier-hover);
-    color: var(--text-normal);
-}
-
-.csr-notes-list {
-    margin-top: var(--space-xs);
-}
-
-.csr-notes-empty {
-    font-size: 12px;
-    color: var(--text-faint);
-    padding: var(--space-xs) 0;
-}
-
-.csr-note-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-xs) var(--space-s);
-    background: var(--background-primary);
-    border-radius: var(--radius-s);
-    margin-bottom: var(--space-xs);
-}
-
-.csr-note-path {
-    font-size: 12px;
-    color: var(--text-normal);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-}
-
-.csr-note-remove {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0 var(--space-xs);
-    font-size: 16px;
-    line-height: 1;
-}
-
-.csr-note-remove:hover {
-    color: var(--text-error);
 }
 
 /* ===========================================
@@ -4731,25 +4593,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-/* Status badges */
-.nexus-status-badge {
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 10px;
-    margin-left: auto;
-    flex-shrink: 0;
-}
-
-.nexus-status-badge.configured {
-    background: var(--background-modifier-success);
-    color: var(--text-on-accent);
-}
-
-.nexus-status-badge.not-configured {
-    color: var(--text-muted);
-    background: var(--background-modifier-border);
 }
 
 /* Provider defaults section */

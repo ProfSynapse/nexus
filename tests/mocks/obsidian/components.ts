@@ -3,26 +3,61 @@
  */
 
 import { createMockElement } from './core';
+import { FakeElement, isFakeElement } from './dom';
 
-// Setting mock
+// Element factory: a FakeElement subtree when the caller renders into a
+// FakeElement (tests that observe structure), the call-recording mock otherwise.
+function childOf(containerEl: unknown, tag: string, info?: Record<string, unknown> | string): HTMLElement {
+  if (isFakeElement(containerEl)) {
+    return containerEl.createEl(tag, info as never) as unknown as HTMLElement;
+  }
+  return createMockElement(tag);
+}
+
+function asFake(el: unknown): FakeElement | null {
+  return isFakeElement(el) ? el : null;
+}
+
+// Setting mock. Given a FakeElement container it renders Obsidian's markup
+// (setting-item > setting-item-info > name/description, setting-item-control)
+// in place, so order, names, descriptions and disabled state can be asserted.
 export class Setting {
   settingEl: HTMLElement;
+  infoEl: HTMLElement;
+  nameEl: HTMLElement;
+  descEl: HTMLElement;
   controlEl: HTMLElement;
+  components: unknown[] = [];
+  /** Last value passed to setName/setDesc (strings only), for assertions. */
+  name = '';
+  desc = '';
 
-  constructor(_containerEl: HTMLElement) {
-    this.settingEl = createMockElement('div');
-    this.controlEl = createMockElement('div');
+  constructor(containerEl: HTMLElement) {
+    this.settingEl = childOf(containerEl, 'div', 'setting-item');
+    this.infoEl = childOf(this.settingEl, 'div', 'setting-item-info');
+    this.nameEl = childOf(this.infoEl, 'div', 'setting-item-name');
+    this.descEl = childOf(this.infoEl, 'div', 'setting-item-description');
+    this.controlEl = childOf(this.settingEl, 'div', 'setting-item-control');
   }
 
-  setClass(_cls: string): this {
+  setClass(cls: string): this {
+    asFake(this.settingEl)?.addClass(cls);
     return this;
   }
 
-  setName(_name: string): this {
+  setName(name: string | DocumentFragment): this {
+    if (typeof name === 'string') {
+      this.name = name;
+      asFake(this.nameEl)?.setText(name);
+    }
     return this;
   }
 
-  setDesc(_desc: string): this {
+  setDesc(desc: string | DocumentFragment): this {
+    if (typeof desc === 'string') {
+      this.desc = desc;
+      asFake(this.descEl)?.setText(desc);
+    }
     return this;
   }
 
@@ -30,33 +65,82 @@ export class Setting {
     return this;
   }
 
-  addText(callback: (text: TextComponent) => void): this {
-    callback(new TextComponent(this.settingEl));
+  setHeading(): this {
+    asFake(this.settingEl)?.addClass('setting-item-heading');
     return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    asFake(this.settingEl)?.toggleClass('is-disabled', disabled);
+    return this;
+  }
+
+  then(callback: (setting: this) => unknown): this {
+    callback(this);
+    return this;
+  }
+
+  private add<T>(component: T, callback: (component: T) => unknown): this {
+    this.components.push(component);
+    callback(component);
+    return this;
+  }
+
+  addText(callback: (text: TextComponent) => void): this {
+    return this.add(new TextComponent(this.controlEl), callback);
   }
 
   addTextArea(callback: (textarea: TextAreaComponent) => void): this {
-    callback(new TextAreaComponent(this.settingEl));
-    return this;
+    return this.add(new TextAreaComponent(this.controlEl), callback);
   }
 
   addDropdown(callback: (dropdown: DropdownComponent) => void): this {
-    callback(new DropdownComponent(this.settingEl));
-    return this;
+    return this.add(new DropdownComponent(this.controlEl), callback);
   }
 
   addToggle(callback: (toggle: ToggleComponent) => void): this {
-    callback(new ToggleComponent(this.settingEl));
-    return this;
+    return this.add(new ToggleComponent(this.controlEl), callback);
   }
 
   addButton(callback: (button: ButtonComponent) => void): this {
-    callback(new ButtonComponent(this.settingEl));
-    return this;
+    return this.add(new ButtonComponent(this.controlEl), callback);
+  }
+
+  addExtraButton(callback: (button: ExtraButtonComponent) => void): this {
+    return this.add(new ExtraButtonComponent(this.controlEl), callback);
   }
 
   addSlider(callback: (slider: SliderComponent) => void): this {
-    callback(new SliderComponent(this.settingEl));
+    return this.add(new SliderComponent(this.controlEl), callback);
+  }
+
+  addProgressBar(callback: (bar: ProgressBarComponent) => void): this {
+    return this.add(new ProgressBarComponent(this.controlEl), callback);
+  }
+}
+
+// SettingGroup mock (Obsidian 1.11+): setting-group > setting-items, with the
+// internal groupEl/listEl fields the real class carries.
+export class SettingGroup {
+  groupEl: HTMLElement;
+  listEl: HTMLElement;
+
+  constructor(containerEl: HTMLElement) {
+    this.groupEl = childOf(containerEl, 'div', 'setting-group');
+    this.listEl = childOf(this.groupEl, 'div', 'setting-items');
+  }
+
+  setHeading(_text: string | DocumentFragment): this {
+    return this;
+  }
+
+  addClass(cls: string): this {
+    asFake(this.groupEl)?.addClass(cls);
+    return this;
+  }
+
+  addSetting(callback: (setting: Setting) => void): this {
+    callback(new Setting(this.listEl));
     return this;
   }
 }
@@ -67,8 +151,8 @@ export class TextComponent {
   private value = '';
   private changeCallback?: (value: string) => void;
 
-  constructor(_containerEl: HTMLElement) {
-    this.inputEl = createMockElement('input') as HTMLInputElement;
+  constructor(containerEl: HTMLElement) {
+    this.inputEl = childOf(containerEl, 'input', { type: 'text' }) as HTMLInputElement;
   }
 
   setPlaceholder(_placeholder: string): this {
@@ -77,11 +161,17 @@ export class TextComponent {
 
   setValue(value: string): this {
     this.value = value;
+    const fake = asFake(this.inputEl);
+    if (fake) fake.value = value;
     return this;
   }
 
   getValue(): string {
     return this.value;
+  }
+
+  setDisabled(_disabled: boolean): this {
+    return this;
   }
 
   onChange(callback: (value: string) => void): this {
@@ -101,8 +191,8 @@ export class TextAreaComponent {
   inputEl: HTMLTextAreaElement;
   private value = '';
 
-  constructor(_containerEl: HTMLElement) {
-    this.inputEl = createMockElement('textarea') as HTMLTextAreaElement;
+  constructor(containerEl: HTMLElement) {
+    this.inputEl = childOf(containerEl, 'textarea') as HTMLTextAreaElement;
   }
 
   setPlaceholder(_placeholder: string): this {
@@ -123,30 +213,58 @@ export class TextAreaComponent {
   }
 }
 
-// DropdownComponent mock
+// DropdownComponent mock. With a FakeElement container, options are real
+// <option> children of selectEl and `selectEl.value`/`disabled` track the API.
 export class DropdownComponent {
   selectEl: HTMLSelectElement;
   private value = '';
+  private changeCallback?: (value: string) => unknown;
 
-  constructor(_containerEl: HTMLElement) {
-    this.selectEl = createMockElement('select') as HTMLSelectElement;
+  constructor(containerEl: HTMLElement) {
+    this.selectEl = childOf(containerEl, 'select', 'dropdown') as HTMLSelectElement;
+    // Like Obsidian: a 'change' event on the select reports its current value.
+    asFake(this.selectEl)?.addEventListener('change', () => {
+      const fake = asFake(this.selectEl);
+      if (fake) this.changeCallback?.(fake.value);
+    });
   }
 
-  addOption(_value: string, _display: string): this {
+  addOption(value: string, display: string): this {
+    asFake(this.selectEl)?.createEl('option', { value, text: display });
+    return this;
+  }
+
+  addOptions(options: Record<string, string>): this {
+    for (const [value, display] of Object.entries(options)) this.addOption(value, display);
     return this;
   }
 
   setValue(value: string): this {
     this.value = value;
+    const fake = asFake(this.selectEl);
+    if (fake) fake.value = value;
     return this;
   }
 
   getValue(): string {
-    return this.value;
+    return asFake(this.selectEl)?.value ?? this.value;
   }
 
-  onChange(_callback: (value: string) => void): this {
+  setDisabled(disabled: boolean): this {
+    const fake = asFake(this.selectEl);
+    if (fake) fake.disabled = disabled;
     return this;
+  }
+
+  onChange(callback: (value: string) => unknown): this {
+    this.changeCallback = callback;
+    return this;
+  }
+
+  /** Test helper: select a value as the user would. */
+  trigger(value: string): unknown {
+    this.setValue(value);
+    return this.changeCallback?.(value);
   }
 }
 
@@ -154,13 +272,21 @@ export class DropdownComponent {
 export class ToggleComponent {
   toggleEl: HTMLElement;
   private value = false;
+  private changeCallback?: (value: boolean) => unknown;
 
-  constructor(_containerEl: HTMLElement) {
-    this.toggleEl = createMockElement('div');
+  constructor(containerEl: HTMLElement) {
+    this.toggleEl = childOf(containerEl, 'div', 'checkbox-container');
+    // Like Obsidian: clicking the switch flips it and reports the new value.
+    asFake(this.toggleEl)?.addEventListener('click', () => {
+      if (asFake(this.toggleEl)?.disabled) return;
+      this.setValue(!this.value);
+      this.changeCallback?.(this.value);
+    });
   }
 
   setValue(value: boolean): this {
     this.value = value;
+    asFake(this.toggleEl)?.toggleClass('is-enabled', value);
     return this;
   }
 
@@ -168,22 +294,237 @@ export class ToggleComponent {
     return this.value;
   }
 
-  onChange(_callback: (value: boolean) => void): this {
+  setDisabled(disabled: boolean): this {
+    const fake = asFake(this.toggleEl);
+    if (fake) fake.disabled = disabled;
     return this;
+  }
+
+  setTooltip(_tooltip: string): this {
+    return this;
+  }
+
+  onChange(callback: (value: boolean) => unknown): this {
+    this.changeCallback = callback;
+    return this;
+  }
+
+  /** Test helper: flip the toggle as the user would. */
+  trigger(value: boolean): unknown {
+    this.setValue(value);
+    return this.changeCallback?.(value);
   }
 }
 
-// SliderComponent mock
+// SliderComponent mock. Obsidian 1.13+ draws its own `span.slider-value`
+// before the range input and keeps it current (`updateDisplay`), formatted by
+// `setDisplayFormat` when one is set. In FakeElement mode the mock reproduces
+// that element, because a second, plugin-made readout next to it is exactly
+// the duplicate this shape exists to catch.
 export class SliderComponent {
-  sliderEl: HTMLElement;
+  sliderEl: HTMLInputElement;
+  valueEl: HTMLElement | null = null;
+  disabled = false;
+  min = 0;
+  max = 100;
+  step = 1;
   private value = 0;
+  private displayFormat: ((value: number) => string) | null = null;
+  private changeCallback?: (value: number) => unknown;
 
-  constructor(_containerEl: HTMLElement) {
-    this.sliderEl = createMockElement('input');
+  constructor(containerEl: HTMLElement) {
+    if (isFakeElement(containerEl)) {
+      this.valueEl = containerEl.createSpan('slider-value') as unknown as HTMLElement;
+      this.sliderEl = containerEl.createEl('input', { cls: 'slider', type: 'range' }) as unknown as HTMLInputElement;
+      const fake = this.sliderEl as unknown as FakeElement;
+      fake.addEventListener('input', () => this.updateDisplay());
+      fake.addEventListener('change', () => { this.changeCallback?.(this.getValue()); });
+    } else {
+      this.sliderEl = createMockElement('input') as HTMLInputElement;
+    }
   }
 
-  setLimits(_min: number, _max: number, _step: number): this {
+  private updateDisplay(): void {
+    const valueEl = asFake(this.valueEl);
+    if (!valueEl) return;
+    const value = this.getValue();
+    valueEl.setText(this.displayFormat ? this.displayFormat(value) : String(value));
+  }
+
+  setLimits(min: number, max: number, step: number): this {
+    this.min = min;
+    this.max = max;
+    this.step = step;
+    // Like Obsidian, the limits land on the range input itself.
+    const fake = asFake(this.sliderEl);
+    if (fake) {
+      fake.setAttribute('min', String(min));
+      fake.setAttribute('max', String(max));
+      fake.setAttribute('step', String(step));
+    }
+    this.updateDisplay();
     return this;
+  }
+
+  setValue(value: number): this {
+    this.value = value;
+    const fake = asFake(this.sliderEl);
+    if (fake) fake.value = String(value);
+    this.updateDisplay();
+    return this;
+  }
+
+  getValue(): number {
+    const fake = asFake(this.sliderEl);
+    return fake ? Number(fake.value) : this.value;
+  }
+
+  setDisplayFormat(format: (value: number) => string): this {
+    this.displayFormat = format;
+    this.updateDisplay();
+    return this;
+  }
+
+  setInstant(_instant: boolean): this {
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
+    const fake = asFake(this.sliderEl);
+    if (fake) fake.disabled = disabled;
+    return this;
+  }
+
+  setDynamicTooltip(): this {
+    return this;
+  }
+
+  onChange(callback: (value: number) => unknown): this {
+    this.changeCallback = callback;
+    return this;
+  }
+
+  /** Test helper: drag to a value (input events) without committing. */
+  drag(value: number): void {
+    const fake = asFake(this.sliderEl);
+    if (!fake) return;
+    fake.value = String(value);
+    fake.dispatch('input');
+  }
+
+  /** Test helper: release at a value (input then change). */
+  commit(value: number): unknown {
+    const fake = asFake(this.sliderEl);
+    if (!fake) {
+      this.value = value;
+      return this.changeCallback?.(value);
+    }
+    this.drag(value);
+    fake.dispatch('change');
+    return undefined;
+  }
+}
+
+// ButtonComponent mock
+export class ButtonComponent {
+  buttonEl: HTMLButtonElement;
+  private clickCallback?: (evt?: unknown) => unknown;
+
+  constructor(containerEl: HTMLElement) {
+    this.buttonEl = childOf(containerEl, 'button') as HTMLButtonElement;
+    asFake(this.buttonEl)?.addEventListener('click', event => { this.clickCallback?.(event); });
+  }
+
+  setButtonText(text: string): this {
+    asFake(this.buttonEl)?.setText(text);
+    return this;
+  }
+
+  setIcon(_icon: string): this {
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    asFake(this.buttonEl)?.setAttribute('aria-label', tooltip);
+    return this;
+  }
+
+  setClass(cls: string): this {
+    asFake(this.buttonEl)?.addClass(cls);
+    return this;
+  }
+
+  setCta(): this {
+    asFake(this.buttonEl)?.addClass('mod-cta');
+    return this;
+  }
+
+  setWarning(): this {
+    asFake(this.buttonEl)?.addClass('mod-warning');
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    const fake = asFake(this.buttonEl);
+    if (fake) fake.disabled = disabled;
+    return this;
+  }
+
+  onClick(callback: (evt?: unknown) => unknown): this {
+    this.clickCallback = callback;
+    return this;
+  }
+
+  // Helper for tests to trigger click
+  click(): void {
+    this.clickCallback?.();
+  }
+}
+
+// ExtraButtonComponent mock
+export class ExtraButtonComponent {
+  extraSettingsEl: HTMLElement;
+  private clickCallback?: () => unknown;
+
+  constructor(containerEl: HTMLElement) {
+    this.extraSettingsEl = childOf(containerEl, 'div', 'clickable-icon extra-setting-button');
+    asFake(this.extraSettingsEl)?.addEventListener('click', () => { this.clickCallback?.(); });
+  }
+
+  setIcon(icon: string): this {
+    asFake(this.extraSettingsEl)?.setAttribute('data-icon', icon);
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    asFake(this.extraSettingsEl)?.setAttribute('aria-label', tooltip);
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    const fake = asFake(this.extraSettingsEl);
+    if (fake) fake.disabled = disabled;
+    return this;
+  }
+
+  onClick(callback: () => unknown): this {
+    this.clickCallback = callback;
+    return this;
+  }
+
+  click(): void {
+    this.clickCallback?.();
+  }
+}
+
+// ProgressBarComponent mock
+export class ProgressBarComponent {
+  progressBar: HTMLElement;
+  private value = 0;
+
+  constructor(containerEl: HTMLElement) {
+    this.progressBar = childOf(containerEl, 'div', 'setting-progress-bar');
   }
 
   setValue(value: number): this {
@@ -195,60 +536,10 @@ export class SliderComponent {
     return this.value;
   }
 
-  setDynamicTooltip(): this {
+  setVisibility(visible: boolean): this {
+    const fake = asFake(this.progressBar);
+    if (fake) fake.hidden = !visible;
     return this;
-  }
-
-  onChange(_callback: (value: number) => void): this {
-    return this;
-  }
-}
-
-// ButtonComponent mock
-export class ButtonComponent {
-  buttonEl: HTMLButtonElement;
-  private clickCallback?: () => void;
-
-  constructor(_containerEl: HTMLElement) {
-    this.buttonEl = createMockElement('button') as HTMLButtonElement;
-  }
-
-  setButtonText(_text: string): this {
-    return this;
-  }
-
-  setIcon(_icon: string): this {
-    return this;
-  }
-
-  setTooltip(_tooltip: string): this {
-    return this;
-  }
-
-  setClass(_cls: string): this {
-    return this;
-  }
-
-  setCta(): this {
-    return this;
-  }
-
-  setWarning(): this {
-    return this;
-  }
-
-  setDisabled(_disabled: boolean): this {
-    return this;
-  }
-
-  onClick(callback: () => void): this {
-    this.clickCallback = callback;
-    return this;
-  }
-
-  // Helper for tests to trigger click
-  click(): void {
-    this.clickCallback?.();
   }
 }
 
@@ -297,8 +588,9 @@ export class AbstractInputSuggest<T> {
 }
 
 // setIcon mock
-export function setIcon(_element: HTMLElement, _iconId: string): void {
-  // Mock implementation
+export function setIcon(element: HTMLElement, iconId: string): void {
+  // Records the icon on FakeElements so structure tests can assert it.
+  asFake(element)?.setAttribute('data-icon', iconId);
 }
 
 // Debouncer<Args, V> — structural type matching Obsidian's public API.

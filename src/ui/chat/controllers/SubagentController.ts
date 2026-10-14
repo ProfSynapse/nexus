@@ -32,6 +32,28 @@ import type { ConversationData, ToolCall, ChatMessage } from '../../../types/cha
 import type { StreamingController } from './StreamingController';
 import type { ToolEventCoordinator } from '../coordinators/ToolEventCoordinator';
 import { isSubagentMetadata } from '../../../types/branch/BranchTypes';
+import type { ThinkingEffort } from '../../../types/llm/ProviderTypes';
+import {
+  resolveAgentModel,
+  resolveAgentRunSettings,
+  type ConversationAgentSettings
+} from '../../../services/llm/utils/SubagentModelResolver';
+import { DEFAULT_MODELS } from '../../../services/llm/adapters/ModelRegistry';
+
+/** Options the subagent executor passes to each streaming turn. */
+interface SubagentStreamOptions {
+  provider?: string;
+  model?: string;
+  systemPrompt?: string;
+  abortSignal?: AbortSignal;
+  workspaceId?: string;
+  sessionId?: string;
+  operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
+  operationScopeId?: string;
+  enableThinking?: boolean;
+  thinkingEffort?: ThinkingEffort;
+  temperature?: number;
+}
 
 interface SubagentResultPayload {
   success?: boolean;
@@ -60,12 +82,14 @@ export interface SubagentControllerDependencies {
  */
 export interface SubagentContextProvider {
   getCurrentConversation: () => ConversationData | null;
-  getSelectedModel: () => { providerId?: string; modelId?: string } | null;
+  getSelectedModel: () => { providerId?: string; modelId?: string; contextWindow?: number } | null;
   getSelectedPrompt: () => { name?: string; systemPrompt?: string } | null;
   getLoadedWorkspaceData: () => Record<string, unknown> | null;
   getContextNotes: () => string[];
   getThinkingSettings: () => { enabled?: boolean; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } | null;
   getSelectedWorkspaceId: () => string | null;
+  /** This chat's subagent settings (model, thinking, Creativity, context window). */
+  getAgentSettings?: () => ConversationAgentSettings | null;
 }
 
 /**
@@ -208,7 +232,7 @@ export class SubagentController {
       // Wire up to PromptManagerAgent
       deps.promptManagerAgent.setSubagentExecutor(
         this.subagentExecutor,
-        () => this.buildSubagentContext(contextProvider)
+        () => this.buildSubagentContext(contextProvider, deps.llmService)
       );
 
       // Initialize status menu if a container is provided. The optional
@@ -317,31 +341,13 @@ export class SubagentController {
     directToolExecutor: DirectToolExecutor
   ): (
     messages: ChatMessage[],
-    options: {
-      provider?: string;
-      model?: string;
-      systemPrompt?: string;
-      abortSignal?: AbortSignal;
-      workspaceId?: string;
-      sessionId?: string;
-      operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
-      operationScopeId?: string;
-    }
+    options: SubagentStreamOptions
   ) => AsyncGenerator<ChatRuntimeEvent, void, unknown> {
     const isOpenAITool = this.isOpenAITool.bind(this);
 
     return async function* (
       messages: ChatMessage[],
-      options: {
-        provider?: string;
-        model?: string;
-        systemPrompt?: string;
-        abortSignal?: AbortSignal;
-        workspaceId?: string;
-        sessionId?: string;
-        operationOrigin?: import('../../../types/tools/ToolOperationTypes').ToolExecutionOrigin;
-        operationScopeId?: string;
-      }
+      options: SubagentStreamOptions
     ) {
       try {
         const tools = shouldPassToolSchemasToProvider(options?.provider)
@@ -355,6 +361,9 @@ export class SubagentController {
           workspaceId: options?.workspaceId,
           operationOrigin: options?.operationOrigin,
           operationScopeId: options?.operationScopeId,
+          enableThinking: options?.enableThinking,
+          thinkingEffort: options?.thinkingEffort,
+          temperature: options?.temperature,
           tools,
         };
 
@@ -452,7 +461,7 @@ export class SubagentController {
   /**
    * Build context for subagent execution from current state
    */
-  private buildSubagentContext(contextProvider: SubagentContextProvider) {
+  private buildSubagentContext(contextProvider: SubagentContextProvider, llmService: LLMService) {
     const currentConversation = contextProvider.getCurrentConversation();
     const messages = currentConversation?.messages || [];
     const lastMessage = messages[messages.length - 1];
@@ -462,7 +471,27 @@ export class SubagentController {
     const selectedPrompt = contextProvider.getSelectedPrompt();
     const workspaceData = contextProvider.getLoadedWorkspaceData();
     const contextNotes = contextProvider.getContextNotes() || [];
-    const thinkingSettings = contextProvider.getThinkingSettings();
+    const conversationAgent = contextProvider.getAgentSettings?.() ?? undefined;
+    const agentDefaults = llmService.getAgentDefaults();
+
+    // Subagents use the subagent model: this chat's, then the default, then
+    // the chat model when it is a cloud model, then any cloud provider.
+    const agentModel = resolveAgentModel({
+      conversation: conversationAgent,
+      defaultAgent: agentDefaults.model,
+      chat: { provider: selectedModel?.providerId, model: selectedModel?.modelId },
+      availableProviders: llmService.getAvailableProviders(),
+      defaultModelFor: provider => DEFAULT_MODELS[provider]
+    });
+    const isChatModel = agentModel.provider === selectedModel?.providerId
+      && agentModel.model === selectedModel?.modelId;
+    const runSettings = resolveAgentRunSettings({
+      provider: agentModel.provider,
+      model: agentModel.model,
+      conversation: conversationAgent,
+      defaults: agentDefaults,
+      advertisedContextWindow: isChatModel ? selectedModel?.contextWindow : undefined
+    });
 
     return {
       conversationId: currentConversation?.id || 'unknown',
@@ -471,14 +500,17 @@ export class SubagentController {
       sessionId,
       source: 'internal' as const,
       isSubagentBranch: false,
-      provider: selectedModel?.providerId,
-      model: selectedModel?.modelId,
+      provider: agentModel.provider || undefined,
+      model: agentModel.model || undefined,
       agentPrompt: selectedPrompt?.systemPrompt,
       agentName: selectedPrompt?.name,
       workspaceData: workspaceData ?? undefined,
       contextNotes,
-      thinkingEnabled: thinkingSettings?.enabled,
-      thinkingEffort: thinkingSettings?.effort,
+      thinkingEnabled: runSettings.thinking.enabled,
+      thinkingEffort: runSettings.thinking.effort,
+      temperature: runSettings.temperature,
+      contextWindow: runSettings.contextWindow,
+      conversationAgent,
     };
   }
 

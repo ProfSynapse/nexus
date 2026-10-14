@@ -56,7 +56,6 @@ import { ChatEventBinder } from './utils/ChatEventBinder';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { generateUUID } from '../../utils/uuid';
-import { getContextWindowOverrideKey } from './utils/ContextWindowSettings';
 
 // Nexus Lifecycle
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
@@ -644,8 +643,8 @@ export class ChatView extends ItemView {
       onSidebarToggled: (_visible) => { /* Sidebar toggled */ }
     };
     this.uiStateController = new UIStateController(this.containerEl, uiStateEvents, this);
-    this.uiStateController.setOpenSettingsCallback(() => {
-      void this.openChatSettingsModal();
+    this.uiStateController.setOpenProviderSettingsCallback(() => {
+      this.openProviderSettings();
     });
     this.streamingController = new StreamingController(this.containerEl, this.app, this);
     this.nexusLoadingController = new NexusLoadingController(this.containerEl);
@@ -1141,17 +1140,12 @@ export class ChatView extends ItemView {
     }, this).open();
   }
 
-  /** Apply a changed default only to this active chat, through the normal handoff. */
-  async applyContextWindowDefault(overrides: Record<string, number>, changedKeys: ReadonlySet<string>): Promise<boolean> {
-    const model = this.modelAgentManager?.getSelectedModel();
-    if (!model) return true;
-    const key = getContextWindowOverrideKey(model.providerId, model.modelId);
-    if (!changedKeys.has(key)) return true;
-    return this.modelAgentManager.requestContextChange({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      contextWindowOverride: overrides[key]
-    });
+  /** The no-provider welcome sends the user to Settings → Nexus → Providers. */
+  private openProviderSettings(): void {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin?.openNexusSettings({ tab: 'providers' })) {
+      new Notice('Could not open settings. Add a provider in the Nexus settings.');
+    }
   }
 
   private async ensurePreservationServiceAndCompact(): Promise<void> {

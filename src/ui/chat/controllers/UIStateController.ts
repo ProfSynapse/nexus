@@ -11,7 +11,7 @@ export interface UIStateControllerEvents {
 
 export class UIStateController {
   private sidebarVisible = false;
-  private onOpenSettings?: () => void;
+  private onOpenProviderSettings?: () => void;
   private timeouts: ManagedTimeoutTracker;
 
   constructor(
@@ -27,10 +27,11 @@ export class UIStateController {
   }
 
   /**
-   * Set callback for opening settings
+   * Set the callback for the no-provider welcome button, which opens
+   * Settings → Nexus → Providers (not the per-chat settings modal).
    */
-  setOpenSettingsCallback(callback: () => void): void {
-    this.onOpenSettings = callback;
+  setOpenProviderSettingsCallback(callback: () => void): void {
+    this.onOpenProviderSettings = callback;
   }
 
   /**
@@ -107,9 +108,7 @@ export class UIStateController {
       setIcon(settingsBtnIcon, 'settings');
       settingsBtn.insertBefore(settingsBtnIcon, settingsBtn.firstChild);
       const settingsHandler = () => {
-        if (this.onOpenSettings) {
-          this.onOpenSettings();
-        }
+        this.onOpenProviderSettings?.();
       };
       this.registerClickHandler(settingsBtn, settingsHandler);
     }

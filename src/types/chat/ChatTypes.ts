@@ -177,6 +177,10 @@ export interface Conversation {
         enabled: boolean;
         effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
       };
+      /** Subagent Creativity for this chat (0-1). Absent: the defaults apply. */
+      agentTemperature?: number;
+      /** Subagent context budget for this chat. Absent or null: the subagent model's default. */
+      agentContextWindow?: number | null;
     };
     promptId?: string;
     workflowId?: string;

@@ -12,6 +12,8 @@ import { ChatSettingsRenderer, ChatSettings, ChatSettingsOptions } from '../../.
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { Settings } from '../../../settings';
 import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
+import { resolveSubagentTarget } from '../../../components/shared/chatSettings/subagentTarget';
+import { getRegistryContextWindow } from '../../../services/llm/utils/modelCapabilityLookup';
 
 /**
  * Type for the NexusPlugin with settings property
@@ -27,9 +29,9 @@ export class ChatSettingsModal extends Modal {
   private conversationId: string | null;
   private renderer: ChatSettingsRenderer | null = null;
   private pendingSettings: ChatSettings | null = null;
-  private displayedContextWindowOverrides: Record<string, number> | null = null;
   private saveButton: ButtonComponent | null = null;
   private saveStatus: HTMLElement | null = null;
+  private buttonContainer: HTMLElement | null = null;
   private saving = false;
   private ownsContextHandoff = false;
   private closed = false;
@@ -50,13 +52,20 @@ export class ChatSettingsModal extends Modal {
     this.closed = false;
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass('chat-settings-modal');
+    this.setTitle('Chat settings');
+    this.modalEl.addClass('chat-settings-modal');
 
-    // Header with buttons
-    const header = contentEl.createDiv('chat-settings-header');
-    header.createEl('h2', { text: 'Chat settings' });
+    // The renderer's container comes first so the form sits above the buttons
+    // even though it fills in asynchronously.
+    const rendererContainer = contentEl.createDiv('chat-settings-renderer');
 
-    const buttonContainer = header.createDiv('chat-settings-buttons');
+    // Cancel / Save sit at the bottom of the modal, outside the scrolling content.
+    this.buttonContainer?.remove();
+    const buttonContainer = this.modalEl.createDiv('modal-button-container');
+    this.buttonContainer = buttonContainer;
+    this.saveStatus = buttonContainer.createEl('p', { text: '', cls: 'chat-settings-save-status' });
+    this.saveStatus.setAttribute('role', 'status');
+    this.saveStatus.setAttribute('aria-live', 'polite');
     new ButtonComponent(buttonContainer)
       .setButtonText('Cancel')
       .onClick(() => this.close());
@@ -67,20 +76,17 @@ export class ChatSettingsModal extends Modal {
       .onClick(() => {
         void this.handleSave();
       });
-    this.saveStatus = buttonContainer.createEl('p', { text: '' });
-    this.saveStatus.setAttribute('role', 'status');
-    this.saveStatus.setAttribute('aria-live', 'polite');
 
     // Load data and render
-    void this.loadAndRender(contentEl);
+    void this.loadAndRender(rendererContainer);
   }
 
-  private async loadAndRender(contentEl: HTMLElement): Promise<void> {
+  private async loadAndRender(rendererContainer: HTMLElement): Promise<void> {
     const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
     const llmProviderSettings = plugin?.settings?.settings?.llmProviders;
 
     if (!llmProviderSettings) {
-      contentEl.createEl('p', { text: 'Settings not available' });
+      rendererContainer.createEl('p', { text: 'Settings not available' });
       return;
     }
 
@@ -95,14 +101,11 @@ export class ChatSettingsModal extends Modal {
     const initialSettings = this.getCurrentSettings();
     initialSettings.workflowId = workflowId;
 
-    // Create renderer
-    const rendererContainer = contentEl.createDiv('chat-settings-renderer');
-
     this.renderer = new ChatSettingsRenderer(rendererContainer, {
       app: this.app,
+      surface: 'chat',
       llmProviderSettings,
       initialSettings,
-      showWorkflowSelection: true,
       options: { workspaces, prompts },
       callbacks: {
         onSettingsChange: (settings) => {
@@ -148,13 +151,30 @@ export class ChatSettingsModal extends Modal {
       const key = getContextWindowOverrideKey(model.providerId, model.modelId);
       contextWindowOverrides[key] = this.modelAgentManager.getEffectiveContextWindow();
     }
-    this.displayedContextWindowOverrides = { ...contextWindowOverrides };
+
+    const provider = model?.providerId || llmSettings?.defaultModel?.provider || '';
+    const modelId = model?.modelId || llmSettings?.defaultModel?.model || '';
+    const agentProvider = this.modelAgentManager.getAgentProvider() || llmSettings?.agentModel?.provider || undefined;
+    const agentModel = this.modelAgentManager.getAgentModel() || llmSettings?.agentModel?.model || undefined;
+
+    // This chat's subagent limit is one number; the renderer keys it by the
+    // model the Subagents rows describe. A chat without its own limit shows
+    // the default limit, which is what its subagents would use.
+    const agentContextWindowOverrides: Record<string, number> = {};
+    const agentTarget = resolveSubagentTarget({ provider, model: modelId, agentProvider, agentModel });
+    if (agentTarget.provider && agentTarget.model) {
+      const key = getContextWindowOverrideKey(agentTarget.provider, agentTarget.model);
+      const agentContextWindow = this.modelAgentManager.getAgentContextWindow()
+        ?? llmSettings?.agentContextWindowOverrides?.[key]
+        ?? null;
+      if (agentContextWindow !== null) agentContextWindowOverrides[key] = agentContextWindow;
+    }
 
     return {
-      provider: model?.providerId || llmSettings?.defaultModel?.provider || '',
-      model: model?.modelId || llmSettings?.defaultModel?.model || '',
-      agentProvider: this.modelAgentManager.getAgentProvider() || llmSettings?.agentModel?.provider || undefined,
-      agentModel: this.modelAgentManager.getAgentModel() || llmSettings?.agentModel?.model || undefined,
+      provider,
+      model: modelId,
+      agentProvider,
+      agentModel,
       thinking: {
         enabled: thinking?.enabled ?? false,
         effort: thinking?.effort ?? 'medium'
@@ -166,6 +186,8 @@ export class ChatSettingsModal extends Modal {
         effort: agentThinking?.effort ?? 'medium'
       },
       temperature: temperature,
+      agentTemperature: this.modelAgentManager.getAgentTemperature(),
+      agentContextWindowOverrides,
       imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-3.1-flash-image',
       speechProvider: this.modelAgentManager.getSpeechProvider() || llmSettings?.defaultSpeechModel?.provider,
@@ -231,31 +253,7 @@ export class ChatSettingsModal extends Modal {
         if (!committed) return;
       }
 
-      const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
-      const llmProviders = plugin?.settings?.settings?.llmProviders;
-      if (llmProviders && settings.contextWindowOverrides) {
-        const displayed = this.displayedContextWindowOverrides ?? {};
-        const changedKeys = new Set([...Object.keys(displayed), ...Object.keys(settings.contextWindowOverrides)]);
-        const oldOverrides = llmProviders.contextWindowOverrides;
-        const nextOverrides = { ...oldOverrides };
-        let changed = false;
-        for (const key of changedKeys) {
-          if (displayed[key] === settings.contextWindowOverrides[key]) continue;
-          changed = true;
-          if (settings.contextWindowOverrides[key] === undefined) delete nextOverrides[key];
-          else nextOverrides[key] = settings.contextWindowOverrides[key];
-        }
-        if (changed) {
-          llmProviders.contextWindowOverrides = nextOverrides;
-          try {
-            await plugin?.settings?.saveSettings();
-          } catch (error) {
-            llmProviders.contextWindowOverrides = oldOverrides;
-            const reason = error instanceof Error ? error.message : 'Unknown error';
-            throw new Error(`Context change was saved, but default context settings could not be saved: ${reason}`);
-          }
-        }
-      }
+      // The context window applies to this conversation only; Defaults own the value for new chats.
       if (this.closed) return;
 
       // Update prompt
@@ -292,6 +290,12 @@ export class ChatSettingsModal extends Modal {
         this.modelAgentManager.setAgentThinkingSettings(settings.agentThinking);
       }
 
+      // Subagent Creativity and context limit for this chat
+      if (typeof settings.agentTemperature === 'number') {
+        this.modelAgentManager.setAgentTemperature(settings.agentTemperature);
+      }
+      this.modelAgentManager.setAgentContextWindow(this.resolveAgentContextWindow(settings));
+
       // Update temperature
       this.modelAgentManager.setTemperature(settings.temperature);
 
@@ -322,9 +326,11 @@ export class ChatSettingsModal extends Modal {
         settings.transcriptionModel || null
       );
 
-      // Save to conversation metadata
+      // Save to conversation metadata; with no conversation open, the next new one adopts them.
       if (this.conversationId) {
         await this.modelAgentManager.saveToConversation(this.conversationId);
+      } else {
+        this.modelAgentManager.carrySelectionsIntoNextConversation();
       }
 
       if (!this.closed) this.close();
@@ -340,13 +346,31 @@ export class ChatSettingsModal extends Modal {
     }
   }
 
+  /**
+   * The subagent limit to keep for this chat. The model maximum is stored as
+   * "no limit", except when Defaults set a lower one for that model: then the
+   * maximum is kept explicitly so this chat does not fall back to the default.
+   */
+  private resolveAgentContextWindow(settings: ChatSettings): number | null {
+    const target = resolveSubagentTarget(settings);
+    if (!target.provider || !target.model) return null;
+    const key = getContextWindowOverrideKey(target.provider, target.model);
+    const chosen = settings.agentContextWindowOverrides?.[key];
+    if (typeof chosen === 'number') return chosen;
+    const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
+    const defaultLimit = plugin?.settings?.settings?.llmProviders?.agentContextWindowOverrides?.[key];
+    if (typeof defaultLimit !== 'number') return null;
+    return getRegistryContextWindow(target.provider, target.model) ?? null;
+  }
+
   onClose(): void {
     this.closed = true;
     if (this.ownsContextHandoff) this.modelAgentManager.cancelContextHandoff();
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;
-    this.displayedContextWindowOverrides = null;
+    this.buttonContainer?.remove();
+    this.buttonContainer = null;
     this.contentEl.empty();
   }
 }

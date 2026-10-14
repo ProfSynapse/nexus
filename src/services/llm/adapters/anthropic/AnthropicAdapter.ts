@@ -19,7 +19,7 @@ import {
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
-import { ThinkingEffortMapper, mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
+import { ThinkingEffortMapper, isAnthropicAdaptiveThinkingModel, mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
 import type { AnthropicThinkingBlock, ThinkingEffort } from '../../../../types/llm/ProviderTypes';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
@@ -569,8 +569,7 @@ export class AnthropicAdapter extends BaseAdapter {
   }
 
   private supportsAdaptiveThinking(modelId: string): boolean {
-    const normalized = this.normalizeModelId(modelId);
-    return /^claude-(?:(?:fable|mythos|opus|sonnet)-(?:5(?:-|$)|4-(?:6|7|8)(?:-|$))|haiku-5-5(?:-|$))/.test(normalized);
+    return isAnthropicAdaptiveThinkingModel(this.normalizeModelId(modelId));
   }
 
   private captureThinkingBlock(
