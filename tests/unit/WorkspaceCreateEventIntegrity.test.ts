@@ -209,3 +209,112 @@ describeWithSqlite('WorkspaceEventApplier: replaying a duplicate workspace_creat
     expect(rows).toEqual([expect.objectContaining({ id: 'default', description: 'second life', created: 3 })]);
   });
 });
+
+/**
+ * Two `workspace_created` events with one name and different ids.
+ *
+ * 5.17-5.20.x appended a `workspace_created` even when the live INSERT then
+ * failed UNIQUE(name), and two devices can each create the same name before
+ * syncing. Each id has its own shard (ws_<id>.jsonl) and a rebuild replays the
+ * shards one after another in listing order. Replay used INSERT OR REPLACE, so
+ * the second shard's create DELETED the first workspace's row — its edits gone,
+ * its sessions/states/projects/tasks pointing at a workspace that no longer
+ * existed. The rule now: both rows survive under their own ids, the
+ * earliest-created keeps the name, the other becomes "<name> (<id>)", and the
+ * result does not depend on shard order.
+ */
+describeWithSqlite('WorkspaceEventApplier: two workspaces created with one name', () => {
+  const create = (id: string, created: number, description: string): WorkspaceEvent => ({
+    id: `c-${id}-${created}`, type: 'workspace_created', deviceId: 'dev', timestamp: created,
+    data: { id, name: 'Default Workspace', description, rootFolder: '/', created, isActive: true }
+  } as WorkspaceEvent);
+  const update = (workspaceId: string, timestamp: number, data: Record<string, unknown>): WorkspaceEvent => ({
+    id: `u-${workspaceId}-${timestamp}`, type: 'workspace_updated', deviceId: 'dev', timestamp,
+    workspaceId, data: { lastAccessed: timestamp, ...data }
+  } as WorkspaceEvent);
+  const session = (workspaceId: string, timestamp: number): WorkspaceEvent => ({
+    id: `s-${workspaceId}`, type: 'session_created', deviceId: 'dev', timestamp,
+    workspaceId, data: { id: `session-${workspaceId}`, name: 'S', startTime: timestamp }
+  } as WorkspaceEvent);
+
+  // Each array is one shard; shards replay whole, one after another.
+  const realShard = [create('default', 10, 'real'), update('default', 20, { description: 'EDITED' }), session('default', 21)];
+  const phantomShard = [create('ws_phantom', 30, 'phantom'), session('ws_phantom', 31)];
+
+  async function replayShards(shards: WorkspaceEvent[][]) {
+    const { cache, db } = openCache();
+    const applier = new WorkspaceEventApplier(cache as unknown as ISQLiteCacheManager);
+    for (const shard of shards) {
+      for (const event of shard) {
+        await applier.apply(event);
+      }
+    }
+    const workspaces = db.prepare('SELECT id, name, description, created FROM workspaces ORDER BY id').all();
+    const orphanSessions = db.prepare(
+      'SELECT s.id FROM sessions s LEFT JOIN workspaces w ON w.id = s.workspaceId WHERE w.id IS NULL'
+    ).all();
+    return { workspaces, orphanSessions };
+  }
+
+  const expected = [
+    { id: 'default', name: 'Default Workspace', description: 'EDITED', created: 10 },
+    { id: 'ws_phantom', name: 'Default Workspace (ws_phantom)', description: 'phantom', created: 30 }
+  ];
+
+  it('keeps the earlier workspace, its edits and its sessions when the later shard replays second', async () => {
+    const result = await replayShards([realShard, phantomShard]);
+    // Pre-fix: only ws_phantom survived; session-default was orphaned.
+    expect(result.workspaces).toEqual(expected);
+    expect(result.orphanSessions).toEqual([]);
+  });
+
+  it('gives the same result when the later shard replays first', async () => {
+    const result = await replayShards([phantomShard, realShard]);
+    expect(result.workspaces).toEqual(expected);
+    expect(result.orphanSessions).toEqual([]);
+  });
+
+  it('breaks a created-time tie by id, independent of shard order', async () => {
+    const a = [create('ws_a', 5, 'a')];
+    const b = [create('ws_b', 5, 'b')];
+    const forward = await replayShards([a, b]);
+    const reversed = await replayShards([b, a]);
+    expect(forward.workspaces).toEqual(reversed.workspaces);
+    expect(forward.workspaces).toEqual([
+      expect.objectContaining({ id: 'ws_a', name: 'Default Workspace' }),
+      expect.objectContaining({ id: 'ws_b', name: 'Default Workspace (ws_b)' })
+    ]);
+  });
+
+  it('applies the rest of an update whose rename collides, instead of failing the event', async () => {
+    const result = await replayShards([
+      realShard,
+      [
+        { ...create('ws_other', 40, 'other'), data: { id: 'ws_other', name: 'Other', created: 40, rootFolder: '/' } } as WorkspaceEvent,
+        update('ws_other', 50, { name: 'Default Workspace', description: 'kept' })
+      ]
+    ]);
+    // Pre-fix: UNIQUE constraint failed: workspaces.name, and 'kept' never landed.
+    expect(result.workspaces).toEqual([
+      expect.objectContaining({ id: 'default', name: 'Default Workspace', description: 'EDITED' }),
+      expect.objectContaining({ id: 'ws_other', name: 'Default Workspace (ws_other)', description: 'kept' })
+    ]);
+  });
+});
+
+describeWithSqlite('WorkspaceRepository.update: a rejected rename writes no event', () => {
+  it('refuses a name another workspace holds before appending', async () => {
+    const { cache, db } = openCache();
+    const log = createEventLog();
+    const repo = createRepository(cache, log.writer);
+    await repo.create(DEFAULT);
+    await repo.create({ ...DEFAULT, id: 'ws_other', name: 'Other' });
+
+    await expect(repo.update('ws_other', { name: 'Default Workspace', description: 'x' }))
+      .rejects.toThrow('UNIQUE constraint failed: workspaces.name');
+
+    // Pre-fix: a workspace_updated was appended, then the UPDATE threw.
+    expect(log.events.filter(e => e.type === 'workspace_updated')).toHaveLength(0);
+    expect(db.prepare("SELECT name FROM workspaces WHERE id = 'ws_other'").get()?.name).toBe('Other');
+  });
+});

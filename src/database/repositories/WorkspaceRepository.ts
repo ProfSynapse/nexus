@@ -178,6 +178,19 @@ export class WorkspaceRepository
   async update(id: string, data: UpdateWorkspaceData): Promise<void> {
     try {
       await this.transaction(async () => {
+        // 0. A rename onto another workspace's name would fail UNIQUE(name)
+        //    after the event below was already appended — the same orphan
+        //    event `create` guards against. Refuse it first.
+        if (data.name !== undefined) {
+          const holder = await this.sqliteCache.queryOne<{ id: string }>(
+            'SELECT id FROM workspaces WHERE name = ? AND id != ? LIMIT 1',
+            [data.name, id]
+          );
+          if (holder) {
+            throw new WorkspaceConflictError('name', holder.id, data.name);
+          }
+        }
+
         // 1. Write event to JSONL
         const eventData: Partial<{ name: string; description: string; rootFolder: string; lastAccessed: number; isActive: boolean; isArchived: boolean; dedicatedAgentId: string; contextJson: string }> = {
           lastAccessed: data.lastAccessed ?? Date.now()
@@ -248,7 +261,9 @@ export class WorkspaceRepository
       this.invalidateCache(id);
       this.log('update', { id });
     } catch (error) {
-      this.logError('update', error);
+      if (!(error instanceof WorkspaceConflictError)) {
+        this.logError('update', error);
+      }
       throw error;
     }
   }

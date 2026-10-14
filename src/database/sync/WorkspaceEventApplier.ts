@@ -106,27 +106,100 @@ export class WorkspaceEventApplier {
     // events. Replaying a duplicate as INSERT OR REPLACE reverted every edit
     // made before it. First create wins; later ones are no-ops. A create after
     // `workspace_deleted` still lands, because the delete purged the row.
-    // OR REPLACE is kept for the name constraint only, as before.
+    const existing = await this.sqliteCache.queryOne<{ id: string }>(
+      'SELECT id FROM workspaces WHERE id = ?',
+      [event.data.id]
+    );
+    if (existing) {
+      return;
+    }
+
+    const created = event.data.created ?? event.timestamp ?? Date.now();
+    const name = await this.claimNameForCreate(event.data.id, event.data.name, created);
+
     await this.sqliteCache.run(
-      `INSERT OR REPLACE INTO workspaces
+      `INSERT INTO workspaces
        (id, name, description, rootFolder, created, lastAccessed, isActive, isArchived, contextJson, dedicatedAgentId)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE NOT EXISTS (SELECT 1 FROM workspaces WHERE id = ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
-        event.data.name,
+        name,
         event.data.description ?? null,
         event.data.rootFolder ?? '',
-        event.data.created ?? Date.now(),
-        event.data.created ?? Date.now(),
+        created,
+        created,
         // Default to 1 (active) if not specified
         event.data.isActive !== undefined ? (event.data.isActive ? 1 : 0) : 1,
         event.data.isArchived !== undefined ? (event.data.isArchived ? 1 : 0) : 0,
         event.data.contextJson ?? null,
-        event.data.dedicatedAgentId ?? null,
-        event.data.id
+        event.data.dedicatedAgentId ?? null
       ]
     );
+  }
+
+  /**
+   * Decide which name a replayed `workspace_created` gets when another
+   * workspace (a different id) already holds that name.
+   *
+   * `UNIQUE(name)` used to be resolved by INSERT OR REPLACE, which DELETES the
+   * row holding the name. Two workspaces with one name in the event store is
+   * real history — 5.17-5.20.x appended a `workspace_created` even when the
+   * live INSERT then failed on the name, and two devices can each create
+   * "Project X" before they sync — so a rebuild silently dropped whichever
+   * workspace was replayed first, its edits, and the parent row of its
+   * sessions, states, traces, projects, tasks and conversations.
+   *
+   * Rule: both workspaces keep their rows and ids, so every reference to either
+   * id still resolves. The earliest-created one (ties: smaller id) keeps the
+   * plain name; the other is shown as "<name> (<id>)". Deciding by `created`
+   * rather than by arrival makes the result independent of the order the
+   * shard files are listed in. Merging the two under one id (aliasing) was
+   * rejected: every applier and every live lookup by id would need to learn
+   * the alias, and two genuinely different workspaces would be fused.
+   *
+   * Returns the name the incoming row should be inserted with. When the
+   * incoming workspace is the earlier one, the current holder is renamed out
+   * of the way first.
+   */
+  private async claimNameForCreate(id: string, name: string, created: number): Promise<string> {
+    const holder = await this.sqliteCache.queryOne<{ id: string; created: number | null }>(
+      'SELECT id, created FROM workspaces WHERE name = ? AND id != ?',
+      [name, id]
+    );
+    if (!holder) {
+      return name;
+    }
+
+    const holderCreated = typeof holder.created === 'number' ? holder.created : Number.POSITIVE_INFINITY;
+    const incomingWins = created < holderCreated || (created === holderCreated && id < holder.id);
+    if (!incomingWins) {
+      return this.disambiguatedName(name, id);
+    }
+
+    await this.sqliteCache.run(
+      'UPDATE workspaces SET name = ? WHERE id = ?',
+      [await this.disambiguatedName(name, holder.id), holder.id]
+    );
+    return name;
+  }
+
+  /**
+   * "<name> (<id>)" — derived from the id so the same history always yields
+   * the same name, with a counter only if a user already chose that exact text.
+   */
+  private async disambiguatedName(name: string, id: string): Promise<string> {
+    const base = `${name} (${id})`;
+    let candidate = base;
+    for (let n = 2; ; n++) {
+      const taken = await this.sqliteCache.queryOne<{ id: string }>(
+        'SELECT id FROM workspaces WHERE name = ? AND id != ?',
+        [candidate, id]
+      );
+      if (!taken) {
+        return candidate;
+      }
+      candidate = `${base} ${n}`;
+    }
   }
 
   private async applyWorkspaceUpdated(event: WorkspaceUpdatedEvent): Promise<void> {
@@ -137,7 +210,19 @@ export class WorkspaceEventApplier {
     const updates: string[] = [];
     const values: unknown[] = [];
 
-    if (event.data.name !== undefined) { updates.push('name = ?'); values.push(event.data.name); }
+    if (event.data.name !== undefined) {
+      // A rename onto a name another workspace holds would fail UNIQUE(name)
+      // and take the rest of this event (description, context, archive flag)
+      // down with it. Such events exist: the live update appended its event
+      // before SQLite rejected the name. Keep the rest, and give the name the
+      // same "<name> (<id>)" form a colliding create gets.
+      const holder = await this.sqliteCache.queryOne<{ id: string }>(
+        'SELECT id FROM workspaces WHERE name = ? AND id != ?',
+        [event.data.name, event.workspaceId]
+      );
+      const name = holder ? await this.disambiguatedName(event.data.name, event.workspaceId) : event.data.name;
+      updates.push('name = ?'); values.push(name);
+    }
     if (event.data.description !== undefined) { updates.push('description = ?'); values.push(event.data.description); }
     if (event.data.rootFolder !== undefined) { updates.push('rootFolder = ?'); values.push(event.data.rootFolder); }
     if (event.data.lastAccessed !== undefined) { updates.push('lastAccessed = ?'); values.push(event.data.lastAccessed); }
