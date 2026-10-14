@@ -195,6 +195,16 @@ describe('Chat settings', () => {
     }
   });
 
+  it('leaves Web search out of the summary when the provider offers no toggle for it', async () => {
+    const { container, renderer } = await renderChat({ provider: 'mistral', model: 'mistral-large-latest', webSearch: false });
+    try {
+      expect(rowNames(foldItems(container, FOLD_TITLES.chatOptions))).not.toContain(COPY.webSearch);
+      expect(foldSummary(container, FOLD_TITLES.chatOptions)).not.toContain('Web search');
+    } finally {
+      renderer.destroy();
+    }
+  });
+
   it('hides Thinking for a model that cannot reason and keeps the stored level', async () => {
     const { container, renderer } = await renderChat({ provider: 'mistral', model: 'mistral-large-latest' });
     try {

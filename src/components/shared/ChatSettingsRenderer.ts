@@ -459,8 +459,10 @@ export class ChatSettingsRenderer {
           this.settings.model = model ?? '';
           if (provider !== undefined) this.settings.provider = provider;
         }
-        // A newly picked model starts at its full window.
-        this.clearContextWindowOverride(variant);
+        // In a chat, a newly picked model starts at its full window. On
+        // Defaults every per-model limit is already saved and is that model's
+        // own preference, so picking a model keeps it.
+        if (this.surface !== 'defaults') this.clearContextWindowOverride(variant);
       },
       noProvidersText: isAgent ? COPY.noCloudProviders : COPY.noProviders,
       modelOptionMap: isAgent ? this.agentModelOptionMap : this.modelOptionMap,
@@ -694,9 +696,19 @@ export class ChatSettingsRenderer {
     return ['anthropic', 'openai', 'google', 'openrouter'].includes(this.settings.provider);
   }
 
+  /** Google models before Gemini 3 get an info row instead of a toggle. */
+  private isGeminiWithoutWebSearch(): boolean {
+    return this.settings.provider === 'google' && !this.settings.model.startsWith('gemini-3');
+  }
+
+  /** The Web search toggle is offered: only then does the summary report it. */
+  private hasWebSearchToggle(): boolean {
+    return this.surface === 'chat' && this.supportsWebSearch() && !this.isGeminiWithoutWebSearch();
+  }
+
   private renderWebSearchSetting(itemsEl: HTMLElement): void {
     if (!this.supportsWebSearch()) return;
-    if (this.settings.provider === 'google' && !this.settings.model.startsWith('gemini-3')) {
+    if (this.isGeminiWithoutWebSearch()) {
       new Setting(itemsEl)
         .setName(COPY.webSearch)
         .setDesc(COPY.webSearchGeminiDesc);
@@ -718,7 +730,7 @@ export class ChatSettingsRenderer {
       temperature: this.settings.temperature,
       supportsTemperature: this.capabilitiesFor('chat').supportsSamplingParams,
       contextWindow: this.getContextBudget('chat'),
-      webSearch: this.surface === 'chat' ? this.settings.webSearch === true : undefined
+      webSearch: this.hasWebSearchToggle() ? this.settings.webSearch === true : undefined
     });
   }
 

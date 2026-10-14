@@ -85,7 +85,7 @@ it('changing the chat provider and model keeps an open Context fold open and unt
     // The chat model's own groups did redraw: no Thinking for Mistral Large, a 128K window.
     expect(rowNames(topItems(container))).toEqual([COPY.provider, COPY.model]);
     expect(snapshotRows(container, FOLD_TITLES.chatOptions)[0]).not.toBe(optionsRows[0]);
-    expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Creativity 0.5 · 128K context · Web search off');
+    expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Creativity 0.5 · 128K context'); // Mistral has no Web search row.
     expect(renderer.getSettings()).toEqual(expect.objectContaining({ provider: 'mistral', model: 'mistral-large-latest' }));
   } finally {
     renderer.destroy();

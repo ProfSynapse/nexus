@@ -4,7 +4,8 @@
  *
  * Failures this buys: a 1-token slider (the old control), a budget set for one
  * model leaking into another (overrides are keyed by provider and model), a
- * new model inheriting a stale limit instead of starting at its maximum, a
+ * Defaults model switch deleting a saved per-model limit, a chat model pick
+ * inheriting a stale limit instead of starting at its maximum, a
  * saved size between stops being rewritten just by opening settings, a readout
  * that showed the value twice ("1,000,000 tokens 1000000"), and drags that
  * saved on every pixel. Real renderer and slider readout over the FakeElement
@@ -30,13 +31,13 @@ import { choose, control, findRow, flush, foldItems, foldSummary, localStorageAp
 const opus46 = getContextWindowOverrideKey('anthropic', 'claude-opus-4-6');
 const haiku55 = getContextWindowOverrideKey('anthropic', 'claude-haiku-5-5');
 
-async function setup(overrides: Partial<ChatSettings> = {}) {
+async function setup(overrides: Partial<ChatSettings> = {}, surface: 'defaults' | 'chat' = 'defaults') {
   const container = createFakeRoot();
   const app = localStorageApp();
   const onSettingsChange = jest.fn();
   const renderer = new ChatSettingsRenderer(container as unknown as HTMLElement, {
     app: app as never,
-    surface: 'defaults',
+    surface,
     foldStore: new FoldStateStore(app),
     llmProviderSettings: llmSettings(),
     initialSettings: chatSettings({ model: 'claude-opus-4-6', contextWindowOverrides: {}, ...overrides }),
@@ -75,7 +76,7 @@ it('snaps to the presets below the model maximum, then the maximum', async () =>
   }
 });
 
-it('starts a newly picked model at its maximum and keeps other models\' limits', async () => {
+it('on Defaults, picking a model shows its saved limit and never deletes one', async () => {
   const { container, renderer, slider, readouts } = await setup({
     contextWindowOverrides: { [opus46]: 64_000, [haiku55]: 350_000 }
   });
@@ -84,31 +85,56 @@ it('starts a newly picked model at its maximum and keeps other models\' limits',
 
     choose(control(findRow(topItems(container), COPY.model), 'select'), 'anthropic::claude-haiku-5-5');
     await flush();
-    // Claude Haiku 5.5: seven stops ending at 1M, thumb on the last.
-    expect(slider().value).toBe('6');
-    expect(readouts()).toEqual(['1M']);
-    expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Fixed temperature · 1M context');
-    expect(renderer.getSettings().contextWindowOverrides).toEqual({ [opus46]: 64_000 });
+    // Claude Haiku 5.5: seven stops ending at 1M; its saved 350K is the fifth.
+    expect(slider().value).toBe('4');
+    expect(readouts()).toEqual(['350K']);
 
+    // Switching away and back keeps Opus at its saved 64K.
     choose(control(findRow(topItems(container), COPY.model), 'select'), 'anthropic::claude-opus-4-6');
     await flush();
-    expect(readouts()).toEqual(['200K']);
-    expect(renderer.getSettings().contextWindowOverrides).toEqual({});
+    expect(readouts()).toEqual(['64K']);
+    expect(renderer.getSettings().contextWindowOverrides).toEqual({ [opus46]: 64_000, [haiku55]: 350_000 });
   } finally {
     renderer.destroy();
   }
 });
 
-it('starts at the maximum after a provider change too', async () => {
+it('on Defaults, a model without a saved limit starts at its maximum', async () => {
+  const { container, renderer, readouts } = await setup({ contextWindowOverrides: { [opus46]: 64_000 } });
+  try {
+    choose(control(findRow(topItems(container), COPY.model), 'select'), 'anthropic::claude-haiku-5-5');
+    await flush();
+    expect(readouts()).toEqual(['1M']);
+    expect(foldSummary(container, FOLD_TITLES.chatOptions)).toBe('Fixed temperature · 1M context');
+    expect(renderer.getSettings().contextWindowOverrides).toEqual({ [opus46]: 64_000 });
+  } finally {
+    renderer.destroy();
+  }
+});
+
+it('in a chat, a newly picked model starts at its maximum and keeps other models\' limits', async () => {
   const { container, renderer, readouts } = await setup({
-    contextWindowOverrides: { [getContextWindowOverrideKey('mistral', 'mistral-large-latest')]: 32_000 }
-  });
+    contextWindowOverrides: { [opus46]: 64_000, [haiku55]: 350_000 }
+  }, 'chat');
+  try {
+    choose(control(findRow(topItems(container), COPY.model), 'select'), 'anthropic::claude-haiku-5-5');
+    await flush();
+    expect(readouts()).toEqual(['1M']);
+    expect(renderer.getSettings().contextWindowOverrides).toEqual({ [opus46]: 64_000 });
+  } finally {
+    renderer.destroy();
+  }
+});
+
+it('on Defaults, a provider change shows the new model\'s saved limit', async () => {
+  const mistralLarge = getContextWindowOverrideKey('mistral', 'mistral-large-latest');
+  const { container, renderer, readouts } = await setup({ contextWindowOverrides: { [mistralLarge]: 32_000 } });
   try {
     choose(control(findRow(topItems(container), COPY.provider), 'select'), 'mistral');
     await flush();
     await flush();
-    expect(readouts()).toEqual(['128K']);
-    expect(renderer.getSettings().contextWindowOverrides).toEqual({});
+    expect(readouts()).toEqual(['32K']);
+    expect(renderer.getSettings().contextWindowOverrides).toEqual({ [mistralLarge]: 32_000 });
   } finally {
     renderer.destroy();
   }
