@@ -79,7 +79,7 @@ interface FakeHost {
  */
 function installHost(text = ''): FakeHost {
     const host: FakeHost = { textContent: text, detach: jest.fn() };
-    (window.activeDocument.body.createDiv as jest.Mock).mockReturnValue(host);
+    (window.document.body.createDiv as jest.Mock).mockReturnValue(host);
     return host;
 }
 
@@ -476,6 +476,39 @@ describe('BaseQueryRunner.run', () => {
 
         expect(vault.adapter.remove).toHaveBeenCalledWith(created);
         expect(files[created]).toBeUndefined();
+    });
+
+    // A query starts from a tool call, so whichever window has focus is
+    // arbitrary: a popout, or the Settings window (its own window since
+    // Obsidian 1.14). A host placed there is detached when that window closes,
+    // the controller's isShown() gate never opens, and the call times out.
+    it('hosts the render in the main window even while another window has focus', async () => {
+        registerLiveView();
+        const host = installHost();
+        renderCallsSinkWith(harvestable);
+        const { app } = makeApp({ 'A/Tasks.base': 'x' });
+        const focusedDoc = { body: { createDiv: jest.fn(() => ({ textContent: '', detach: jest.fn() })) } };
+        const testWindow = window as unknown as object;
+        const activeDocumentDescriptor = Object.getOwnPropertyDescriptor(testWindow, 'activeDocument');
+        Object.defineProperty(testWindow, 'activeDocument', { configurable: true, get: () => focusedDoc });
+
+        try {
+            await BaseQueryRunner.run({
+                app,
+                plugin: pluginWith(jest.fn().mockReturnValue(true)),
+                sourcePath: 'A/Tasks.base',
+                config: BASE_CONFIG,
+                viewName: 'Active',
+                limit: 10
+            });
+        } finally {
+            if (activeDocumentDescriptor) Object.defineProperty(testWindow, 'activeDocument', activeDocumentDescriptor);
+        }
+
+        expect(focusedDoc.body.createDiv).not.toHaveBeenCalled();
+        expect(window.document.body.createDiv).toHaveBeenCalledWith({ cls: 'nexus-base-analyze-host' });
+        expect((MarkdownRenderer.render as jest.Mock).mock.calls[0][2]).toBe(host);
+        expect(host.detach).toHaveBeenCalled();
     });
 
     it('deletes the scratch file even when the render never reports', async () => {

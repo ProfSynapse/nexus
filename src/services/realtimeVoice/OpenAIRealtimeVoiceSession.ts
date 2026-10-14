@@ -192,7 +192,12 @@ export class OpenAIRealtimeVoiceSession implements RealtimeVoiceSession {
     const outputAudio = createEl('audio');
     outputAudio.autoplay = true;
     outputAudio.addClass('chat-live-voice-output');
-    window.activeDocument.body.appendChild(outputAudio);
+    // The main window, never window.activeDocument. The element is hidden and
+    // lives for the whole session, but activeDocument is whichever window has
+    // focus when the call connects: after the awaited client-secret request
+    // that can be a popout or the Settings window (its own window since
+    // Obsidian 1.14), and closing it would silently kill the assistant's audio.
+    window.document.body.appendChild(outputAudio);
     this.outputAudio = outputAudio;
 
     peerConnection.ontrack = (event) => {
