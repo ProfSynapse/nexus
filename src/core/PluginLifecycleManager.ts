@@ -29,11 +29,6 @@ import type { RouterState } from '../settings/SettingsRouter';
 // Type-only import to avoid bundling Node.js dependencies on mobile
 type MCPConnectorType = import('../connector').MCPConnector;
 
-// Interface for services with storage state management
-interface StateManager {
-    saveState(): Promise<void>;
-}
-
 /**
  * Extended Plugin interface with required service methods
  * Used for proper typing when passing plugin to child managers
@@ -478,16 +473,6 @@ export class PluginLifecycleManager {
                     await this.embeddingManager.shutdown();
                 } catch (error) {
                     void error;
-                }
-            }
-
-            // Save processed files state before cleanup
-            const stateManager = this.config.serviceManager?.getServiceIfReady<StateManager>('stateManager');
-            if (stateManager && typeof stateManager.saveState === 'function') {
-                try {
-                    await stateManager.saveState();
-                } catch (error) {
-                    console.error('[PluginLifecycleManager] Failed to save state during shutdown:', error);
                 }
             }
 

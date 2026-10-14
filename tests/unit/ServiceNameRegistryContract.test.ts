@@ -29,13 +29,9 @@ const SRC = path.join(ROOT, 'src');
  * Lookups known to target a name nothing registers, kept so this contract can
  * land without widening its change. Each entry must stay unregistered (the
  * last test fails once it is fixed, so the list only shrinks) and must never
- * gain a member.
- *
- * - `stateManager`: PluginLifecycleManager's shutdown asks for it to save
- *   processed-file state. ProcessedFilesStateManager was removed in the
- *   simplify-search-architecture work, so the lookup is a no-op.
+ * gain a member. It is empty now; keep it that way.
  */
-const KNOWN_UNREGISTERED = new Set(['stateManager']);
+const KNOWN_UNREGISTERED = new Set<string>();
 
 /**
  * `getServiceIfReady('x')`, `getServiceIfReady<T>('x')`, `?.getService?.<T>("x")`
