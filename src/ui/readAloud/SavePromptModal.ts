@@ -21,6 +21,7 @@ export class SavePromptModal extends Modal {
 
   onOpen(): void {
     this.modalEvents = new Component();
+    this.modalEvents.load();
     const { contentEl } = this;
     contentEl.addClass('read-aloud-save-prompt');
 

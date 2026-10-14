@@ -100,3 +100,29 @@ it('removes its click listener on unload', () => {
   accordion.unload();
   expect(toggle.listenerCount('click')).toBe(0);
 });
+
+it('wraps the toggle in a heading and labels the content region by it (WAI-ARIA accordion)', () => {
+  const { accordion, el } = build();
+  const heading = el('.nexus-accordion-heading');
+  expect(heading.getAttribute('role')).toBe('heading');
+  expect(heading.getAttribute('aria-level')).toBe('3');
+  expect((accordion.rootEl as unknown as FakeElement).children[0]).toBe(heading);
+  expect(heading.children).toEqual([accordion.toggleEl]);
+
+  const toggleId = el('.nexus-accordion-toggle').getAttribute('id');
+  expect(toggleId).toBeTruthy();
+  const content = el('.nexus-accordion-content');
+  expect(content.getAttribute('role')).toBe('region');
+  expect(content.getAttribute('aria-labelledby')).toBe(toggleId);
+
+  expect(build({ headingLevel: 2 }).el('.nexus-accordion-heading').getAttribute('aria-level')).toBe('2');
+});
+
+it('unload() removes the click listener, as it does in Obsidian (which skips never-loaded components)', () => {
+  const { accordion, el, onToggle } = build();
+  expect(el('.nexus-accordion-toggle').listenerCount('click')).toBe(1);
+  accordion.unload();
+  expect(el('.nexus-accordion-toggle').listenerCount('click')).toBe(0);
+  el('.nexus-accordion-toggle').click();
+  expect(onToggle).not.toHaveBeenCalled();
+});

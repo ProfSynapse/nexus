@@ -101,6 +101,7 @@ describe('BoxedSection — re-instantiation invariants (C-3)', () => {
     it('action click invokes onAction via registerDomEvent (not raw addEventListener)', () => {
       const container = makeEl();
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const onAction = jest.fn();
 
       new BoxedSection(container as unknown as HTMLElement, {
@@ -128,6 +129,7 @@ describe('BoxedSection — re-instantiation invariants (C-3)', () => {
     it('unload() removes the click listener wired by registerDomEvent', () => {
       const container = makeEl();
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const onAction = jest.fn();
 
       new BoxedSection(container as unknown as HTMLElement, {
@@ -154,6 +156,7 @@ describe('BoxedSection — re-instantiation invariants (C-3)', () => {
     it('second BoxedSection instance gets its own wired handler; old handler de-registered via unload', () => {
       const host = makeEl();
       const sharedComponent = new Component();
+      sharedComponent.load(); // Obsidian only runs cleanups for a loaded component.
 
       // First render — placeholder.
       const firstAction = jest.fn();

@@ -56,6 +56,7 @@ function stubResizeObserver() {
 function makeLine() {
   const slot = createMockElement('div');
   const component = new Component();
+  component.load(); // Obsidian only runs cleanups for a loaded component.
   const line = new ToolStatusLine(slot, component);
   const createdSlots = () =>
     (slot.createDiv as jest.Mock).mock.results.map(r => r.value as HTMLElement);

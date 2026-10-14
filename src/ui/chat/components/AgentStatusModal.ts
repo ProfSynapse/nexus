@@ -118,6 +118,7 @@ export class AgentStatusModal extends Modal {
     const { contentEl } = this;
     this.renderEvents?.unload();
     this.renderEvents = new Component();
+    this.renderEvents.load();
     contentEl.empty();
 
     // Get running agents from executor (in-memory, has lastToolUsed)

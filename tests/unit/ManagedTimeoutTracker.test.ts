@@ -13,6 +13,7 @@ describe('ManagedTimeoutTracker', () => {
   describe('schedule', () => {
     it('returns a clearTimeout-compatible id', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
       const id = tracker.schedule(cb, 100);
@@ -23,6 +24,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('executes callback after delay', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
       tracker.schedule(cb, 500);
@@ -33,6 +35,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('tracks multiple ids independently', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb1 = jest.fn();
       const cb2 = jest.fn();
@@ -47,6 +50,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('self-removes id from set after firing so set does not grow unboundedly', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
       tracker.schedule(cb, 50);
@@ -59,6 +63,7 @@ describe('ManagedTimeoutTracker', () => {
   describe('clear', () => {
     it('cancels all pending timeouts', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb1 = jest.fn();
       const cb2 = jest.fn();
@@ -72,6 +77,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('is idempotent — calling clear twice does not throw', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       tracker.schedule(jest.fn(), 100);
       tracker.clear();
@@ -80,6 +86,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('is idempotent on empty tracker', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       expect(() => tracker.clear()).not.toThrow();
     });
@@ -88,6 +95,7 @@ describe('ManagedTimeoutTracker', () => {
   describe('Component lifecycle integration', () => {
     it('registers a cleanup callback via component.register', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const spy = jest.spyOn(component, 'register');
       new ManagedTimeoutTracker(component);
       expect(spy).toHaveBeenCalledWith(expect.any(Function));
@@ -95,6 +103,7 @@ describe('ManagedTimeoutTracker', () => {
 
     it('Component unload triggers clear — cancels pending timeouts', () => {
       const component = new Component();
+      component.load(); // Obsidian only runs cleanups for a loaded component.
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
       tracker.schedule(cb, 500);

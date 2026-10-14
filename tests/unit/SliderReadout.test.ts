@@ -15,6 +15,7 @@ import { bindSliderReadout } from '../../src/components/shared/settings/sliderRe
 function renderSlider(value: number, configure?: (slider: SliderComponent) => void) {
   const root = createFakeRoot();
   const events = new Component();
+  events.load(); // Obsidian only runs cleanups for a loaded component.
   const setting = new Setting(root as unknown as HTMLElement).setName('Creativity');
   let slider!: SliderComponent;
   setting.addSlider(s => {
@@ -56,6 +57,7 @@ it('adds exactly one readout before the input on builds without a native one', (
   (slider as unknown as { setDisplayFormat?: unknown }).setDisplayFormat = undefined;
   slider.setValue(3);
   const events = new Component();
+  events.load(); // Obsidian only runs cleanups for a loaded component.
   const readout = bindSliderReadout(events, setting, slider as never, v => `Level ${v}`);
   const control = setting.controlEl as unknown as FakeElement;
   const readouts = control.querySelectorAll('.slider-value');

@@ -35,6 +35,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-current');
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -51,6 +52,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-current');
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -69,6 +71,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming(null);
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -84,6 +87,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming(null);
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -101,6 +105,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-old');
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -117,6 +122,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-old');
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       streaming as unknown as StreamingController,
@@ -134,6 +140,7 @@ describe('ToolStatusBarController — batch entries (no debounce)', () => {
   it('pushes each entry synchronously to the status bar', () => {
     const bar = makeBar();
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       makeStreaming('m1') as unknown as StreamingController,
@@ -148,6 +155,7 @@ describe('ToolStatusBarController — batch entries (no debounce)', () => {
   it('forwards all rapid-fire entries (no coalescing)', () => {
     const bar = makeBar();
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       makeStreaming('m1') as unknown as StreamingController,
@@ -166,6 +174,7 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
   it('stops forwarding entries after the owning component unloads', () => {
     const bar = makeBar();
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       makeStreaming('m1') as unknown as StreamingController,
@@ -184,6 +193,7 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
   it('drops entries after component unload (isDisposed guard)', () => {
     const bar = makeBar();
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       makeStreaming('m1') as unknown as StreamingController,
@@ -204,6 +214,7 @@ describe('ToolStatusBarController — accessors', () => {
   it('exposes the wrapped status bar via getStatusBar', () => {
     const bar = makeBar();
     const component = new Component();
+    component.load(); // Obsidian only runs cleanups for a loaded component.
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
       makeStreaming('m1') as unknown as StreamingController,

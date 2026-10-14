@@ -18,6 +18,7 @@ export class ConversationTitleModal extends Modal {
 
   onOpen(): void {
     this.modalEvents = new Component();
+    this.modalEvents.load();
     const { contentEl } = this;
     contentEl.addClass('chat-conversation-title-modal');
 

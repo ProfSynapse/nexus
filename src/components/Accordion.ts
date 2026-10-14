@@ -11,6 +11,8 @@ export interface AccordionOptions {
     icon?: string;
     /** One-line summary shown under the title while the fold is closed. */
     summary?: string;
+    /** aria-level of the heading that wraps the toggle. Defaults to 3. */
+    headingLevel?: number;
     /** Open on creation. Defaults to closed. */
     open?: boolean;
     /** Called once per user toggle (and for non-silent setOpen calls that change state). */
@@ -24,16 +26,21 @@ let accordionSequence = 0;
  *
  * Markup:
  *   div.nexus-accordion[.is-open]
- *     button.nexus-accordion-toggle[aria-expanded][aria-controls]
- *       span.nexus-accordion-icon
- *       span.nexus-accordion-text > span.nexus-accordion-title + span.nexus-accordion-summary
- *       span.nexus-accordion-chevron
- *     div.nexus-accordion-content.setting-group[id][hidden]
+ *     div.nexus-accordion-heading[role=heading][aria-level]
+ *       button.nexus-accordion-toggle[id][aria-expanded][aria-controls]
+ *         span.nexus-accordion-icon
+ *         span.nexus-accordion-text > span.nexus-accordion-title + span.nexus-accordion-summary
+ *         span.nexus-accordion-chevron
+ *     div.nexus-accordion-content.setting-group[id][role=region][aria-labelledby][hidden]
  *       div.setting-items   (exposed as itemsEl; the same node for the accordion's lifetime)
  *
  * The content reuses Obsidian's setting-group markup so rows added with
  * `new Setting(accordion.itemsEl)` get the core 1.11+ group styling. The toggle
- * is a native button, so Enter and Space work without extra key handling.
+ * is a native button, so Enter and Space work without extra key handling, and
+ * it sits in a heading (the WAI-ARIA accordion pattern) so screen-reader
+ * heading navigation reaches each fold. The accordion loads itself, so
+ * `unload()` really removes its listener (Obsidian's unload is a no-op on a
+ * component that was never loaded).
  */
 export class Accordion extends Component {
     readonly containerEl: HTMLElement;
@@ -55,14 +62,20 @@ export class Accordion extends Component {
         this.summary = options.summary ?? '';
         this.onToggle = options.onToggle;
 
-        const contentId = `nexus-accordion-${options.id}-${++accordionSequence}`;
+        const baseId = `nexus-accordion-${options.id}-${++accordionSequence}`;
+        const contentId = baseId;
+        const toggleId = `${baseId}-toggle`;
 
         this.rootEl = containerEl.createDiv({ cls: 'nexus-accordion' });
         this.rootEl.setAttribute('data-fold', options.id);
 
-        this.toggleEl = this.rootEl.createEl('button', {
+        const headingEl = this.rootEl.createDiv({
+            cls: 'nexus-accordion-heading',
+            attr: { role: 'heading', 'aria-level': String(options.headingLevel ?? 3) }
+        });
+        this.toggleEl = headingEl.createEl('button', {
             cls: 'nexus-accordion-toggle',
-            attr: { type: 'button', 'aria-controls': contentId }
+            attr: { type: 'button', id: toggleId, 'aria-controls': contentId }
         });
 
         if (options.icon) {
@@ -75,10 +88,14 @@ export class Accordion extends Component {
         this.summaryEl = textEl.createSpan({ cls: 'nexus-accordion-summary' });
         this.chevronEl = this.toggleEl.createSpan({ cls: 'nexus-accordion-chevron' });
 
-        this.contentEl = this.rootEl.createDiv({ cls: ['nexus-accordion-content', 'setting-group'] });
+        this.contentEl = this.rootEl.createDiv({
+            cls: ['nexus-accordion-content', 'setting-group'],
+            attr: { role: 'region', 'aria-labelledby': toggleId }
+        });
         this.contentEl.id = contentId;
         this.itemsEl = this.contentEl.createDiv({ cls: 'setting-items' });
 
+        this.load();
         this.registerDomEvent(this.toggleEl, 'click', () => this.toggle());
         this.applyState();
     }
