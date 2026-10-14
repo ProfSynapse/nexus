@@ -1144,7 +1144,7 @@ export class ChatView extends ItemView {
   private openProviderSettings(): void {
     const plugin = getNexusPlugin<NexusPlugin>(this.app);
     if (!plugin?.openNexusSettings({ tab: 'providers' })) {
-      new Notice('Open Settings → Nexus → Providers to add a provider.');
+      new Notice('Could not open settings. Add a provider in the Nexus settings.');
     }
   }
 
