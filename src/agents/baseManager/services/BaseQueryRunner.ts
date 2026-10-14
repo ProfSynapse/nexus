@@ -150,7 +150,13 @@ export class BaseQueryRunner {
     const started = Date.now();
     const rendezvous = awaitAnalyzeView(scratchViewName);
     const component = new Component();
-    const host = window.activeDocument.body.createDiv({ cls: HOST_CLASS });
+    // The main window, never window.activeDocument. A query is started by a
+    // tool call, not a click, so the focused window is arbitrary: a popout or
+    // the Settings window (its own window since Obsidian 1.14). If that window
+    // closes mid-query the host is detached, the controller's isShown() gate
+    // stays false, and the call times out with no rows. Nothing is shown to
+    // the user, so the main window is always the right host.
+    const host = window.document.body.createDiv({ cls: HOST_CLASS });
     let created = false;
 
     try {

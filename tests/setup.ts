@@ -176,6 +176,12 @@ if (!testGlobal.window) {
     configurable: true,
     get: () => testGlobal.document ?? mockDocument
   });
+  // The main window's own document. Same object as activeDocument by default;
+  // multi-window tests override activeDocument to tell the two apart.
+  Object.defineProperty(mockWindow, 'document', {
+    configurable: true,
+    get: () => testGlobal.document ?? mockDocument
+  });
   Object.defineProperty(mockWindow, 'activeWindow', {
     configurable: true,
     get: () => mockWindow

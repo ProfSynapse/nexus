@@ -3,6 +3,7 @@ import type { ResolvedRealtimeVoiceSessionRequest } from '../../src/services/rea
 
 type TestableOpenAIRealtimeVoiceSession = OpenAIRealtimeVoiceSession & {
   handleServerEvent: (rawData: unknown) => void;
+  attachRemoteAudio: (peerConnection: RTCPeerConnection) => void;
 };
 
 describe('OpenAIRealtimeVoiceSession', () => {
@@ -100,5 +101,33 @@ describe('OpenAIRealtimeVoiceSession', () => {
     }));
 
     expect(onAssistantTranscriptCompleted).toHaveBeenCalledWith('Fallback transcript.');
+  });
+  // The output <audio> element lives for the whole session and is hidden. It
+  // is attached after an awaited network request, by which time focus may be
+  // in a popout or the Settings window (its own window since Obsidian 1.14);
+  // closing that window would take the assistant's voice with it.
+  it('attaches the hidden output audio to the main window, not the focused one', () => {
+    const testWindow = window as unknown as object;
+    const focusedDoc = { body: { appendChild: jest.fn() } };
+    const descriptor = Object.getOwnPropertyDescriptor(testWindow, 'activeDocument');
+    Object.defineProperty(testWindow, 'activeDocument', { configurable: true, get: () => focusedDoc });
+
+    const session = createSession();
+    const peerConnection = {} as RTCPeerConnection;
+    try {
+      session.attachRemoteAudio(peerConnection);
+    } finally {
+      if (descriptor) Object.defineProperty(testWindow, 'activeDocument', descriptor);
+    }
+
+    expect(focusedDoc.body.appendChild).not.toHaveBeenCalled();
+    expect(window.document.body.appendChild).toHaveBeenCalledTimes(1);
+    const audio = (window.document.body.appendChild as jest.Mock).mock.calls[0][0] as { tagName: string };
+    expect(audio.tagName).toBe('AUDIO');
+
+    // The node-env mock element has no media API; stop() pauses before removing.
+    Object.assign(audio, { pause: jest.fn() });
+    session.stop();
+    expect((audio as unknown as { remove: jest.Mock }).remove).toHaveBeenCalled();
   });
 });

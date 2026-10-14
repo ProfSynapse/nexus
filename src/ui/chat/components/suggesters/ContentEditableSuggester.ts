@@ -20,6 +20,8 @@ export abstract class ContentEditableSuggester<T> {
   protected isActive = false;
   protected component?: Component;
   private clickOutsideHandler?: (e: MouseEvent) => void;
+  /** The document the click-outside listener was added to, so destroy() removes it from the same one. */
+  private clickOutsideDoc: Document | null = null;
 
   constructor(app: App, element: HTMLElement, config: SuggesterConfig, component?: Component) {
     this.app = app;
@@ -69,11 +71,22 @@ export abstract class ContentEditableSuggester<T> {
         window.setTimeout(() => this.closeSuggestions(), 100);
       }
     };
+    // The input's own document, never window.activeDocument. Suggesters are
+    // built with the chat view, when focus may be in another window (a chat
+    // view restored into a popout loads while the main window has focus), so
+    // activeDocument would listen to the wrong window for the life of the view.
+    const doc = this.ownerDocument();
+    this.clickOutsideDoc = doc;
     if (this.component) {
-      this.component.registerDomEvent(window.activeDocument, 'click', this.clickOutsideHandler);
+      this.component.registerDomEvent(doc, 'click', this.clickOutsideHandler);
     } else {
-      window.activeDocument.addEventListener('click', this.clickOutsideHandler);
+      doc.addEventListener('click', this.clickOutsideHandler);
     }
+  }
+
+  /** The document the input element lives in: the chat view's window. */
+  private ownerDocument(): Document {
+    return this.element.ownerDocument ?? window.document;
   }
 
   /**
@@ -213,7 +226,7 @@ export abstract class ContentEditableSuggester<T> {
    * Create suggestion container
    */
   private createSuggestionContainer(): void {
-    this.suggestionContainer = window.activeDocument.body.createDiv('suggester-container');
+    this.suggestionContainer = this.ownerDocument().body.createDiv('suggester-container');
     this.suggestionContainer.classList.add('suggester-container-positioned', 'suggester-container-hidden');
   }
 
@@ -225,7 +238,8 @@ export abstract class ContentEditableSuggester<T> {
 
     const rect = this.element.getBoundingClientRect();
     this.suggestionContainer.style.left = rect.left + 'px';
-    this.suggestionContainer.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    const viewportHeight = (this.ownerDocument().defaultView ?? window).innerHeight;
+    this.suggestionContainer.style.bottom = (viewportHeight - rect.top + 4) + 'px';
     this.suggestionContainer.style.width = rect.width + 'px';
   }
 
@@ -288,9 +302,10 @@ export abstract class ContentEditableSuggester<T> {
     }
 
     // Remove document click listener
-    if (this.clickOutsideHandler) {
-      window.activeDocument.removeEventListener('click', this.clickOutsideHandler);
+    if (this.clickOutsideHandler && this.clickOutsideDoc) {
+      this.clickOutsideDoc.removeEventListener('click', this.clickOutsideHandler);
     }
+    this.clickOutsideDoc = null;
 
     if (this.suggestionContainer) {
       this.suggestionContainer.remove();
