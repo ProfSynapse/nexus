@@ -4,7 +4,7 @@ Nexus works with any tool that supports the Model Context Protocol (MCP). Below 
 
 **Requires**: [Node.js](https://nodejs.org/) v18+ installed on your machine.
 
-Create or refresh `connector.js` from **Nexus settings -> Get started -> MCP integration** before adding Nexus to an external agent. Obsidian community releases only ship `main.js`, `manifest.json`, and `styles.css`, so `connector.js` is generated locally when you explicitly set up MCP.
+Claude Desktop, Claude Code, Codex and Antigravity can be connected in one click from **Nexus settings -> Get started -> Connect an external agent**. For any other agent, create or refresh `connector.js` from the **Other agents** steps on that same page before adding Nexus to its config. Obsidian community releases only ship `main.js`, `manifest.json`, and `styles.css`, so `connector.js` is generated locally when you explicitly set up MCP.
 
 **The server entry** you'll be adding everywhere:
 - **Command**: `node`
@@ -21,7 +21,7 @@ Replace `/path/to/Vault/` with the actual path to your Obsidian vault.
 | Claude Desktop | `claude_desktop_config.json` | `mcpServers` | JSON | Yes (full quit) |
 | Claude Code (CLI) | `.mcp.json` | `mcpServers` | JSON | No (auto) |
 | Codex CLI | `~/.codex/config.toml` | `[mcp_servers.name]` | **TOML** | No |
-| Gemini CLI | `~/.gemini/settings.json` | `mcpServers` | JSON | No |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers` | JSON | Yes |
 | GitHub Copilot (VS Code) | `.vscode/mcp.json` | **`servers`** | JSON | Maybe |
 | Cline | `cline_mcp_settings.json` | `mcpServers` | JSON | No (auto) |
 | Roo Code | `cline_mcp_settings.json` or `.roo/mcp.json` | `mcpServers` | JSON | No |
@@ -126,9 +126,11 @@ args = ["/path/to/Vault/.obsidian/plugins/nexus/connector.js"]
 
 ---
 
-## Gemini CLI
+## Antigravity
 
-**Config file**: `~/.gemini/settings.json` (user-level) or `.gemini/settings.json` (project-level)
+**Config file**: `~/.gemini/config/mcp_config.json` (on Windows, `%USERPROFILE%\.gemini\config\mcp_config.json`). Older Antigravity builds used `~/.gemini/antigravity/mcp_config.json`; Nexus still recognizes that file when it shows connection status, but writes the new location.
+
+**One click**: **Nexus settings -> Get started -> Connect an external agent -> Antigravity -> Connect** writes this entry for you.
 
 **First MCP server**:
 ```json
@@ -142,7 +144,7 @@ args = ["/path/to/Vault/.obsidian/plugins/nexus/connector.js"]
 }
 ```
 
-**Adding to existing** — add inside the existing `mcpServers` object.
+**Adding to existing** — add inside the existing `mcpServers` object, then restart Antigravity so it loads Nexus.
 
 ---
 
