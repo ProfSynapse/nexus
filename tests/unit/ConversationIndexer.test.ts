@@ -268,16 +268,17 @@ describe('ConversationIndexer', () => {
       expect(result.total).toBe(1);
     });
 
-    it('should handle empty conversations list', async () => {
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)    // no existing state
-        .mockResolvedValueOnce(null);   // updateBackfillState (completed with 0)
+    it('should handle empty conversations list without recording completion', async () => {
+      mocks.mockDb.queryOne.mockResolvedValueOnce(null); // no existing state
 
       mocks.mockDb.query.mockResolvedValueOnce([]); // no conversations
 
       const result = await indexer.start(null);
 
       expect(result).toEqual({ total: 0, processed: 0 });
+      // An empty table is usually a cache that has not replayed yet. A
+      // 'completed' row written here blocked every later backfill.
+      expect(mocks.mockDb.run).not.toHaveBeenCalled();
     });
 
     it('should skip conversations with no messages', async () => {
@@ -630,6 +631,8 @@ describe('ConversationIndexer resume checkpoint', () => {
     const save = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
     /** Conversation ids whose messages were fetched, in order, across all runs. */
     const messageFetches: string[] = [];
+    /** Conversations that would have rows in conversation_embedding_metadata. */
+    const indexed = new Set<string>();
 
     const conversations = conversationIds.map(id => ({
       id,
@@ -649,12 +652,19 @@ describe('ConversationIndexer resume checkpoint', () => {
         return null;
       }),
       query: jest.fn(async (sql: string, params?: unknown[]) => {
+        // The completed-backfill catch-up: conversations with no embedding
+        // rows. Every conversation here yields a QA pair, so one whose messages
+        // were read has rows.
+        if (sql.includes('conversation_embedding_metadata')) {
+          return conversations.filter(c => !indexed.has(c.id)).map(c => ({ ...c }));
+        }
         if (sql.includes('FROM conversations')) {
           return conversations.map(c => ({ ...c }));
         }
         if (sql.includes('FROM messages')) {
           const conversationId = String(params?.[0] ?? '');
           messageFetches.push(conversationId);
+          indexed.add(conversationId);
           return [
             { ...createMessageRow({ id: `${conversationId}-m0`, conversationId, role: 'user', sequenceNumber: 0 }) },
             { ...createMessageRow({ id: `${conversationId}-m1`, conversationId, role: 'assistant', sequenceNumber: 1 }) }
