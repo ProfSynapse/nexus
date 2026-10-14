@@ -67,6 +67,24 @@ interface SQLiteMaintenanceServiceOptions {
   blobStore?: CacheBlobStore;
 }
 
+/**
+ * The vec0 tables that hold embedding vectors. Each is created in
+ * schema.ts as `USING vec0(embedding float[384])`; a test holds the two in step.
+ */
+export const EMBEDDING_VECTOR_TABLES = [
+  'note_embeddings',
+  'trace_embeddings',
+  'conversation_embeddings'
+] as const;
+
+/** Row tables that describe the vectors, plus the conversation backfill cursor. */
+export const EMBEDDING_METADATA_TABLES = [
+  'embedding_metadata',
+  'trace_embedding_metadata',
+  'conversation_embedding_metadata',
+  'embedding_backfill_state'
+] as const;
+
 export class SQLiteMaintenanceService {
   private readonly app: App;
   private dbPath: string;
@@ -113,6 +131,33 @@ export class SQLiteMaintenanceService {
       this.bridge.exec(db, 'CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])');
       this.bridge.exec(db, 'DELETE FROM conversation_embedding_metadata');
       this.bridge.exec(db, 'DELETE FROM embedding_backfill_state');
+      return Promise.resolve();
+    });
+  }
+
+  /**
+   * Delete every stored embedding vector and its metadata, and nothing else.
+   *
+   * Vectors are derived cache data: turning semantic search back on rebuilds
+   * them from the vault and the conversation history. The three vec0 tables
+   * are dropped and recreated rather than DELETEd, so the space they held is
+   * released, with the same DDL the schema uses (EMBEDDING_VECTOR_TABLES).
+   * The metadata tables keep their schema and lose their rows, and the
+   * conversation backfill cursor is cleared so the next pass starts over.
+   *
+   * Conversations, messages, traces, the notes index and the learned retrieval
+   * adapter (a file, not a table) are untouched.
+   */
+  async clearEmbeddingIndex(): Promise<void> {
+    await this.transaction(() => {
+      const db = this.getDb();
+      for (const table of EMBEDDING_VECTOR_TABLES) {
+        this.bridge.exec(db, `DROP TABLE IF EXISTS ${table}`);
+        this.bridge.exec(db, `CREATE VIRTUAL TABLE IF NOT EXISTS ${table} USING vec0(embedding float[384])`);
+      }
+      for (const table of EMBEDDING_METADATA_TABLES) {
+        this.bridge.exec(db, `DELETE FROM ${table}`);
+      }
       return Promise.resolve();
     });
   }

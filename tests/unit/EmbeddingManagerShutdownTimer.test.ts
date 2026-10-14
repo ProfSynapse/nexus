@@ -49,9 +49,14 @@ jest.mock('../../src/services/embeddings/IndexingQueue', () => ({
     startFullIndex,
     startTraceIndex,
     startConversationIndex,
+    pruneMissingNotes: jest.fn().mockResolvedValue(0),
+    pruneMissingConversations: jest.fn().mockResolvedValue(0),
     destroy: queueDestroy,
     cancel: jest.fn(),
-    isIndexing: jest.fn().mockReturnValue(false)
+    on: jest.fn(() => ({})),
+    offref: jest.fn(),
+    isIndexing: jest.fn().mockReturnValue(false),
+    isIndexingPaused: jest.fn().mockReturnValue(false)
   }))
 }));
 
@@ -62,6 +67,11 @@ jest.mock('../../src/services/embeddings/adapter/createRetrievalDreamService', (
 import { EmbeddingManager } from '../../src/services/embeddings/EmbeddingManager';
 import type { App, Plugin } from 'obsidian';
 import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
+
+/** The prune passes run before the first phase, so reaching it takes several ticks. */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+}
 
 function createManager() {
   const app = {
@@ -98,7 +108,7 @@ describe('EmbeddingManager deferred background indexing', () => {
 
     await manager.shutdown();
     jest.advanceTimersByTime(10_000);
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(queueDestroy).toHaveBeenCalled();
     expect(startFullIndex).not.toHaveBeenCalled();
@@ -111,7 +121,7 @@ describe('EmbeddingManager deferred background indexing', () => {
     manager.initialize();
 
     jest.advanceTimersByTime(3_000);
-    await Promise.resolve();
+    await flushMicrotasks();
 
     // Conversations are the first phase (cheapest-first ordering), so this is
     // the call that proves the timer fired. Asserting on the note phase would
@@ -127,7 +137,7 @@ describe('EmbeddingManager deferred background indexing', () => {
     });
     const manager = createManager(); manager.initialize();
     jest.advanceTimersByTime(3_000);
-    await Promise.resolve();
+    await flushMicrotasks();
     let closed = false;
     const shutdown = manager.shutdown().then(() => { closed = true; });
     await Promise.resolve(); expect(closed).toBe(false);
@@ -135,14 +145,14 @@ describe('EmbeddingManager deferred background indexing', () => {
     finish(); await shutdown;
     expect(finalSave).toHaveBeenCalledTimes(1); expect(closed).toBe(true);
     expect(startTraceIndex).not.toHaveBeenCalled(); expect(startFullIndex).not.toHaveBeenCalled();
-    manager.initialize(); jest.advanceTimersByTime(3_000); await Promise.resolve();
+    manager.initialize(); jest.advanceTimersByTime(3_000); await flushMicrotasks();
     expect(startConversationIndex).toHaveBeenCalledTimes(1);
   });
   it('waits for the old background chain before starting cache-rebuild indexing again', async () => {
     let finish!: () => void;
     startConversationIndex.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
     const manager = createManager(); manager.initialize();
-    jest.advanceTimersByTime(3_000); await Promise.resolve();
+    jest.advanceTimersByTime(3_000); await flushMicrotasks();
     const rebuilt = manager.reindexAfterCacheRebuild();
     await Promise.resolve(); expect(startConversationIndex).toHaveBeenCalledTimes(1);
     finish(); await rebuilt;

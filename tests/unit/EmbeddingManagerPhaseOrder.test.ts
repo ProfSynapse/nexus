@@ -43,9 +43,14 @@ jest.mock('../../src/services/embeddings/IndexingQueue', () => ({
     startFullIndex: jest.fn(async () => { calls.push('notes'); }),
     startTraceIndex: jest.fn(async () => { calls.push('traces'); }),
     startConversationIndex: jest.fn(async () => { calls.push('conversations'); }),
+    pruneMissingNotes: jest.fn(async () => { calls.push('prune-notes'); return 0; }),
+    pruneMissingConversations: jest.fn(async () => { calls.push('prune-conversations'); return 0; }),
     cancel,
     destroy: jest.fn(),
-    isIndexing: jest.fn(() => indexing)
+    on: jest.fn(() => ({})),
+    offref: jest.fn(),
+    isIndexing: jest.fn(() => indexing),
+    isIndexingPaused: jest.fn(() => false)
   }))
 }));
 
@@ -84,11 +89,10 @@ describe('EmbeddingManager background indexing order', () => {
     manager.initialize();
 
     jest.advanceTimersByTime(3_000);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
 
-    expect(calls).toEqual(['conversations', 'traces', 'notes']);
+    // Stale vectors are pruned before any phase, then cheapest-first.
+    expect(calls).toEqual(['prune-notes', 'prune-conversations', 'conversations', 'traces', 'notes']);
   });
 
   it('re-derives embeddings after a cache rebuild', async () => {
@@ -99,11 +103,12 @@ describe('EmbeddingManager background indexing order', () => {
 
     await manager.reindexAfterCacheRebuild();
 
-    // Conversations first here too: they are the rows the rebuild actually
-    // destroyed, so they must not queue behind the vault walk.
-    expect(calls[0]).toBe('conversations');
+    // Conversations first here too (after the prune): they are the rows the
+    // rebuild actually destroyed, so they must not queue behind the vault walk.
+    expect(calls.filter(call => !call.startsWith('prune-'))[0]).toBe('conversations');
     expect(calls).toContain('traces');
     expect(calls).toContain('notes');
+    await manager.shutdown();
   });
 
   it('cancels the in-flight walk so the re-index is not swallowed by isRunning', async () => {
@@ -118,6 +123,7 @@ describe('EmbeddingManager background indexing order', () => {
     // Without the cancel(), every phase would early-return on isRunning and the
     // rebuild would silently leave conversation embeddings at zero.
     expect(cancel).toHaveBeenCalled();
-    expect(calls[0]).toBe('conversations');
+    expect(calls.filter(call => !call.startsWith('prune-'))[0]).toBe('conversations');
+    await manager.shutdown();
   });
 });
