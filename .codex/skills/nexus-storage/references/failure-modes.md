@@ -26,6 +26,23 @@ default, so an unknown type is dropped in silence during replay.
 Fix: write through the repository (event first, then cache) and add the `case` to
 the applier. Re-verify by rebuilding the cache again and confirming survival.
 
+## "After Rebuild cache the old value is still shown until reload"
+
+Two separate causes; check which before fixing.
+
+- A read answered from the repository `QueryCache` (shared by every repository,
+  60 s TTL) rather than SQLite. Anything that wipes or replays the database
+  (`StorageMaintenanceService.rebuildCache`, startup replay, `sync()`) must call
+  `getQueryCache().clear()` after the replay settles. Compare
+  `SELECT ... FROM workspaces` with `workspaceService.getWorkspace` in the
+  running plugin: a mismatch is this cause.
+- A replayed event resolved a UNIQUE constraint with `INSERT OR REPLACE`, which
+  deletes the *other* row (same name, different id) together with its edits.
+  Appliers must decide name collisions explicitly; `WorkspaceEventApplier`
+  keeps both rows and disambiguates the later-created name. Replay shards are
+  listed in filename order, so any "first wins" rule has to compare timestamps
+  or ids, never arrival order.
+
 ## "A list tool returns an entity, but loading it by ID or name says not found"
 
 Check `pluginStorage.migration.state` before blaming the point lookup. Affected
