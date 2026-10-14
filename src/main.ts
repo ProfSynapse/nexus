@@ -6,6 +6,7 @@ import { BRAND_NAME } from './constants/branding';
 import { supportsMCPBridge } from './utils/platform';
 import { WasmEnsurer } from './utils/WasmEnsurer';
 import type { PluginServices } from './types/plugin/PluginTypes';
+import type { RouterState } from './settings/SettingsRouter';
 
 // MCPConnector type for desktop-only dynamic import
 type MCPConnectorType = import('./connector').MCPConnector;
@@ -209,6 +210,14 @@ export default class NexusPlugin extends Plugin {
         }
 
         // Service manager cleanup handled by lifecycle manager
+    }
+
+    /**
+     * Open Settings on the Nexus tab at the requested route, e.g. `{ tab: 'providers' }`.
+     * Returns false when settings cannot be opened yet.
+     */
+    public openNexusSettings(route: Partial<RouterState>): boolean {
+        return this.lifecycleManager?.openNexusSettings(route) ?? false;
     }
 
     /**

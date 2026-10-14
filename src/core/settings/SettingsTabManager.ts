@@ -11,12 +11,21 @@ import type { App, Plugin } from 'obsidian';
 import type { Settings } from '../../settings';
 // Use new SettingsView (tab-based UI) instead of old SettingsTab (accordion-based)
 import { SettingsView } from '../../settings/SettingsView';
+import type { RouterState } from '../../settings/SettingsRouter';
 import type { BackgroundProcessor } from '../background/BackgroundProcessor';
 import type { PluginLifecycleManager } from '../PluginLifecycleManager';
 import type { ServiceManager } from '../ServiceManager';
 
 // Type-only import to avoid bundling Node.js dependencies on mobile
 type MCPConnectorType = import('../../connector').MCPConnector;
+
+/** Obsidian's settings modal is not part of the public App typings. */
+interface AppWithSettingModal {
+    setting?: {
+        open(): void;
+        openTabById(id: string): void;
+    };
+}
 
 export interface SettingsTabManagerConfig {
     plugin: Plugin;
@@ -94,6 +103,19 @@ export class SettingsTabManager {
      */
     getSettingsTab(): SettingsView | undefined {
         return this.settingsTab;
+    }
+
+    /**
+     * Open Settings on the Nexus tab, at the requested route (for example the
+     * Providers tab). Returns false when Obsidian's settings modal is unavailable.
+     */
+    openNexusSettings(route: Partial<RouterState>): boolean {
+        const setting = (this.config.app as unknown as AppWithSettingModal).setting;
+        if (!setting) return false;
+        this.settingsTab?.openTo(route);
+        setting.open();
+        setting.openTabById(this.config.plugin.manifest.id);
+        return true;
     }
 
     /**

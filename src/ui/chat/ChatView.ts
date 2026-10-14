@@ -643,8 +643,8 @@ export class ChatView extends ItemView {
       onSidebarToggled: (_visible) => { /* Sidebar toggled */ }
     };
     this.uiStateController = new UIStateController(this.containerEl, uiStateEvents, this);
-    this.uiStateController.setOpenSettingsCallback(() => {
-      void this.openChatSettingsModal();
+    this.uiStateController.setOpenProviderSettingsCallback(() => {
+      this.openProviderSettings();
     });
     this.streamingController = new StreamingController(this.containerEl, this.app, this);
     this.nexusLoadingController = new NexusLoadingController(this.containerEl);
@@ -1138,6 +1138,14 @@ export class ChatView extends ItemView {
           this.chatService.getToolCallMessagesForConversation(conversationId, options),
       },
     }, this).open();
+  }
+
+  /** The no-provider welcome sends the user to Settings → Nexus → Providers. */
+  private openProviderSettings(): void {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin?.openNexusSettings({ tab: 'providers' })) {
+      new Notice('Open Settings → Nexus → Providers to add a provider.');
+    }
   }
 
   private async ensurePreservationServiceAndCompact(): Promise<void> {
