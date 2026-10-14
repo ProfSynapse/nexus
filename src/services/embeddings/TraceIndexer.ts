@@ -13,6 +13,7 @@
  */
 
 import { EmbeddingService } from './EmbeddingService';
+import { preprocessContent } from './EmbeddingUtils';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 import {
   SaveCadence,
@@ -32,8 +33,9 @@ export interface TraceIndexerProgress {
 /**
  * Handles backfill indexing for existing memory traces.
  *
- * Queries all traces from the database, filters out those already embedded,
- * then processes each one. Embedding is idempotent -- re-running is safe.
+ * Queries all traces from the database, filters out those already embedded
+ * and those too short to embed, then processes each one, reporting progress
+ * after each. Embedding is idempotent -- re-running is safe.
  */
 export class TraceIndexer {
   private db: SQLiteCacheManager;
@@ -104,8 +106,18 @@ export class TraceIndexer {
     );
     const embeddedIds = new Set(embeddedRows.map(r => r.traceId));
 
-    // Filter to traces not already embedded
-    const needsIndexing = allTraces.filter(t => !embeddedIds.has(t.id));
+    // Filter to traces not already embedded, and that can be embedded at all.
+    //
+    // embedTrace() skips content that preprocesses to nothing (under ten
+    // characters), so such a trace never gets a row and used to be counted as
+    // work on every start. Real vaults are full of them: tool-call traces whose
+    // content is just "Used tool". One vault had 6,660 of 6,681 un-embedded
+    // traces in that state, and walking them (with a 50 ms yield each) showed
+    // "Indexing: 0/6644" for about six minutes per start while embedding
+    // nothing.
+    const needsIndexing = allTraces.filter(
+      t => !embeddedIds.has(t.id) && preprocessContent(t.content ?? '') !== null
+    );
 
     if (needsIndexing.length === 0) {
       return { total: 0, processed: 0 };
@@ -139,6 +151,7 @@ export class TraceIndexer {
           );
           processedCount++;
           saveCadence.recordItem();
+          this.onProgress({ totalTraces: totalCount, processedTraces: processedCount });
         } catch (error) {
           // embedTrace() catches its own failures and never rethrows, so this
           // is now a genuine surprise rather than the periodic save, which

@@ -242,18 +242,62 @@ describe('TraceIndexer', () => {
   // ==========================================================================
 
   describe('progress reporting', () => {
-    it('should emit initial and final progress', async () => {
-      const traces = [createTraceRow('trace-1')];
+    it('should emit initial, per-trace and final progress', async () => {
+      const traces = [createTraceRow('trace-1'), createTraceRow('trace-2')];
       mocks.mockDb.query
         .mockResolvedValueOnce(traces)    // all traces
         .mockResolvedValueOnce([]);       // no embedded IDs
 
       await indexer.start(null, () => false, noOpAsync);
 
-      // Initial + final
-      expect(mocks.onProgress).toHaveBeenCalledTimes(2);
+      // Progress advances as traces are embedded, not only at the end: a
+      // status bar stuck at 0/N for the whole pass is what this replaced.
+      expect(mocks.progressCalls).toEqual([
+        { totalTraces: 2, processedTraces: 0 },
+        { totalTraces: 2, processedTraces: 1 },
+        { totalTraces: 2, processedTraces: 2 },
+        { totalTraces: 2, processedTraces: 2 },
+      ]);
+    });
+  });
+
+  // ==========================================================================
+  // Traces that cannot be embedded
+  // ==========================================================================
+
+  describe('traces too short to embed', () => {
+    it('does not count or walk traces that embedTrace would skip', async () => {
+      // The live shape: tool-call traces whose whole content is "Used tool"
+      // (9 characters) never get an embedding row, so they used to be
+      // re-counted and re-walked on every start.
+      const traces = [
+        createTraceRow('tool-1', { content: 'Used tool' }),
+        createTraceRow('tool-2', { content: 'Used tool' }),
+        createTraceRow('empty', { content: '' }),
+        createTraceRow('real', { content: 'Decided to move the launch to Friday' }),
+      ];
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)
+        .mockResolvedValueOnce([]);
+
+      const result = await indexer.start(null, () => false, noOpAsync);
+
+      expect(result).toEqual({ total: 1, processed: 1 });
+      expect(mocks.mockEmbeddingService.embedTrace).toHaveBeenCalledTimes(1);
+      expect(mocks.mockEmbeddingService.embedTrace.mock.calls[0][0]).toBe('real');
       expect(mocks.progressCalls[0]).toEqual({ totalTraces: 1, processedTraces: 0 });
-      expect(mocks.progressCalls[1]).toEqual({ totalTraces: 1, processedTraces: 1 });
+    });
+
+    it('reports no work when only unembeddable traces are missing', async () => {
+      mocks.mockDb.query
+        .mockResolvedValueOnce([createTraceRow('tool-1', { content: 'Used tool' })])
+        .mockResolvedValueOnce([]);
+
+      const result = await indexer.start(null, () => false, noOpAsync);
+
+      expect(result).toEqual({ total: 0, processed: 0 });
+      expect(mocks.onProgress).not.toHaveBeenCalled();
+      expect(mocks.mockDb.save).not.toHaveBeenCalled();
     });
   });
 

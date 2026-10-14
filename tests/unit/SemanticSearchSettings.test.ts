@@ -228,6 +228,47 @@ describe('Semantic search fold', () => {
     }
   });
 
+  it('shows the note hash check as its own row, then switches to indexing the changed notes', async () => {
+    const { tab, items, summary, runtime } = await render();
+    try {
+      runtime.indexing({ phase: 'checking', processedNotes: 1200, totalNotes: 7640, currentNote: null, estimatedTimeRemaining: null, scope: 'notes' });
+      await settle();
+      expect(rowNames(items())).toEqual([COPY.toggle, COPY.checking]);
+      const row = findRow(items(), COPY.checking);
+      expect(rowDesc(row)).toBe(COPY.checkingDesc);
+      expect(value(row)).toBe('1,200 / 7,640');
+      expect(summary()).toBe('Checking · 16%');
+
+      // The check advances in place.
+      runtime.indexing({ phase: 'checking', processedNotes: 7600, totalNotes: 7640, currentNote: null, estimatedTimeRemaining: null, scope: 'notes' });
+      expect(findRow(items(), COPY.checking)).toBe(row);
+      expect(value(row)).toBe('7,600 / 7,640');
+
+      // Embedding starts: the counts are now the notes that changed.
+      runtime.indexing({ phase: 'indexing', processedNotes: 3, totalNotes: 117, scope: 'notes' });
+      await settle();
+      expect(rowNames(items())).toEqual([COPY.toggle, COPY.indexing]);
+      expect(value(findRow(items(), COPY.indexing))).toBe('3 / 117');
+      expect(summary()).toBe('Indexing · 3%');
+    } finally {
+      tab.destroy();
+    }
+  });
+
+  it('says what a chat or memory pass is counting', async () => {
+    const { tab, items, runtime } = await render();
+    try {
+      runtime.indexing({ processedNotes: 5, totalNotes: 52, scope: 'conversations' });
+      await settle();
+      const row = findRow(items(), COPY.indexing);
+      expect(value(row)).toBe('5 / 52 chats');
+      runtime.indexing({ processedNotes: 2, totalNotes: 21, scope: 'traces' });
+      expect(value(findRow(items(), COPY.indexing))).toBe('2 / 21 memories');
+    } finally {
+      tab.destroy();
+    }
+  });
+
   it('says the model did not load, with the detail, instead of claiming an index', async () => {
     const { tab, items, summary, runtime } = await render();
     try {

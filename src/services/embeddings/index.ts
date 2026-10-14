@@ -22,7 +22,7 @@ export { preprocessContent, extractWikiLinks } from './EmbeddingUtils';
 export type { SimilarNote } from './NoteEmbeddingService';
 export type { TraceSearchResult } from './TraceEmbeddingService';
 export type { ConversationSearchResult } from './ConversationEmbeddingService';
-export type { IndexingProgress } from './IndexingQueue';
+export type { IndexingProgress, IndexingScope } from './IndexingQueue';
 export type { ChunkOptions, ContentChunk } from './ContentChunker';
 export type { QAPair } from './QAPairBuilder';
 export type { WindowOptions, MessageWindow } from './ConversationWindowRetriever';
