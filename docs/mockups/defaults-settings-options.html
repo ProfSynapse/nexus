@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus · Defaults tab and chat settings: 10 options</title>
+  <link rel="stylesheet" href="defaults-settings-options.css">
+  <script src="defaults-settings-options.js" defer></script>
+</head>
+<body class="theme-dark">
+  <main class="mock-page">
+    <header class="mock-intro">
+      <span class="mock-eyebrow">NEXUS / DEFAULTS + CHAT SETTINGS · 10 OPTIONS</span>
+      <h1>Same settings. Ten ways to lay them out.</h1>
+      <p>Each option redraws two surfaces: <strong>Settings → Nexus → Defaults</strong> and the <strong>Chat settings</strong> modal behind the chat gear. Every field that exists today is still there. Nothing else in the plugin changes.</p>
+    </header>
+
+    <div class="mock-toolbar" aria-label="Mockup controls">
+      <button id="mock-overview" aria-pressed="true">Overview</button>
+      <label>Option <select id="mock-variant"></select></label>
+      <div class="mock-seg" role="radiogroup" aria-label="Surface">
+        <button role="radio" aria-checked="true" data-surface="defaults">Defaults tab</button>
+        <button role="radio" aria-checked="false" data-surface="chat">Chat settings</button>
+      </div>
+      <div class="mock-toolbar-spacer"></div>
+      <button id="mock-phone" aria-pressed="false">Phone width</button>
+      <button id="mock-theme" aria-pressed="false">Light theme</button>
+    </div>
+
+    <section class="mock-overview" id="mock-overview-grid" aria-label="All ten options"></section>
+
+    <div class="mock-layout" id="mock-detail" hidden>
+      <aside class="mock-context" id="mock-context" aria-live="polite"></aside>
+      <section class="mock-stage" id="mock-stage" aria-label="Selected option"></section>
+    </div>
+
+    <footer class="mock-footer">DRAFT · 14 OCT 2026 <span>Proposed layouts, not implemented. Values are sample data, and nothing is saved.</span></footer>
+  </main>
+</body>
+</html>

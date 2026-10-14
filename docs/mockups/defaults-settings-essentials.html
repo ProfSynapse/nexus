@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus · Defaults and chat settings: essentials + folds</title>
+  <link rel="stylesheet" href="defaults-settings-essentials.css">
+  <script src="defaults-settings-essentials.js" defer></script>
+</head>
+<body class="theme-dark">
+  <main class="mock-page">
+    <header class="mock-intro">
+      <span class="mock-eyebrow">NEXUS / DEFAULTS + CHAT SETTINGS · OPTION 2, ROUND 3</span>
+      <h1>Essentials + folds, built from Obsidian parts</h1>
+      <p>Every control is an Obsidian component, drawn the way Obsidian 1.13+ renders it. Turn on <strong>Label components</strong> to see which component each control is. The only custom code is the fold: a chevron button that hides a group’s card.</p>
+    </header>
+
+    <div class="mock-toolbar" aria-label="Mockup controls">
+      <div class="mock-seg" role="radiogroup" aria-label="Surface">
+        <button role="radio" aria-checked="true" data-surface="defaults">Defaults tab</button>
+        <button role="radio" aria-checked="false" data-surface="chat">Chat settings</button>
+      </div>
+      <button id="mock-expand">Open all folds</button>
+      <button id="mock-annotate" aria-pressed="false">Label components</button>
+      <label id="mock-semantic-wrap">Semantic search <select id="mock-semantic">
+        <option value="on">On, indexed</option>
+        <option value="indexing">On, indexing</option>
+        <option value="confirm">Turning off (confirm)</option>
+        <option value="off">Off</option>
+      </select></label>
+      <label>OS <select id="mock-os"><option value="mac">macOS</option><option value="win">Windows</option><option value="linux">Linux</option></select></label>
+      <label>Node.js <select id="mock-node"><option value="found">Found</option><option value="missing">Missing</option></select></label>
+      <div class="mock-toolbar-spacer"></div>
+      <a class="mock-link" href="defaults-settings-options.html">All 10 options</a>
+      <button id="mock-phone" aria-pressed="false">Phone width</button>
+      <button id="mock-theme" aria-pressed="false">Light theme</button>
+    </div>
+
+    <div class="mock-layout">
+      <aside class="mock-context" id="mock-context"></aside>
+      <section class="mock-stage" id="mock-stage" aria-label="Proposed settings"></section>
+    </div>
+
+    <footer class="mock-footer">DRAFT · 14 OCT 2026 <span>Proposed layout, not implemented. Values and index counts are sample data; nothing is saved.</span></footer>
+  </main>
+</body>
+</html>
