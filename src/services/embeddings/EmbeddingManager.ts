@@ -217,23 +217,37 @@ export class EmbeddingManager {
    * and the engine, and leaves the stored vectors in place (see deleteIndex).
    *
    * Idempotent, a no-op on mobile and after shutdown(), and serialized: two
-   * quick toggles apply in the order they were made.
+   * quick toggles apply in the order they were made. Turning on while on but
+   * not running (an earlier start failed) tries again.
+   *
+   * @throws when the change could not be applied, so the caller can say so.
+   *   Later toggles still run: the queue keeps a settled copy.
    */
   setEnabled(enabled: boolean): Promise<void> {
     const next = this.transition.then(async () => {
       if (this.shuttingDown || Platform.isMobile) {
         return;
       }
-      if (enabled === this.isEnabled) {
-        return;
-      }
 
       if (enabled) {
+        if (this.isEnabled && this.isInitialized) {
+          return;
+        }
         this.isEnabled = true;
         this.initialize();
+        if (!this.isInitialized) {
+          // initialize() logs and swallows its own error. Drop whatever it
+          // built before failing, so a retry starts clean.
+          await this.teardown();
+          this.emitState();
+          throw new Error('Semantic search could not start.');
+        }
         return;
       }
 
+      if (!this.isEnabled) {
+        return;
+      }
       this.isEnabled = false;
       await this.teardown();
       this.emitState();
@@ -241,7 +255,7 @@ export class EmbeddingManager {
     this.transition = next.catch((error) => {
       console.error('[EmbeddingManager] Failed to apply the semantic search setting:', error);
     });
-    return this.transition;
+    return next;
   }
 
   /**
@@ -305,6 +319,11 @@ export class EmbeddingManager {
    */
   private async teardown(): Promise<void> {
     this.runGeneration++;
+
+    // Anything still holding this service (an open task modal, a dream cycle or
+    // a search already under way) must get the disabled answers from here on,
+    // not wake the engine back up after it is disposed below.
+    this.service?.disable();
 
     if (this.backgroundIndexingTimer !== null) {
       window.clearTimeout(this.backgroundIndexingTimer);

@@ -37,7 +37,7 @@ jest.mock('../../src/services/embeddings/EmbeddingEngine', () => ({
 
 jest.mock('../../src/services/embeddings/EmbeddingService', () => ({
   EmbeddingService: jest.fn().mockImplementation(() => track('service', id => ({
-    id, isServiceEnabled: jest.fn().mockReturnValue(true)
+    id, isServiceEnabled: jest.fn().mockReturnValue(true), disable: jest.fn()
   })))
 }));
 
@@ -165,6 +165,10 @@ describe('EmbeddingManager hot toggle', () => {
     expect(queue.destroy).toHaveBeenCalled();
     expect(statusBar.destroy).toHaveBeenCalled();
     expect(engine.dispose).toHaveBeenCalled();
+    // Holders of the old service get disabled answers, so they cannot wake the engine.
+    expect(created.service[0].disable).toHaveBeenCalled();
+    expect((created.service[0].disable as jest.Mock).mock.invocationCallOrder[0])
+      .toBeLessThan((engine.dispose as jest.Mock).mock.invocationCallOrder[0]);
     expect(clearIntervalSpy).toHaveBeenCalledWith(dreamInterval);
     expect(h.plugin.removeCommand).toHaveBeenCalledWith('consolidate-retrieval-memory');
     expect(h.manager.getService()).toBeNull();
@@ -221,6 +225,42 @@ describe('EmbeddingManager hot toggle', () => {
     await h.manager.setEnabled(true);
 
     expect(created.engine).toHaveLength(1);
+  });
+
+  it('reports a failed start to the caller, and turning on again retries', async () => {
+    const h = createManager(false);
+    const { EmbeddingStatusBar } = jest.requireMock('../../src/services/embeddings/EmbeddingStatusBar');
+    (EmbeddingStatusBar as jest.Mock).mockImplementationOnce(() => { throw new Error('status bar failed'); });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(h.manager.setEnabled(true)).rejects.toThrow('could not start');
+      // The half-built components were stopped and dropped.
+      expect(created.watcher[0].stop).toHaveBeenCalled();
+      expect(created.engine[0].dispose).toHaveBeenCalled();
+      expect(h.manager.getService()).toBeNull();
+      expect(h.states.at(-1)).toMatchObject({ enabled: true, initialized: false });
+
+      await h.manager.setEnabled(true);
+      expect(created.engine).toHaveLength(2);
+      expect(h.states.at(-1)).toMatchObject({ enabled: true, initialized: true });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('a failed toggle does not block the next one', async () => {
+    const h = createManager();
+    h.manager.initialize();
+    const [engine] = created.engine;
+    (engine.dispose as jest.Mock).mockRejectedValueOnce(new Error('dispose failed'));
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await expect(h.manager.setEnabled(false)).rejects.toThrow('dispose failed');
+      await h.manager.setEnabled(true);
+      expect(created.engine).toHaveLength(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('stops a background chain between phases when turned off mid-run', async () => {

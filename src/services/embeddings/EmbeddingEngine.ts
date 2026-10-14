@@ -20,6 +20,8 @@ import { EmbeddingIframe } from './EmbeddingIframe';
  */
 export class EmbeddingEngine {
   private iframe: EmbeddingIframe | null = null;
+  /** Set by dispose(). A disposed engine never loads the model again. */
+  private disposed = false;
   private readonly MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
   private readonly DIMENSIONS = 384;
 
@@ -28,6 +30,7 @@ export class EmbeddingEngine {
    * Downloads model on first use (~23MB, cached in IndexedDB)
    */
   async initialize(): Promise<void> {
+    this.assertNotDisposed();
     if (this.iframe?.ready()) {
       return;
     }
@@ -43,6 +46,7 @@ export class EmbeddingEngine {
    * @returns Float32Array of 384 dimensions
    */
   async generateEmbedding(text: string): Promise<Float32Array> {
+    this.assertNotDisposed();
     if (!this.iframe) {
       await this.initialize();
     }
@@ -62,6 +66,7 @@ export class EmbeddingEngine {
    * @returns Array of Float32Array embeddings
    */
   async generateEmbeddings(texts: string[]): Promise<Float32Array[]> {
+    this.assertNotDisposed();
     if (!this.iframe) {
       await this.initialize();
     }
@@ -78,9 +83,20 @@ export class EmbeddingEngine {
    * Dispose of the engine to free memory
    */
   async dispose(): Promise<void> {
+    this.disposed = true;
     if (this.iframe) {
       await this.iframe.dispose();
       this.iframe = null;
+    }
+  }
+
+  /**
+   * A caller that kept a reference past dispose() gets an error instead of a
+   * fresh hidden iframe with the model loaded that nothing would dispose.
+   */
+  private assertNotDisposed(): void {
+    if (this.disposed) {
+      throw new Error('Embedding engine was disposed');
     }
   }
 

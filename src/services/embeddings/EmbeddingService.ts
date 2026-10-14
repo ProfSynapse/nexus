@@ -211,6 +211,15 @@ export class EmbeddingService {
   // ==================== UTILITIES ====================
 
   /**
+   * Turn this instance off for good. Called when semantic search is turned off
+   * or the plugin unloads: every method then returns its empty answer, so a
+   * caller that kept a reference never reaches the disposed engine.
+   */
+  disable(): void {
+    this.isEnabled = false;
+  }
+
+  /**
    * Check if service is enabled
    */
   isServiceEnabled(): boolean {

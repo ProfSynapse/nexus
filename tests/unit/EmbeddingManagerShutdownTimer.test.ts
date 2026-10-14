@@ -21,6 +21,7 @@ jest.mock('../../src/services/embeddings/EmbeddingEngine', () => ({
 jest.mock('../../src/services/embeddings/EmbeddingService', () => ({
   EmbeddingService: jest.fn().mockImplementation(() => ({
     isServiceEnabled: jest.fn().mockReturnValue(true),
+    disable: jest.fn(),
     getStats: jest.fn().mockResolvedValue({ noteCount: 0, traceCount: 0, conversationChunkCount: 0 })
   }))
 }));

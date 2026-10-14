@@ -78,7 +78,12 @@ export default class NexusPlugin extends Plugin {
             // idempotent, so it also catches a value adopted by an earlier read
             // (the workflow scheduler reconciles synced settings too).
             if (this.lifecycleManager) {
-                await this.lifecycleManager.setEmbeddingsEnabled(this.settings.settings.enableEmbeddings ?? true);
+                try {
+                    await this.lifecycleManager.setEmbeddingsEnabled(this.settings.settings.enableEmbeddings ?? true);
+                } catch (error) {
+                    // The settings were adopted; only starting or stopping the index failed.
+                    console.error(`[${BRAND_NAME}] Could not apply the synced semantic search setting:`, error);
+                }
             }
             if (needsReload && !this.unloading && !this.syncedSettingsNeedReload) {
                 this.syncedSettingsNeedReload = true;
