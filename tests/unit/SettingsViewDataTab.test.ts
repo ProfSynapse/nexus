@@ -108,9 +108,9 @@ jest.mock('../../src/components/Accordion', () => ({
     rootEl: {
       addClass: jest.fn()
     },
-    getContentEl: jest.fn().mockReturnValue({
+    itemsEl: {
       addClass: jest.fn()
-    }),
+    },
     unload: jest.fn()
   }))
 }));
@@ -181,8 +181,9 @@ it('saves accordion toggles and restores them in a new settings/view instance', 
     const first = new Settings(plugin as never);
     await first.loadSettings();
     const view = render(first);
-    expect(accordion.mock.calls[accordion.mock.calls.length - 1][2]).toBe(true);
-    accordion.mock.calls[accordion.mock.calls.length - 1][3](false);
+    expect(accordion.mock.calls[accordion.mock.calls.length - 1][1].open).toBe(true);
+    expect(accordion.mock.calls[accordion.mock.calls.length - 1][1]).toEqual(expect.objectContaining({ id: 'get-started', title: 'Get started', icon: 'rocket' }));
+    accordion.mock.calls[accordion.mock.calls.length - 1][1].onToggle(false);
     // Drain the real settings save lock and promise chain.
     await new Promise(resolve => setImmediate(resolve));
     expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ getStartedOpen: false }));
@@ -191,8 +192,8 @@ it('saves accordion toggles and restores them in a new settings/view instance', 
     const reloaded = new Settings(plugin as never);
     await reloaded.loadSettings();
     const secondView = render(reloaded);
-    expect(accordion.mock.calls[accordion.mock.calls.length - 1][2]).toBe(false);
-    accordion.mock.calls[accordion.mock.calls.length - 1][3](true);
+    expect(accordion.mock.calls[accordion.mock.calls.length - 1][1].open).toBe(false);
+    accordion.mock.calls[accordion.mock.calls.length - 1][1].onToggle(true);
     await new Promise(resolve => setImmediate(resolve));
     const reopened = new Settings(plugin as never);
     await reopened.loadSettings();

@@ -564,21 +564,22 @@ export class SettingsView extends PluginSettingTab {
             return;
         }
 
-        this.getStartedAccordion = new Accordion(
-            containerEl,
-            'Get started',
-            shouldOpenGetStarted(this.app, this.settingsManager.settings),
-            (isOpen) => {
+        this.getStartedAccordion = new Accordion(containerEl, {
+            id: 'get-started',
+            title: 'Get started',
+            icon: 'rocket',
+            open: shouldOpenGetStarted(this.app, this.settingsManager.settings),
+            onToggle: (isOpen) => {
                 this.settingsManager.settings.getStartedOpen = isOpen;
                 void this.settingsManager.saveSettings().catch((error: unknown) => {
                     console.error('[SettingsView] Failed to save get started preference:', error);
                     new Notice('Could not save the get started preference.');
                 });
             }
-        );
+        });
         this.getStartedAccordion.rootEl.addClass('nexus-settings-accordion');
 
-        const accordionContent = this.getStartedAccordion.getContentEl();
+        const accordionContent = this.getStartedAccordion.itemsEl;
         accordionContent.addClass('nexus-settings-accordion-content');
 
         void this.renderGetStartedContent(accordionContent);
