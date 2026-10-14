@@ -94,11 +94,62 @@ export const FILE_CONVERSION_COPY = {
   visionUnavailable: 'Vision models could not be loaded.'
 } as const;
 
+/** "1 note", "4,512 notes". */
+function countOf(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 export const SEMANTIC_COPY = {
   toggle: 'Semantic search',
   toggleDesc: 'Find notes and past chats by meaning, not just exact words. Runs on this device.',
+  index: 'Index',
+  indexOnDesc: 'Kept up to date as notes and chats change.',
+  indexOffDesc: 'Kept on this device, so turning search back on only re-indexes notes that changed.',
+  indexCounts: (notes: number, chats: number): string => `${countOf(notes, 'note')} · ${countOf(chats, 'chat')}`,
+  indexPaused: (notes: number): string => `Paused · ${countOf(notes, 'note')}`,
+  indexPausedUnknown: 'Paused',
+  noIndex: 'No index on this device',
+  starting: 'Starting',
+  indexing: 'Indexing',
+  /** Description of the Indexing row, from the queue's estimate in seconds. */
+  indexingDesc: (secondsLeft: number | null): string => {
+    if (secondsLeft === null || !Number.isFinite(secondsLeft) || secondsLeft <= 0) return 'You can keep working.';
+    if (secondsLeft < 60) return 'Less than a minute left. You can keep working.';
+    const minutes = Math.round(secondsLeft / 60);
+    return `About ${minutes} minute${minutes === 1 ? '' : 's'} left. You can keep working.`;
+  },
+  indexingPausedDesc: 'Paused. Resume indexing whenever you like.',
+  indexingProgress: (done: number, total: number): string => `${done.toLocaleString()} / ${total.toLocaleString()}`,
+  pauseIndexing: 'Pause indexing',
+  resumeIndexing: 'Resume indexing',
+  deleteIndex: 'Delete index',
+  deleteIndexDesc: 'Frees the space it uses. Turning search back on re-indexes the whole vault.',
+  deleteFailed: 'The search index could not be deleted.',
+  applyFailed: 'The semantic search setting could not be applied. Restart Obsidian to apply it.',
   restartNotice: (enabled: boolean): string =>
     `Semantic search ${enabled ? 'turned on' : 'turned off'}. Restart Obsidian to apply.`
+} as const;
+
+/** The confirmation shown before semantic search is turned off. */
+export const SEMANTIC_OFF_MODAL_COPY = {
+  title: 'Turn off semantic search?',
+  lede: 'Nexus will match exact words only.',
+  bullets: [
+    'Vault search falls back to keyword matching, and agents stop being offered semantic search.',
+    'Searching past chats by meaning stops working.',
+    'Note suggestions in chat use file names only.'
+  ],
+  note: 'Your index stays on this device, so turning it back on is quick.',
+  cancel: 'Cancel',
+  confirm: 'Turn off'
+} as const;
+
+/** The confirmation shown before the search index is deleted (owner decision 6). */
+export const SEMANTIC_DELETE_MODAL_COPY = {
+  title: 'Delete the search index?',
+  body: SEMANTIC_COPY.deleteIndexDesc,
+  cancel: 'Cancel',
+  confirm: 'Delete'
 } as const;
 
 export const VIDEO_COPY = {

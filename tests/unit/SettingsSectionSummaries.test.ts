@@ -66,6 +66,7 @@ it('summarises file conversion by the File import switch', () => {
 
 it('summarises semantic search', () => {
   expect(semanticSearchSummary({ enabled: false })).toBe('Off · index kept');
+  expect(semanticSearchSummary({ enabled: false, indexKept: false })).toBe('Off · no index');
   expect(semanticSearchSummary({ enabled: true })).toBe('On');
   expect(semanticSearchSummary({ enabled: true, noteCount: 4512 })).toBe('On · 4,512 notes');
   expect(semanticSearchSummary({ enabled: true, indexingPercent: 42.4 })).toBe('Indexing · 42%');

@@ -96,8 +96,14 @@ export function fileConversionSummary(input: { enabled: boolean; vision: boolean
   return join(['File import on', input.vision ? 'Vision' : 'Text extraction', input.autoConvert ? 'auto-convert' : null]);
 }
 
-export function semanticSearchSummary(input: { enabled: boolean; noteCount?: number; indexingPercent?: number }): string {
-  if (!input.enabled) return 'Off · index kept';
+export function semanticSearchSummary(input: {
+  enabled: boolean;
+  noteCount?: number;
+  indexingPercent?: number;
+  /** While off: false once the index was deleted. Unknown counts as kept. */
+  indexKept?: boolean;
+}): string {
+  if (!input.enabled) return input.indexKept === false ? 'Off · no index' : 'Off · index kept';
   if (typeof input.indexingPercent === 'number') return `Indexing · ${Math.round(input.indexingPercent)}%`;
   if (typeof input.noteCount === 'number') return `On · ${input.noteCount.toLocaleString()} notes`;
   return 'On';
