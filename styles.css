@@ -2010,6 +2010,24 @@ body.is-mobile .nexus-accordion-toggle {
     color: var(--text-faint);
 }
 
+/* Nexus settings span the full pane, like the tab strip above them, instead
+   of Obsidian's 700px setting-group column. */
+.nexus-settings {
+    --setting-group-max-width: none;
+}
+
+/* Obsidian pads and resizes every h2 inside .vertical-tab-content; the page
+   title lines up with the back button and the lede instead. */
+.nexus-settings .nexus-page-head .nexus-page-title {
+    padding: 0;
+    margin: 0;
+    font-size: 22px;
+}
+
+.nexus-gs-page .setting-item {
+    align-items: center;
+}
+
 .nexus-page-head {
     display: flex;
     flex-direction: column;
