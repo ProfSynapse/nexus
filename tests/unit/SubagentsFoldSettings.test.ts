@@ -105,7 +105,7 @@ it('saves the subagent Context window in its own map', async () => {
   }
 });
 
-it('starts a newly picked subagent model at its maximum', async () => {
+it('shows a newly picked subagent model at its saved limit, and never deletes one', async () => {
   const h = await renderDefaults({
     agentModel: { provider: 'anthropic', model: 'claude-opus-4-6' },
     agentContextWindowOverrides: { [opus46]: 64_000, [haiku55]: 350_000 }
@@ -113,8 +113,23 @@ it('starts a newly picked subagent model at its maximum', async () => {
   try {
     choose(control(h.row(COPY.model), 'select'), 'anthropic::claude-haiku-5-5');
     await h.settle();
-    expect(h.row(COPY.contextWindow).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['1M']);
+    expect(h.row(COPY.contextWindow).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['350K']);
     expect(h.settings.agentModel).toEqual({ provider: 'anthropic', model: 'claude-haiku-5-5' });
+    expect(h.settings.agentContextWindowOverrides).toEqual({ [opus46]: 64_000, [haiku55]: 350_000 });
+  } finally {
+    h.tab.destroy();
+  }
+});
+
+it('starts a newly picked subagent model with no saved limit at its maximum', async () => {
+  const h = await renderDefaults({
+    agentModel: { provider: 'anthropic', model: 'claude-opus-4-6' },
+    agentContextWindowOverrides: { [opus46]: 64_000 }
+  });
+  try {
+    choose(control(h.row(COPY.model), 'select'), 'anthropic::claude-haiku-5-5');
+    await h.settle();
+    expect(h.row(COPY.contextWindow).querySelectorAll('.slider-value').map(el => el.textContent)).toEqual(['1M']);
     expect(h.settings.agentContextWindowOverrides).toEqual({ [opus46]: 64_000 });
   } finally {
     h.tab.destroy();
