@@ -55,6 +55,16 @@ export interface ModelDropdownConfig {
   /** Empty-state text for provider dropdown when none available */
   noProvidersText: string;
 
+  /**
+   * Label of a first, empty-valued Provider option meaning "no model of its
+   * own" (the Subagents fold: "Same as chat"). Selected while no provider is
+   * set, so the dropdown never shows a provider that is not the setting.
+   */
+  inheritOptionText?: string;
+
+  /** Model row text while no provider is set; defaults to "Select a provider first". */
+  getUnsetModelText?: () => string | undefined;
+
   /** The model option map to populate (maps option key -> { provider, modelId }) */
   modelOptionMap: Map<string, { provider: string; modelId: string }>;
 
@@ -140,6 +150,10 @@ function renderProviderDropdown(
           );
         }
 
+        if (config.inheritOptionText) {
+          dropdown.addOption('', config.inheritOptionText);
+        }
+
         providers.forEach(id => {
           dropdown.addOption(id, config.getProviderDisplayName?.(id) || PROVIDER_NAMES[id] || id);
         });
@@ -174,7 +188,7 @@ function renderModelDropdown(
     .setName('Model')
     .addDropdown(async dropdown => {
       if (!modelProviderId) {
-        dropdown.addOption('', 'Select a provider first');
+        dropdown.addOption('', config.getUnsetModelText?.() || 'Select a provider first');
         return;
       }
 

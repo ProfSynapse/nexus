@@ -40,7 +40,7 @@ type OutputFormat = 'png' | 'jpeg' | 'webp';
  * the OpenAI pricing page; `costPerImage` is a measured 1024x1024 image at
  * `medium` quality, since `auto` resolves to a different quality per model.
  */
-interface OpenAIImageModelSpec {
+export interface OpenAIImageModelSpec {
   displayName: string;
   /** USD for one 1024x1024 image at medium quality. */
   costPerImage: number;
@@ -130,6 +130,70 @@ const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
 const PORTRAIT_RATIOS = new Set(['2:3', '3:4', '4:5', '9:16', '1:4', '1:8']);
 const LANDSCAPE_RATIOS = new Set(['3:2', '4:3', '5:4', '16:9', '21:9', '4:1', '8:1']);
 
+export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelSpec>> = {
+  'gpt-image-2': {
+    displayName: 'GPT Image 2',
+    costPerImage: 0.053,
+    pricingNote: '1756 output tokens at $30/M for 1024x1024 medium; auto picked low (196 tokens) on a simple prompt',
+    inputTokenPricePerMillion: 8,
+    outputTokenPricePerMillion: 30,
+    supportsArbitrarySize: true,
+    lastUpdated: '2026-09-02'
+  },
+  // https://developers.openai.com/api/docs/guides/image-generation
+  'gpt-image-2.5-sunburst': {
+    displayName: 'GPT Image 2.5 Sunburst',
+    costPerImage: 0.01317,
+    pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+    inputTokenPricePerMillion: 8,
+    textInputTokenPricePerMillion: 5,
+    outputTokenPricePerMillion: 30,
+    defaultQuality: 'medium',
+    strictSizeLimits: true,
+    supportsArbitrarySize: true,
+    lastUpdated: '2026-09-08'
+  },
+  'gpt-image-2.5-flare': {
+    displayName: 'GPT Image 2.5 Flare',
+    costPerImage: 0.01317,
+    pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+    inputTokenPricePerMillion: 8,
+    textInputTokenPricePerMillion: 5,
+    outputTokenPricePerMillion: 30,
+    defaultQuality: 'medium',
+    strictSizeLimits: true,
+    supportsArbitrarySize: true,
+    lastUpdated: '2026-09-08'
+  },
+  'gpt-image-1.5': {
+    displayName: 'GPT Image 1.5',
+    costPerImage: 0.034,
+    pricingNote: '1056 output tokens at $32/M for 1024x1024 medium; auto picks high (4160 tokens, $0.133)',
+    inputTokenPricePerMillion: 8,
+    outputTokenPricePerMillion: 32,
+    supportsArbitrarySize: false,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-image-1': {
+    displayName: 'GPT Image 1',
+    costPerImage: 0.042,
+    pricingNote: '1056 output tokens at $40/M for 1024x1024 medium',
+    inputTokenPricePerMillion: 10,
+    outputTokenPricePerMillion: 40,
+    supportsArbitrarySize: false,
+    lastUpdated: '2026-09-02'
+  },
+  'gpt-image-1-mini': {
+    displayName: 'GPT Image 1 Mini',
+    costPerImage: 0.008,
+    pricingNote: '1056 output tokens at $8/M for 1024x1024 medium',
+    inputTokenPricePerMillion: 2.5,
+    outputTokenPricePerMillion: 8,
+    supportsArbitrarySize: false,
+    lastUpdated: '2026-09-02'
+  }
+};
+
 export class OpenAIImageAdapter extends BaseImageAdapter {
 
   // Image adapters don't support streaming in the same way as text
@@ -142,69 +206,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   readonly name = 'openai-image';
   readonly baseUrl = 'https://api.openai.com/v1';
 
-  private readonly modelSpecs: Record<string, OpenAIImageModelSpec> = {
-    'gpt-image-2': {
-      displayName: 'GPT Image 2',
-      costPerImage: 0.053,
-      pricingNote: '1756 output tokens at $30/M for 1024x1024 medium; auto picked low (196 tokens) on a simple prompt',
-      inputTokenPricePerMillion: 8,
-      outputTokenPricePerMillion: 30,
-      supportsArbitrarySize: true,
-      lastUpdated: '2026-09-02'
-    },
-    // https://developers.openai.com/api/docs/guides/image-generation
-    'gpt-image-2.5-sunburst': {
-      displayName: 'GPT Image 2.5 Sunburst',
-      costPerImage: 0.01317,
-      pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
-      inputTokenPricePerMillion: 8,
-      textInputTokenPricePerMillion: 5,
-      outputTokenPricePerMillion: 30,
-      defaultQuality: 'medium',
-      strictSizeLimits: true,
-      supportsArbitrarySize: true,
-      lastUpdated: '2026-09-08'
-    },
-    'gpt-image-2.5-flare': {
-      displayName: 'GPT Image 2.5 Flare',
-      costPerImage: 0.01317,
-      pricingNote: 'Measured 439 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
-      inputTokenPricePerMillion: 8,
-      textInputTokenPricePerMillion: 5,
-      outputTokenPricePerMillion: 30,
-      defaultQuality: 'medium',
-      strictSizeLimits: true,
-      supportsArbitrarySize: true,
-      lastUpdated: '2026-09-08'
-    },
-    'gpt-image-1.5': {
-      displayName: 'GPT Image 1.5',
-      costPerImage: 0.034,
-      pricingNote: '1056 output tokens at $32/M for 1024x1024 medium; auto picks high (4160 tokens, $0.133)',
-      inputTokenPricePerMillion: 8,
-      outputTokenPricePerMillion: 32,
-      supportsArbitrarySize: false,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-image-1': {
-      displayName: 'GPT Image 1',
-      costPerImage: 0.042,
-      pricingNote: '1056 output tokens at $40/M for 1024x1024 medium',
-      inputTokenPricePerMillion: 10,
-      outputTokenPricePerMillion: 40,
-      supportsArbitrarySize: false,
-      lastUpdated: '2026-09-02'
-    },
-    'gpt-image-1-mini': {
-      displayName: 'GPT Image 1 Mini',
-      costPerImage: 0.008,
-      pricingNote: '1056 output tokens at $8/M for 1024x1024 medium',
-      inputTokenPricePerMillion: 2.5,
-      outputTokenPricePerMillion: 8,
-      supportsArbitrarySize: false,
-      lastUpdated: '2026-09-02'
-    }
-  };
+  private readonly modelSpecs = OPENAI_IMAGE_MODEL_SPECS;
 
   readonly supportedModels: ImageModel[] = Object.keys(this.modelSpecs) as ImageModel[];
   readonly supportedSizes: string[] = [...FIXED_SIZES];

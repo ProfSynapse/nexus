@@ -66,6 +66,19 @@ export const COPY = {
   removeNote: (name: string): string => `Remove ${name}`,
   usedFor: 'Used for',
   usedForDesc: 'Subagents, saved prompts and automations. Must be a cloud model.',
+  /** Chat options summary while no chat model is picked. */
+  pickModelFirst: 'Pick a model first',
+  /** Creativity and Context window rows while no model is picked. */
+  noModelTuningDesc: 'Pick a model to adjust this.',
+  noValueReadout: '—',
+  noModelValueText: 'No model selected',
+  /** Subagent Provider option: no model of their own, run on the chat model. */
+  sameAsChat: 'Same as chat',
+  sameAsChatModel: (modelName: string): string => `Same as chat (${modelName})`,
+  /** Subagents summary: no cloud provider, so nothing they could run on. */
+  noModel: 'No model',
+  /** Subagents summary: no subagent model and no cloud chat model to describe. */
+  notSet: 'Not set',
   noProviders: 'No providers enabled',
   noCloudProviders: 'No cloud providers enabled',
   none: 'None'

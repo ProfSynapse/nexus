@@ -36,7 +36,7 @@ import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions
 type OutputFormat = 'png' | 'jpeg' | 'webp';
 type GeminiImageSize = '512' | '1K' | '2K' | '4K';
 
-interface GeminiImageModelSpec {
+export interface GeminiImageModelSpec {
   displayName: string;
   /** USD for one 1K image (1120 output image tokens; 1290 for 2.5). */
   costPerImage: number;
@@ -127,6 +127,71 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
   '8:1': [1024, 128]
 };
 
+export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelSpec>> = {
+  'gemini-3.1-flash-lite-image': {
+    displayName: 'Nano Banana 2 Lite',
+    costPerImage: 0.0336,
+    pricingNote: '1120 image tokens at $30/M; 1K only',
+    imageTokenPricePerMillion: 30,
+    maxReferenceImages: 14,
+    imageSizes: ['1K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3.1-flash-image': {
+    displayName: 'Nano Banana 2',
+    costPerImage: 0.067,
+    pricingNote: '1120 image tokens at $60/M for 1K; 512 is $0.045, 2K $0.101, 4K $0.151',
+    imageTokenPricePerMillion: 60,
+    maxReferenceImages: 14,
+    imageSizes: ['512', '1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3-pro-image': {
+    displayName: 'Nano Banana Pro',
+    costPerImage: 0.134,
+    pricingNote: '1120 image tokens at $120/M for 1K or 2K; 4K is $0.24',
+    imageTokenPricePerMillion: 120,
+    maxReferenceImages: 14,
+    imageSizes: ['1K', '2K', '4K'],
+    contextWindow: 131072,
+    lastUpdated: '2026-09-02'
+  },
+  // Preview ids. Google's deprecation page lists a 2026-06-25 shutdown for
+  // both, but the API still serves them; kept so saved settings keep working.
+  'gemini-3.1-flash-image-preview': {
+    displayName: 'Nano Banana 2 preview',
+    costPerImage: 0.067,
+    pricingNote: 'Same pricing as gemini-3.1-flash-image',
+    imageTokenPricePerMillion: 60,
+    maxReferenceImages: 14,
+    imageSizes: ['512', '1K', '2K', '4K'],
+    contextWindow: 65536,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-3-pro-image-preview': {
+    displayName: 'Nano Banana Pro preview',
+    costPerImage: 0.134,
+    pricingNote: 'Same pricing as gemini-3-pro-image',
+    imageTokenPricePerMillion: 120,
+    maxReferenceImages: 14,
+    imageSizes: ['1K', '2K', '4K'],
+    contextWindow: 131072,
+    lastUpdated: '2026-09-02'
+  },
+  'gemini-2.5-flash-image': {
+    displayName: 'Nano Banana legacy, shuts down 2026-10-02',
+    costPerImage: 0.039,
+    pricingNote: '1290 image tokens at $30/M; no imageSize parameter',
+    imageTokenPricePerMillion: 30,
+    maxReferenceImages: 3,
+    imageSizes: null,
+    contextWindow: 32768,
+    lastUpdated: '2026-09-02'
+  }
+};
+
 export class GeminiImageAdapter extends BaseImageAdapter {
 
   // Image adapters don't support streaming in the same way as text
@@ -139,70 +204,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   readonly name = 'gemini-image';
   readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
-  private readonly modelSpecs: Record<string, GeminiImageModelSpec> = {
-    'gemini-3.1-flash-lite-image': {
-      displayName: 'Nano Banana 2 Lite',
-      costPerImage: 0.0336,
-      pricingNote: '1120 image tokens at $30/M; 1K only',
-      imageTokenPricePerMillion: 30,
-      maxReferenceImages: 14,
-      imageSizes: ['1K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3.1-flash-image': {
-      displayName: 'Nano Banana 2',
-      costPerImage: 0.067,
-      pricingNote: '1120 image tokens at $60/M for 1K; 512 is $0.045, 2K $0.101, 4K $0.151',
-      imageTokenPricePerMillion: 60,
-      maxReferenceImages: 14,
-      imageSizes: ['512', '1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3-pro-image': {
-      displayName: 'Nano Banana Pro',
-      costPerImage: 0.134,
-      pricingNote: '1120 image tokens at $120/M for 1K or 2K; 4K is $0.24',
-      imageTokenPricePerMillion: 120,
-      maxReferenceImages: 14,
-      imageSizes: ['1K', '2K', '4K'],
-      contextWindow: 131072,
-      lastUpdated: '2026-09-02'
-    },
-    // Preview ids. Google's deprecation page lists a 2026-06-25 shutdown for
-    // both, but the API still serves them; kept so saved settings keep working.
-    'gemini-3.1-flash-image-preview': {
-      displayName: 'Nano Banana 2 preview',
-      costPerImage: 0.067,
-      pricingNote: 'Same pricing as gemini-3.1-flash-image',
-      imageTokenPricePerMillion: 60,
-      maxReferenceImages: 14,
-      imageSizes: ['512', '1K', '2K', '4K'],
-      contextWindow: 65536,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-3-pro-image-preview': {
-      displayName: 'Nano Banana Pro preview',
-      costPerImage: 0.134,
-      pricingNote: 'Same pricing as gemini-3-pro-image',
-      imageTokenPricePerMillion: 120,
-      maxReferenceImages: 14,
-      imageSizes: ['1K', '2K', '4K'],
-      contextWindow: 131072,
-      lastUpdated: '2026-09-02'
-    },
-    'gemini-2.5-flash-image': {
-      displayName: 'Nano Banana legacy, shuts down 2026-10-02',
-      costPerImage: 0.039,
-      pricingNote: '1290 image tokens at $30/M; no imageSize parameter',
-      imageTokenPricePerMillion: 30,
-      maxReferenceImages: 3,
-      imageSizes: null,
-      contextWindow: 32768,
-      lastUpdated: '2026-09-02'
-    }
-  };
+  private readonly modelSpecs = GEMINI_IMAGE_MODEL_SPECS;
 
   readonly supportedModels: ImageModel[] = Object.keys(this.modelSpecs) as ImageModel[];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];

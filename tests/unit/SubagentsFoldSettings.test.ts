@@ -179,3 +179,48 @@ it('describes the chat model when no subagent model is set, since subagents run 
     h.tab.destroy();
   }
 });
+
+it('selects an explicit "Same as chat" provider when no subagent model is set', async () => {
+  const h = await renderDefaults({ defaultModel: { provider: 'anthropic', model: 'claude-opus-4-6' } });
+  try {
+    // Before, the dropdown had no option for "none", so it showed the first
+    // provider while the rows below described the chat model.
+    const provider = control(h.row(COPY.provider), 'select');
+    expect(optionLabels(provider)).toEqual([COPY.sameAsChat, 'Anthropic', 'Mistral AI']);
+    expect(provider.value).toBe('');
+    expect(optionLabels(control(h.row(COPY.model), 'select'))).toEqual([COPY.sameAsChatModel('Claude Opus 4.6')]);
+  } finally {
+    h.tab.destroy();
+  }
+});
+
+it('goes back to the chat model when "Same as chat" is picked', async () => {
+  const h = await renderDefaults({
+    defaultModel: { provider: 'anthropic', model: 'claude-opus-4-6' },
+    agentModel: { provider: 'mistral', model: 'mistral-large-latest' }
+  });
+  try {
+    expect(control(h.row(COPY.provider), 'select').value).toBe('mistral');
+
+    choose(control(h.row(COPY.provider), 'select'), '');
+    await h.settle();
+
+    expect(h.settings.agentModel).toBeUndefined();
+    expect(control(h.row(COPY.provider), 'select').value).toBe('');
+    expect(foldSummary(h.root, FOLD_TITLES.subagents)).toBe('Claude Opus 4.6 · Thinking off · Creativity 0.5 · 200K context');
+  } finally {
+    h.tab.destroy();
+  }
+});
+
+it('does not describe a chat model whose provider is not set up', async () => {
+  const h = await renderDefaults({ defaultModel: { provider: 'openai', model: 'gpt-5.6-sol' } });
+  try {
+    // Subagents would run on a cloud provider that is set up, not on this model.
+    expect(foldSummary(h.root, FOLD_TITLES.subagents)).toBe(COPY.notSet);
+    expect(foldSummary(h.root, FOLD_TITLES.chatOptions)).toBe(COPY.pickModelFirst);
+    expect(rowNames(h.items())).not.toContain(COPY.thinking);
+  } finally {
+    h.tab.destroy();
+  }
+});

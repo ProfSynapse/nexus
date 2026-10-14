@@ -39,7 +39,13 @@ async function setup(overrides: Partial<ChatSettings> = {}, surface: 'defaults' 
     app: app as never,
     surface,
     foldStore: new FoldStateStore(app),
-    llmProviderSettings: llmSettings(),
+    llmProviderSettings: llmSettings({
+      providers: {
+        ...llmSettings().providers,
+        // A local server, so the tiny local model's provider can be used.
+        lmstudio: { enabled: true, apiKey: 'http://127.0.0.1:1234' }
+      }
+    }),
     initialSettings: chatSettings({ model: 'claude-opus-4-6', contextWindowOverrides: {}, ...overrides }),
     options: { workspaces: [], prompts: [] },
     callbacks: { onSettingsChange }
