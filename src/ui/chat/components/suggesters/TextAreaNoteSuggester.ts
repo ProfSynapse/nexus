@@ -12,15 +12,15 @@ import {
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { TokenCalculator } from '../../utils/TokenCalculator';
-import type { EmbeddingService } from '../../../../services/embeddings/EmbeddingService';
-import { searchNotes } from '../../../../utils/noteSearch';
+import { searchNotes, type EmbeddingServiceSource } from '../../../../utils/noteSearch';
 
 export class TextAreaNoteSuggester extends ContentEditableSuggester<NoteSuggestionItem> {
   private messageEnhancer: MessageEnhancer;
-  private embeddingService: EmbeddingService | null;
+  /** Resolved on every query; see EmbeddingServiceSource. */
+  private embeddingSource: EmbeddingServiceSource;
   private maxTokensPerNote = 10000;
 
-  constructor(app: App, element: HTMLElement, messageEnhancer: MessageEnhancer, component?: Component, embeddingService?: EmbeddingService | null) {
+  constructor(app: App, element: HTMLElement, messageEnhancer: MessageEnhancer, component?: Component, embeddingSource?: EmbeddingServiceSource) {
     super(app, element, {
       trigger: /\[\[([^\]]*?)$/,
       maxSuggestions: 50,
@@ -29,11 +29,11 @@ export class TextAreaNoteSuggester extends ContentEditableSuggester<NoteSuggesti
     }, component);
 
     this.messageEnhancer = messageEnhancer;
-    this.embeddingService = embeddingService ?? null;
+    this.embeddingSource = embeddingSource ?? null;
   }
 
   async getSuggestions(query: string): Promise<SuggestionItem<NoteSuggestionItem>[]> {
-    const files = await searchNotes(this.app, query, this.embeddingService, this.config.maxSuggestions);
+    const files = await searchNotes(this.app, query, this.embeddingSource, this.config.maxSuggestions);
     return files.map(file => this.createSuggestion(file, 1.0));
   }
 
