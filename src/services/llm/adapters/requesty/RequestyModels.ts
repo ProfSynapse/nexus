@@ -138,38 +138,6 @@ export const REQUESTY_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
-  {
-    provider: 'requesty',
-    name: 'Gemini 2.5 Pro',
-    apiName: 'google/gemini-2.5-pro',
-    contextWindow: 1048576,
-    maxTokens: 66000,
-    inputCostPerMillion: 1.25,
-    outputCostPerMillion: 10.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'requesty',
-    name: 'Gemini 2.5 Flash',
-    apiName: 'google/gemini-2.5-flash',
-    contextWindow: 1048576,
-    maxTokens: 65536,
-    inputCostPerMillion: 0.15,
-    outputCostPerMillion: 0.60,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
 
   // Anthropic models via Requesty (dashed upstream slugs)
   // Requesty lists this one with a dotted version, unlike its dashed Claude siblings.

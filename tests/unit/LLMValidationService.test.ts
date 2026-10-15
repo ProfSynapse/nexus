@@ -7,7 +7,12 @@
  */
 
 import { __setRequestUrlMock } from 'obsidian';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { LLMValidationService } from '../../src/services/llm/validation/ValidationService';
+import type { ModelSpec } from '../../src/services/llm/adapters/modelTypes';
+import { PERPLEXITY_MODELS } from '../../src/services/llm/adapters/perplexity/PerplexityModels';
+import { REQUESTY_MODELS } from '../../src/services/llm/adapters/requesty/RequestyModels';
 
 const mockRequestUrl = jest.fn();
 
@@ -84,19 +89,44 @@ describe('LLMValidationService', () => {
     await expect(validator('validateOpenAI')('restricted-key')).resolves.toEqual({ success: true });
   });
 
-  describe.each([['validatePerplexity'], ['validateRequesty']])('%s', (name) => {
-    it('accepts the key when only the test model is unavailable', async () => {
-      mockRequestUrl.mockResolvedValue({
-        status: 404,
-        json: { error: { message: 'No endpoints found for openai/gpt-5-nano.' } },
-        text: '',
-        headers: {}
-      });
-
-      await expect(validator(name)('test-key')).resolves.toEqual({ success: true });
+  describe.each([
+    ['validatePerplexity', PERPLEXITY_MODELS],
+    ['validateRequesty', REQUESTY_MODELS]
+  ] as const)('%s', (name, registry) => {
+    const expected = LLMValidationService.cheapestTestModels(registry);
+    const sentModels = () => mockRequestUrl.mock.calls.map(call => JSON.parse(call[0].body).model);
+    const modelGone = (model: string) => ({
+      status: 404,
+      json: { error: { message: `No endpoints found for ${model}.` } },
+      text: '',
+      headers: {}
     });
 
-    it('rejects a key the provider refuses', async () => {
+    it('tests with the cheapest model in its own registry', async () => {
+      mockRequestUrl.mockResolvedValue({ status: 200, json: {}, text: '{}', headers: {} });
+
+      await expect(validator(name)('test-key')).resolves.toEqual({ success: true });
+      expect(sentModels()).toEqual([expected[0]]);
+      expect(registry.map(model => model.apiName)).toContain(expected[0]);
+    });
+
+    it('moves on to the next cheapest model when one is gone', async () => {
+      mockRequestUrl
+        .mockResolvedValueOnce(modelGone(expected[0]))
+        .mockResolvedValueOnce({ status: 200, json: {}, text: '{}', headers: {} });
+
+      await expect(validator(name)('test-key')).resolves.toEqual({ success: true });
+      expect(sentModels()).toEqual(expected.slice(0, 2));
+    });
+
+    it('accepts the key when every test model is gone, because only the models were refused', async () => {
+      mockRequestUrl.mockImplementation(async (request: { body: string }) => modelGone(JSON.parse(request.body).model));
+
+      await expect(validator(name)('test-key')).resolves.toEqual({ success: true });
+      expect(sentModels()).toEqual(expected);
+    });
+
+    it('stops at the first refusal of the key', async () => {
       mockRequestUrl.mockResolvedValue({
         status: 401,
         json: { error: { message: 'Invalid model access token' } },
@@ -105,6 +135,7 @@ describe('LLMValidationService', () => {
       });
 
       await expect(validator(name)('bad-key')).resolves.toEqual({ success: false, error: 'Invalid model access token' });
+      expect(mockRequestUrl).toHaveBeenCalledTimes(1);
     });
 
     it('rejects a 400 that blames the key even when it mentions a model', async () => {
@@ -117,5 +148,28 @@ describe('LLMValidationService', () => {
 
       await expect(validator(name)('bad-key')).resolves.toEqual({ success: false, error: 'Invalid API key for model sonar' });
     });
+  });
+
+  describe('cheapestTestModels', () => {
+    const spec = (apiName: string, input: number, output: number) =>
+      ({ apiName, inputCostPerMillion: input, outputCostPerMillion: output }) as ModelSpec;
+
+    it('orders by price, puts unpriced models last, drops duplicates and caps the attempts', () => {
+      expect(LLMValidationService.cheapestTestModels([
+        spec('free', 0, 0),
+        spec('pricey', 5, 25),
+        spec('cheap', 0.1, 0.4),
+        spec('cheap', 0.1, 0.4),
+        spec('middle', 1, 4)
+      ])).toEqual(['cheap', 'middle', 'pricey']);
+    });
+  });
+
+  it('never names a model in a key check: test models come from the registry', () => {
+    // A hardcoded test model is how the OpenRouter check broke when its free
+    // model was removed. Checks must be model-free or use cheapestTestModels.
+    const source = readFileSync(join(__dirname, '../../src/services/llm/validation/ValidationService.ts'), 'utf8');
+    expect(source).not.toMatch(/model\s*:\s*['"`]/);
+    expect(source).not.toMatch(/\/models\/[a-z0-9.-]+:generateContent/i);
   });
 });

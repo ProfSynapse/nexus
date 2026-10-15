@@ -13,6 +13,9 @@ import {
   ProviderHttpClient,
   ProviderHttpResponse
 } from '../adapters/shared/ProviderHttpClient';
+import type { ModelSpec } from '../adapters/modelTypes';
+import { PERPLEXITY_MODELS } from '../adapters/perplexity/PerplexityModels';
+import { REQUESTY_MODELS } from '../adapters/requesty/RequestyModels';
 
 type ValidationResponseBody = {
   error?: {
@@ -124,36 +127,69 @@ export class LLMValidationService {
     }
   }
 
+  /** How many registry models a test-message check tries before giving up. */
+  private static readonly TEST_MODEL_ATTEMPTS = 3;
+
+  /**
+   * The provider's own registry models, cheapest first, for a test message.
+   * Taking them from the registry instead of a hardcoded id means the check
+   * moves with the model list, and a model with no price (unknown or free,
+   * which is how a removed free model broke the OpenRouter check) goes last.
+   */
+  static cheapestTestModels(models: readonly ModelSpec[]): string[] {
+    const cost = (model: ModelSpec) => model.inputCostPerMillion + model.outputCostPerMillion;
+    return models
+      .map((model, index) => ({ model, index }))
+      .sort((a, b) => {
+        const aPriced = cost(a.model) > 0;
+        const bPriced = cost(b.model) > 0;
+        if (aPriced !== bPriced) return aPriced ? -1 : 1;
+        return cost(a.model) - cost(b.model) || a.index - b.index;
+      })
+      .map(({ model }) => model.apiName)
+      .filter((id, index, ids) => ids.indexOf(id) === index)
+      .slice(0, this.TEST_MODEL_ATTEMPTS);
+  }
+
   /**
    * Validate a key by sending a one-word test message, for providers that
-   * cannot check a key any other way. An error about the test model itself
-   * means the key was accepted, so a retired model never fails the provider.
+   * cannot check a key any other way. It tries the cheapest registry models in
+   * turn: an error about the model moves on to the next one, and an error
+   * about the key stops. If every model was refused only as a model, the key
+   * itself was accepted, so a retired model never fails the provider.
    */
   private static async validateWithTestMessage(
     provider: string,
     label: string,
     url: string,
     headers: Record<string, string>,
-    body: Record<string, unknown>
+    models: string[],
+    buildBody: (model: string) => Record<string, unknown>
   ): Promise<{ success: boolean; error?: string }> {
+    if (models.length === 0) {
+      return { success: false, error: `No ${label} model is available to check the key with` };
+    }
+
     try {
-      const response = await this.requestWithTimeout(provider, `${label} validation`, {
-        url,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(body)
-      });
+      for (const model of models) {
+        const response = await this.requestWithTimeout(provider, `${label} validation`, {
+          url,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify(buildBody(model))
+        });
 
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      }
+        if (response.status >= 200 && response.status < 300) {
+          return { success: true };
+        }
 
-      const errorData = (response.json ?? {}) as ValidationResponseBody & { message?: string; detail?: string };
-      const error = errorData.error?.message || errorData.message || errorData.detail || `HTTP ${response.status}`;
-      if (this.isTestModelUnavailable(response.status, error)) {
-        return { success: true };
+        const errorData = (response.json ?? {}) as ValidationResponseBody & { message?: string; detail?: string };
+        const error = errorData.error?.message || errorData.message || errorData.detail || `HTTP ${response.status}`;
+        if (!this.isTestModelUnavailable(response.status, error)) {
+          return { success: false, error };
+        }
       }
-      return { success: false, error };
+      return { success: true };
     } catch (error: unknown) {
       return {
         success: false,
@@ -349,28 +385,27 @@ export class LLMValidationService {
   }
 
   private static async validatePerplexity(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    // Perplexity has no model list, so this sends a test message. A retired
-    // test model does not fail the key.
+    // Perplexity has no model list, so this sends a test message to its
+    // cheapest registry models.
     return this.validateWithTestMessage('perplexity', 'Perplexity', 'https://api.perplexity.ai/chat/completions', {
       'Authorization': `Bearer ${apiKey}`,
       'X-Pplx-Integration': 'nexus'
-    }, {
-      model: 'sonar',
+    }, this.cheapestTestModels(PERPLEXITY_MODELS), model => ({
+      model,
       messages: [{ role: 'user', content: 'Hi' }],
       max_tokens: 5
-    });
+    }));
   }
 
   private static async validateRequesty(apiKey: string): Promise<{ success: boolean; error?: string }> {
     // Requesty answers a bad key on its model list with the same 403 as other
-    // refusals, so this sends a test message. A retired test model does not
-    // fail the key.
+    // refusals, so this sends a test message to its cheapest registry models.
     return this.validateWithTestMessage('requesty', 'Requesty', 'https://router.requesty.ai/v1/chat/completions', {
       'Authorization': `Bearer ${apiKey}`
-    }, {
-      model: 'openai/gpt-5-nano',
+    }, this.cheapestTestModels(REQUESTY_MODELS), model => ({
+      model,
       messages: [{ role: 'user', content: 'Hi' }],
       max_completion_tokens: 5
-    });
+    }));
   }
 }
