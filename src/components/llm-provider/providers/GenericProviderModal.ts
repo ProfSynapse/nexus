@@ -19,6 +19,7 @@ import { ModelWithProvider } from '../../../services/StaticModelsService';
 import { renderOAuthBanner, updateConnectButtonState, renderCliStatusBanner, updateCheckStatusButtonState } from '../../shared/OAuthBannerComponent';
 import { OAuthFlowManager } from '../../../services/oauth/OAuthFlowManager';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import { fetchListedModelIds, isModelListed } from '../../../services/llm/validation/ProviderModelAvailability';
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -40,6 +41,9 @@ export class GenericProviderModal implements IProviderModal {
   // State
   private apiKey = '';
   private models: ModelWithProvider[] = [];
+  /** Chat model ids the provider no longer lists; their toggles are locked off. */
+  private unavailableModelIds = new Set<string>();
+  private availabilityRevision = 0;
   private isValidated = false;
   private validationTimeout: number | null = null;
   private validationRevision = 0;
@@ -83,6 +87,8 @@ export class GenericProviderModal implements IProviderModal {
               };
 
               config.enabled = true;
+            }).then(() => {
+              void this.refreshModelAvailability();
             });
           },
           onDisconnect: () => {
@@ -449,6 +455,7 @@ export class GenericProviderModal implements IProviderModal {
         { includeIngestionModels }
       );
       this.displayModels();
+      void this.refreshModelAvailability();
     } catch (error) {
       console.error('[GenericProvider] Error loading models:', error);
       this.modelsContainer.empty();
@@ -485,13 +492,23 @@ export class GenericProviderModal implements IProviderModal {
       modelNameEl.textContent = model.name;
 
       // Model toggle
+      const unavailable = this.unavailableModelIds.has(model.id);
+      if (unavailable) {
+        modelEl.addClass('is-unavailable');
+        modelNameEl.createSpan({
+          cls: 'llm-provider-model-unavailable',
+          text: `No longer available from ${this.config.providerName}`
+        });
+      }
+
       const currentEnabled = this.config.config.models?.[model.id]?.enabled ?? true;
       const toggleContainer = modelRow.createDiv('model-toggle-container');
       toggleContainer.addClass('llm-provider-model-toggle');
 
       new Setting(toggleContainer)
         .addToggle(toggle => toggle
-          .setValue(currentEnabled)
+          .setValue(unavailable ? false : currentEnabled)
+          .setDisabled(unavailable)
           .onChange(enabled => {
             // Initialize models object if needed
             if (!this.config.config.models) {
@@ -506,6 +523,33 @@ export class GenericProviderModal implements IProviderModal {
           })
         );
     });
+  }
+
+  /**
+   * Lock off the chat models the provider no longer lists. The saved toggle
+   * values are left alone, so a model that comes back keeps its setting. When
+   * the list cannot be fetched, every model stays available.
+   */
+  private async refreshModelAvailability(): Promise<void> {
+    const revision = ++this.availabilityRevision;
+    let unavailable = new Set<string>();
+    try {
+      const chatModelIds = this.deps.staticModelsService
+        .getModelsForProvider(this.config.providerId)
+        .map(model => model.id);
+      const listed = await fetchListedModelIds(this.config.providerId, this.apiKey);
+      if (listed) {
+        unavailable = new Set(chatModelIds.filter(id => !isModelListed(id, listed)));
+      }
+    } catch (error) {
+      console.warn('[GenericProvider] Could not check model availability:', error);
+    }
+    if (this.destroyed || revision !== this.availabilityRevision) return;
+
+    const changed = unavailable.size !== this.unavailableModelIds.size
+      || [...unavailable].some(id => !this.unavailableModelIds.has(id));
+    this.unavailableModelIds = unavailable;
+    if (changed) this.displayModels();
   }
 
   /**
@@ -555,6 +599,7 @@ export class GenericProviderModal implements IProviderModal {
         this.saveConfig();
 
         new Notice(`${this.config.providerName} API key validated successfully!`);
+        void this.refreshModelAvailability();
       } else {
         throw new Error(result.error || 'API key validation failed');
       }

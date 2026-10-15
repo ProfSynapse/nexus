@@ -89,6 +89,86 @@ export class LLMValidationService {
   }
 
   /**
+   * Validate a key with a read-only GET that needs authentication but no model.
+   * Checks that send a test message name a model, and fail every key once the
+   * provider retires that model.
+   */
+  private static async validateWithAuthenticatedGet(
+    provider: string,
+    label: string,
+    url: string,
+    headers: Record<string, string>,
+    keyAcceptedStatuses: number[] = []
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await this.requestWithTimeout(provider, `${label} validation`, {
+        url,
+        method: 'GET',
+        headers
+      });
+
+      if ((response.status >= 200 && response.status < 300) || keyAcceptedStatuses.includes(response.status)) {
+        return { success: true };
+      }
+
+      const errorData = (response.json ?? {}) as ValidationResponseBody & { message?: string; detail?: string };
+      return {
+        success: false,
+        error: errorData.error?.message || errorData.message || errorData.detail || `HTTP ${response.status}`
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : `${label} API key validation failed`
+      };
+    }
+  }
+
+  /**
+   * Validate a key by sending a one-word test message, for providers that
+   * cannot check a key any other way. An error about the test model itself
+   * means the key was accepted, so a retired model never fails the provider.
+   */
+  private static async validateWithTestMessage(
+    provider: string,
+    label: string,
+    url: string,
+    headers: Record<string, string>,
+    body: Record<string, unknown>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await this.requestWithTimeout(provider, `${label} validation`, {
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify(body)
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        return { success: true };
+      }
+
+      const errorData = (response.json ?? {}) as ValidationResponseBody & { message?: string; detail?: string };
+      const error = errorData.error?.message || errorData.message || errorData.detail || `HTTP ${response.status}`;
+      if (this.isTestModelUnavailable(response.status, error)) {
+        return { success: true };
+      }
+      return { success: false, error };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : `${label} API key validation failed`
+      };
+    }
+  }
+
+  /** A 400/403/404 that is about the model, not the key or account. */
+  private static isTestModelUnavailable(status: number, message: string): boolean {
+    if (status !== 400 && status !== 403 && status !== 404) return false;
+    return /model|endpoints? found/i.test(message) && !/api[ _-]?key|auth|credential|token/i.test(message);
+  }
+
+  /**
    * Validate an API key by making a simple test request
    */
   static async validateApiKey(
@@ -169,243 +249,49 @@ export class LLMValidationService {
   }
 
   private static async validateOpenAI(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Use Obsidian's requestUrl instead of SDK for mobile compatibility
-      const response = await this.requestWithTimeout('openai', 'OpenAI validation', {
-        url: 'https://api.openai.com/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-5-nano',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_completion_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return {
-          success: false,
-          error: errorData.error?.message || `HTTP ${response.status}`
-        };
-      }
-    } catch (error: unknown) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'OpenAI API key validation failed'
-      };
-    }
+    // Listing models names no model. A restricted key without the model-read
+    // scope gets 403 here but still authenticated, so 403 accepts the key.
+    return this.validateWithAuthenticatedGet('openai', 'OpenAI', 'https://api.openai.com/v1/models', {
+      'Authorization': `Bearer ${apiKey}`
+    }, [403]);
   }
 
   private static async validateAnthropic(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Use Obsidian's requestUrl to bypass CORS restrictions
-      const response = await this.requestWithTimeout('anthropic', 'Anthropic validation', {
-        url: 'https://api.anthropic.com/v1/messages',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 5,
-          messages: [{ role: 'user', content: 'Hi' }]
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Anthropic API key validation failed' 
-      };
-    }
+    // Listing models needs a valid key but no model id, so a retired model cannot fail the check.
+    return this.validateWithAuthenticatedGet('anthropic', 'Anthropic', 'https://api.anthropic.com/v1/models', {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    });
   }
 
   private static async validateGoogle(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('google', 'Google validation', {
-        url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Hi' }] }],
-          generationConfig: { maxOutputTokens: 5 }
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Google API key validation failed' 
-      };
-    }
+    // Listing models needs a valid key but no model id, so a retired model cannot fail the check.
+    return this.validateWithAuthenticatedGet('google', 'Google', 'https://generativelanguage.googleapis.com/v1beta/models', { 'x-goog-api-key': apiKey });
   }
 
   private static async validateMistral(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('mistral', 'Mistral validation', {
-        url: 'https://api.mistral.ai/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'mistral-tiny',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Mistral API key validation failed' 
-      };
-    }
+    // Listing models needs a valid key but no model id, so a retired model cannot fail the check.
+    return this.validateWithAuthenticatedGet('mistral', 'Mistral', 'https://api.mistral.ai/v1/models', { 'Authorization': `Bearer ${apiKey}` });
   }
 
   private static async validateGroq(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('groq', 'Groq validation', {
-        url: 'https://api.groq.com/openai/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama3-8b-8192',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Groq API key validation failed' 
-      };
-    }
+    // Listing models needs a valid key but no model id, so a retired model cannot fail the check.
+    return this.validateWithAuthenticatedGet('groq', 'Groq', 'https://api.groq.com/openai/v1/models', { 'Authorization': `Bearer ${apiKey}` });
   }
 
   private static async validateDeepSeek(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('deepseek', 'DeepSeek validation', {
-        url: 'https://api.deepseek.com/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'deepseek-v4-flash',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return {
-          success: false,
-          error: errorData.error?.message || `HTTP ${response.status}`
-        };
-      }
-    } catch (error: unknown) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'DeepSeek API key validation failed'
-      };
-    }
+    // Listing models needs a valid key but no model id, so a retired model cannot fail the check.
+    return this.validateWithAuthenticatedGet('deepseek', 'DeepSeek', 'https://api.deepseek.com/models', { 'Authorization': `Bearer ${apiKey}` });
   }
 
   private static async validateOpenRouter(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const requestBody = {
-        model: 'liquid/lfm-2.5-1.2b-thinking:free',  // Free model for validation
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 1
-      };
-      
-      const response = await this.requestWithTimeout('openrouter', 'OpenRouter validation', {
-        url: 'https://openrouter.ai/api/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://synapticlabs.ai',
-          'X-Title': BRAND_NAME
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        const errorMessage = errorData.error?.message || JSON.stringify(errorData) || `HTTP ${response.status}`;
-        console.error('OpenRouter validation error:', errorMessage);
-        return { 
-          success: false, 
-          error: errorMessage
-        };
-      }
-    } catch (error: unknown) {
-      console.error('OpenRouter validation exception:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'OpenRouter API key validation failed' 
-      };
-    }
+    // OpenRouter's model list is public, so it cannot check a key. The key
+    // endpoint can, and it costs nothing and names no model.
+    return this.validateWithAuthenticatedGet('openrouter', 'OpenRouter', 'https://openrouter.ai/api/v1/key', {
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://synapticlabs.ai',
+      'X-Title': BRAND_NAME
+    });
   }
 
   private static async validateDeepgram(apiKey: string): Promise<{ success: boolean; error?: string }> {
@@ -463,69 +349,28 @@ export class LLMValidationService {
   }
 
   private static async validatePerplexity(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('perplexity', 'Perplexity validation', {
-        url: 'https://api.perplexity.ai/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'X-Pplx-Integration': 'nexus'
-        },
-        body: JSON.stringify({
-          model: 'sonar',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = (response.json ?? {});
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Perplexity API key validation failed' 
-      };
-    }
+    // Perplexity has no model list, so this sends a test message. A retired
+    // test model does not fail the key.
+    return this.validateWithTestMessage('perplexity', 'Perplexity', 'https://api.perplexity.ai/chat/completions', {
+      'Authorization': `Bearer ${apiKey}`,
+      'X-Pplx-Integration': 'nexus'
+    }, {
+      model: 'sonar',
+      messages: [{ role: 'user', content: 'Hi' }],
+      max_tokens: 5
+    });
   }
 
   private static async validateRequesty(apiKey: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      const response = await this.requestWithTimeout('requesty', 'Requesty validation', {
-        url: 'https://router.requesty.ai/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-5-nano',
-          messages: [{ role: 'user', content: 'Hi' }],
-          max_completion_tokens: 5
-        })
-      });
-
-      if (response.status >= 200 && response.status < 300) {
-        return { success: true };
-      } else {
-        const errorData = response.json || {};
-        return { 
-          success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
-        };
-      }
-    } catch (error: unknown) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Requesty API key validation failed' 
-      };
-    }
+    // Requesty answers a bad key on its model list with the same 403 as other
+    // refusals, so this sends a test message. A retired test model does not
+    // fail the key.
+    return this.validateWithTestMessage('requesty', 'Requesty', 'https://router.requesty.ai/v1/chat/completions', {
+      'Authorization': `Bearer ${apiKey}`
+    }, {
+      model: 'openai/gpt-5-nano',
+      messages: [{ role: 'user', content: 'Hi' }],
+      max_completion_tokens: 5
+    });
   }
 }

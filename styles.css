@@ -3533,6 +3533,17 @@ body.is-mobile .nexus-compatible-modal button {
     font-weight: bold;
 }
 
+.model-item.is-unavailable .llm-provider-model-name {
+    color: var(--text-muted);
+}
+
+.llm-provider-model-unavailable {
+    display: block;
+    font-size: var(--font-ui-smaller);
+    font-weight: normal;
+    color: var(--text-faint);
+}
+
 .llm-provider-description-input {
     flex: 1;
 }
