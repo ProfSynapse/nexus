@@ -2,6 +2,14 @@
 
 ## October 2026
 
+**Unreleased** — Saving works again in vaults with an incomplete storage record
+
+> Draft for the next release. Version number and PR links are added when it is cut.
+
+- In a vault whose Nexus `data.json` had a storage record without its migration details (for example after the file was cleaned by hand), storage never finished starting. Every save failed with "Failed to save workspace" or "Storage is not ready", including workspaces, workflows and schedules. Nexus now treats an incomplete or damaged storage record as missing: it checks the vault for older Nexus data, moves it over if there is any, and rewrites the record. No data is deleted.
+
+---
+
 **v5.21.1** — API keys validate again, and retired models no longer block a provider
 
 - Adding an OpenRouter API key failed with "No endpoints found for liquid/lfm-2.5-1.2b-thinking:free", so OpenRouter stayed turned off even with a working key. The check sent a test message to a free model that OpenRouter has since removed. It now asks OpenRouter whether the key is valid, which costs nothing and does not depend on any model ([#420](https://github.com/ProfSynapse/nexus/pull/420)).

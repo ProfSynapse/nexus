@@ -54,6 +54,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+const MIGRATION_STATES: readonly PluginScopedMigrationState[] = ['not_needed', 'pending', 'verified', 'failed'];
+
+/**
+ * Return the persisted JSONL-migration record only when its `migration` block
+ * is usable. data.json is user-editable and can be synced or hand-cleaned, so
+ * `pluginStorage` may be missing, partial (no `migration`), or malformed
+ * (`migration: null`, missing or unknown `state`). Any such record is treated
+ * as absent: the caller re-detects legacy data on disk and writes a fully
+ * formed state back. Only a well-formed `verified` record is trusted to skip
+ * detection, so unusable data can never suppress a needed migration.
+ */
+function readPersistedStorageState(value: unknown): PluginScopedStorageState | undefined {
+  if (!isRecord(value) || !isRecord(value.migration)) {
+    return undefined;
+  }
+  const state = value.migration.state;
+  if (typeof state !== 'string' || !MIGRATION_STATES.includes(state as PluginScopedMigrationState)) {
+    return undefined;
+  }
+  return value as unknown as PluginScopedStorageState;
+}
+
 function buildUniquePaths(...basePaths: string[]): string[] {
   return Array.from(new Set(basePaths.filter(path => typeof path === 'string' && path.trim().length > 0)));
 }
@@ -115,7 +137,7 @@ export class PluginScopedStorageCoordinator {
     legacySourcesDetected: string[],
     vaultRootHasEventData: boolean
   ): PluginScopedStorageState {
-    const persistedState = pluginData.pluginStorage;
+    const persistedState = readPersistedStorageState(pluginData.pluginStorage);
 
     if (persistedState?.migration.state === 'verified') {
       if (!vaultRootHasEventData && legacySourcesDetected.length > 0) {
@@ -169,7 +191,7 @@ export class PluginScopedStorageCoordinator {
   ): Promise<PluginScopedStorageState> {
     const pluginData = await this.loadPluginData();
     const nextState = this.buildPersistedState(
-      pluginData.pluginStorage,
+      readPersistedStorageState(pluginData.pluginStorage),
       plan.vaultWriteBasePath,
       plan.state.migration.legacySourcesDetected,
       migrationState,
@@ -196,7 +218,7 @@ export class PluginScopedStorageCoordinator {
   async writeCacheBackendState(state: CacheBackendState): Promise<void> {
     await pluginDataLock.acquire(async () => {
       const data = await this.loadPluginData();
-      const existing = data.pluginStorage ?? this.createNotNeededState('');
+      const existing = readPersistedStorageState(data.pluginStorage) ?? this.createNotNeededState('');
       data.pluginStorage = { ...existing, cacheBackend: state };
       await this.plugin.saveData(data);
     });
