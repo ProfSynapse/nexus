@@ -7,8 +7,8 @@
  * incoming events are. While one entry plays, later ones collapse into a
  * single queued slot (latest wins). A same-text tense flip restyles the
  * visible line in place instead of re-rolling it. Once a revealed line that
- * overflows the row has no successor waiting, it rewinds and carousels on a
- * loop so the whole sentence stays readable.
+ * overflows the row has no successor waiting, it repeats continuously so the whole sentence stays readable.
+ * Layout dimensions below are fixtures; browser checks verify CSS continuity.
  */
 
 import { Component, createMockElement } from 'obsidian';
@@ -17,15 +17,21 @@ import { ToolStatusLine } from '../../src/ui/chat/components/toolStatusLine';
 const WORD_MS = 90;
 const DWELL_MS = 450;
 
-/** The text lives in an inner span; the outer div is the clipping row. */
-function innerOf(outer: HTMLElement): HTMLElement {
+/** The clipping row contains a moving track with one or two text copies. */
+function trackOf(outer: HTMLElement): HTMLElement {
   return (outer.createSpan as jest.Mock).mock.results[0].value as HTMLElement;
+}
+
+function innerOf(outer: HTMLElement): HTMLElement {
+  return (trackOf(outer).createSpan as jest.Mock).mock.results[0].value as HTMLElement;
 }
 
 /** Give a played line real geometry so the overflow measurement can run. */
 function measure(outer: HTMLElement, rowWidth: number, textWidth: number): void {
   (outer as unknown as { clientWidth: number }).clientWidth = rowWidth;
   (innerOf(outer) as unknown as { scrollWidth: number }).scrollWidth = textWidth;
+  // Simulate the two-copy layout; real CSS geometry is checked in a browser.
+  trackOf(outer).getBoundingClientRect = jest.fn(() => ({ width: 2 * (textWidth + 32) } as DOMRect));
 }
 
 /**
@@ -200,105 +206,115 @@ describe('ToolStatusLine — clear', () => {
   });
 });
 
-describe('ToolStatusLine — carousel', () => {
+describe('ToolStatusLine — continuous carousel', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
-  it('rewinds and loops a revealed line that outgrows the row', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
-
-    line.update('a goal far wider than the row', 'present');
+  it('repeats the complete text once, hidden from screen readers, and loops the full copy distance', () => {
+    const { line, createdSlots } = makeLine();
+    const goal = 'a goal far wider than the row';
+    line.update(goal, 'present');
     const [outer] = createdSlots();
-    measure(outer, 200, 500); // 300px of text hangs off the row
+    measure(outer, 200, 500);
+    const track = trackOf(outer);
 
-    // Mid-reveal the line is still following the newest word, not looping.
     jest.advanceTimersByTime(WORD_MS * 6);
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+    expect(track.createSpan).toHaveBeenCalledTimes(1);
+    expect(track.addClass).not.toHaveBeenCalledWith('tool-status-marquee');
 
-    // Reveal done + dwell → the carousel takes over from the parked tail.
     jest.advanceTimersByTime(DWELL_MS);
-
-    const [text] = createdTexts();
-    expect(text.addClass).toHaveBeenCalledWith('tool-status-marquee');
+    expect(track.createSpan).toHaveBeenLastCalledWith({
+      cls: 'tool-status-text-inner', text: goal, attr: { 'aria-hidden': 'true' },
+    });
+    expect(track.addClass).toHaveBeenCalledWith('tool-status-marquee');
     expect((outer as unknown as { scrollLeft: number }).scrollLeft).toBe(0);
-    // 300px at 45px/s = 6.67s of travel, held either side → ~9.5s per lap.
-    expect(text.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-shift', '-300px');
-    expect(text.style.setProperty).toHaveBeenCalledWith(
-      '--tool-status-marquee-duration',
-      '9524ms'
-    );
+    // The lap covers a whole copy plus its 32px gap at 45px/s, with no holds.
+    expect(track.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-duration', '11822ms');
+
+    jest.advanceTimersByTime(60_000);
+    expect(track.createSpan).toHaveBeenCalledTimes(2);
+    expect(createdSlots()).toHaveLength(1);
   });
 
-  it('floors the lap time so a barely-overflowing line drifts instead of twitching', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
-
+  it('floors the lap time for a short overflowing line', () => {
+    const { line, createdSlots } = makeLine();
     line.update('just over', 'present');
-    measure(createdSlots()[0], 200, 220);
+    measure(createdSlots()[0], 50, 70);
     jest.advanceTimersByTime(WORD_MS + DWELL_MS);
-
-    expect(createdTexts()[0].style.setProperty).toHaveBeenCalledWith(
-      '--tool-status-marquee-duration',
-      '3000ms'
+    expect(trackOf(createdSlots()[0]).style.setProperty).toHaveBeenCalledWith(
+      '--tool-status-marquee-duration', '3000ms'
     );
   });
 
   it('leaves a line that fits the row alone', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
-
+    const { line, createdSlots } = makeLine();
     line.update('short goal', 'present');
-    measure(createdSlots()[0], 400, 402); // 2px: rounding, not text
+    measure(createdSlots()[0], 400, 402);
     jest.advanceTimersByTime(WORD_MS + DWELL_MS);
-
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+    const track = trackOf(createdSlots()[0]);
+    expect(track.addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+    expect(track.createSpan).toHaveBeenCalledTimes(1);
   });
 
   it('does not loop a line that is about to be replaced', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
-
+    const { line, createdSlots } = makeLine();
     line.update('first long goal', 'present');
     measure(createdSlots()[0], 100, 500);
-    line.update('second long goal', 'present'); // queued mid-reveal
-
+    line.update('second long goal', 'present');
     jest.advanceTimersByTime(WORD_MS * 3 + DWELL_MS);
-
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+    expect(trackOf(createdSlots()[0]).addClass).not.toHaveBeenCalledWith('tool-status-marquee');
     expect(createdSlots()).toHaveLength(2);
   });
 
-  it('keeps looping across a tense flip instead of re-rolling the line', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
-
-    line.update('a goal far wider than the row', 'present');
+  it('keeps the same track and copies across duplicate events and tense flips', () => {
+    const { line, createdSlots } = makeLine();
+    const goal = 'a goal far wider than the row';
+    line.update(goal, 'present');
     const [outer] = createdSlots();
     measure(outer, 200, 500);
     jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
+    const track = trackOf(outer);
+    (track.addClass as jest.Mock).mockClear();
+    (track.style.setProperty as jest.Mock).mockClear();
 
-    const [text] = createdTexts();
-    (text.addClass as jest.Mock).mockClear();
-
-    line.update('a goal far wider than the row', 'past');
-
-    expect(createdSlots()).toHaveLength(1); // same line, restyled in place
+    line.update(goal, 'present');
+    line.update(goal, 'past');
+    expect(createdSlots()).toHaveLength(1);
     expect(outer.addClass).toHaveBeenCalledWith('tool-status-text-past');
-    // The loop lives on the inner element, so the tense swap never touches it.
-    expect(text.addClass).not.toHaveBeenCalled();
+    expect(track.createSpan).toHaveBeenCalledTimes(2);
+    expect(track.addClass).not.toHaveBeenCalled();
+    expect(track.style.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('replaces the looping entry when a new tool status arrives', () => {
+    const { line, createdSlots } = makeLine();
+    line.update('first long goal', 'present');
+    const [first] = createdSlots();
+    measure(first, 100, 500);
+    jest.advanceTimersByTime(WORD_MS * 3 + DWELL_MS);
+    line.update('next tool', 'present');
+    jest.advanceTimersByTime(WORD_MS);
+    expect(innerOf(createdSlots()[1]).textContent).toBe('next tool');
+    expect(first.classList.add).toHaveBeenCalledWith('exiting');
+    jest.advanceTimersByTime(200);
+    expect(first.remove).toHaveBeenCalled();
   });
 
   it('skips the carousel under reduced motion and exposes the full text on the row', () => {
-    const matchMedia = jest.fn().mockReturnValue({ matches: true });
-    (window as unknown as { matchMedia: unknown }).matchMedia = matchMedia;
-
-    const { line, createdSlots, createdTexts } = makeLine();
-    line.update('a goal far wider than the row', 'present');
-    const [outer] = createdSlots();
-    measure(outer, 200, 500);
-    jest.advanceTimersByTime(DWELL_MS);
-
-    expect(createdTexts()[0].textContent).toBe('a goal far wider than the row');
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
-    expect(outer.setAttribute).toHaveBeenCalledWith('title', 'a goal far wider than the row');
-
-    (window as unknown as { matchMedia: unknown }).matchMedia = undefined;
+    (window as unknown as { matchMedia: unknown }).matchMedia = jest.fn().mockReturnValue({ matches: true });
+    try {
+      const { line, createdSlots } = makeLine();
+      line.update('a goal far wider than the row', 'present');
+      const [outer] = createdSlots();
+      measure(outer, 200, 500);
+      jest.advanceTimersByTime(DWELL_MS);
+      expect(innerOf(outer).textContent).toBe('a goal far wider than the row');
+      expect(trackOf(outer).createSpan).toHaveBeenCalledTimes(1);
+      expect(trackOf(outer).addClass).not.toHaveBeenCalledWith('tool-status-marquee');
+      expect(outer.setAttribute).toHaveBeenCalledWith('title', 'a goal far wider than the row');
+    } finally {
+      (window as unknown as { matchMedia: unknown }).matchMedia = undefined;
+    }
   });
 });
 
@@ -315,14 +331,13 @@ describe('ToolStatusLine — carousel follows the row width', () => {
     jest.useRealTimers();
   });
 
-  /** Play a line to a settled, looping state at the given geometry. */
   function looping(rowWidth: number, textWidth: number) {
     const line = makeLine();
     line.line.update('a goal far wider than the row', 'present');
     const [outer] = line.createdSlots();
     measure(outer, rowWidth, textWidth);
     jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
-    return { ...line, outer, text: innerOf(outer) };
+    return { ...line, outer, track: trackOf(outer) };
   }
 
   it('observes the row the line is drawn into', () => {
@@ -330,92 +345,61 @@ describe('ToolStatusLine — carousel follows the row width', () => {
     expect(resize.observed).toEqual([slot]);
   });
 
-  it('re-measures the lap against the new width when the pane narrows', () => {
-    const { outer, text } = looping(200, 500);
-    expect(text.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-shift', '-300px');
-    (text.style.setProperty as jest.Mock).mockClear();
-
-    measure(outer, 120, 500); // pane dragged narrower — 80px more to travel
+  it('keeps the same lap and speed when the pane narrows or its height changes', () => {
+    const { outer, track } = looping(200, 500);
+    (track.style.setProperty as jest.Mock).mockClear();
+    measure(outer, 120, 500);
     resize.fire();
     jest.advanceTimersByTime(RESIZE_SETTLE_MS);
-
-    expect(text.style.setProperty).toHaveBeenCalledWith('--tool-status-marquee-shift', '-380px');
-    expect(text.style.setProperty).toHaveBeenCalledWith(
-      '--tool-status-marquee-duration',
-      '12063ms'
-    );
-  });
-
-  it('keeps a running lap where it is when the width does not actually change', () => {
-    const { text } = looping(200, 500);
-    (text.style.setProperty as jest.Mock).mockClear();
-
-    resize.fire(); // e.g. a height-only change
-    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
-
-    expect(text.style.setProperty).not.toHaveBeenCalled();
-  });
-
-  it('collapses several resize ticks into one measurement', () => {
-    const { outer, text } = looping(200, 500);
-    (text.style.setProperty as jest.Mock).mockClear();
-
-    measure(outer, 190, 500);
-    resize.fire();
-    measure(outer, 160, 500);
-    resize.fire();
-    measure(outer, 150, 500);
     resize.fire();
     jest.advanceTimersByTime(RESIZE_SETTLE_MS);
-
-    // Only the settled width is written, not every frame of the drag.
-    const shifts = (text.style.setProperty as jest.Mock).mock.calls
-      .filter(([name]) => name === '--tool-status-marquee-shift')
-      .map(([, value]) => value);
-    expect(shifts).toEqual(['-350px']);
+    // Viewport width does not change the distance between repeated copies.
+    expect(track.style.setProperty).not.toHaveBeenCalled();
+    expect(track.createSpan).toHaveBeenCalledTimes(2);
   });
 
-  it('stops looping when the pane widens enough to fit the line', () => {
-    const { outer, text } = looping(200, 500);
-
+  it('removes the repeated copy when the pane widens enough, then can loop again', () => {
+    const { outer, track } = looping(200, 500);
+    const repeat = (track.createSpan as jest.Mock).mock.results[1].value as HTMLElement;
     measure(outer, 520, 500);
     resize.fire();
     jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+    expect(track.removeClass).toHaveBeenCalledWith('tool-status-marquee');
+    expect(track.style.removeProperty).toHaveBeenCalledWith('--tool-status-marquee-duration');
+    expect(repeat.remove).toHaveBeenCalled();
 
-    expect(text.removeClass).toHaveBeenCalledWith('tool-status-marquee');
-    expect(text.style.removeProperty).toHaveBeenCalledWith('--tool-status-marquee-shift');
+    measure(outer, 200, 500);
+    resize.fire();
+    jest.advanceTimersByTime(RESIZE_SETTLE_MS);
+    expect(track.createSpan).toHaveBeenCalledTimes(3);
+    expect(track.addClass).toHaveBeenLastCalledWith('tool-status-marquee');
   });
 
   it('starts looping when a row that had no width gets one', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
+    const { line, createdSlots } = makeLine();
     line.update('a goal far wider than the row', 'present');
     const [outer] = createdSlots();
-    measure(outer, 0, 500); // status bar still collapsed — nothing to measure
+    measure(outer, 0, 500);
     jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
-
+    expect(trackOf(outer).addClass).not.toHaveBeenCalledWith('tool-status-marquee');
     measure(outer, 200, 500);
     resize.fire();
     jest.advanceTimersByTime(RESIZE_SETTLE_MS);
-
-    expect(createdTexts()[0].addClass).toHaveBeenCalledWith('tool-status-marquee');
-    // The stream parked the row on the tail; the first lap rewinds it.
+    expect(trackOf(outer).addClass).toHaveBeenCalledWith('tool-status-marquee');
     expect((outer as unknown as { scrollLeft: number }).scrollLeft).toBe(0);
   });
 
-  it('ignores a resize that lands mid-reveal — the reveal measures at its end', () => {
-    const { line, createdSlots, createdTexts } = makeLine();
+  it('ignores a resize mid-reveal and measures after the reveal ends', () => {
+    const { line, createdSlots } = makeLine();
     line.update('a goal far wider than the row', 'present');
     const [outer] = createdSlots();
     measure(outer, 200, 500);
-
     jest.advanceTimersByTime(WORD_MS * 2);
     resize.fire();
     jest.advanceTimersByTime(RESIZE_SETTLE_MS);
-    expect(createdTexts()[0].addClass).not.toHaveBeenCalledWith('tool-status-marquee');
-
+    expect(trackOf(outer).addClass).not.toHaveBeenCalledWith('tool-status-marquee');
     jest.advanceTimersByTime(WORD_MS * 7 + DWELL_MS);
-    expect(createdTexts()[0].addClass).toHaveBeenCalledWith('tool-status-marquee');
+    expect(trackOf(outer).addClass).toHaveBeenCalledWith('tool-status-marquee');
   });
 
   it('disconnects the observer when the owning component unloads', () => {

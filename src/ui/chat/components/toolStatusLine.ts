@@ -11,11 +11,11 @@ export type { ToolStatusEntry };
  * always looking at the words being "typed".
  *
  * Once the reveal finishes, a line that does not fit the row does not park on
- * its tail: it rewinds to the head and carousels — hold, travel left at a
- * reading pace, hold, snap back — looping until the next entry replaces it, so
- * an uncapped goal sentence stays readable end to end. The loop is a pure CSS
- * animation (no per-frame timers); JS only measures the overflow and hands the
- * distance and duration to the stylesheet as custom properties. The row is
+ * its tail: two copies travel left at a reading pace in a seamless loop
+ * until the next entry replaces it, so an uncapped goal sentence stays
+ * readable end to end. The loop is a pure CSS
+ * animation (no per-frame timers); JS measures the repeated track and hands
+ * its duration to the stylesheet as a custom property. The row is
  * watched for resizes and the lap re-measured against the new width, so the
  * carousel tracks the pane rather than the width it happened to start at.
  *
@@ -41,12 +41,7 @@ export class ToolStatusLine {
   // Carousel travel speed. Slow enough to read, brisk enough that a long
   // goal completes a lap while the tools it describes are still running.
   private static readonly MARQUEE_SPEED_PX_PER_S = 45;
-  // Fraction of the cycle spent travelling — the remainder is the hold at
-  // each end. Must match the keyframe stops of `tool-status-marquee`
-  // (0%–15% head hold, 15%–85% travel, 85%–100% tail hold).
-  private static readonly MARQUEE_TRAVEL_FRACTION = 0.7;
-  // Floor on a full lap so a barely-overflowing line drifts instead of
-  // twitching back and forth.
+  // Keep even a short overflowing line slow enough to read.
   private static readonly MARQUEE_MIN_CYCLE_MS = 3000;
   // Sub-pixel overflow is a rounding artifact, not text worth scrolling to.
   private static readonly MARQUEE_MIN_OVERFLOW_PX = 4;
@@ -55,13 +50,15 @@ export class ToolStatusLine {
   private static readonly RESIZE_SETTLE_MS = 150;
 
   private currentSlot: HTMLElement | null = null;
+  private currentTrack: HTMLElement | null = null;
   private currentText: HTMLElement | null = null;
+  private repeatedText: HTMLElement | null = null;
   private currentEntry: ToolStatusEntry | null = null;
   private queuedEntry: ToolStatusEntry | null = null;
   private animating = false;
   // Lap distance currently handed to the stylesheet, so a resize that leaves
   // the endpoint where it was writes nothing.
-  private appliedShiftPx: number | null = null;
+  private appliedDistancePx: number | null = null;
   private resizePending = false;
   private timeouts: ManagedTimeoutTracker;
 
@@ -127,9 +124,11 @@ export class ToolStatusLine {
     this.queuedEntry = null;
     this.currentEntry = null;
     this.currentSlot = null;
+    this.currentTrack = null;
     this.currentText = null;
+    this.repeatedText = null;
     this.animating = false;
-    this.appliedShiftPx = null;
+    this.appliedDistancePx = null;
     // Remove every slot, including any mid-exit one whose scheduled removal
     // was just cancelled by timeouts.clear().
     const host = this.slot as HTMLElement & { empty?: () => void };
@@ -161,14 +160,16 @@ export class ToolStatusLine {
     const nextSlot = this.slot.createDiv({
       cls: `tool-status-text-${entry.state} entering`,
     });
-    // The text lives in an inner element so the carousel can own `transform`
-    // without fighting the slot's enter/exit translateY, and so the full text
-    // stays available on hover for readers who get no carousel at all.
-    const nextText = nextSlot.createSpan({ cls: 'tool-status-text-inner' });
+    // A separate track owns the carousel's transform without fighting the
+    // slot's enter/exit translateY. The title exposes the full text on hover.
+    const nextTrack = nextSlot.createSpan({ cls: 'tool-status-track' });
+    const nextText = nextTrack.createSpan({ cls: 'tool-status-text-inner' });
     nextSlot.setAttribute('title', entry.text);
     this.currentSlot = nextSlot;
+    this.currentTrack = nextTrack;
     this.currentText = nextText;
-    this.appliedShiftPx = null;
+    this.repeatedText = null;
+    this.appliedDistancePx = null;
     this.timeouts.schedule(() => {
       nextSlot.removeClass('entering');
       nextSlot.addClass('active');
@@ -228,15 +229,18 @@ export class ToolStatusLine {
    *
    * A no-op when the row has no width yet (status bar still collapsed) or
    * under reduced motion — the `title` attribute carries the full text in
-   * those cases. Only the custom properties change on a re-measure, never the
-   * `animation` shorthand, so a running lap keeps its position instead of
-   * snapping back to the head mid-resize.
+   * those cases. A width change that still needs a loop leaves its distance
+   * and duration alone, preserving the running lap.
    */
   private syncMarquee(): void {
     const outer = this.currentSlot;
+    const track = this.currentTrack;
     const inner = this.currentText;
-    if (!outer || !inner) return;
-    if (this.prefersReducedMotion()) return;
+    if (!outer || !track || !inner) return;
+    if (this.prefersReducedMotion()) {
+      this.stopMarquee();
+      return;
+    }
 
     const rowWidth = outer.clientWidth;
     const textWidth = inner.scrollWidth;
@@ -248,33 +252,41 @@ export class ToolStatusLine {
       return;
     }
 
-    const shiftPx = -Math.round(overflow);
-    if (this.appliedShiftPx === null) {
+    if (!this.repeatedText) {
+      this.repeatedText = track.createSpan({
+        cls: 'tool-status-text-inner',
+        text: this.currentEntry?.text ?? '',
+        attr: { 'aria-hidden': 'true' },
+      });
+    }
+    track.addClass('tool-status-marquee');
+    // Two equal copies, each followed by the same CSS spacing. Moving half
+    // the track puts the second copy exactly where the first one started.
+    const distancePx = track.getBoundingClientRect().width / 2;
+    if (this.appliedDistancePx === null) {
       // First lap for this line: the reveal left the row scrolled to the tail
       // and the loop drives the text with `transform`, so hand it back a row
       // scrolled to the head. A re-measure of a running lap leaves it alone.
       outer.scrollLeft = 0;
     }
-    if (this.appliedShiftPx !== shiftPx) {
-      const travelMs = (overflow / ToolStatusLine.MARQUEE_SPEED_PX_PER_S) * 1000;
+    if (this.appliedDistancePx !== distancePx) {
+      const travelMs = (distancePx / ToolStatusLine.MARQUEE_SPEED_PX_PER_S) * 1000;
       const cycleMs = Math.max(
         ToolStatusLine.MARQUEE_MIN_CYCLE_MS,
-        travelMs / ToolStatusLine.MARQUEE_TRAVEL_FRACTION
+        travelMs
       );
-      inner.style.setProperty('--tool-status-marquee-shift', `${shiftPx}px`);
-      inner.style.setProperty('--tool-status-marquee-duration', `${Math.round(cycleMs)}ms`);
-      this.appliedShiftPx = shiftPx;
+      track.style.setProperty('--tool-status-marquee-duration', `${Math.round(cycleMs)}ms`);
+      this.appliedDistancePx = distancePx;
     }
-    inner.addClass('tool-status-marquee');
   }
 
   /** The text fits the row now — park it at the head, unlooped. */
   private stopMarquee(): void {
-    if (this.appliedShiftPx === null) return;
-    this.appliedShiftPx = null;
-    this.currentText?.removeClass('tool-status-marquee');
-    this.currentText?.style.removeProperty('--tool-status-marquee-shift');
-    this.currentText?.style.removeProperty('--tool-status-marquee-duration');
+    this.appliedDistancePx = null;
+    this.currentTrack?.removeClass('tool-status-marquee');
+    this.currentTrack?.style.removeProperty('--tool-status-marquee-duration');
+    this.repeatedText?.remove();
+    this.repeatedText = null;
   }
 
   private prefersReducedMotion(): boolean {
