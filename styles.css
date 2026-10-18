@@ -9514,7 +9514,8 @@ body.is-mobile .nexus-workflow-attachment button { min-height: 44px; }
 }
 .reasoning-catch-up {
   position: absolute;
-  right: var(--space-m);
+  left: 50%;
+  transform: translateX(-50%);
   bottom: var(--space-m);
   display: grid;
   place-items: center;
