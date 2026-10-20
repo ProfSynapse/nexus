@@ -159,3 +159,9 @@ Targeted chat message writes continue through the existing adapter/repository ev
 - Observation: "Rebuild cache" left `getWorkspace` answering from the QueryCache, and `WorkspaceEventApplier` replayed a same-name, different-id `workspace_created` with INSERT OR REPLACE, deleting the other workspace. Neither symptom was in failure-modes.md, and the "first wins" rule was order-dependent because shards replay in listing order.
 - Change: added the "old value is still shown until reload" entry to references/failure-modes.md.
 - Files: references/failure-modes.md, refinement-log.md
+
+## 2026-10-20 — New event type, older devices, and replay order
+
+- Observation: adding `message_tool_call_upserted` needed three facts that were in no reference. Older appliers skip an unknown type and mark it applied. `message_updated` merges field by field. Same-millisecond events replay in random-UUID order. Separately, the cache-rebuild cost note ("Rebuildable does not mean cheap") is what kept the planned trace-compaction migration from triggering a rebuild.
+- Change: added the "I added an event type" entry to references/failure-modes.md.
+- Files: references/failure-modes.md, refinement-log.md

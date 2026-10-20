@@ -235,3 +235,11 @@ Linux, four vaults open. `obsidian plugin:reload id=nexus vault="Nexus Redesign 
 ### 2026-10-18 — Continuous status carousel
 
 The status-line regression fails against the previous implementation. Geometry fixtures in Jest verify sequencing and duplication; a Chromium run using the bundled production component and stylesheet verifies constant motion, continuity across the lap boundary, resize and tense stability, new-status replacement, and reduced motion. Obsidian CLI was unavailable, so this is browser component evidence rather than in-app verification. No protocol change.
+
+### 2026-10-20 — CLI needs `vault=` first and a TTY; long eval scripts from a file
+
+Bounded-storage work (traces, chat checkpoints) in the "Nexus Redesign Test" vault, Linux, Obsidian 1.14.4, four vaults open.
+- `sync:status vault=<name>` reported the focused vault; with `vault=` before the command it reported the named one. `plugin:reload` was only ever run with `vault=` first. It was proven to target the test vault in-band: an unsaved in-memory turn vanished there and the interrupted-turn repair ran.
+- Without a TTY the CLI printed nothing (`version` still did); wrapping in `script -qec` fixed every command.
+- Multi-line `eval` scripts were loaded from a file with `window.eval(require('fs').readFileSync(...))`.
+- Change: protocols/live-loop.md steps 1 and 5. Files: protocols/live-loop.md, refinement-log.md.

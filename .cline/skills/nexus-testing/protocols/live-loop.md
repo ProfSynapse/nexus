@@ -73,6 +73,15 @@ Obsidian (the headless container) to turn a skip into a failure.
    check is in-band: assert `app.vault.getName()` at the start of every session
    and throw if it is not the vault you expect, before anything else runs.
 
+   **Put `vault=` before the command, and give the CLI a terminal.** On Linux
+   1.14.4 with four vaults open, `obsidian sync:status vault=Synaptic-Labs`
+   silently reported the *focused* vault; `obsidian vault=Synaptic-Labs
+   sync:status` reported the named one. The same CLI also printed nothing at
+   all when stdout was not a TTY, and `version` alone still worked, which reads
+   like "no data". From an agent shell, wrap each call:
+   `script -qec "obsidian vault=<name> <command>" /dev/null`. Neither fact
+   replaces the in-band `getName()` assertion below.
+
    That assertion has its own trap: the value `getName()` returns is the vault's
    directory basename (`test-vault`), not the key Obsidian stores it under in
    `obsidian.json` (`testvault0001` in `headless-obsidian.md` step 3). Asserting
@@ -162,6 +171,11 @@ Obsidian (the headless container) to turn a skip into a failure.
      rather than charging that wait against an unrelated operation's timeout.
      Do not blindly retry a mutating expression whose acknowledgement
      was lost: it may already have executed.
+
+     A multi-line script does not survive shell quoting into `code=`. On
+     desktop, keep it in a file outside the vault and run
+     `eval code="window.eval(require('fs').readFileSync('/tmp/x.js','utf8'))"`;
+     the script sets its `window` status object as above.
 
      Settings can live in a separate native window. In that case `document`
      and `dev:screenshot` target the main vault window even while the settings

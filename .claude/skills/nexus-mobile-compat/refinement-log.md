@@ -102,3 +102,7 @@ skill.
 ## 2026-10-13 — thinking disclosure implementation
 
 Runtime store and disclosure introduce no packages or Node imports. Production build reachability gate passed. No protocol correction; no change.
+
+## 2026-10-20 — bounded-storage work
+
+The new modules (trace compactor, tool-result trimming, turn checkpoints) add no packages or Node imports. Hashing uses Web Crypto with an FNV-1a fallback. The reachability check passed. One observation, not acted on: `src/utils/platform.ts:7` says iOS lacks regex lookbehind, yet `src/utils/pathUtils.ts:246` uses `(?<!\.)` and the bundle contains three lookbehinds. The new code avoids them. Whether current minimum iOS versions accept them was not verified. No protocol change.

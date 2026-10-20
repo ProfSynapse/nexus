@@ -118,6 +118,31 @@ then two questions have to be answered explicitly:
   `storage-model.md`. Old streams simply have no tombstone; the entity comes back
   once and the user's next delete is permanent.
 
+## "I added an event type; how do devices on older versions see it?"
+
+They skip it, and they never come back for it. An older applier's `switch` has
+no case for the new type, so the event is a no-op. `ReconcilePipeline` still
+marks it in `applied_events`, so even after that device upgrades it will not
+apply that event until a full rebuild. Two rules follow:
+
+- **Never let an older device depend on the new event alone.** At a natural
+  convergence point, also write the same state with an event type older
+  versions already apply. `message_tool_call_upserted` (one tool call during a
+  turn) is backed by a full `tool_calls` snapshot in `message_updated` when the
+  turn ends. The test that matters replays the events with the new type
+  filtered out and gets the same row.
+- **Other direct JSONL readers need the case too.** `CompactionTranscriptRecoveryService`
+  replays conversation events itself, not through the appliers.
+  `grep -rn "'message_updated'" src/` finds them.
+
+Two facts that decide whether a smaller event is safe:
+- `message_updated` merges field by field: an omitted field keeps its stored
+  value on every version. That is what makes "write only what changed" safe.
+- Replay orders events by `timestamp`, then `deviceId`, then a **random** UUID.
+  Two writes to one entity from one device in the same millisecond can replay
+  in either order. `MessageRepository` waits out the millisecond so its own
+  writes keep their order.
+
 ## "The view says 'no tasks' but the data is there"
 
 A read raced startup hydration. Await `waitForQueryReady()` (optional on
