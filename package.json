@@ -71,5 +71,10 @@
 		"pdf-lib": "1.17.1",
 		"pdfjs-dist": "^5.7.284",
 		"streaming-markdown": "^0.2.15"
+	},
+	"allowScripts": {
+		"esbuild@0.25.12": true,
+		"better-sqlite3@12.10.0": true,
+		"@dao-xyz/sqlite3-vec@0.0.19": true
 	}
 }
