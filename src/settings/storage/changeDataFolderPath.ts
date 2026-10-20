@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
 
 import type { ServiceManager } from '../../core/ServiceManager';
-import { validateVaultRelativePath } from '../../database/storage/VaultRootResolver';
+import { resolveMaxShardBytes, validateVaultRelativePath } from '../../database/storage/VaultRootResolver';
 import type { VaultRootRelocationResult } from '../../database/migration/VaultRootRelocationService';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 import type { Settings } from '../../settings';
@@ -118,7 +118,7 @@ export async function changeDataFolderPath(
   }
 
   const relocationResult = await runtimeAdapter.relocateVaultRoot(validation.normalizedPath, {
-    maxShardBytes: currentStorage.maxShardBytes
+    maxShardBytes: resolveMaxShardBytes(currentStorage)
   });
 
   if (!relocationResult.success || !relocationResult.verified || !relocationResult.switched) {

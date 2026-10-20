@@ -114,8 +114,9 @@ describe('DataTab data folder changes', () => {
     expect(result.persisted).toBe(true);
     expect(result.relocated).toBe(true);
     expect(result.applyOnNextStartup).toBe(false);
+    // The fixture stores the pre-5.22 default (4 MiB); relocation uses the effective cap.
     expect(adapter.relocateVaultRoot).toHaveBeenCalledWith('storage/assistant-data', {
-      maxShardBytes: 4 * 1024 * 1024
+      maxShardBytes: 1024 * 1024
     });
     expect(settings.saveSettings).toHaveBeenCalledTimes(1);
     expect(settings.settings.storage?.rootPath).toBe('storage/assistant-data');

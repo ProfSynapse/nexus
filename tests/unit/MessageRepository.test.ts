@@ -19,7 +19,8 @@ import {
   createIncompleteToolCall
 } from '../fixtures/chatBugs';
 import type { AlternativeMessageEvent } from '../../src/database/interfaces/StorageEvents';
-import type { MessageEvent, MessageUpdatedEvent } from '../../src/database/interfaces/StorageEvents';
+import type { MessageEvent, MessageToolCallUpsertedEvent, MessageUpdatedEvent } from '../../src/database/interfaces/StorageEvents';
+import type { MessageData } from '../../src/types/storage/HybridStorageTypes';
 import { MessageRepository } from '../../src/database/repositories/MessageRepository';
 import type { RepositoryDependencies } from '../../src/database/repositories/base/BaseRepository';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
@@ -42,7 +43,7 @@ type TestToolCall = {
 // the real applier replays it. Rows come from emitted SQL, never preset metadata.
 function createMessagePersistenceHarness() {
   const rows = new Map<string, Record<string, unknown>>();
-  const events: Array<MessageEvent | MessageUpdatedEvent> = [];
+  const events: Array<MessageEvent | MessageUpdatedEvent | MessageToolCallUpsertedEvent> = [];
   const sqliteCache = {
     queryOne: jest.fn(async (sql: string, params: unknown[]) => {
       if (sql.includes('MAX(sequenceNumber)')) return { maxSeq: -1 };
@@ -70,8 +71,8 @@ function createMessagePersistenceHarness() {
   const deps = {
     sqliteCache,
     jsonlWriter: {
-      appendEvent: jest.fn(async (_path: string, event: Omit<MessageEvent | MessageUpdatedEvent, 'id' | 'timestamp' | 'deviceId'>) => {
-        const stored: MessageEvent | MessageUpdatedEvent = JSON.parse(JSON.stringify({
+      appendEvent: jest.fn(async (_path: string, event: Omit<MessageEvent | MessageUpdatedEvent | MessageToolCallUpsertedEvent, 'id' | 'timestamp' | 'deviceId'>) => {
+        const stored: MessageEvent | MessageUpdatedEvent | MessageToolCallUpsertedEvent = JSON.parse(JSON.stringify({
           ...event, id: 'event-1', timestamp: 123456, deviceId: 'device-1'
         }));
         events.push(stored);
@@ -168,6 +169,160 @@ describe('MessageRepository message metadata persistence', () => {
     const replay = new AnthropicContextBuilder().buildContext(conversation);
     expect(replay).toEqual([{ role: 'assistant', content: 'NEW ANSWER is longer' }]);
     expect(JSON.stringify(replay)).not.toContain('OLD ANSWER');
+  });
+});
+
+describe('MessageRepository chat writes: only what changed, each tool call once', () => {
+  // Results sized like real ones (p95 ~48 KB in measured chats, here 5 KB).
+  const toolA = createCompletedToolCall({ id: 'tc-a', result: { rows: 'a'.repeat(5000) } });
+  const toolB = createCompletedToolCall({ id: 'tc-b', result: { rows: 'b'.repeat(5000) } });
+  type AnyMessageEvent = MessageEvent | MessageUpdatedEvent | MessageToolCallUpsertedEvent;
+
+  async function seeded() {
+    const harness = createMessagePersistenceHarness();
+    await harness.repo.addMessage('conv-1', {
+      id: 'ai-1', role: 'assistant', content: 'Working', timestamp: 1, state: 'streaming'
+    });
+    return harness;
+  }
+
+  async function replay(events: AnyMessageEvent[]) {
+    const rebuilt = createMessagePersistenceHarness();
+    const applier = new ConversationEventApplier(rebuilt.sqliteCache);
+    for (const event of events) await applier.apply(event as never);
+    return rebuilt;
+  }
+
+  const essentials = (calls: MessageData['toolCalls']) =>
+    calls?.map(call => ({ id: call.id, result: call.result, success: call.success }));
+
+  it('writes only the changed field mid-turn, never re-saving tool results', async () => {
+    const harness = await seeded();
+    await harness.repo.update('ai-1', { content: 'Working', toolCalls: [toolA] });
+    const before = harness.events.length;
+
+    await harness.repo.update('ai-1', { content: 'Working on it', toolCalls: [toolA] });
+
+    expect(harness.events).toHaveLength(before + 1);
+    expect(harness.events[before]).toMatchObject({ type: 'message_updated', data: { content: 'Working on it' } });
+    expect(Object.keys(harness.events[before].data)).toEqual(['content']);
+  });
+
+  it('writes a new call mid-turn as one upsert carrying only that call', async () => {
+    const harness = await seeded();
+    await harness.repo.update('ai-1', { content: 'Working', reasoning: 'thinking', toolCalls: [toolA] });
+    const before = harness.events.length;
+
+    await harness.repo.update('ai-1', { content: 'Working', reasoning: 'thinking', toolCalls: [toolA, toolB] });
+
+    expect(harness.events.slice(before)).toEqual([
+      expect.objectContaining({ type: 'message_tool_call_upserted', messageId: 'ai-1', data: { tool_call: expect.objectContaining({ id: 'tc-b' }) } })
+    ]);
+  });
+
+  it('writes the full tool calls once when the turn ends, so older versions catch up', async () => {
+    const harness = await seeded();
+    await harness.repo.update('ai-1', { toolCalls: [toolA] });
+    await harness.repo.update('ai-1', { toolCalls: [toolA, toolB] });
+    const before = harness.events.length;
+
+    await harness.repo.update('ai-1', { toolCalls: [toolA, toolB], state: 'complete' });
+
+    expect(harness.events.slice(before)).toHaveLength(1);
+    const final = harness.events[before] as MessageUpdatedEvent;
+    expect(final.data.state).toBe('complete');
+    expect(final.data.tool_calls?.map(call => call.id)).toEqual(['tc-a', 'tc-b']);
+  });
+
+  it('writes each tool result about twice per turn, however many rounds it has', async () => {
+    const harness = await seeded();
+    const calls: typeof toolA[] = [];
+    for (let round = 0; round < 12; round += 1) {
+      const started = createIncompleteToolCall({ id: `tc-${round}` });
+      await harness.repo.update('ai-1', { toolCalls: [...calls, started] });
+      calls.push(createCompletedToolCall({ id: `tc-${round}`, result: { rows: `${round}`.repeat(5000) } }));
+      await harness.repo.update('ai-1', { toolCalls: [...calls] });
+    }
+    await harness.repo.update('ai-1', { toolCalls: [...calls], state: 'complete' });
+
+    const resultBytes = harness.events.reduce((total, event) => {
+      const text = JSON.stringify(event);
+      return total + (text.match(/(\d)\1{4999}/g) ?? []).length * 5000;
+    }, 0);
+    // Once as its upsert, once in the final snapshot. Whole-array writes made this 12 × 13 / 2 + 12.
+    expect(resultBytes).toBe(12 * 5000 * 2);
+  });
+
+  it('replays deltas plus the final snapshot to the message the live writes produced', async () => {
+    const original = await seeded();
+    await original.repo.update('ai-1', { content: 'Working.' });
+    await original.repo.update('ai-1', { content: 'Working.', toolCalls: [toolA] });
+    await original.repo.update('ai-1', { content: 'Done', toolCalls: [toolA, toolB], reasoning: 'checked both' });
+    await original.repo.update('ai-1', { content: 'Done', toolCalls: [toolA, toolB], state: 'complete', metadata: { usage: 3 } });
+    const live = expectDefined(await original.repo.getById('ai-1'));
+
+    const rebuilt = await replay(original.events);
+    const replayed = expectDefined(await rebuilt.repo.getById('ai-1'));
+    expect(replayed.content).toBe(live.content);
+    expect(replayed.state).toBe('complete');
+    expect(replayed.reasoning).toBe('checked both');
+    expect(replayed.metadata).toEqual({ usage: 3 });
+    expect(essentials(replayed.toolCalls)).toEqual(essentials(live.toolCalls));
+
+    // A device on an older version skips the upserts; the final snapshot still gives it everything.
+    const older = await replay(original.events.filter(event => event.type !== 'message_tool_call_upserted'));
+    expect(essentials(expectDefined(await older.repo.getById('ai-1')).toolCalls)).toEqual(essentials(live.toolCalls));
+  });
+
+  it('keeps mid-turn tool calls replayable if the turn never ends (crash)', async () => {
+    const original = await seeded();
+    await original.repo.update('ai-1', { toolCalls: [toolA] });
+    await original.repo.update('ai-1', { toolCalls: [toolA, toolB] });
+
+    const rebuilt = await replay(original.events);
+    expect(essentials(expectDefined(await rebuilt.repo.getById('ai-1')).toolCalls)).toEqual(essentials([toolA, toolB]));
+  });
+
+  it('falls back to a snapshot when a call is removed, so replay cannot keep it', async () => {
+    const original = await seeded();
+    await original.repo.update('ai-1', { toolCalls: [toolA, toolB] });
+    const before = original.events.length;
+    await original.repo.update('ai-1', { toolCalls: [toolB] });
+
+    expect((original.events[before] as MessageUpdatedEvent).data.tool_calls?.map(call => call.id)).toEqual(['tc-b']);
+    const rebuilt = await replay(original.events);
+    expect(expectDefined(await rebuilt.repo.getById('ai-1')).toolCalls?.map(call => call.id)).toEqual(['tc-b']);
+  });
+
+  it('does not rewrite tool calls that differ from a rebuilt cache only in shape', async () => {
+    // The live chat keeps full tool-call objects (displayName, executionTime…);
+    // a rebuilt cache holds the event's subset. Same calls, different JSON.
+    const original = await seeded();
+    await original.repo.update('ai-1', { toolCalls: [toolA, toolB] });
+    const rebuilt = await replay(original.events);
+
+    await rebuilt.repo.update('ai-1', { toolCalls: [toolA, toolB], content: 'Still working' });
+
+    expect(rebuilt.events).toHaveLength(1);
+    expect(rebuilt.events[0].data).toEqual({ content: 'Still working' });
+  });
+
+  it('stores a very large tool result trimmed, identically in the live cache and on replay', async () => {
+    const original = await seeded();
+    const huge = createCompletedToolCall({ id: 'tc-huge', result: { success: true, path: 'Big.md', content: `HEAD${'x'.repeat(3 * 1024 * 1024)}TAIL` } });
+    await original.repo.update('ai-1', { toolCalls: [huge], state: 'complete' });
+
+    const live = expectDefined(await original.repo.getById('ai-1'));
+    const stored = live.toolCalls?.[0].result as { success: boolean; path: string; content: string };
+    expect(stored.success).toBe(true);
+    expect(stored.path).toBe('Big.md');
+    expect(stored.content.startsWith('HEAD')).toBe(true);
+    expect(stored.content.endsWith('TAIL')).toBe(true);
+    expect(stored.content).toContain('[Nexus trimmed this tool result: 3.0 MB in total');
+    expect(JSON.stringify(original.events).length).toBeLessThan(400 * 1024);
+
+    const rebuilt = await replay(original.events);
+    expect(expectDefined(await rebuilt.repo.getById('ai-1')).toolCalls?.[0].result).toEqual(stored);
   });
 });
 

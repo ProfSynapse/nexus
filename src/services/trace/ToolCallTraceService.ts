@@ -16,6 +16,9 @@ import { generateUUID } from '../../utils/uuid';
 /** Max candidates persisted per retrieval, to bound trace size. */
 const RETRIEVAL_CANDIDATE_CAP = 25;
 
+/** Fields `buildContextMetadata` captures under `context`; repeating them in `input.arguments` doubled them in every trace. */
+const CONTEXT_DUPLICATE_KEYS = ['memory', 'goal', 'constraints', 'sessionName', 'workspaceId', 'sessionId'] as const;
+
 /** Agent names (normalized) that own retrieval (search) tools. */
 const RETRIEVAL_AGENTS = new Set(['searchmanager', 'search', 'vaultlibrarian']);
 /** Tool/mode names (normalized) that perform relevance retrieval we learn from. */
@@ -337,7 +340,7 @@ export class ToolCallTraceService {
     relatedFiles: string[];
   }): ReturnType<typeof TraceMetadataBuilder.create> {
     const context = this.buildContextMetadata(options.workspaceId, options.sessionId, options.params);
-    const sanitizedParams = this.sanitizeParams(options.params);
+    const sanitizedParams = this.sanitizeParams(options.params, context);
     const input =
       sanitizedParams || options.relatedFiles.length > 0
         ? {
@@ -396,7 +399,7 @@ export class ToolCallTraceService {
     };
   }
 
-  private sanitizeParams(params: ToolCallParams): unknown {
+  private sanitizeParams(params: ToolCallParams, context: TraceContextMetadata): unknown {
     if (!isRecord(params)) {
       return params;
     }
@@ -405,6 +408,14 @@ export class ToolCallTraceService {
     delete sanitized.context;
     delete sanitized.workspaceContext;
     delete sanitized._displaySessionId;
+    // `context` already holds these. Drop an argument only when it is the same
+    // value, so a tool whose own parameter happens to share the name keeps it.
+    const contextRecord = context as unknown as Record<string, unknown>;
+    for (const key of CONTEXT_DUPLICATE_KEYS) {
+      if (key in sanitized && sanitized[key] === contextRecord[key]) {
+        delete sanitized[key];
+      }
+    }
     return Object.keys(sanitized).length > 0 ? sanitized : undefined;
   }
 

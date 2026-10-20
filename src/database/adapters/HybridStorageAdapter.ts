@@ -603,6 +603,10 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return !this.closing && ready;
   }
 
+  getDeviceId(): string {
+    return this.jsonlWriter.getDeviceId();
+  }
+
   waitForQueryReady(maxWaitMs = this.getStartupRebuildIdleTimeoutMs()): Promise<boolean> {
     if (this.closing) return Promise.resolve(false);
     if (this.isQueryReady()) return Promise.resolve(true);

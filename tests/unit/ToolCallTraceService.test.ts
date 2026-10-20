@@ -206,6 +206,47 @@ describe('ToolCallTraceService', () => {
     expect(JSON.stringify(trace.metadata)).not.toContain(largeResult);
   });
 
+  it('stores memory and goal once, under context, and keeps arguments that differ from it', async () => {
+    const memoryService = {
+      recordActivityTrace: jest.fn().mockResolvedValue('trace-1')
+    };
+    const service = new ToolCallTraceService(
+      memoryService as never,
+      { getWorkspaceContext: jest.fn().mockReturnValue(null), setWorkspaceContext: jest.fn() } as never,
+      { getWorkspaceByNameOrId: jest.fn().mockResolvedValue({ id: 'workspace-uuid', name: 'Workspace Name' }) } as never,
+      {} as never
+    );
+
+    await service.captureToolCall(
+      'toolManager_useTools',
+      {
+        workspaceId: 'Workspace Name',
+        sessionId: 'session-1',
+        memory: 'Writing the weekly summary.',
+        goal: 'Save it under Reports.',
+        constraints: 'No deletions.',
+        tool: 'content write --path "Reports/W42.md" --content "Hello"'
+      },
+      { success: true },
+      true,
+      5
+    );
+
+    const metadata = memoryService.recordActivityTrace.mock.calls[0][0].metadata;
+    expect(metadata.context).toEqual(expect.objectContaining({
+      workspaceId: 'workspace-uuid',
+      sessionId: 'session-1',
+      memory: 'Writing the weekly summary.',
+      goal: 'Save it under Reports.',
+      constraints: 'No deletions.'
+    }));
+    // Identical to context: dropped. The workspace *name* differs from the resolved id: kept.
+    expect(metadata.input.arguments).toEqual({
+      workspaceId: 'Workspace Name',
+      tool: 'content write --path "Reports/W42.md" --content "Hello"'
+    });
+  });
+
   it('records compact canonical useTools batch results for search expansion', async () => {
     const memoryService = {
       recordActivityTrace: jest.fn().mockResolvedValue('trace-1')

@@ -12,6 +12,17 @@
 import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, GoogleMessage, GooglePart } from './IContextBuilder';
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
+import { trimToolResultForStorage } from '../../../utils/toolResultTrim';
+
+/**
+ * Gemini's `functionResponse.response` must be an object. A stored result that
+ * is a string (including one trimmed down to its head and tail) is wrapped.
+ */
+function asGoogleResponse(result: unknown): Record<string, unknown> {
+  if (result && typeof result === 'object' && !Array.isArray(result)) return result as Record<string, unknown>;
+  if (result === undefined || result === null) return {};
+  return { content: result };
+}
 
 type GoogleReasoningToolCall = Parameters<typeof ReasoningPreserver.buildGoogleModelMessageWithThinking>[0][number];
 
@@ -125,7 +136,7 @@ export class GoogleContextBuilder implements IContextBuilder {
             functionResponse: {
               name: tc.name || '',
               response: tc.success
-                ? (tc.result || {})
+                ? asGoogleResponse(trimToolResultForStorage(tc.result))
                 : { error: tc.error || 'Tool execution failed' }
             }
           }));

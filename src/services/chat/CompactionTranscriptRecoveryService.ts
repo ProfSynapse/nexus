@@ -109,6 +109,18 @@ export class CompactionTranscriptRecoveryService {
 
       if (event.type === 'message_updated') {
         this.applyMessageUpdatedEvent(event, messages);
+        continue;
+      }
+
+      if (event.type === 'message_tool_call_upserted') {
+        const existingMessage = messages.get(event.messageId);
+        const [call] = this.normalizeToolCalls([event.data.tool_call]) ?? [];
+        if (existingMessage && call) {
+          const calls = existingMessage.toolCalls ? [...existingMessage.toolCalls] : [];
+          const index = calls.findIndex(candidate => candidate.id === call.id);
+          if (index >= 0) calls[index] = call; else calls.push(call);
+          existingMessage.toolCalls = calls;
+        }
       }
     }
 

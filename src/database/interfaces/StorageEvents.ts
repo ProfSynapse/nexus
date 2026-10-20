@@ -506,6 +506,26 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
 }
 
 /**
+ * Event: one tool call of a message started or finished.
+ *
+ * Written during a turn instead of re-saving the whole `tool_calls` array on
+ * every round (each earlier result was written again each time). Replay
+ * merges the call into the message's tool calls by id. When the turn ends, a
+ * `message_updated` carries the full array: versions that predate this event
+ * skip it and catch up from that snapshot. See `database/utils/toolCallEvents`.
+ */
+export interface MessageToolCallUpsertedEvent extends BaseStorageEvent {
+  type: 'message_tool_call_upserted';
+  /** Parent conversation ID */
+  conversationId: string;
+  /** Target message ID */
+  messageId: string;
+  data: {
+    tool_call: NonNullable<MessageUpdatedEvent['data']['tool_calls']>[number];
+  };
+}
+
+/**
  * Event: Message deleted
  *
  * Records removal of an existing top-level conversation message.
@@ -806,6 +826,7 @@ export type ConversationEvent =
   | ConversationDeletedEvent
   | MessageEvent
   | MessageUpdatedEvent
+  | MessageToolCallUpsertedEvent
   | MessageDeletedEvent
   | BranchCreatedEvent
   | BranchMessageEvent
@@ -864,6 +885,7 @@ export function isConversationEvent(event: StorageEvent): event is ConversationE
     'conversation_deleted',
     'message',
     'message_updated',
+    'message_tool_call_upserted',
     'message_deleted',
     'branch_created',
     'branch_message',
@@ -920,6 +942,7 @@ export function isUpdateEvent(event: StorageEvent): boolean {
     'state_updated',
     'conversation_updated',
     'message_updated',
+    'message_tool_call_upserted',
     'branch_message_updated',
     'branch_updated',
     'project_updated',

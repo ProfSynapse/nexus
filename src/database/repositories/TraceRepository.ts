@@ -28,6 +28,7 @@ import { TraceAddedEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { DatabaseRow, QueryParams } from './base/BaseRepository';
 import { workspaceStreamPath } from './base/workspaceStreamPath';
+import { compactTraceMetadata } from '../../services/trace/TraceMetadataCompactor';
 
 interface TraceRow extends DatabaseRow {
   id: string;
@@ -179,6 +180,14 @@ export class TraceRepository
     const now = Date.now();
 
     try {
+      // Every trace writer ends here, so this is where traces are bounded:
+      // oversized values (a spliced file payload, a legacy result dump) become
+      // markers before anything is persisted. Serialized once, so the JSONL
+      // event and the SQLite row hold the same string.
+      const metadataJson = data.metadata
+        ? (await compactTraceMetadata(data.metadata)).json
+        : undefined;
+
       await this.transaction(async () => {
         // 1. Write event to workspace JSONL
         await this.writeEvent<TraceAddedEvent>(
@@ -191,7 +200,7 @@ export class TraceRepository
               id,
               content: data.content,
               traceType: data.type,
-              metadataJson: data.metadata ? JSON.stringify(data.metadata) : undefined
+              metadataJson
             }
           }
         );
@@ -207,7 +216,7 @@ export class TraceRepository
             data.timestamp ?? now,
             data.type ?? null,
             data.content,
-            data.metadata ? JSON.stringify(data.metadata) : null
+            metadataJson ?? null
           ]
         );
       });

@@ -23,6 +23,21 @@ import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '
 import type { ToolCallMessageHistoryOptions } from '../database/repositories/interfaces/IMessageRepository';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend, withWritableBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches, readPersistedMessageAccounting, withPersistedMessageAccounting } from './helpers/ConversationTypeConverters';
+import { toEventToolCalls } from '../database/utils/toolCallEvents';
+
+/** What `updateConversation` compares a message against before writing it. */
+interface StoredMessageSnapshot {
+  id: string;
+  content: string | null;
+  state: string;
+  reasoning?: string;
+  reasoningSegments?: string;
+  toolCallId?: string;
+  activeAlternativeIndex?: number;
+  metadata?: MessageData['metadata'];
+  toolCalls?: MessageData['toolCalls'];
+  alternatives?: MessageData['alternatives'];
+}
 
 type ConversationMessageResult = MessageData;
 
@@ -131,6 +146,11 @@ export class ConversationService {
    */
   private getReadyAdapter(): IStorageAdapter | undefined {
     return resolveAdapter(this.storageAdapterOrGetter);
+  }
+
+  /** This installation's device id, when the storage adapter has one. */
+  getDeviceId(): string | undefined {
+    return this.getReadyAdapter()?.getDeviceId?.();
   }
 
   /**
@@ -538,10 +558,31 @@ export class ConversationService {
           }
 
           for (const msg of nextMessages) {
-            // Fast-path: skip messages that haven't changed.
-            // Compares the scalar fields that cover 95%+ of real updates.
-            // Complex fields (toolCalls, alternatives) are caught by the
-            // safety-net dirty-check in MessageRepository.update().
+            const convertedToolCalls = msg.toolCalls?.map(tc => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: tc.function || {
+                name: tc.name || 'unknown_tool',
+                arguments: JSON.stringify(tc.parameters || {})
+              },
+              // Kept so tool bubbles can be rebuilt; dropping them here used
+              // to erase them from every message saved through this path.
+              name: tc.name,
+              parameters: tc.parameters,
+              result: tc.result,
+              success: tc.success,
+              error: tc.error,
+              executionTime: tc.executionTime
+            }));
+            const convertedAlternatives = msg.alternatives?.map(toAlternativeMessage);
+
+            // Fast-path: skip messages that haven't changed. Every field the
+            // update below writes has to be compared, or a change to only that
+            // field is silently never saved (stripping an incomplete tool call
+            // on abort used to be lost this way). Tool calls are compared in
+            // the shape the event persists, since the cache holds a different
+            // shape after a replay. A false "changed" only costs the
+            // repository's own dirty check; a false "unchanged" loses data.
             const prev = existingById.get(msg.id);
             const persistedMetadata = withPersistedMessageAccounting({
               ...msg,
@@ -554,23 +595,14 @@ export class ConversationService {
                 && serializeReasoningSegments(msg.reasoningSegments) === prev.reasoningSegments
                 && (msg.toolCallId ?? undefined) === (prev.toolCallId ?? undefined)
                 && (msg.activeAlternativeIndex ?? 0) === (prev.activeAlternativeIndex ?? 0)
-                && JSON.stringify(persistedMetadata ?? null) === JSON.stringify(prev.metadata ?? null)) {
+                && JSON.stringify(persistedMetadata ?? null) === JSON.stringify(prev.metadata ?? null)
+                && (convertedToolCalls === undefined
+                  || JSON.stringify(toEventToolCalls(convertedToolCalls) ?? null) === JSON.stringify(toEventToolCalls(prev.toolCalls) ?? null))
+                && (convertedAlternatives === undefined
+                  || JSON.stringify(convertedAlternatives) === JSON.stringify(prev.alternatives ?? null))) {
               delete msg.replaceMetadata;
               continue;
             }
-
-            const convertedToolCalls = msg.toolCalls?.map(tc => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: tc.function || {
-                name: tc.name || 'unknown_tool',
-                arguments: JSON.stringify(tc.parameters || {})
-              },
-              result: tc.result,
-              success: tc.success,
-              error: tc.error,
-              executionTime: tc.executionTime
-            }));
 
             await adapter.updateMessage(id, msg.id, {
               content: msg.content ?? null,
@@ -580,7 +612,7 @@ export class ConversationService {
               toolCalls: convertedToolCalls,
               toolCallId: msg.toolCallId,
               metadata: persistedMetadata ?? null,
-              alternatives: msg.alternatives?.map(toAlternativeMessage),
+              alternatives: convertedAlternatives,
               activeAlternativeIndex: msg.activeAlternativeIndex
             });
             delete msg.replaceMetadata;
@@ -636,8 +668,8 @@ export class ConversationService {
    * full objects enable content/state comparison that avoids redundant writes
    * (the data is already fetched by adapter.getMessages, so this is free).
    */
-  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number; metadata?: MessageData['metadata'] }>> {
-    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; reasoningSegments?: string; toolCallId?: string; activeAlternativeIndex?: number; metadata?: MessageData['metadata'] }> = [];
+  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<StoredMessageSnapshot[]> {
+    const messages: StoredMessageSnapshot[] = [];
     let page = 0;
     let hasNextPage = true;
 
@@ -656,6 +688,8 @@ export class ConversationService {
         toolCallId: message.toolCallId,
         activeAlternativeIndex: message.activeAlternativeIndex,
         metadata: message.metadata,
+        toolCalls: message.toolCalls,
+        alternatives: message.alternatives,
       })));
       hasNextPage = !!result.hasNextPage;
       page += 1;

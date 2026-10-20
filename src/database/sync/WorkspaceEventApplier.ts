@@ -22,10 +22,20 @@ import {
   ToolOperationFailedEvent,
   ToolOperationIndeterminateEvent,
 } from '../interfaces/StorageEvents';
+import { Platform } from 'obsidian';
 import { ISQLiteCacheManager } from './SyncCoordinator';
 import { purgeWorkspaceRows } from '../workspaceOwnership';
 import { purgeSessionRows } from '../sessionOwnership';
 import { deriveStateMetadataFromJson, resolveStateDescription } from '../utils/stateContent';
+import { compactTraceMetadataJson } from '../../services/trace/TraceMetadataCompactor';
+
+/**
+ * Largest trace metadata a phone will parse during replay. Above it the cache
+ * row keeps only a compaction stub (size and hash) and the event in JSONL is
+ * left as it is. Parsing a 60 MB record on a phone is a memory risk; on
+ * desktop there is no ceiling.
+ */
+const MOBILE_TRACE_PARSE_CEILING = 16 * 1024 * 1024;
 
 export class WorkspaceEventApplier {
   private sqliteCache: ISQLiteCacheManager;
@@ -425,7 +435,12 @@ export class WorkspaceEventApplier {
         event.timestamp ?? Date.now(),
         event.data.traceType ?? null,
         event.data.content ?? '',
-        event.data.metadataJson ?? null
+        // Events from older devices, or written before compaction existed,
+        // can carry multi-MB metadata. The cache only ever gets the bounded
+        // form, which is a deterministic function of the event.
+        (await compactTraceMetadataJson(event.data.metadataJson, {
+          maxParseBytes: Platform.isMobile ? MOBILE_TRACE_PARSE_CEILING : undefined
+        })) ?? null
       ]
     );
   }

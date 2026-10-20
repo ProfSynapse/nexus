@@ -48,3 +48,51 @@ describe('targeted chat writes', () => {
     expect(updated).toHaveBeenCalledWith(conversation);
   });
 });
+
+describe('updateConversation fast path', () => {
+  // Stored the way a replayed cache holds tool calls: the event's subset.
+  const storedCall = (id: string, result?: unknown) => ({
+    id, type: 'function', function: { name: 'useTools', arguments: '{}' }, name: 'useTools',
+    ...(result === undefined ? {} : { result, success: true })
+  });
+  // Held the way the live chat holds them: extra display fields.
+  const liveCall = (id: string, result?: unknown) => ({
+    ...storedCall(id, result), displayName: 'Use tools', technicalName: 'toolManager_useTools', executionTime: 12
+  });
+
+  function serviceWith(storedToolCalls: unknown[]) {
+    const adapter = {
+      isReady: () => true,
+      getConversation: jest.fn(async () => ({ id: 'c', metadata: {} })),
+      getMessages: jest.fn(async () => ({
+        items: [{ id: 'm', conversationId: 'c', role: 'assistant', content: 'Done', state: 'complete', timestamp: 1, sequenceNumber: 0, toolCalls: storedToolCalls }],
+        hasNextPage: false
+      })),
+      updateMessage: jest.fn(async () => undefined),
+      deleteMessage: jest.fn(async () => undefined),
+      updateConversation: jest.fn(async () => undefined)
+    };
+    const service = new ConversationService({} as Plugin, {} as FileSystemService, {} as IndexManager, adapter as unknown as IStorageAdapter);
+    return { service, adapter };
+  }
+
+  const message = (toolCalls: unknown[]) => ({ id: 'm', role: 'assistant', content: 'Done', state: 'complete', timestamp: 1, toolCalls });
+
+  it('saves a change that only touches tool calls (abort stripping an incomplete call)', async () => {
+    const { service, adapter } = serviceWith([storedCall('done', { ok: true }), storedCall('incomplete')]);
+
+    await service.updateConversation('c', { messages: [message([liveCall('done', { ok: true })])] } as never);
+
+    expect(adapter.updateMessage).toHaveBeenCalledTimes(1);
+    const written = (adapter.updateMessage.mock.calls[0] as unknown[])[2] as { toolCalls: Array<{ id: string }> };
+    expect(written.toolCalls.map(call => call.id)).toEqual(['done']);
+  });
+
+  it('still skips a message whose tool calls differ from the cache only in shape', async () => {
+    const { service, adapter } = serviceWith([storedCall('done', { ok: true })]);
+
+    await service.updateConversation('c', { messages: [message([liveCall('done', { ok: true })])] } as never);
+
+    expect(adapter.updateMessage).not.toHaveBeenCalled();
+  });
+});

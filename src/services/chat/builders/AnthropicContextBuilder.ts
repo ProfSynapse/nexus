@@ -11,6 +11,7 @@
 
 import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, AnthropicMessage, LLMContentBlock } from './IContextBuilder';
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
+import { trimToolResultForStorage } from '../../../utils/toolResultTrim';
 
 export class AnthropicContextBuilder implements IContextBuilder {
   readonly provider = 'anthropic';
@@ -91,7 +92,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
             tool_use_id: toolCall.id,
             ...(toolCall.success ? {} : { is_error: true }),
             content: toolCall.success
-              ? JSON.stringify(toolCall.result || {})
+              ? JSON.stringify(trimToolResultForStorage(toolCall.result) || {})
               : `Error: ${toolCall.error || 'Tool execution failed'}`
           }));
 
@@ -111,7 +112,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
             tool_use_id: toolCall.id,
             ...(toolCall.success ? {} : { is_error: true }),
             content: toolCall.success
-              ? JSON.stringify(toolCall.result || {})
+              ? JSON.stringify(trimToolResultForStorage(toolCall.result) || {})
               : `Error: ${toolCall.error || 'Tool execution failed'}`
           }));
 
@@ -269,7 +270,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
           tool_use_id: call.id,
           ...(call.success ? {} : { is_error: true }),
           content: call.success
-            ? JSON.stringify(call.result || {})
+            ? JSON.stringify(trimToolResultForStorage(call.result) || {})
             : `Error: ${call.error || 'Tool execution failed'}`,
         })) });
       }

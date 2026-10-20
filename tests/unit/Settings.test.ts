@@ -34,7 +34,7 @@ describe('Settings', () => {
     expect(settings.settings.storage).toEqual({
       schemaVersion: 2,
       rootPath: 'Nexus',
-      maxShardBytes: 4 * 1024 * 1024,
+      maxShardBytes: 1024 * 1024,
       audioSubfolder: 'audio'
     });
   });
@@ -56,7 +56,7 @@ describe('Settings', () => {
     expect(settings.settings.storage).toEqual({
       schemaVersion: 2,
       rootPath: 'storage/assistant-data',
-      maxShardBytes: 4 * 1024 * 1024,
+      maxShardBytes: 1024 * 1024,
       audioSubfolder: 'audio'
     });
   });

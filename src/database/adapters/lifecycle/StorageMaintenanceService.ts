@@ -15,9 +15,8 @@ import {
   VaultRootRelocationService,
   type VaultRootRelocationResult
 } from '../../migration/VaultRootRelocationService';
-import { resolveVaultRoot } from '../../storage/VaultRootResolver';
+import { resolveMaxShardBytes, resolveVaultRoot } from '../../storage/VaultRootResolver';
 import { VaultEventStore } from '../../storage/vaultRoot/VaultEventStore';
-import { DEFAULT_STORAGE_SETTINGS } from '../../../types/plugin/PluginTypes';
 import type { CacheBlobStore } from '../../storage/CacheBlobStore';
 import { InitLifecycleController } from './InitLifecycleController';
 import {
@@ -373,7 +372,7 @@ export class StorageMaintenanceService {
       };
     }
 
-    const maxShardBytes = options?.maxShardBytes ?? DEFAULT_STORAGE_SETTINGS.maxShardBytes;
+    const maxShardBytes = options?.maxShardBytes ?? resolveMaxShardBytes(undefined);
 
     const relocationService = new VaultRootRelocationService({
       app: this.deps.getApp(),

@@ -1,5 +1,5 @@
 import type { MCPSettings, MCPStorageSettings } from '../../types/plugin/PluginTypes';
-import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
+import { DEFAULT_STORAGE_SETTINGS, LEGACY_DEFAULT_MAX_SHARD_BYTES } from '../../types/plugin/PluginTypes';
 
 export interface VaultRootPathValidation {
   inputPath: string;
@@ -121,9 +121,20 @@ export function validateVaultRelativePath(
   };
 }
 
-function resolveMaxShardBytes(storage: MCPStorageSettings | undefined): number {
+/**
+ * The shard cap in effect for these settings. Installs that saved the old
+ * default (`LEGACY_DEFAULT_MAX_SHARD_BYTES`) get the current one; any other
+ * stored value is kept. Existing shards are never resized — this only decides
+ * where the next shard starts.
+ */
+export function resolveMaxShardBytes(storage: Pick<MCPStorageSettings, 'maxShardBytes'> | undefined): number {
   const candidate = storage?.maxShardBytes;
-  if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+  if (
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate) &&
+    candidate > 0 &&
+    candidate !== LEGACY_DEFAULT_MAX_SHARD_BYTES
+  ) {
     return Math.floor(candidate);
   }
 

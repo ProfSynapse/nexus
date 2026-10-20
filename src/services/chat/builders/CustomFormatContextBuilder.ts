@@ -15,6 +15,7 @@
 
 import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMessage } from './IContextBuilder';
 import { ConversationData, ChatMessage, ToolCall, ToolCallFormat } from '../../../types/chat/ChatTypes';
+import { trimToolResultForStorage } from '../../../utils/toolResultTrim';
 
 export class CustomFormatContextBuilder implements IContextBuilder {
   readonly provider = 'custom';
@@ -120,7 +121,7 @@ export class CustomFormatContextBuilder implements IContextBuilder {
           // Add tool results with appropriate format wrapper
           const toolResults = msg.toolCalls.map((tc: ToolCall) => ({
             success: tc.success !== false,
-            result: tc.result,
+            result: trimToolResultForStorage(tc.result),
             error: tc.error
           }));
           messages.push({

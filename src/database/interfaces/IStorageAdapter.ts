@@ -116,6 +116,12 @@ export interface IStorageAdapter {
   waitForQueryReady?(): Promise<boolean>;
 
   /**
+   * This installation's persistent device id, as stamped on every event it
+   * writes. Optional: only the hybrid adapter has one.
+   */
+  getDeviceId?(): string;
+
+  /**
    * Close the storage adapter and release resources
    *
    * This should:

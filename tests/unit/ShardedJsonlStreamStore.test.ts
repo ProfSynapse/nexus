@@ -210,6 +210,23 @@ describe('ShardedJsonlStreamStore', () => {
       expect(allEvents.map(e => e.id)).toEqual(['evt-1', 'evt-2', 'evt-3']);
     });
 
+    it('still writes a record larger than the cap, and warns with its type and size', async () => {
+      const { app, adapter } = createMockApp();
+      const store = new ShardedJsonlStreamStore({ app, rootPath: 'root', maxShardBytes: 64 });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const big = makeEvent('evt-big', { payload: 'x'.repeat(500) });
+      const result = await store.appendEvent('workspaces/ws-1', big);
+
+      expect(adapter.write).toHaveBeenCalledWith('root/workspaces/ws-1/shard-000001.jsonl', `${JSON.stringify(big)}\n`);
+      expect(result.shard.size).toBeGreaterThan(64);
+      expect(warn).toHaveBeenCalledWith(
+        '[ShardedJsonlStreamStore] Record exceeds the shard size cap',
+        expect.objectContaining({ stream: 'workspaces/ws-1', type: 'test_event', maxShardBytes: 64 })
+      );
+      warn.mockRestore();
+    });
+
     it('clamps maxShardBytes to minimum of 1', () => {
       const { app } = createMockApp();
       const store = new ShardedJsonlStreamStore({ app, rootPath: 'root', maxShardBytes: 0 });

@@ -339,6 +339,19 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
     const serializedRecord = `${serializedEvent}\n`;
     const recordBytes = this.getUtf8ByteLength(serializedRecord);
 
+    // A JSONL line cannot be split, so a record over the cap still gets
+    // written, into a shard of its own that is over the cap too. Refusing it
+    // would lose user data; saying so tells us which writer to bound next.
+    // Traces are bounded before they get here (TraceMetadataCompactor).
+    if (recordBytes > this.maxShardBytes) {
+      console.warn('[ShardedJsonlStreamStore] Record exceeds the shard size cap', {
+        stream: relativeStreamPath,
+        type: (event as { type?: unknown }).type,
+        recordBytes,
+        maxShardBytes: this.maxShardBytes
+      });
+    }
+
     const shouldRotate =
       currentShard !== null &&
       currentShard.size > 0 &&

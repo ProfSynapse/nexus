@@ -15,6 +15,7 @@ import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMe
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
 import { synthesizeToolCallId } from '../../llm/utils/toolCallId';
+import { trimToolResultForStorage } from '../../../utils/toolResultTrim';
 
 type ReasoningToolCallLike = {
   id?: string;
@@ -169,7 +170,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
                 role: 'tool',
                 tool_call_id: normalizedIds[index],
                 content: toolCall.success !== false
-                  ? JSON.stringify(toolCall.result || {})
+                  ? JSON.stringify(trimToolResultForStorage(toolCall.result) || {})
                   : JSON.stringify({ error: toolCall.error || 'Tool execution failed' })
               });
             }
@@ -216,7 +217,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
           messages.push({
             role: 'tool',
             tool_call_id: toolCallId,
-            content: msg.content || '{}'
+            content: trimToolResultForStorage(msg.content || '{}')
           });
         }
       }

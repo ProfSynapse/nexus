@@ -19,6 +19,16 @@ describe('VaultRootResolver', () => {
     expect(result.validation.isValid).toBe(true);
   });
 
+  it('moves installs that saved the old 4 MiB default to the 1 MiB default, and keeps any other value', () => {
+    // Every pre-5.22 install persisted the default in data.json; no setting exposes it.
+    const legacy = resolveVaultRoot({ storage: { schemaVersion: 2, rootPath: 'Nexus', maxShardBytes: 4 * 1024 * 1024 } });
+    const custom = resolveVaultRoot({ storage: { schemaVersion: 2, rootPath: 'Nexus', maxShardBytes: 3 * 1024 * 1024 } });
+
+    expect(DEFAULT_STORAGE_SETTINGS.maxShardBytes).toBe(1024 * 1024);
+    expect(legacy.maxShardBytes).toBe(1024 * 1024);
+    expect(custom.maxShardBytes).toBe(3 * 1024 * 1024);
+  });
+
   it('normalizes vault-relative paths from settings', () => {
     const result = resolveVaultRoot({
       storage: {

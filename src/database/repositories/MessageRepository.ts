@@ -25,10 +25,23 @@ import {
   ToolCallMessageHistoryOptions
 } from './interfaces/IMessageRepository';
 import { MessageData, AlternativeMessage } from '../../types/storage/HybridStorageTypes';
-import { MessageEvent, MessageUpdatedEvent, MessageDeletedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
+import { MessageEvent, MessageUpdatedEvent, MessageToolCallUpsertedEvent, MessageDeletedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { DatabaseRow, QueryParams } from './base/BaseRepository';
 import { parseJsonColumn } from '../utils/jsonColumn';
+import {
+  isTerminalMessageState,
+  planToolCallWrite,
+  toEventToolCalls,
+  type EventToolCall
+} from '../utils/toolCallEvents';
+import { trimToolResultForStorage } from '../../utils/toolResultTrim';
+
+/** A tool call with its result bounded the way persisted events bound it. */
+function trimToolCallResult<T extends { result?: unknown }>(call: T): T {
+  const result = trimToolResultForStorage(call.result);
+  return result === call.result ? call : { ...call, result };
+}
 
 interface MessageRow extends DatabaseRow {
   id: string;
@@ -464,80 +477,111 @@ export class MessageRepository
         );
       }
 
-      // Skip entirely if nothing actually changed (prevents JSONL write amplification)
-      if (!this.hasChanges(current, data)) {
+      // Only fields that actually changed are written. Replay merges
+      // message_updated field by field (ConversationEventApplier), so an
+      // omitted field keeps its stored value on every reader version. Writing
+      // the whole message instead re-saved every earlier tool result on each
+      // round of a long turn.
+      const changed = this.changedFields(current, data);
+      if (changed.size === 0) {
         return;
       }
+      const has = (field: keyof UpdateMessageData): boolean => changed.has(field);
 
-      // 1. Write update event to JSONL
-      await this.writeEvent<MessageUpdatedEvent>(
-        this.jsonlPath(current.conversationId),
-        {
+      // Tool calls: during a turn each call that started or finished is
+      // written once (message_tool_call_upserted) instead of re-saving the
+      // whole array; when the turn ends, one full snapshot goes into
+      // message_updated so devices on older versions catch up. See
+      // database/utils/toolCallEvents.
+      const resultingState = data.state ?? current.state;
+      const turnEnded = has('state') && isTerminalMessageState(data.state) && !isTerminalMessageState(current.state);
+      const nextToolCalls = has('toolCalls') ? data.toolCalls : current.toolCalls;
+      let toolCallSnapshot: EventToolCall[] | undefined;
+      let toolCallUpserts: EventToolCall[] = [];
+      if (has('toolCalls')) {
+        const plan = planToolCallWrite(toEventToolCalls(current.toolCalls), toEventToolCalls(data.toolCalls), {
+          turnEnded: turnEnded || isTerminalMessageState(resultingState)
+        });
+        if (plan.kind === 'upserts') toolCallUpserts = plan.calls;
+        if (plan.kind === 'snapshot') toolCallSnapshot = toEventToolCalls(data.toolCalls);
+      }
+      if (turnEnded && !toolCallSnapshot && nextToolCalls && nextToolCalls.length > 0) {
+        toolCallSnapshot = toEventToolCalls(nextToolCalls);
+      }
+
+      // 1. Write the events to JSONL
+      const streamPath = this.jsonlPath(current.conversationId);
+      for (const call of toolCallUpserts) {
+        await this.awaitDistinctTimestamp(messageId);
+        await this.writeEvent<MessageToolCallUpsertedEvent>(streamPath, {
+          type: 'message_tool_call_upserted',
+          conversationId: current.conversationId,
+          messageId,
+          data: { tool_call: call }
+        });
+      }
+
+      const onlyToolCallsChanged = changed.size === 1 && has('toolCalls') && !toolCallSnapshot;
+      if (!onlyToolCallsChanged) {
+        await this.awaitDistinctTimestamp(messageId);
+        await this.writeEvent<MessageUpdatedEvent>(streamPath, {
           type: 'message_updated',
           conversationId: current.conversationId,
           messageId,
           data: {
-            content: data.content ?? undefined,
-            state: data.state,
-            reasoning: data.reasoning,
-            reasoning_segments: data.reasoningSegments,
-            metadata: data.metadata,
-            // Persist full tool call data including results so tool bubbles can be reconstructed
-            tool_calls: data.toolCalls?.map(tc => ({
-              id: tc.id,
-              type: tc.type || 'function',
-              function: tc.function,
-              name: tc.name,
-              parameters: tc.parameters,
-              result: tc.result,
-              success: tc.success,
-              error: tc.error
-            })),
-            tool_call_id: data.toolCallId ?? undefined,
+            content: has('content') ? data.content ?? undefined : undefined,
+            state: has('state') ? data.state : undefined,
+            reasoning: has('reasoning') ? data.reasoning : undefined,
+            reasoning_segments: has('reasoningSegments') ? data.reasoningSegments : undefined,
+            metadata: has('metadata') ? data.metadata : undefined,
+            // Full tool calls (results included) so tool bubbles can be reconstructed
+            tool_calls: toolCallSnapshot,
+            tool_call_id: has('toolCallId') ? data.toolCallId ?? undefined : undefined,
             // Branching support
-            alternatives: this.convertAlternativesToEvent(data.alternatives),
-            activeAlternativeIndex: data.activeAlternativeIndex
+            alternatives: has('alternatives') ? this.convertAlternativesToEvent(data.alternatives) : undefined,
+            activeAlternativeIndex: has('activeAlternativeIndex') ? data.activeAlternativeIndex : undefined
           }
-        }
-      );
+        });
+      }
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];
       const params: QueryParams = [];
 
-      if (data.content !== undefined) {
+      if (has('content') && data.content !== undefined) {
         setClauses.push('content = ?');
         params.push(data.content);
       }
-      if (data.state !== undefined) {
+      if (has('state') && data.state !== undefined) {
         setClauses.push('state = ?');
         params.push(data.state);
       }
-      if (data.reasoning !== undefined) {
+      if (has('reasoning') && data.reasoning !== undefined) {
         setClauses.push('reasoningContent = ?');
         params.push(data.reasoning);
       }
-      if (data.reasoningSegments !== undefined) {
+      if (has('reasoningSegments') && data.reasoningSegments !== undefined) {
         setClauses.push('reasoningSegmentsJson = ?');
         params.push(data.reasoningSegments ? JSON.stringify(data.reasoningSegments) : null);
       }
-      if (data.metadata !== undefined) {
+      if (has('metadata') && data.metadata !== undefined) {
         setClauses.push('metadataJson = ?');
         params.push(data.metadata === null ? null : JSON.stringify(data.metadata));
       }
-      if (data.toolCalls !== undefined) {
+      if (has('toolCalls') && data.toolCalls !== undefined) {
         setClauses.push('toolCallsJson = ?');
-        params.push(data.toolCalls ? JSON.stringify(data.toolCalls) : null);
+        // Trimmed like the events, so the live cache matches what replay builds.
+        params.push(data.toolCalls ? JSON.stringify(data.toolCalls.map(trimToolCallResult)) : null);
       }
-      if (data.toolCallId !== undefined) {
+      if (has('toolCallId') && data.toolCallId !== undefined) {
         setClauses.push('toolCallId = ?');
         params.push(data.toolCallId);
       }
-      if (data.alternatives !== undefined) {
+      if (has('alternatives') && data.alternatives !== undefined) {
         setClauses.push('alternativesJson = ?');
         params.push(data.alternatives ? JSON.stringify(data.alternatives) : null);
       }
-      if (data.activeAlternativeIndex !== undefined) {
+      if (has('activeAlternativeIndex') && data.activeAlternativeIndex !== undefined) {
         setClauses.push('activeAlternativeIndex = ?');
         params.push(data.activeAlternativeIndex);
       }
@@ -567,53 +611,72 @@ export class MessageRepository
     }
   }
 
+  /** Last event time written per message, to keep this device's writes strictly ordered. */
+  private readonly lastWriteMs = new Map<string, number>();
+
   /**
-   * Detect whether any supplied update fields differ from the current stored values.
-   * Only checks fields present in the update (undefined = not being updated).
+   * Replay orders events by timestamp, then device, then a random event id,
+   * so two writes to one message in the same millisecond could replay in
+   * either order. Waiting out the millisecond keeps this device's writes in
+   * the order they were made.
    */
-  private hasChanges(current: MessageData, updates: UpdateMessageData): boolean {
-    if (updates.metadata !== undefined) {
-      const currentJson = current.metadata == null ? null : JSON.stringify(current.metadata);
-      const incomingJson = updates.metadata === null ? null : JSON.stringify(updates.metadata);
-      if (currentJson !== incomingJson) return true;
+  private async awaitDistinctTimestamp(messageId: string): Promise<void> {
+    const last = this.lastWriteMs.get(messageId) ?? 0;
+    while (Date.now() <= last) {
+      await new Promise(resolve => window.setTimeout(resolve, 1));
     }
-    if (updates.content !== undefined) {
-      // Normalise null → '' for comparison since SQLite stores empty strings
-      const incoming = updates.content ?? '';
-      if (incoming !== current.content) return true;
+    this.lastWriteMs.delete(messageId);
+    this.lastWriteMs.set(messageId, Date.now());
+    if (this.lastWriteMs.size > 256) {
+      const oldest = this.lastWriteMs.keys().next().value;
+      if (oldest !== undefined) this.lastWriteMs.delete(oldest);
+    }
+  }
+
+  /**
+   * The supplied update fields that differ from the stored values. A field
+   * left undefined is not being updated.
+   *
+   * Tool calls are compared in the shape the event persists. The cache holds
+   * full objects after a live write but the event's subset after a replay, so
+   * comparing raw JSON reported a change after every rebuild and re-saved the
+   * whole array each time.
+   */
+  private changedFields(current: MessageData, updates: UpdateMessageData): Set<keyof UpdateMessageData> {
+    const changed = new Set<keyof UpdateMessageData>();
+    const json = (value: unknown): string | null => (value == null ? null : JSON.stringify(value));
+
+    if (updates.metadata !== undefined && json(current.metadata) !== json(updates.metadata)) {
+      changed.add('metadata');
+    }
+    // Normalise null → '' for comparison since SQLite stores empty strings
+    if (updates.content !== undefined && (updates.content ?? '') !== current.content) {
+      changed.add('content');
     }
     if (updates.state !== undefined && updates.state !== current.state) {
-      return true;
+      changed.add('state');
     }
     if (updates.reasoning !== undefined && updates.reasoning !== current.reasoning) {
-      return true;
+      changed.add('reasoning');
     }
-    if (updates.reasoningSegments !== undefined) {
-      const currentJson = current.reasoningSegments ? JSON.stringify(current.reasoningSegments) : null;
-      const incomingJson = updates.reasoningSegments ? JSON.stringify(updates.reasoningSegments) : null;
-      if (currentJson !== incomingJson) return true;
+    if (updates.reasoningSegments !== undefined && json(current.reasoningSegments) !== json(updates.reasoningSegments)) {
+      changed.add('reasoningSegments');
     }
     if (updates.toolCallId !== undefined && updates.toolCallId !== current.toolCallId) {
-      return true;
+      changed.add('toolCallId');
     }
     if (updates.activeAlternativeIndex !== undefined
         && updates.activeAlternativeIndex !== current.activeAlternativeIndex) {
-      return true;
+      changed.add('activeAlternativeIndex');
     }
-    // Serialised comparison for complex objects — conservative (may detect
-    // false-positive changes if the caller reshapes tool call objects, but
-    // never misses a real change).
-    if (updates.toolCalls !== undefined) {
-      const currentJson = current.toolCalls ? JSON.stringify(current.toolCalls) : null;
-      const updatesJson = updates.toolCalls ? JSON.stringify(updates.toolCalls) : null;
-      if (currentJson !== updatesJson) return true;
+    if (updates.toolCalls !== undefined
+        && json(toEventToolCalls(current.toolCalls)) !== json(toEventToolCalls(updates.toolCalls))) {
+      changed.add('toolCalls');
     }
-    if (updates.alternatives !== undefined) {
-      const currentJson = current.alternatives ? JSON.stringify(current.alternatives) : null;
-      const updatesJson = updates.alternatives ? JSON.stringify(updates.alternatives) : null;
-      if (currentJson !== updatesJson) return true;
+    if (updates.alternatives !== undefined && json(current.alternatives) !== json(updates.alternatives)) {
+      changed.add('alternatives');
     }
-    return false;
+    return changed;
   }
 
   /**

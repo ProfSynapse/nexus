@@ -23,6 +23,7 @@ import type { LLMService } from '../llm/core/LLMService';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 import type { ToolCallMessageHistoryOptions } from '../../database/repositories/interfaces/IMessageRepository';
 import type { ChatRuntimeEnvelope } from '../llm/runtime/ChatRuntimeEvent';
+import { isInterruptedCheckpoint, repairInterruptedTurn } from './TurnCheckpoint';
 
 interface ConversationListItem {
   id: string;
@@ -63,6 +64,7 @@ interface MCPConnectorLike {
 
 interface ConversationServiceDependency {
   updateChatMessage?: (conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>) => Promise<void>;
+  getDeviceId?: () => string | undefined;
   getConversation: (id: string, pagination?: { page?: number; pageSize?: number }) => Promise<ConversationData | null>;
   listConversations: (vaultName?: string, limit?: number, page?: number) => Promise<Array<{
     id: string;
@@ -458,10 +460,34 @@ export class ChatService {
     paginationOptions?: { page?: number; pageSize?: number }
   ): Promise<ConversationData | null> {
     const conversation = await this.conversationQueryService.getConversation(id, paginationOptions);
-    if (conversation) conversation.messages = conversation.messages.map(message => {
+    if (!conversation) return conversation;
+
+    // A message saved as a mid-turn checkpoint with no live turn behind it was
+    // interrupted (crash, reload, or another device that stopped). Keep it as
+    // aborted, minus the tool calls that never finished.
+    const deviceId = this.dependencies.conversationService.getDeviceId?.();
+    const now = Date.now();
+    const repairs: Array<{ messageId: string; repair: ReturnType<typeof repairInterruptedTurn> }> = [];
+    conversation.messages = conversation.messages.map(message => {
       const turn = this.turnStore.get(id, message.id);
-      return turn && turn.saveState !== 'saved' ? projectTurn(message, turn) : message;
+      if (turn && turn.saveState !== 'saved') return projectTurn(message, turn);
+      if (!turn && isInterruptedCheckpoint(message, deviceId, now)) {
+        const repair = repairInterruptedTurn(message);
+        repairs.push({ messageId: message.id, repair });
+        return { ...message, ...repair };
+      }
+      return message;
     });
+
+    const update = this.dependencies.conversationService.updateChatMessage;
+    for (const { messageId, repair } of repairs) {
+      try {
+        await update?.call(this.dependencies.conversationService, id, messageId, { ...repair, replaceMetadata: true });
+      } catch (error) {
+        // The repaired view is still shown; the next load retries the save.
+        console.warn('[ChatService] Could not save an interrupted turn as aborted:', error);
+      }
+    }
     return conversation;
   }
 

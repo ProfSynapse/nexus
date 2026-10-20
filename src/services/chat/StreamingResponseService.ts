@@ -36,6 +36,21 @@ import {
   type ChatTurnState,
 } from '../llm/runtime/ChatTurnReducer';
 import type { ToolExecutionOrigin } from '../../types/tools/ToolOperationTypes';
+import {
+  TURN_CHECKPOINT_METADATA_KEY,
+  TurnCheckpointer,
+  type TurnCheckpointMarker
+} from './TurnCheckpoint';
+
+/** Runtime events that change what a checkpoint would save. */
+const CHECKPOINTED_EVENTS = new Set<ChatRuntimeEvent['type']>([
+  'assistant.delta',
+  'reasoning.delta',
+  'reasoning.completed',
+  'tool.snapshot',
+  'tool.execution.started',
+  'tool.execution.completed'
+]);
 
 function addUsage(previous: NormalizedTokenUsage | undefined, current: NormalizedTokenUsage): NormalizedTokenUsage {
   if (!previous) return { ...current };
@@ -96,6 +111,7 @@ interface LLMServiceLike {
 
 interface ConversationServiceLike {
   updateChatMessage?: (conversationId: string, messageId: string, updates: Partial<import('../../types/chat/ChatTypes').ConversationMessage>) => Promise<void>;
+  getDeviceId?: () => string | undefined;
   getConversation(conversationId: string): Promise<ConversationData | null>;
   addMessage(params: { conversationId: string; role: string; content: string; id: string }): Promise<void>;
   updateConversation(conversationId: string, update: { messages?: ConversationMessage[]; metadata?: ConversationData['metadata'] }): Promise<void>;
@@ -152,7 +168,12 @@ export class StreamingResponseService {
     const envelope = (event: ChatRuntimeEvent): StreamingChunk => ({ messageId, event, snapshot });
     let releaseSave: () => void = () => undefined;
     const saveFinished = new Promise<void>(resolve => { releaseSave = resolve; });
+    // Progress is saved while the turn runs, so a crash or reload keeps it.
+    // Closed before the final save, which therefore always lands last.
+    const deviceId = this.dependencies.conversationService.getDeviceId?.();
+    const checkpoints = new TurnCheckpointer(() => this.persistCheckpoint(conversationId, messageId, turnState, deviceId));
     const saveTerminal = async (): Promise<void> => {
+      await checkpoints.close();
       const generationId = snapshot.generationId;
       this.pendingSaves.set(generationId, async () => {
         snapshot = this.turnStore.setSaveState(snapshot, 'saving');
@@ -396,6 +417,9 @@ export class StreamingResponseService {
         }
 
         dispatch(event);
+        if (CHECKPOINTED_EVENTS.has(event.type)) {
+          checkpoints.request();
+        }
 
         // Persist every terminal state before exposing it to consumers. This
         // prevents failed/aborted turns from surviving as draft placeholders.
@@ -441,6 +465,30 @@ export class StreamingResponseService {
       // Notify queue service that generation is complete (resumes processing)
       void this.dependencies.messageQueueService?.onGenerationComplete?.(snapshot.generationId);
     }
+  }
+
+  /**
+   * Save the turn so far: text, reasoning and tool calls, with state
+   * `streaming` and a checkpoint marker. The repository writes only what
+   * changed and each tool call once, so frequent checkpoints stay small.
+   */
+  private async persistCheckpoint(
+    conversationId: string,
+    messageId: string,
+    turnState: ChatTurnState,
+    deviceId: string | undefined
+  ): Promise<void> {
+    const update = this.dependencies.conversationService.updateChatMessage;
+    if (!update) return;
+    const marker: TurnCheckpointMarker = { at: Date.now(), deviceId };
+    await update.call(this.dependencies.conversationService, conversationId, messageId, {
+      content: turnState.content,
+      state: 'streaming',
+      toolCalls: turnState.toolCalls,
+      reasoning: turnState.reasoning.text || '',
+      reasoningSegments: turnState.reasoning.segments,
+      metadata: { [TURN_CHECKPOINT_METADATA_KEY]: marker }
+    });
   }
 
   private async persistTerminalMessage(

@@ -33,10 +33,18 @@ export interface MCPStorageSettings {
   audioSubfolder?: string;
 }
 
+/**
+ * The shard cap shipped before 5.22. Sync tools upload the whole active shard
+ * on every append, so each change cost up to this much upload and version
+ * history. No setting exposes the cap, so a stored value equal to this was
+ * never a user choice; the resolver reads it as the current default.
+ */
+export const LEGACY_DEFAULT_MAX_SHARD_BYTES = 4 * 1024 * 1024;
+
 export const DEFAULT_STORAGE_SETTINGS: MCPStorageSettings = {
   schemaVersion: 2,
   rootPath: 'Nexus',
-  maxShardBytes: 4 * 1024 * 1024,
+  maxShardBytes: 1024 * 1024,
   audioSubfolder: 'audio'
 };
 

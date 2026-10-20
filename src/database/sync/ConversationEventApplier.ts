@@ -12,9 +12,12 @@ import {
   ConversationDeletedEvent,
   MessageEvent,
   MessageUpdatedEvent,
+  MessageToolCallUpsertedEvent,
   MessageDeletedEvent,
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
+import { parseJsonColumn } from '../utils/jsonColumn';
+import { mergeToolCall, type EventToolCall } from '../utils/toolCallEvents';
 
 export class ConversationEventApplier {
   private sqliteCache: ISQLiteCacheManager;
@@ -42,6 +45,9 @@ export class ConversationEventApplier {
         break;
       case 'message_updated':
         await this.applyMessageUpdated(event);
+        break;
+      case 'message_tool_call_upserted':
+        await this.applyMessageToolCallUpserted(event);
         break;
       case 'message_deleted':
         await this.applyMessageDeleted(event);
@@ -213,6 +219,25 @@ export class ConversationEventApplier {
         values
       );
     }
+  }
+
+  private async applyMessageToolCallUpserted(event: MessageToolCallUpsertedEvent): Promise<void> {
+    const call = event.data?.tool_call;
+    if (!call?.id) {
+      return;
+    }
+    const row = await this.sqliteCache.queryOne<{ toolCallsJson: string | null }>(
+      'SELECT toolCallsJson FROM messages WHERE id = ?',
+      [event.messageId]
+    );
+    if (!row) {
+      return;
+    }
+    const existing = parseJsonColumn<EventToolCall[]>(row.toolCallsJson, 'messages.toolCallsJson') ?? [];
+    await this.sqliteCache.run(
+      'UPDATE messages SET toolCallsJson = ? WHERE id = ?',
+      [JSON.stringify(mergeToolCall(existing, call)), event.messageId]
+    );
   }
 
   private async applyMessageDeleted(event: MessageDeletedEvent): Promise<void> {

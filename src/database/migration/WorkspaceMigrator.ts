@@ -25,6 +25,7 @@ import { LegacyFileScanner } from './LegacyFileScanner';
 import { MigrationStatusTracker } from './MigrationStatusTracker';
 import { BaseMigrator } from './BaseMigrator';
 import { WorkspaceMigrationResult, MigrationCategory } from './types';
+import { compactTraceMetadataJson } from '../../services/trace/TraceMetadataCompactor';
 
 export class WorkspaceMigrator extends BaseMigrator<WorkspaceMigrationResult> {
   protected readonly category: MigrationCategory = 'workspaces';
@@ -100,6 +101,14 @@ export class WorkspaceMigrator extends BaseMigrator<WorkspaceMigrationResult> {
       for (const [sessionId, sessionData] of sessionEntries) {
         this.collectSessionEvents(workspace.id, sessionId, sessionData, events, result);
       }
+    }
+
+    // Legacy traces can carry whole tool results (a nested loadWorkspace dump
+    // reached 59 MB). Bound them the same way new traces are bounded.
+    for (const event of events) {
+      if (event.type !== 'trace_added') continue;
+      const traceEvent = event as Omit<TraceAddedEvent, 'id' | 'deviceId' | 'timestamp'>;
+      traceEvent.data.metadataJson = (await compactTraceMetadataJson(traceEvent.data.metadataJson)) ?? undefined;
     }
 
     // Write all events in a single operation
