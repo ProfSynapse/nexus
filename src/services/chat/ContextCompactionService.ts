@@ -16,6 +16,7 @@
 
 import { ConversationMessage, ConversationData } from '../../types/chat/ChatTypes';
 import type { SavedCompactionState } from './CompactionContext';
+import type { CompactionTraceContext } from './CompactionTraceContext';
 
 
 /**
@@ -52,6 +53,8 @@ export interface CompactedContext {
   summary: string;
   /** Conversation-derived createState arguments, persisted and preloaded verbatim. */
   savedState?: SavedCompactionState;
+  /** Original recent memory/goal entries from the conversation's session. */
+  traceContext?: CompactionTraceContext;
   /** References only; current schemas are resolved on every prompt build. */
   toolSelectors?: string[];
   /** Space kept for the recent turns when selecting optional schema preloads. */

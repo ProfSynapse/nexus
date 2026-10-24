@@ -131,3 +131,9 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 
 - Observation: a native createState call is unnecessary for drafting and excludes models without function calling. Restoring a static model also dropped its known output allowance because the static and runtime field names differ.
 - Change: documented plain-JSON drafting followed by one host state write, state-first schema budgeting, repeated/replay checks, and the two output-limit field names in references/chat-plumbing.md.
+
+
+## 2026-10-24 — User requested original goal/memory lead-up
+
+- Observation: a generated saved state did not satisfy the user's desire to see the sequence of prior goal/memory entries.
+- Change: documented a separate bounded session timeline, state-first budget ordering, nested command status, and handoff/reload preservation in references/chat-plumbing.md.

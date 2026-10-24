@@ -2,6 +2,7 @@ import type { ConversationData, ConversationMessage } from '../../types/chat/Cha
 import { ContextBudgetService } from '../chat/ContextBudgetService';
 import { ContextCompactionService, type CompactedContext } from '../chat/ContextCompactionService';
 import { compactionContextText } from '../chat/CompactionContext';
+import { selectCompactionTraceContext, traceContextText } from '../chat/CompactionTraceContext';
 
 export interface LiveVoiceContextBuilderOptions {
   maxContextTokens?: number;
@@ -26,10 +27,20 @@ export class LiveVoiceContextBuilder {
     const context = this.wrapContext(frontierSection, recentSection);
 
     if (ContextBudgetService.estimateTextTokens(context) <= maxTokens) {
-      return context;
+      return this.withRecentTraces(conversation, context, maxTokens);
     }
 
-    return this.buildTrimmedContext(frontierSection, recentMessages, maxTokens);
+    return this.withRecentTraces(conversation, this.buildTrimmedContext(frontierSection, recentMessages, maxTokens), maxTokens);
+  }
+
+  private withRecentTraces(conversation: ConversationData, context: string, maxTokens: number): string {
+    if (!context) return context;
+    const traces = [...this.getCompactionFrontier(conversation)].reverse().find(record => record.traceContext)?.traceContext;
+    const budget = Math.max(0, Math.min(Math.floor(maxTokens * 0.05), maxTokens - ContextBudgetService.estimateTextTokens(context) - 16));
+    const selected = selectCompactionTraceContext(traces, budget);
+    if (!selected) return context;
+    const block = `<recent_goal_memory_traces>\n${this.escapeXmlContent(traceContextText(selected))}\n</recent_goal_memory_traces>`;
+    return context.replace('</conversation_context>', `${block}\n</conversation_context>`);
   }
 
   private buildTrimmedContext(

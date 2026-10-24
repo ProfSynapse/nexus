@@ -18,6 +18,7 @@ import { ContextBudgetService } from '../../../services/chat/ContextBudgetServic
 import { CompactionBudgetService } from '../../../services/chat/CompactionBudgetService';
 import { compactionContextText } from '../../../services/chat/CompactionContext';
 import { previouslyUsedTools } from '../../../services/chat/CompactionToolContext';
+import { loadCompactionTraceContext, traceContextText, type CompactionTraceSource } from '../../../services/chat/CompactionTraceContext';
 
 export interface MessageExecutionOptions {
   provider?: string;
@@ -109,7 +110,7 @@ interface StreamingControllerLike {
   finalizeStreaming(messageId: string, content: string): void;
 }
 
-interface StorageAdapterLike {
+interface StorageAdapterLike extends CompactionTraceSource {
   messages: Pick<IMessageRepository, 'getMessages'>;
 }
 
@@ -479,6 +480,10 @@ export class ChatSendCoordinator {
         sourceContextWindow = modelAgentManager.getEffectiveContextWindow?.()
           ?? ContextBudgetService.getPolicy(messageOptions.provider)?.maxTokens ?? 0;
         outputLimit = modelAgentManager.getSelectedMaxOutputTokens?.();
+        const traceContext = await loadCompactionTraceContext(this.deps.getStorageAdapter(),
+          modelAgentManager.getSelectedWorkspaceId() || GLOBAL_WORKSPACE_ID,
+          conversation.metadata?.chatSettings?.sessionId, compactedContext.compactedAt,
+          [...frontier].reverse().find(record => record.traceContext)?.traceContext, originalMessages);
         const basePrompt = modelAgentManager.getHandoffSystemPrompt
           ? await modelAgentManager.getHandoffSystemPrompt([]) : messageOptions.systemPrompt;
         const providerTools = this.deps.getChatService()?.getContextTools?.(messageOptions.provider) ?? [];
@@ -503,12 +508,14 @@ export class ChatSendCoordinator {
           activeMessages,
           { provider: messageOptions.provider, model: messageOptions.model, maxTokens,
             contextWindow: sourceContextWindow,
-            priorContext: frontier.map(compactionContextText).filter(Boolean).join('\n\n') || undefined },
+            priorContext: [...frontier.map(compactionContextText), traceContext ? traceContextText(traceContext) : '']
+              .filter(Boolean).join('\n\n') || undefined },
           { workspaceId: modelAgentManager.getSelectedWorkspaceId() || GLOBAL_WORKSPACE_ID,
             sessionId: conversation.metadata?.chatSettings?.sessionId }
         );
         if (!result.success || !result.savedState) throw new Error(result.error || 'The conversation state was not saved');
         compactedContext.savedState = result.savedState;
+        compactedContext.traceContext = traceContext;
         compactedContext.summary = result.savedState.conversationContext;
         compactedContext.toolSelectors = toolSelectors;
       } catch (error) {

@@ -260,3 +260,8 @@ Obsidian 1.14.5 on Linux: a vault-first TTY wrapper worked for version, plugin:r
 ### 2026-10-24 — Compaction continuity and pnpm verification flags
 
 Controlled mutations that omitted the raw transcript or disabled schema preloads failed the new regressions. The gated state lane exercised plain JSON drafting through real adapters, including an 8B open model with a selected 4K window. In Obsidian 1.14.5, vault-first TTY eval and plugin:reload worked; actual repeated compaction retained an original constraint and a later correction. Rebuild cache was invoked through its command and the confirmation button clicked in the dedicated test vault; subsequent state reads, metadata equality and restored prompt checks passed. Added the pnpm invocation without a standalone separator to protocols/live-loop.md, because pnpm forwards that separator to the verifier.
+
+
+### 2026-10-24 — Original goal/memory timeline after compaction
+
+The timeline-omission mutation failed the prompt integration regression. In the actual dedicated test vault, inspecting the storage facade before integration caught an incorrect assumed subrepository shape: HybridStorageAdapter exposes getTraces directly, not a traces property. Corrected the source contract and fixtures. Real useTools trace metadata also showed a successful dispatch wrapping a failed content read; timeline outcomes now use batch.results success flags. Session scoping, chronological ordering, legacy fields, cold-cache behavior, budget previews and XML escaping have regressions. Existing in-app guidance covered discovery of these runtime contracts; no protocol change.

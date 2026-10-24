@@ -99,6 +99,8 @@ Prefer targeted context gathering over large dumps.
 
 After compaction, this block contains the conversation-derived saved state: restoration context, active task, exact file paths and next steps. The original older messages are excluded from model input at the stored boundary, while the full transcript stays in storage. Repeated compaction incorporates the previous state before replacing it.
 
+`recent_goal_memory_traces` contains bounded original memory/goal entries from the same session, in chronological order. These describe the lead-up to compaction and distinguish recorded intent from action outcomes. The saved state has priority; traces precede optional schema preloads.
+
 Previously used tools are resolved afresh from the current catalog and included in `preloaded_tools` when they fit. `previous_tools_pending_discovery` lists references whose schemas were unavailable or did not fit; discover their current signatures before calling them. The saved state has priority over optional schema preloads.
 
 ### `selected_workspace`

@@ -12,6 +12,7 @@
  */
 
 import type { CliToolSchema } from '../../../agents/toolManager/types';
+import { traceContextText, type CompactionTraceContext } from '../../../services/chat/CompactionTraceContext';
 import type { PreparedWorkflow, PreparedInstruction } from '../../../services/instructions/types';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
@@ -117,6 +118,7 @@ export interface SystemPromptOptions {
   activeSkills?: PreparedInstruction[];
   preloadedTools?: CliToolSchema[];
   deferredToolSelectors?: string[];
+  recentTraceContext?: CompactionTraceContext;
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
@@ -166,6 +168,10 @@ export class SystemPromptBuilder {
       if (compactionFrontierSection) {
         sections.push(compactionFrontierSection);
       }
+    }
+
+    if (options.recentTraceContext) {
+      sections.push(`<recent_goal_memory_traces>\n${this.escapeXmlContent(traceContextText(options.recentTraceContext))}\n</recent_goal_memory_traces>`);
     }
 
     // 1. Session context with tools overview (skip for pre-trained models like Nexus)

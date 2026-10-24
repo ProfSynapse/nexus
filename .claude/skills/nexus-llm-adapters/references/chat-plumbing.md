@@ -89,3 +89,13 @@ A restored model selection must retain its output allowance on both discovery
 and static/custom fallback paths. The static model service calls this field
 `maxTokens`; runtime `ModelInfo` calls it `maxOutputTokens`. Read both types before
 mapping them into `ModelOption`.
+
+
+The compaction prompt also carries a bounded chronological snapshot of original
+session goal/memory entries, including original native-chat call arguments when
+no separate MCP trace exists. Keep this distinct from the generated checkpoint:
+it shows the recent sequence of working context and intent. Use nested batch
+command outcomes when present; successful useTools dispatch alone does not mean
+a requested command succeeded. Allocate state and recent turns first, then this
+timeline, then optional schemas. Preserve the snapshot through handoffs and
+reloads, and resize it for the effective selected window.

@@ -1,6 +1,7 @@
 import type { CliToolSchema } from '../../../agents/toolManager/types';
 import type { PreparedWorkflow, PreparedInstruction, ServiceResult, ToolCatalogPort } from '../../../services/instructions/types';
 import { selectPreviousToolSchemas } from '../../../services/chat/CompactionToolContext';
+import { selectCompactionTraceContext } from '../../../services/chat/CompactionTraceContext';
 import type { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import type { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import type { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
@@ -108,12 +109,18 @@ export class ModelAgentPromptContextAssembler {
       remoteAgents: this.deps.getRemoteAgents?.(),
     };
     let prompt = await this.deps.systemPromptBuilder.build(promptOptions);
+    const retainedReserve = snapshot.compactionFrontier.at(-1)?.retainedTokensAtCompaction ?? 0;
+    const traceContext = [...snapshot.compactionFrontier].reverse().find(record => record.traceContext)?.traceContext
+      ?? snapshot.latestCompactionRecord?.traceContext;
+    const traceBudget = Math.max(0, Math.min(Math.floor(effectiveWindow * 0.05),
+      Math.floor(effectiveWindow * 0.75) - Math.ceil((prompt?.length ?? 0) / 4) - retainedReserve));
+    promptOptions.recentTraceContext = selectCompactionTraceContext(traceContext, traceBudget);
+    if (promptOptions.recentTraceContext) prompt = await this.deps.systemPromptBuilder.build(promptOptions);
     const selectors = snapshot.compactionToolSelectors
       ?? snapshot.compactionFrontier.flatMap(record => record.toolSelectors ?? []);
     if (selectors.length) {
       const window = effectiveWindow;
       const stateReserve = snapshot.compactionFrontier.length ? 0 : Math.floor(window * 0.1);
-      const retainedReserve = snapshot.compactionFrontier.at(-1)?.retainedTokensAtCompaction ?? 0;
       const budget = Math.max(0, Math.min(Math.floor(window * 0.15),
         Math.floor(window * 0.75) - Math.ceil((prompt?.length ?? 0) / 4) - stateReserve - retainedReserve));
       const catalog = await this.deps.getToolCatalogService?.();

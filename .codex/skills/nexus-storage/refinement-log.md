@@ -170,3 +170,8 @@ Targeted chat message writes continue through the existing adapter/repository ev
 ## 2026-10-24 — Compaction state in existing conversation metadata
 
 - No protocol change: the full saved checkpoint, tool references and retained-turn reserve use the existing conversation metadata event path, requiring no schema or new event. The real test vault's confirmed Rebuild cache retained identical checkpoint metadata and the separate createState record; plugin reload restored the state and fresh tool schemas. A regression covers the conversation_updated applier's metadata payload. Replaced ambiguous repo-document references with a repo-root discovery command so generated skill copies remain portable.
+
+
+## 2026-10-24 — Bounded recent goal/memory snapshot
+
+- Existing conversation metadata carries a bounded snapshot of original goal/memory trace entries and their trace IDs; no event type, table or storage root was added. Reads await query readiness and use the same workspace/session without a workspace-wide fallback. Failed optional lookups retain only a matching prior snapshot and mark it unavailable. The facade's trace reader is getTraces; its nested trace repository is private. Native-chat call arguments also preserve original goal/memory evidence when no separate MCP trace was written; merge that evidence into the bounded snapshot. No protocol change.

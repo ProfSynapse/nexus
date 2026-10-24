@@ -31,6 +31,7 @@ describe('ConversationEventApplier', () => {
     const applier = new ConversationEventApplier(sqliteCache);
     const settings = { chatSettings: { workspaceId: 'ws', sessionId: 'session' }, compaction: { frontier: [{
       summary: 'restoration text', savedState: { name: 'Saved checkpoint', conversationContext: 'full restoration text', activeTask: 'Current task', activeFiles: ['Exact path.md'], nextSteps: ['Verify'] },
+      traceContext: { workspaceId: 'ws', sessionId: 'session', status: 'available', hasMore: false, entries: [{ id: 'trace1', timestamp: 1, memory: 'Observed failure', goal: 'Find path next', outcome: 'failed' }] },
       toolSelectors: ['content read'], retainedTokensAtCompaction: 123, boundaryMessageId: 'm20', boundaryMode: 'after'
     }] } };
     await applier.apply({ id: 'event-checkpoint', type: 'conversation_updated', deviceId: 'device', timestamp: 1, conversationId: 'conv', data: { settings } });

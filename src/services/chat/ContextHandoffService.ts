@@ -107,6 +107,7 @@ export class ContextHandoffService {
     return {
       summary: summary.trim(),
       supersedesFrontier: true,
+      traceContext: [...frontier].reverse().find(record => record.traceContext)?.traceContext,
       toolSelectors: previouslyUsedTools(conversation.messages,
         frontier.flatMap(record => record.toolSelectors ?? [])),
       messagesRemoved: removed.length,

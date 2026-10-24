@@ -70,6 +70,18 @@ describe('LiveVoiceContextBuilder', () => {
     expect(context).not.toContain('Hidden assistant message.');
   });
 
+  it('includes bounded goal/memory history alongside the saved state for voice continuation', () => {
+    const context = new LiveVoiceContextBuilder().build(conversation([message('u1', 'user', 'Continue the review')], { compaction: { frontier: [{
+      summary: 'Confirmed work and pending review', messagesRemoved: 1, messagesKept: 1, filesReferenced: [], topics: [], compactedAt: 1,
+      traceContext: { workspaceId: 'ws', sessionId: 'session', status: 'available', hasMore: false, entries: [{ id: 'trace', timestamp: 1, memory: 'Parser path missing', goal: 'Find the path', outcome: 'failed' }] }
+    }] } }));
+    expect(context).toContain('Confirmed work and pending review');
+    expect(context).toContain('<recent_goal_memory_traces>');
+    expect(context).toContain('Parser path missing');
+    expect(context).toContain('Find the path');
+    expect(context).toContain('Continue the review');
+  });
+
   it('drops oldest recent messages until the context fits the token budget', () => {
     const builder = new LiveVoiceContextBuilder({
       maxContextTokens: 120,

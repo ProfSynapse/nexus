@@ -236,6 +236,7 @@ function createHarness(provider = 'github-copilot', preservation: ContextPreserv
   };
 
   const onUpdateContextProgress = jest.fn();
+  const getStorageAdapter = jest.fn<unknown, []>().mockReturnValue(null);
 
   const coordinator = new ChatSendCoordinator({
     app: {} as never,
@@ -248,13 +249,14 @@ function createHarness(provider = 'github-copilot', preservation: ContextPreserv
     getMessageDisplay: () => messageDisplay,
     getStreamingController: () => streamingController,
     getPreservationService: () => preservation,
-    getStorageAdapter: () => null,
+    getStorageAdapter: () => getStorageAdapter() as never,
     onUpdateContextProgress,
     compactionService: realCompaction ? new ContextCompactionService() : compactionService
   });
 
   return {
     coordinator,
+    getStorageAdapter,
     conversation,
     contentEl,
     conversationManager,
@@ -366,6 +368,22 @@ describe('ChatSendCoordinator', () => {
     await h.coordinator.compactCurrentConversation();
     expect(save).toHaveBeenCalledWith(h.conversation.messages, expect.objectContaining({ maxTokens: 16000, contextWindow: 200000 }), expect.anything());
     expect(h.conversation.metadata.compaction.frontier[0].savedState.activeFiles).toEqual(['src/parser.ts']);
+  });
+
+  it('loads actual session goal/memory entries before drafting and persists them beside the saved state', async () => {
+    const preservation = defaultPreservation();
+    const save = jest.spyOn(preservation, 'createStateFromConversation');
+    const h = createHarness('openai', preservation, true);
+    h.conversation.messages.push(createMessage('u3', 'user', 'third'), createMessage('a3', 'assistant', 'answer'));
+    const getTraces = jest.fn().mockResolvedValue({ items: [{ id: 'trace-1', workspaceId: 'workspace-1', sessionId: 'session-1', timestamp: 1,
+      content: 'Generic description', metadata: { context: { memory: 'Parser read failed', goal: 'Find the correct path next' }, outcome: { success: false } } }], hasNextPage: false });
+    h.getStorageAdapter.mockReturnValue({ getTraces, waitForQueryReady: async () => true,
+      messages: { getMessages: async () => ({ items: [], hasNextPage: false }) } });
+    await h.coordinator.compactCurrentConversation();
+    expect(getTraces).toHaveBeenCalledWith('workspace-1', 'session-1', { page: 0, pageSize: 50 });
+    expect(save.mock.calls[0][1].priorContext).toContain('Find the correct path next');
+    expect(h.conversation.metadata.compaction.frontier[0].traceContext.entries[0]).toMatchObject({ memory: 'Parser read failed', goal: 'Find the correct path next', outcome: 'failed' });
+    expect(h.updateConversation).toHaveBeenCalled();
   });
 
   it('keeps all context when state preservation is unavailable', async () => {
