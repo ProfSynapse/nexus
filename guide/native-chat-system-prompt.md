@@ -95,6 +95,12 @@ Prefer targeted context gathering over large dumps.
 
 ## Dynamic Blocks
 
+### `compaction_context` and previously used tools
+
+After compaction, this block contains the conversation-derived saved state: restoration context, active task, exact file paths and next steps. The original older messages are excluded from model input at the stored boundary, while the full transcript stays in storage. Repeated compaction incorporates the previous state before replacing it.
+
+Previously used tools are resolved afresh from the current catalog and included in `preloaded_tools` when they fit. `previous_tools_pending_discovery` lists references whose schemas were unavailable or did not fit; discover their current signatures before calling them. The saved state has priority over optional schema preloads.
+
 ### `selected_workspace`
 
 If the user has selected a workspace in chat settings, the full loaded workspace object is injected as `selected_workspace`.

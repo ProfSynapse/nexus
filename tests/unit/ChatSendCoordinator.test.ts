@@ -125,7 +125,17 @@ function createConversation(messages: ConversationMessage[]): ConversationData {
   };
 }
 
-function createHarness(provider = 'github-copilot', preservation: ContextPreservationService | null = null, realCompaction = false) {
+
+const savedState = { name: 'Checkpoint', conversationContext: 'Fresh active context.', activeTask: 'Continue task', activeFiles: ['src/parser.ts'], nextSteps: ['Verify'] };
+function defaultPreservation() {
+  return new ContextPreservationService({
+    llmService: { generateResponseStream: jest.fn(async function* () { yield { chunk: JSON.stringify(savedState), complete: true }; }) },
+    getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never,
+    executeToolCalls: jest.fn().mockResolvedValue([{ success: true, result: { success: true } }])
+  });
+}
+
+function createHarness(provider = 'github-copilot', preservation: ContextPreservationService | null = defaultPreservation(), realCompaction = false) {
   const conversation = createConversation([
     createMessage('u1', 'user', 'first request'),
     createMessage('a1', 'assistant', 'partial response'),
@@ -175,6 +185,8 @@ function createHarness(provider = 'github-copilot', preservation: ContextPreserv
     }),
     shouldCompactBeforeSending: jest.fn().mockReturnValue(false),
     getSelectedWorkspaceId: jest.fn().mockReturnValue('workspace-1'),
+    getEffectiveContextWindow: jest.fn().mockReturnValue(128000),
+    getSelectedMaxOutputTokens: jest.fn().mockReturnValue(16000),
     appendCompactionRecord: jest.fn(),
     buildMetadataWithCompactionRecord: jest.fn().mockImplementation((metadata, compactedContext) => ({
       ...metadata,
@@ -211,7 +223,7 @@ function createHarness(provider = 'github-copilot', preservation: ContextPreserv
 
   const compactionService = {
     compact: jest.fn().mockImplementation((targetConversation: ConversationData) => {
-      targetConversation.messages = targetConversation.messages.slice(-2);
+      void targetConversation;
       return {
         summary: 'Compacted summary',
         messagesRemoved: 2,
@@ -344,6 +356,40 @@ describe('ChatSendCoordinator', () => {
     );
   });
 
+  it('uses the selected context percentage and the provider output allowance', async () => {
+    const preservation = defaultPreservation();
+    const save = jest.spyOn(preservation, 'createStateFromConversation');
+    const h = createHarness('anthropic', preservation, true);
+    h.conversation.messages.push(createMessage('u3', 'user', 'third'), createMessage('a3', 'assistant', 'answer'));
+    h.modelAgentManager.getEffectiveContextWindow.mockReturnValue(200000);
+    h.modelAgentManager.getSelectedMaxOutputTokens.mockReturnValue(16000);
+    await h.coordinator.compactCurrentConversation();
+    expect(save).toHaveBeenCalledWith(h.conversation.messages, expect.objectContaining({ maxTokens: 16000, contextWindow: 200000 }), expect.anything());
+    expect(h.conversation.metadata.compaction.frontier[0].savedState.activeFiles).toEqual(['src/parser.ts']);
+  });
+
+  it('keeps all context when state preservation is unavailable', async () => {
+    const h = createHarness('openai', null, true);
+    h.conversation.messages.push(createMessage('u3', 'user', 'third'));
+    h.modelAgentManager.shouldCompactBeforeSending.mockReturnValue(true);
+    const before = JSON.stringify(h.conversation);
+    expect(await h.coordinator.handleSendMessage('next')).toBe(false);
+    expect(JSON.stringify(h.conversation)).toBe(before);
+    expect(h.updateConversation).not.toHaveBeenCalled();
+  });
+
+  it('keeps the old boundary when createState reports a write failure', async () => {
+    const preservation = defaultPreservation();
+    jest.spyOn(preservation, 'createStateFromConversation').mockResolvedValue({ success: false, attempts: 1, error: 'disk unavailable' });
+    const h = createHarness('openai', preservation, true);
+    h.conversation.messages.push(createMessage('u3', 'user', 'third'));
+    h.modelAgentManager.shouldCompactBeforeSending.mockReturnValue(true);
+    expect(await h.coordinator.handleSendMessage('next')).toBe(false);
+    expect(h.conversation.metadata.compaction).toBeUndefined();
+    expect(h.modelAgentManager.appendCompactionRecord).not.toHaveBeenCalled();
+    expect(h.updateConversation).not.toHaveBeenCalled();
+  });
+
   it('stops animations and finalizes with the persisted partial content when generation aborts', () => {
     const harness = createHarness();
 
@@ -361,10 +407,10 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
 
   const preservation = () => new ContextPreservationService({
     llmService: { generateResponseStream: jest.fn().mockImplementation(async function* (messages: ConversationMessage[]) {
-      yield { chunk: `Fresh active context from ${messages[0].content.includes('u4') ? 'u4' : 'u2'}.\nHANDOFF_SUMMARY_COMPLETE`, complete: true };
+      yield { chunk: JSON.stringify(savedState), complete: true };
     }) },
-    getAgent: () => null,
-    executeToolCalls: jest.fn()
+    getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never,
+    executeToolCalls: jest.fn().mockResolvedValue([{ success: true }])
   });
 
   it('manual compact immediately after a full handoff leaves its summary and exclusive boundary intact', async () => {
@@ -383,10 +429,10 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
 
   it('later automatic compaction advances through fresh turns without restoring old transcript', async () => {
     const generateResponseStream = jest.fn().mockImplementation(async function* () {
-      yield { chunk: 'Fresh active context.\nHANDOFF_SUMMARY_COMPLETE', complete: true };
+      yield { chunk: JSON.stringify(savedState), complete: true };
     });
     const h = createHarness('openai', new ContextPreservationService({
-      llmService: { generateResponseStream }, getAgent: () => null, executeToolCalls: jest.fn()
+      llmService: { generateResponseStream }, getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never, executeToolCalls: jest.fn().mockResolvedValue([{ success: true }])
     }), true);
     h.conversation.metadata = { compaction: { frontier: [{
       summary: 'Original goal and decisions', boundaryMessageId: 'a2', boundaryMode: 'after',
@@ -400,14 +446,15 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
     h.modelAgentManager.shouldCompactBeforeSending.mockReturnValueOnce(true);
     expect(await h.coordinator.handleSendMessage('next')).toBe(true);
     const frontier = h.conversation.metadata.compaction.frontier;
-    expect(frontier[0].summary).toBe('Original goal and decisions');
+    expect(frontier).toHaveLength(1);
+    expect(frontier[0].savedState.activeTask).toBe('Continue task');
     expect(frontier[frontier.length - 1].boundaryMessageId).toBe('u4');
     expect(frontier[frontier.length - 1].summary).toBe('Fresh active context.');
     expect(generateResponseStream).toHaveBeenCalledTimes(1);
     const preservationInput = generateResponseStream.mock.calls[0][0][0].content as string;
     expect(preservationInput).toContain('u3 fresh request');
     expect(preservationInput).not.toContain('first request');
-    expect(preservationInput).not.toContain('Original goal and decisions');
+    expect(preservationInput).toContain('Original goal and decisions');
     expect(ContextCompactionService.getMessagesAfterBoundary(h.conversation.messages, h.conversation.metadata).map(message => message.id)).toEqual(['u4', 'a4', 'u5', 'a5']);
     expect(h.conversation.messages.map(message => message.id)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3', 'u4', 'a4', 'u5', 'a5']);
   });
@@ -416,7 +463,7 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
     const h = createHarness('openai', new ContextPreservationService({
       llmService: { generateResponseStream: jest.fn().mockImplementation(async function* () {
         yield { chunk: 'Truncated', complete: true, finishReason: 'length' };
-      }) }, getAgent: () => null, executeToolCalls: jest.fn()
+      }) }, getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never, executeToolCalls: jest.fn().mockResolvedValue([{ success: true }])
     }), true);
     h.conversation.metadata = { compaction: { frontier: [{
       summary: 'Original goal and decisions', boundaryMessageId: 'a2', boundaryMode: 'after',
@@ -449,8 +496,8 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
     const h = createHarness('openai', new ContextPreservationService({
       llmService: { generateResponseStream: jest.fn().mockImplementation(async function* () {
         await new Promise<void>(resolve => { release = resolve; });
-        yield { chunk: 'Old chat summary.\nHANDOFF_SUMMARY_COMPLETE', complete: true };
-      }) }, getAgent: () => null, executeToolCalls: jest.fn()
+        yield { chunk: JSON.stringify(savedState), complete: true };
+      }) }, getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never, executeToolCalls: jest.fn().mockResolvedValue([{ success: true }])
     }), true);
     h.conversation.messages.push(createMessage('u3', 'user', 'fresh oversized request'));
     h.modelAgentManager.shouldCompactBeforeSending.mockReturnValue(true);

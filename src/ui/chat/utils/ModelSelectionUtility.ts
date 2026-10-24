@@ -159,6 +159,7 @@ export class ModelSelectionUtility {
       modelId: model.id,
       modelName: model.name,
       contextWindow: model.contextWindow || (settings?.providers[model.provider]?.driverKind === 'openai-compatible' ? OPENAI_COMPATIBLE_CONTEXT_WINDOW : 128000),
+      maxOutputTokens: model.maxOutputTokens,
       supportsThinking: model.supportsThinking || false
     };
   }

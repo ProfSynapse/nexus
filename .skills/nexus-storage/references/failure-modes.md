@@ -326,8 +326,8 @@ blob format, which brings the contiguous requirement from the full database size
 to one chunk. Note that the NOCOPY pointer moves when a `RESIZEABLE` database grows,
 so it must be re-taken immediately before every use. OPFS is not the answer here: the
 sahpool VFS needs a dedicated Worker because `createSyncAccessHandle` is
-`[Exposed=DedicatedWorker]`. See `docs/plans/sqlite-cache-persistence-plan.md` and
-`docs/plans/sqlite-cache-persistence-spike-findings.md`.
+`[Exposed=DedicatedWorker]`. See the SQLite cache persistence plan and spike findings. Locate them from the
+repository root with `rg --files docs/plans | rg sqlite-cache-persistence`.
 
 ## "`await db.save()` returned, so the rows are on disk"
 

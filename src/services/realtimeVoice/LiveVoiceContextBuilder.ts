@@ -1,6 +1,7 @@
 import type { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
 import { ContextBudgetService } from '../chat/ContextBudgetService';
 import { ContextCompactionService, type CompactedContext } from '../chat/ContextCompactionService';
+import { compactionContextText } from '../chat/CompactionContext';
 
 export interface LiveVoiceContextBuilderOptions {
   maxContextTokens?: number;
@@ -76,7 +77,7 @@ export class LiveVoiceContextBuilder {
         const topics = record.topics?.slice(0, 8) ?? [];
         const lines = [
           `  <record index="${index}">`,
-          `    <summary>${this.escapeXmlContent(record.summary)}</summary>`,
+          `    <summary>${this.escapeXmlContent(compactionContextText(record))}</summary>`,
         ];
         if (files.length > 0) {
           lines.push(`    <files>${this.escapeXmlContent(files.join(', '))}</files>`);

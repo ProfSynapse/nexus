@@ -10,6 +10,7 @@ export interface ModelOption {
   modelId: string;
   modelName: string;
   contextWindow: number;
+  maxOutputTokens?: number;
   supportsThinking?: boolean;
 }
 

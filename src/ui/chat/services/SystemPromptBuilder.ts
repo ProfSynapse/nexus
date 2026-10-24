@@ -116,6 +116,7 @@ export interface SystemPromptOptions {
   preparedWorkflow?: PreparedWorkflow | null;
   activeSkills?: PreparedInstruction[];
   preloadedTools?: CliToolSchema[];
+  deferredToolSelectors?: string[];
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
@@ -244,6 +245,9 @@ export class SystemPromptBuilder {
     const tools = new Map<string, CliToolSchema>();
     for (const tool of [...(options.preparedWorkflow?.preloadedTools ?? []), ...(options.preloadedTools ?? [])]) tools.set(`${tool.agent}/${tool.tool}`, tool);
     if (tools.size) sections.push(`<preloaded_tools>\n${this.escapeXmlContent(JSON.stringify([...tools.values()], null, 2))}\n</preloaded_tools>`);
+    if (options.deferredToolSelectors?.length) {
+      sections.push(`<previous_tools_pending_discovery>\nPreviously used tools whose full schemas did not fit or are currently unavailable. Discover their current schemas with getTools before calling them; this list grants no permissions.\n${this.escapeXmlContent(JSON.stringify(options.deferredToolSelectors))}\n</previous_tools_pending_discovery>`);
+    }
 
     return sections.length > 0 ? sections.join('\n') : null;
   }
@@ -727,7 +731,11 @@ Start with the entrypoint and load deeper guide files selectively.
     const renderedAncestry = ancestry.slice(0, 3);
 
     let prompt = `  <record index="${index}" compacted_at="${record.compactedAt}" level="${record.level ?? 0}" merged_records="${record.mergedRecordCount ?? 1}">\n`;
-    prompt += `    <summary>${this.escapeXmlContent(record.summary)}</summary>\n`;
+    if (record.savedState) {
+      prompt += `    <saved_state>${this.escapeXmlContent(JSON.stringify(record.savedState, null, 2))}</saved_state>\n`;
+    } else {
+      prompt += `    <summary>${this.escapeXmlContent(record.summary)}</summary>\n`;
+    }
 
     if (files.length > 0) {
       const remainingFiles = record.filesReferenced.length - files.length;

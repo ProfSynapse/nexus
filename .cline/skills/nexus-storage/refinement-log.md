@@ -43,7 +43,7 @@ symptom entry to `failure-modes.md` (the stack is the tell, the two aggravators
 to check first, which statistics confirm it, and fix at the persistence layer
 rather than catching the RangeError at the call site), and a "rebuildable does
 not mean cheap" section to `storage-model.md`. Measurements behind both are in
-`docs/plans/sqlite-cache-persistence-spike-findings.md`. |
+the SQLite cache persistence spike findings under the repository’s docs/plans directory. |
 `references/failure-modes.md`, `references/storage-model.md`,
 `refinement-log.md`.
 <!-- YYYY-MM-DD | observation | change made | file(s) touched -->
@@ -165,3 +165,8 @@ Targeted chat message writes continue through the existing adapter/repository ev
 - Observation: adding `message_tool_call_upserted` needed three facts that were in no reference. Older appliers skip an unknown type and mark it applied. `message_updated` merges field by field. Same-millisecond events replay in random-UUID order. Separately, the cache-rebuild cost note ("Rebuildable does not mean cheap") is what kept the planned trace-compaction migration from triggering a rebuild.
 - Change: added the "I added an event type" entry to references/failure-modes.md.
 - Files: references/failure-modes.md, refinement-log.md
+
+
+## 2026-10-24 — Compaction state in existing conversation metadata
+
+- No protocol change: the full saved checkpoint, tool references and retained-turn reserve use the existing conversation metadata event path, requiring no schema or new event. The real test vault's confirmed Rebuild cache retained identical checkpoint metadata and the separate createState record; plugin reload restored the state and fresh tool schemas. A regression covers the conversation_updated applier's metadata payload. Replaced ambiguous repo-document references with a repo-root discovery command so generated skill copies remain portable.

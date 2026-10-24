@@ -55,6 +55,12 @@ Tool results larger than 256 KiB are shortened when saved and included in later 
 
 The **Context window** slider sets the budget Nexus uses to track and compact conversation context. It snaps to preset sizes (32K, 64K, 128K, 200K, 350K, 750K and 1M) below the model's maximum, plus the maximum itself. In Defaults, each provider/model pair remembers its own limit, and the default is the model's advertised window. In chat settings, the limit applies to that conversation only. Nexus checks the estimated prompt size before sending and compacts near the selected budget. This does not change the model's thinking effort or output allowance.
 
+Compaction drafts a saved state from the active conversation, including tool arguments, results and failures, together with any previous compaction state. Its starting output allowance is 10% of the selected context window, capped by the model's known output limit and the space needed for instructions, recent turns and a reply. For example, a 32K window starts at about 3.2K tokens; a 4K local window starts at about 400. A smaller selected or runtime-allocated window takes precedence over the model's advertised maximum.
+
+Nexus saves that checkpoint through `memory create-state` before advancing the context boundary. The checkpoint's restoration context, active task, file paths and next steps are included in the next system prompt and survive reopening the chat. The latest two complete exchanges normally remain in the message history; automatic compaction can include them in the checkpoint when an oversized exchange would otherwise prevent sending. The full transcript remains saved. If checkpoint generation, storage or prompt sizing fails, the old context boundary stays in place.
+
+Previously used tools are resolved against the current tool catalog. Their full schemas are preloaded in order of recent use when they fit after the state and recent turns. Remaining tools are listed for discovery when needed. This does not change tool permissions. Small local models use plain JSON to draft the checkpoint, so checkpoint creation does not require native function calling.
+
 Switching to a smaller model applies its budget to the next send. If necessary, Nexus summarizes older context and retains the latest exchanges; the full transcript stays saved. If the prompt still exceeds the budget afterward, the send stops and your draft is restored. Switching back to a larger model does not automatically put compacted messages back into the prompt.
 
 ## Web search and costs

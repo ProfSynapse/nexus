@@ -4,11 +4,14 @@ import {
   ContextCompactionService,
   type CompactedContext
 } from './ContextCompactionService';
+import { compactionContextText } from './CompactionContext';
+import { previouslyUsedTools } from './CompactionToolContext';
 
 export interface HandoffModelConfig {
   providerId: string;
   modelId: string;
   contextWindow?: number | null;
+  maxOutputTokens?: number;
 }
 
 export interface HandoffSummaryOptions {
@@ -45,11 +48,11 @@ export class ContextHandoffService {
 
     const active = ContextCompactionService.getMessagesAfterBoundary(conversation.messages, conversation.metadata);
     const compaction = conversation.metadata?.compaction as {
-      frontier?: Array<{ summary?: string; boundaryMessageId?: string; boundaryMode?: 'at' | 'after' }>;
-      previousContext?: { summary?: string; boundaryMessageId?: string; boundaryMode?: 'at' | 'after' };
+      frontier?: CompactedContext[];
+      previousContext?: CompactedContext;
     } | undefined;
     const frontier = compaction?.frontier ?? (compaction?.previousContext ? [compaction.previousContext] : []);
-    const priorSummary = frontier.map(record => record.summary).filter((value): value is string => !!value).join('\n\n');
+    const priorSummary = frontier.map(record => compactionContextText({ ...record, summary: record.summary ?? '' })).filter(Boolean).join('\n\n');
     const reserve = Math.max(input.outputHeadroomTokens ?? Math.ceil(policy.maxTokens * 0.1), 1024);
     const fixed = ContextBudgetService.estimateTextTokens(input.systemPrompt)
       + Math.max(0, input.toolTokens ?? 0) + reserve + 512;
@@ -72,8 +75,8 @@ export class ContextHandoffService {
       if (message.role === 'user' || groups.length === 0) groups.push([]);
       groups[groups.length - 1].push(message);
     }
-    const summaryLimit = Math.min(12_000, Math.max(256, Math.floor(available * 0.3)),
-      Math.max(128, Math.floor(sourcePolicy.maxTokens * 0.2)));
+    const summaryLimit = Math.min(Math.floor(policy.maxTokens * 0.1), Math.floor(sourcePolicy.maxTokens * 0.1),
+      source.maxOutputTokens ?? Number.POSITIVE_INFINITY, available);
     const kept: ConversationMessage[][] = [];
     let keptTokens = 0;
     for (let index = groups.length - 1; index >= 0; index--) {
@@ -103,6 +106,9 @@ export class ContextHandoffService {
     const keptMessages = kept.flat();
     return {
       summary: summary.trim(),
+      supersedesFrontier: true,
+      toolSelectors: previouslyUsedTools(conversation.messages,
+        frontier.flatMap(record => record.toolSelectors ?? [])),
       messagesRemoved: removed.length,
       messagesKept: keptMessages.length,
       filesReferenced: [],

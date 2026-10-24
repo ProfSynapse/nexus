@@ -2,6 +2,7 @@ import {
   CompactedContext,
   CompactedTranscriptCoverageRef
 } from './ContextCompactionService';
+import { compactionContextText } from './CompactionContext';
 
 export interface CompactionFrontierRecord extends CompactedContext {
   level?: number;
@@ -49,6 +50,18 @@ export class CompactionFrontierService {
     frontier: CompactedContext[],
     record: CompactedContext
   ): CompactionFrontierRecord[] {
+    // A complete saved state or handoff incorporates the previous frontier.
+    // Keep it intact rather than reducing it to a 220-character meta-summary.
+    if (record.savedState || record.supersedesFrontier) {
+      const replacement: CompactionFrontierRecord = {
+        ...record,
+        transcriptCoverageAncestry: this.uniqueCoverageRefs([
+          ...frontier.flatMap(existing => this.getCoverageAncestry(this.normalizeRecord(existing))),
+          ...this.getCoverageAncestry(this.normalizeRecord(record))
+        ])
+      };
+      return [this.normalizeRecord(replacement)];
+    }
     return this.enforceBudget([
       ...frontier.map(existing => this.normalizeRecord(existing)),
       this.normalizeRecord(record)
@@ -130,7 +143,7 @@ export class CompactionFrontierService {
       .map(ref => `${ref.conversationId}:${ref.startSequenceNumber}-${ref.endSequenceNumber}`)
       .join(' ');
     const rawText = [
-      record.summary,
+      compactionContextText(record),
       record.filesReferenced.join(' '),
       record.topics.join(' '),
       coverageText

@@ -31,11 +31,13 @@ describe('ContextHandoffService', () => {
       message('a2', 'assistant', 'Continuing')
     ];
     const args = input(messages, 128_000);
+    args.source.maxOutputTokens = 2048;
     const candidate = await new ContextHandoffService().prepare(args);
+    expect(candidate?.supersedesFrontier).toBe(true);
     expect(candidate?.boundaryMessageId).toBe('u2');
     expect(candidate?.messagesRemoved).toBe(2);
     expect(args.summarizer).toHaveBeenCalledWith(messages.slice(0, 2), expect.objectContaining({
-      provider: 'openai', model: 'large', sourceContextWindow: 250_000
+      provider: 'openai', model: 'large', sourceContextWindow: 250_000, maxTokens: 2048
     }));
     expect(args.conversation.messages).toHaveLength(4);
   });

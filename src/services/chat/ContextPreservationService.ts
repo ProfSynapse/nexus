@@ -1,16 +1,11 @@
 /**
  * ContextPreservationService
  *
- * Forces the LLM to save important context via createState tool before compaction.
- * This is a subprocess that runs at 90% context threshold.
- *
- * Flow:
- * 1. Swap system prompt to one that REQUIRES createState tool use
- * 2. Send conversation to LLM with this special prompt
- * 3. Wait for createState tool call
- * 4. Validate tool was called correctly
- * 5. Retry up to MAX_RETRIES times if validation fails
- * 6. Return saved state content for injection into previous_context
+ * Drafts a checkpoint directly from conversation evidence, then executes
+ * createState once and returns its complete arguments for prompt restoration.
+ * Drafting uses plain JSON so it works without native function calling.
+ * Handoff preparation remains read-only; forceStateSave retains the legacy
+ * native-tool entry point for compatibility.
  */
 
 // NOTE: ConversationMessage here is ChatTypes.ConversationMessage (= ChatMessage),
@@ -22,6 +17,8 @@ import { ConversationMessage } from '../../types/chat/ChatTypes';
 import type { IAgent } from '../../agents/interfaces/IAgent';
 import { GLOBAL_WORKSPACE_ID } from '../WorkspaceService';
 import type { HandoffSummaryOptions } from './ContextHandoffService';
+import { ConversationStateBuilder, type ConversationStateOptions } from './ConversationStateBuilder';
+import { conversationTranscript, type SavedCompactionState } from './CompactionContext';
 
 /**
  * System prompt that forces the model to use createState
@@ -47,6 +44,7 @@ export interface PreservationResult {
   success: boolean;
   stateId?: string;
   stateContent?: string;
+  savedState?: SavedCompactionState;
   error?: string;
   attempts: number;
 }
@@ -152,6 +150,44 @@ export class ContextPreservationService {
     this.options = { ...DEFAULT_OPTIONS, ...options };
   }
 
+  /** Draft from the conversation, then execute the real createState once.
+   * The model never executes tools while preparing intermediate drafts.
+   */
+  async createStateFromConversation(
+    messages: ConversationMessage[],
+    options: ConversationStateOptions,
+    context: { workspaceId?: string; sessionId?: string }
+  ): Promise<PreservationResult> {
+    if (!this.getCreateStateToolSchema()) return { success: false, attempts: 0, error: 'createState is unavailable' };
+    let state: SavedCompactionState | undefined;
+    let attempts = 0;
+    let error = 'The model did not return a valid saved state';
+    while (attempts < this.options.maxRetries && !state) {
+      attempts++;
+      try { state = await new ConversationStateBuilder(this.deps.llmService).draft(messages, options); }
+      catch (cause) {
+        error = cause instanceof Error ? cause.message : String(cause);
+        if (options.signal?.aborted) break;
+      }
+    }
+    if (!state) return { success: false, attempts, error };
+    if (options.signal?.aborted) return { success: false, attempts, error: 'State preservation cancelled' };
+    try {
+      const [result] = await this.deps.executeToolCalls([{
+        id: `compaction_state_${Date.now()}`,
+        type: 'function',
+        function: { name: 'memoryManager_createState', arguments: JSON.stringify(state) }
+      }], context);
+      if (!result?.success) return { success: false, attempts, error: result?.error || 'State persistence failed' };
+      if (result.result && typeof result.result === 'object' && 'success' in result.result && result.result.success === false) {
+        return { success: false, attempts, error: 'createState reported a storage failure' };
+      }
+      return { success: true, attempts, stateId: state.name, stateContent: state.conversationContext, savedState: state };
+    } catch (cause) {
+      return { success: false, attempts, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }
+
   /** Summarize transcript for model handoff without executing a state or vault tool. */
   async summarizeForHandoff(
     messages: ConversationMessage[],
@@ -159,15 +195,7 @@ export class ContextPreservationService {
   ): Promise<string> {
     const completeMarker = 'HANDOFF_SUMMARY_COMPLETE';
     if (options.signal?.aborted) throw new Error('Context handoff cancelled');
-    const transcript = messages.map(message => {
-      const calls = (message.toolCalls ?? []).map(call => [
-        `Tool: ${call.function?.name ?? call.name ?? 'unknown'}`,
-        `Arguments: ${call.function?.arguments ?? ''}`,
-        `Parameters: ${call.parameters ? JSON.stringify(call.parameters) : ''}`,
-        `Outcome: ${call.result === undefined ? '(no result)' : typeof call.result === 'string' ? call.result : JSON.stringify(call.result)}`
-      ].join('\n')).join('\n');
-      return `[${message.role}]: ${message.content}\n${calls}`;
-    }).join('\n\n');
+    const transcript = conversationTranscript(messages);
     const sourceWindow = options.sourceContextWindow ?? 128_000;
     const maxInputTokens = Math.floor(sourceWindow * 0.55) - options.maxTokens - 256;
     if (maxInputTokens < 128) throw new Error('Source model has no room for a handoff summary');

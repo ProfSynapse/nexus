@@ -23,6 +23,10 @@ npm run verify:obsidian -- --vault <name>              # full loop
 npm run verify:obsidian -- --vault <name> --skip-build # reuse the bundle on disk
 ```
 
+When using pnpm, pass script flags directly: `pnpm run verify:obsidian
+--vault <name> --skip-build --require-obsidian`. A standalone `--` is forwarded by
+pnpm and the verifier rejects it as an unknown argument.
+
 Use it as the outer gate — the release protocol does — and use this protocol
 for everything it deliberately does not do: driving the change (step 5),
 escalating past a reload (step 4), and diagnosing what `dev:errors` reported.

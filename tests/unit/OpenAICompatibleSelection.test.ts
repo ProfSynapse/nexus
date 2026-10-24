@@ -104,8 +104,10 @@ describe('OpenAI-compatible configured selection', () => {
       getPlugin: () => ({ settings: { settings: { llmProviders: config } } })
     });
     expect(await resolver.resolveModelOption(FIRST, 'unknown-model-id')).toEqual(expect.objectContaining({
-      providerId: FIRST, providerName: 'My Hermes', modelId: 'unknown-model-id', contextWindow: 4096
+      providerId: FIRST, providerName: 'My Hermes', modelId: 'unknown-model-id', contextWindow: 4096, maxOutputTokens: 1024
     }));
     expect((await resolver.resolveModelOption(FIRST, 'previous-server-model'))?.contextWindow).toBe(4096);
+    expect((await resolver.resolveModelOption('anthropic', 'claude-haiku-4-5-20251001'))?.maxOutputTokens).toBeGreaterThan(0);
+    expect((await resolver.resolveModelOption('ollama', 'not-yet-discovered'))?.contextWindow).toBe(4096);
   });
 });

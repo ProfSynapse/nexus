@@ -15,6 +15,7 @@
  */
 
 import { ConversationMessage, ConversationData } from '../../types/chat/ChatTypes';
+import type { SavedCompactionState } from './CompactionContext';
 
 
 /**
@@ -49,6 +50,14 @@ export interface CompactedTranscriptCoverageRef {
 export interface CompactedContext {
   /** Human-readable summary of truncated conversation */
   summary: string;
+  /** Conversation-derived createState arguments, persisted and preloaded verbatim. */
+  savedState?: SavedCompactionState;
+  /** References only; current schemas are resolved on every prompt build. */
+  toolSelectors?: string[];
+  /** Space kept for the recent turns when selecting optional schema preloads. */
+  retainedTokensAtCompaction?: number;
+  /** This checkpoint/handoff already incorporates all previous frontier context. */
+  supersedesFrontier?: boolean;
   /** Number of messages removed */
   messagesRemoved: number;
   /** Number of messages kept */

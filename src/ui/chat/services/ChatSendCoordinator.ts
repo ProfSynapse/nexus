@@ -15,6 +15,9 @@ import { GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { isTextOnlyProvider } from '../../../services/llm/utils/ToolSchemaSupport';
 import { ContextHandoffService, type HandoffModelConfig } from '../../../services/chat/ContextHandoffService';
 import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
+import { CompactionBudgetService } from '../../../services/chat/CompactionBudgetService';
+import { compactionContextText } from '../../../services/chat/CompactionContext';
+import { previouslyUsedTools } from '../../../services/chat/CompactionToolContext';
 
 export interface MessageExecutionOptions {
   provider?: string;
@@ -62,7 +65,9 @@ interface MessageManagerLike {
 interface ModelAgentManagerLike {
   waitForContextHandoff?(): Promise<void>;
   isContextHandoffPending?(): boolean;
-  getHandoffSystemPrompt?(): Promise<string | null>;
+  getHandoffSystemPrompt?(toolSelectors?: string[]): Promise<string | null>;
+  getSelectedMaxOutputTokens?(): number | undefined;
+  getCompactionCandidatePrompt?(record: CompactedContext): Promise<string | null>;
   cancelContextHandoff?(): void;
   setMessageEnhancement(enhancement: MessageEnhancement): void;
   clearMessageEnhancement(): void;
@@ -263,8 +268,10 @@ export class ChatSendCoordinator {
         throw new Error('The chat changed before context could be prepared');
       }
       const manager = this.deps.getModelAgentManager();
+      const prior = conversation.metadata?.compaction as { frontier?: CompactedContext[] } | undefined;
+      const usedTools = previouslyUsedTools(conversation.messages, prior?.frontier?.flatMap(record => record.toolSelectors ?? []) ?? []);
       const systemPrompt = manager?.getHandoffSystemPrompt
-        ? await manager.getHandoffSystemPrompt()
+        ? await manager.getHandoffSystemPrompt(usedTools)
         : (await manager?.getMessageOptions())?.systemPrompt;
       const tools = this.deps.getChatService()?.getContextTools(request.destination.providerId) ?? [];
       const candidate = await new ContextHandoffService().prepare({
@@ -436,7 +443,7 @@ export class ChatSendCoordinator {
     const activeMessages = ContextCompactionService.getMessagesAfterBoundary(
       originalMessages, conversation.metadata
     );
-    const compactedContext = this.compactionService.compact(conversation, {
+    let compactedContext = this.compactionService.compact(conversation, {
       exchangesToKeep: 2,
       maxSummaryLength: 500,
       includeFileReferences: true,
@@ -449,53 +456,92 @@ export class ChatSendCoordinator {
       return false;
     }
 
-    const removedMessages = activeMessages.slice(0, compactedContext.messagesRemoved);
     await this.deps.ensurePreservationService?.();
     const preservationService = this.deps.getPreservationService();
-    let usedLLM = false;
-
-    if (preservationService) {
+    if (!preservationService) {
+      new Notice('State preservation is unavailable. The current context was kept.', 5000);
+      return false;
+    }
+    const previous = conversation.metadata?.compaction as { frontier?: CompactedContext[]; previousContext?: CompactedContext } | undefined;
+    const frontier = previous?.frontier ?? (previous?.previousContext ? [previous.previousContext] : []);
+    const toolSelectors = previouslyUsedTools(originalMessages,
+      [...frontier.flatMap(record => record.toolSelectors ?? []), 'memory create-state']);
+    let fixedPromptTokens = 0;
+    let providerToolTokens = 0;
+    let sourceContextWindow = 0;
+    let outputLimit: number | undefined;
+    {
       const savingNotice = new Notice('Saving context...', 0);
 
       try {
         const messageOptions = await modelAgentManager.getMessageOptions();
         if (!messageOptions.provider || !messageOptions.model) throw new Error('No model selected for context summary');
-        const sourceContextWindow = modelAgentManager.getEffectiveContextWindow?.() || 128_000;
-        const maxTokens = Math.max(128, Math.min(1000, Math.floor(sourceContextWindow * 0.08)));
-        // Earlier summaries remain in the frontier. Summarize only the newly
-        // removed active suffix so the next record does not duplicate history.
-        compactedContext.summary = await preservationService.summarizeForHandoff(
-          removedMessages,
-          { provider: messageOptions.provider, model: messageOptions.model, maxTokens, sourceContextWindow }
-        );
-        usedLLM = true;
-        // Keep the existing createState archival side effect, using the bounded
-        // summary so a prior large transcript is never sent to the smaller model.
-        await preservationService.forceStateSave(
-          [{ ...removedMessages[0], content: compactedContext.summary }],
-          { provider: messageOptions.provider, model: messageOptions.model },
+        sourceContextWindow = modelAgentManager.getEffectiveContextWindow?.()
+          ?? ContextBudgetService.getPolicy(messageOptions.provider)?.maxTokens ?? 0;
+        outputLimit = modelAgentManager.getSelectedMaxOutputTokens?.();
+        const basePrompt = modelAgentManager.getHandoffSystemPrompt
+          ? await modelAgentManager.getHandoffSystemPrompt([]) : messageOptions.systemPrompt;
+        const providerTools = this.deps.getChatService()?.getContextTools?.(messageOptions.provider) ?? [];
+        providerToolTokens = ContextBudgetService.estimateTextTokens(JSON.stringify(providerTools));
+        fixedPromptTokens = ContextBudgetService.estimateTextTokens(basePrompt) + providerToolTokens;
+        const stateBudget = () => CompactionBudgetService.getStateBudget({
+          contextWindow: sourceContextWindow, maxOutputTokens: outputLimit, fixedPromptTokens,
+          retainedTokens: activeMessages.slice(compactedContext.messagesRemoved)
+            .reduce((tokens, message) => tokens + ContextBudgetService.estimateMessageTokens(message), 0)
+        });
+        let maxTokens: number;
+        try { maxTokens = stateBudget(); }
+        catch (error) {
+          if (manual) throw error;
+          // A small runtime window may require summarizing the recent exchange too.
+          compactedContext = this.compactionService.compact(conversation, {
+            exchangesToKeep: 0, includeFileReferences: true, compactAllIfNoRemovableUnits: true
+          });
+          maxTokens = stateBudget();
+        }
+        const result = await preservationService.createStateFromConversation(
+          activeMessages,
+          { provider: messageOptions.provider, model: messageOptions.model, maxTokens,
+            contextWindow: sourceContextWindow,
+            priorContext: frontier.map(compactionContextText).filter(Boolean).join('\n\n') || undefined },
           { workspaceId: modelAgentManager.getSelectedWorkspaceId() || GLOBAL_WORKSPACE_ID,
             sessionId: conversation.metadata?.chatSettings?.sessionId }
         );
+        if (!result.success || !result.savedState) throw new Error(result.error || 'The conversation state was not saved');
+        compactedContext.savedState = result.savedState;
+        compactedContext.summary = result.savedState.conversationContext;
+        compactedContext.toolSelectors = toolSelectors;
       } catch (error) {
         console.error('[Compaction] Context preservation failed:', error);
-        new Notice('Context could not be safely compacted. The current context was kept.', 5000);
+        new Notice(`${error instanceof Error ? error.message : 'State preservation failed'}. The current context was kept.`, 5000);
         return false;
       } finally {
         savingNotice.hide();
       }
     }
-    if (!usedLLM && compactedContext.messagesKept === 0) {
-      new Notice('Context summarization is unavailable. The current context was kept.', 5000);
-      return false;
-    }
 
     // Compute transcript coverage from compaction boundary.
     // Messages before the boundary are "compacted" (summarized, not sent to LLM).
     const keptMessages = activeMessages.slice(compactedContext.messagesRemoved);
+    compactedContext.retainedTokensAtCompaction = keptMessages.reduce((tokens, message) =>
+      tokens + ContextBudgetService.estimateMessageTokens(message), 0);
     compactedContext.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
       conversation.id, activeMessages, keptMessages
     ) ?? undefined;
+
+    if (modelAgentManager.getCompactionCandidatePrompt) {
+      const retainedTokens = keptMessages.reduce((tokens, message) => tokens + ContextBudgetService.estimateMessageTokens(message), 0);
+      // Recheck the actual rendered state/schema envelope, including XML escaping.
+      try {
+        const prompt = await modelAgentManager.getCompactionCandidatePrompt(compactedContext);
+        CompactionBudgetService.getStateBudget({ contextWindow: sourceContextWindow,
+          maxOutputTokens: outputLimit, retainedTokens,
+          fixedPromptTokens: ContextBudgetService.estimateTextTokens(prompt) + providerToolTokens });
+      } catch (error) {
+        new Notice(`${error instanceof Error ? error.message : 'The saved context does not fit'}. The current context was kept.`, 5000);
+        return false;
+      }
+    }
 
     if (this.deps.getConversationManager()?.getCurrentConversation()?.id !== conversation.id) return false;
     const nextMetadata = modelAgentManager.buildMetadataWithCompactionRecord(
@@ -531,9 +577,7 @@ export class ChatSendCoordinator {
 
     this.deps.onUpdateContextProgress();
 
-    const savedMsg = usedLLM
-      ? `Context saved (${compactedContext.messagesRemoved} messages compacted)`
-      : `Context compacted (${compactedContext.messagesRemoved} messages)`;
+    const savedMsg = `Context saved (${compactedContext.messagesRemoved} messages compacted)`;
     new Notice(savedMsg, 2500);
 
     // Show the divider BEFORE auto-continue so it marks the compaction boundary.

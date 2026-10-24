@@ -125,3 +125,9 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-10-24 | Compaction sent stored message id/timestamp/conversationId fields directly to Anthropic, causing HTTP 400. Added the symptom and envelope allowlist guidance; regression preserves native content blocks. Real API checks cover non-streaming, metadata-bearing streaming and a rejected stream request.
 
 - 2026-10-24 follow-up | User requested live cross-provider verification. Real ContextPreservationService → StreamingOrchestrator → adapter comparisons succeeded for direct OpenAI/Gemini, corrected Anthropic and OpenRouter Claude/GPT/Gemini routes. Restoring the old envelope reproduced Anthropic HTTP 400. The repository OpenRouter key returned 401 while the saved plugin key worked; do not infer schema rejection from authentication failures or assume repo and app credentials match. No additional production fix was justified by this evidence.
+
+
+## 2026-10-24 — Conversation-derived compaction continuity
+
+- Observation: a native createState call is unnecessary for drafting and excludes models without function calling. Restoring a static model also dropped its known output allowance because the static and runtime field names differ.
+- Change: documented plain-JSON drafting followed by one host state write, state-first schema budgeting, repeated/replay checks, and the two output-limit field names in references/chat-plumbing.md.

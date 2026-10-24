@@ -255,3 +255,8 @@ Added gated provider-compaction-live-smoke.test.ts using the real preservation s
 ### 2026-10-24 — Release candidate in the running test vault
 
 Obsidian 1.14.5 on Linux: a vault-first TTY wrapper worked for version, plugin:reload, dev:errors, dev:console, dev:screenshot and eval. A developer eval immediately after opening the test vault initially returned command-not-found; attaching dev:debug and waiting for readiness resolved it. A read during reload briefly had no plugin instance, so the explicit vault/version/storage readiness assertion remained necessary after verify:obsidian. The installed 5.21.2 candidate completed a synthetic Anthropic preservation summary; its temporary key was memory-only, restored afterward and removed from the transport file. Existing live-loop readiness/TTY guidance covered this; no protocol change.
+
+
+### 2026-10-24 — Compaction continuity and pnpm verification flags
+
+Controlled mutations that omitted the raw transcript or disabled schema preloads failed the new regressions. The gated state lane exercised plain JSON drafting through real adapters, including an 8B open model with a selected 4K window. In Obsidian 1.14.5, vault-first TTY eval and plugin:reload worked; actual repeated compaction retained an original constraint and a later correction. Rebuild cache was invoked through its command and the confirmation button clicked in the dedicated test vault; subsequent state reads, metadata equality and restored prompt checks passed. Added the pnpm invocation without a standalone separator to protocols/live-loop.md, because pnpm forwards that separator to the verifier.

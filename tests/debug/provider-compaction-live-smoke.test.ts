@@ -7,6 +7,8 @@
  * Optional COMPACTION_SMOKE_PROVIDER selects one provider; COMPACTION_SMOKE_MODEL
  * overrides its model. COMPACTION_SMOKE_SETTINGS_FILE optionally supplies Nexus
  * plugin settings: explicit environment keys win, then saved keys, then .env.
+ * Run only conversation-derived state checks with -t 'conversation state'.
+ * Includes an 8B open model using a selected 4K window and no native tools.
  * Results contain envelope keys/statuses, never credentials.
  */
 import * as fs from 'node:fs';
@@ -17,6 +19,7 @@ jest.mock('../../src/utils/platform', () => ({
   ...jest.requireActual('../../src/utils/platform'), hasNodeRuntime: () => false,
 }));
 
+import { CompactionBudgetService } from '../../src/services/chat/CompactionBudgetService';
 import { ContextPreservationService } from '../../src/services/chat/ContextPreservationService';
 import { StreamingOrchestrator } from '../../src/services/llm/core/StreamingOrchestrator';
 import type { IAdapterRegistry } from '../../src/services/llm/core/AdapterRegistry';
@@ -56,10 +59,11 @@ const targets = [
   { provider: 'openrouter', model: 'anthropic/claude-haiku-4-5', key: 'OPENROUTER_API_KEY', create: (key: string): BaseAdapter => new OpenRouterAdapter(key) },
   { provider: 'openrouter', model: 'openai/gpt-5.4-nano', key: 'OPENROUTER_API_KEY', create: (key: string): BaseAdapter => new OpenRouterAdapter(key) },
   { provider: 'openrouter', model: 'google/gemini-3.5-flash-lite', key: 'OPENROUTER_API_KEY', create: (key: string): BaseAdapter => new OpenRouterAdapter(key) },
+  { provider: 'openrouter', model: 'meta-llama/llama-3.1-8b-instruct', key: 'OPENROUTER_API_KEY', create: (key: string): BaseAdapter => new OpenRouterAdapter(key) },
 ].filter(target => !process.env.COMPACTION_SMOKE_PROVIDER || target.provider === process.env.COMPACTION_SMOKE_PROVIDER);
 
 type Target = typeof targets[number];
-type Mode = 'current' | 'clean' | 'reproduce-anthropic-bug';
+type Mode = 'current' | 'clean' | 'reproduce-anthropic-bug' | 'state';
 interface Result {
   provider: string; model: string; mode: Mode; success: boolean;
   statuses: number[]; envelopeKeys: string[][]; summaryLength?: number; error?: string;
@@ -107,9 +111,23 @@ async function summarize(target: Target, mode: Mode): Promise<Result> {
   });
   const preservation = new ContextPreservationService({
     llmService: { generateResponseStream: (messages, options) => orchestrator.generateResponseStream(messages, options) },
-    getAgent: () => null, executeToolCalls: async () => [],
+    getAgent: () => ({ getTool: () => ({ getParameterSchema: () => ({ type: 'object' }) }) }) as never,
+    executeToolCalls: async () => [{ success: true, result: { success: true } }],
   });
   try {
+    if (mode === 'state') {
+      const contextWindow = model.includes('8b') ? 4096 : 32768;
+      const state = await preservation.createStateFromConversation([
+        { id: 'state-u', role: 'user', content: 'Fix the fictional parser at src/parser.ts. Do not publish. The next step is running tests.', timestamp: 1, conversationId: 'synthetic-compaction' },
+        { id: 'state-a', role: 'assistant', content: 'The parser was changed. Tests have not been run; publication remains pending.', timestamp: 2, conversationId: 'synthetic-compaction' },
+      ], { provider: target.provider, model, contextWindow, maxTokens: CompactionBudgetService.getStateBudget({ contextWindow, maxOutputTokens: 4096 }) }, { workspaceId: 'synthetic', sessionId: 'synthetic' });
+      if (!state.success) throw new Error(state.error);
+      expect(state.savedState?.activeFiles).toContain('src/parser.ts');
+      expect(JSON.stringify(state.savedState)).toMatch(/test/i);
+      result.success = true;
+      result.summaryLength = JSON.stringify(state.savedState).length;
+      return result;
+    }
     const summary = await preservation.summarizeForHandoff([
       { id: 'u1', role: 'user', content: 'Prepare a launch checklist for a fictional notes app. Keep it to three steps.', timestamp: 1, conversationId: 'synthetic-compaction' },
       { id: 'a1', role: 'assistant', content: 'Draft: test the app, write release notes, publish after approval. Publication is still pending.', timestamp: 2, conversationId: 'synthetic-compaction' },
@@ -139,6 +157,10 @@ describeLive('provider compaction live acceptance', () => {
   });
   for (const target of targets) {
     const testWithKey = getKey(target.key) ? it : it.skip;
+    testWithKey(`${target.provider}/${target.model}: conversation state completes`, async () => {
+      const result = await summarize(target, 'state');
+      expect(result).toMatchObject({ success: true, statuses: [200] });
+    });
     for (const mode of ['clean', 'current'] as const) {
       testWithKey(`${target.provider}/${target.model}: ${mode} compaction completes`, async () => {
         const result = await summarize(target, mode);

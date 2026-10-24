@@ -195,6 +195,12 @@ export class ModelAgentManager {
           return [];
         }
       },
+      getToolCatalogService: async () => {
+        const plugin = getNexusPlugin(this.app) as {
+          getService?<T>(name: string): Promise<T | null>;
+        } | null;
+        return await plugin?.getService?.<import('../../../services/instructions/types').ToolCatalogPort>('toolCatalogService') ?? null;
+      },
     });
   }
 
@@ -609,7 +615,8 @@ export class ModelAgentManager {
     const source = sourceModel ? {
       providerId: sourceModel.providerId,
       modelId: sourceModel.modelId,
-      contextWindow: this.getEffectiveContextWindow()
+      contextWindow: this.getEffectiveContextWindow(),
+      maxOutputTokens: sourceModel.maxOutputTokens
     } : null;
     const destination = { providerId: model.providerId, modelId: model.modelId, contextWindow: window };
     let candidate: CompactedContext | undefined;
@@ -673,11 +680,26 @@ export class ModelAgentManager {
   }
 
   /** System and tool instructions without the active frontier, for handoff sizing. */
-  async getHandoffSystemPrompt(): Promise<string | null> {
+  async getHandoffSystemPrompt(toolSelectors?: string[]): Promise<string | null> {
+    const snapshot = this.getPromptContextSnapshot();
     return await this.promptContextAssembler.buildSystemPrompt({
-      ...this.getPromptContextSnapshot(),
+      ...snapshot,
+      compactionToolSelectors: toolSelectors ?? snapshot.compactionFrontier.flatMap(record => record.toolSelectors ?? []),
+      contextTokenTracker: null,
       compactionFrontier: [],
       latestCompactionRecord: null
+    });
+  }
+
+  getSelectedMaxOutputTokens(): number | undefined {
+    return this.selectedModel?.maxOutputTokens;
+  }
+
+  async getCompactionCandidatePrompt(record: CompactedContext): Promise<string | null> {
+    return await this.promptContextAssembler.buildSystemPrompt({
+      ...this.getPromptContextSnapshot(), contextTokenTracker: null,
+      compactionFrontier: new CompactionFrontierService().appendRecord(this.compactionState.getCompactionFrontier(), record),
+      latestCompactionRecord: record
     });
   }
 
@@ -1364,7 +1386,8 @@ export class ModelAgentManager {
       transcriptionModel: this.transcriptionModel,
       contextTokenTracker: this.compactionState.getContextTokenTracker(),
       compactionFrontier: this.compactionState.getCompactionFrontier(),
-      latestCompactionRecord: this.compactionState.getLatestCompactionRecord()
+      latestCompactionRecord: this.compactionState.getLatestCompactionRecord(),
+      effectiveContextWindow: this.getEffectiveContextWindow()
     };
   }
 

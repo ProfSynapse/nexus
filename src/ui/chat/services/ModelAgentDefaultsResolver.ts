@@ -169,6 +169,7 @@ export class ModelAgentDefaultsResolver {
         modelId,
         modelName: model?.name || modelId,
         contextWindow: model?.contextWindow || OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+        maxOutputTokens: model?.maxOutputTokens,
         supportsThinking: model?.supportsThinking ?? false
       };
     }
@@ -181,6 +182,7 @@ export class ModelAgentDefaultsResolver {
         modelId,
         modelName: staticModel.name,
         contextWindow: staticModel.contextWindow,
+        maxOutputTokens: staticModel.maxTokens,
         supportsThinking: staticModel.capabilities.supportsThinking
       };
     }
@@ -190,7 +192,7 @@ export class ModelAgentDefaultsResolver {
       providerName: ModelSelectionUtility.getProviderDisplayName(providerId),
       modelId,
       modelName: modelId,
-      contextWindow: 128000,
+      contextWindow: ['ollama', 'lmstudio', 'webllm'].includes(providerId) ? 4096 : 128000,
       supportsThinking: false
     };
   }

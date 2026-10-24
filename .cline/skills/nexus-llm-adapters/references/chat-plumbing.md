@@ -69,3 +69,23 @@ compaction must summarize only the active suffix, and a no-op must leave the
 previous boundary intact. Separately, retry regeneration must replace provider
 replay metadata: merging a previous Anthropic response into a new answer can
 make the next prompt differ from the answer visible in chat.
+
+
+## Saved-state compaction
+
+Ordinary compaction drafts `createState` arguments from the active conversation
+and prior checkpoint, then the host executes the real state tool once. The JSON
+drafting call has no native tools: a local model need not implement function
+calling to preserve context. The output target is a percentage of the effective
+selected/runtime window, capped by known output allowance and actual prompt room.
+
+Keep the complete saved state in conversation metadata and in the next prompt.
+Do not pass it through the legacy frontier's short meta-summary merge. Resolve
+previous tool references against the live catalog, newest first; optional schemas
+must yield space to the state and retained turns. Test repeated compaction,
+reopening, and JSONL replay rather than only the first boundary change.
+
+A restored model selection must retain its output allowance on both discovery
+and static/custom fallback paths. The static model service calls this field
+`maxTokens`; runtime `ModelInfo` calls it `maxOutputTokens`. Read both types before
+mapping them into `ModelOption`.
