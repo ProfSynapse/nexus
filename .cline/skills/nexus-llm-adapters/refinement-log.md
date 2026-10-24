@@ -137,3 +137,8 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 
 - Observation: a generated saved state did not satisfy the user's desire to see the sequence of prior goal/memory entries.
 - Change: documented a separate bounded session timeline, state-first budget ordering, nested command status, and handoff/reload preservation in references/chat-plumbing.md.
+
+
+## 2026-10-24 — Explicit conversation recovery after compaction
+
+- User requested an instruction to search earlier conversation and a preloaded recovery tool. Recovery search now takes priority over optional trace/schema extras after the saved state and recent turns. Small contexts can receive catalog-derived essential recovery arguments; do not invent tool signatures or claim an unindexed/empty search recovered evidence.

@@ -54,3 +54,22 @@ export function selectPreviousToolSchemas(
   }
   return { tools, deferred };
 }
+
+/** Prefer the complete search schema; a small window can carry the exact
+ * catalog-backed recovery arguments without unrelated advanced options. */
+export function selectConversationRecoverySchema(catalog: ToolCatalogPort, maxTokens: number, alreadyLoaded: readonly CliToolSchema[] = []): { tools: CliToolSchema[]; deferred: string[] } {
+  const full = selectPreviousToolSchemas(['search memory'], catalog, maxTokens, alreadyLoaded);
+  if (!full.deferred.length) return full;
+  const resolved = catalog.resolve(['search memory']);
+  if (!resolved.ok || resolved.value.length !== 1) return full;
+  const schema = resolved.value[0];
+  if (!schema.arguments?.length) return full;
+  const recoveryArguments = new Set(['query', 'memoryTypes', 'sessionName', 'windowSize', 'limit']);
+  const subset: CliToolSchema = {
+    agent: schema.agent, tool: schema.tool, command: schema.command, usage: schema.usage,
+    description: `${schema.description.split('\n')[0]} Recovery argument subset; discover the full schema before using additional options.`,
+    arguments: schema.arguments.filter(argument => argument.required || recoveryArguments.has(argument.name))
+  };
+  const cost = Math.ceil(JSON.stringify([subset], null, 2).length / 4 * 1.2) + 64;
+  return cost <= maxTokens ? { tools: [subset], deferred: [] } : full;
+}

@@ -99,3 +99,12 @@ command outcomes when present; successful useTools dispatch alone does not mean
 a requested command succeeded. Allocate state and recent turns first, then this
 timeline, then optional schemas. Preserve the snapshot through handoffs and
 reloads, and resize it for the effective selected window.
+
+
+A compacted prompt should explicitly explain how to recover missing details and
+preload the current conversation-search tool even when it was never used in the
+original exchange. Reserve state and recent turns first, then prioritize the
+recovery schema before optional trace/schema extras. If the full signature is
+too large, derive a labeled recovery subset from the live catalog and retain its
+original argument definitions. Report unavailable or empty search honestly;
+loading a tool schema does not establish that its conversation index has hits.

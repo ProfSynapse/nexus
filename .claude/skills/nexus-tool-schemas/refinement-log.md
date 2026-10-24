@@ -44,3 +44,8 @@ their tools appear in no export.
 - 2026-10-13 | Release preparation regenerated the versioned CLI/MCP bundle through the version lifecycle; compatibility aliases and schema validation stayed consistent. | No protocol change needed.
 
 - 2026-10-24 | The repository version lifecycle generated and validated the next release’s CLI/MCP catalogs and compatibility aliases without tool-contract drift. The catalog validator’s placement message for an explicitly named versioned catalog is a heuristic; schemas/manifest.json identifies the release artifacts. No schema or procedure change.
+
+
+## 2026-10-24 — Compaction recovery signature
+
+Exported the search memory subset through the live normalizer and validated the scratch artifact. The prompt uses the current catalog schema; its small-window recovery subset retains original argument definitions and labels omitted advanced options. No catalog or parameter schema changed. No protocol change.

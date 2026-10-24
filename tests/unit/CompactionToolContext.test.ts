@@ -1,3 +1,4 @@
+import { SearchMemoryTool } from '../../src/agents/searchManager/tools/searchMemory';
 import { previouslyUsedTools, selectPreviousToolSchemas } from '../../src/services/chat/CompactionToolContext';
 import { BaseAgent } from '../../src/agents/baseAgent';
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
@@ -18,7 +19,8 @@ function tool(slug: string): ITool {
 }
 class Agent extends BaseAgent { constructor() { super('contentManager', 'Content', '1'); [tool('read'), tool('write')].forEach(value => this.registerTool(value)); } }
 function setup() {
-  const registry = new Map<string, IAgent>([['contentManager', new Agent()]]);
+  const search = new class extends BaseAgent { constructor() { super('searchManager', 'Search', '1'); this.registerTool(new SearchMemoryTool({} as never, undefined, undefined, undefined, {} as never)); } }();
+  const registry = new Map<string, IAgent>([['contentManager', new Agent()], ['searchManager', search]]);
   return { registry, catalog: new ToolCatalogService(() => registry) };
 }
 const savedState = { name: 'Verified checkpoint', conversationContext: 'User goal and confirmed work. '.repeat(35), activeTask: 'Verify exact path', activeFiles: ['Notes/Exact path.md'], nextSteps: ['Do the next check'] };
@@ -67,6 +69,45 @@ describe('previously used compaction schemas', () => {
     expect(prompt).toContain('<saved_state>');
     expect(prompt).toContain('<previous_tools_pending_discovery>');
     expect(prompt).toContain('web open');
+  });
+
+  it('preloads the real conversation search schema after compaction even when never previously used', async () => {
+    const { catalog } = setup();
+    const assembler = new ModelAgentPromptContextAssembler({ systemPromptBuilder: new SystemPromptBuilder(async () => ''), getSessionId: async () => 'session', getToolCatalogService: async () => catalog });
+    const input = snapshot(128000, [{ ...record, toolSelectors: [] }]);
+    const prompt = await assembler.buildSystemPrompt(input);
+    expect(prompt).toContain('"command": "search memory"');
+    expect(prompt).toContain('"flag": "--session-name"');
+    expect(prompt).toContain('"flag": "--memory-types"');
+    expect(prompt).toContain('"flag": "--window-size"');
+    expect(prompt).toContain('<history_recovery>');
+    expect(prompt).toContain('search before guessing');
+    expect(prompt).toContain('Conversation search requires an available conversation index');
+    const small = await assembler.buildSystemPrompt(snapshot(4096));
+    expect(small).toContain('"command": "search memory"');
+    expect(small).toContain(savedState.conversationContext);
+  });
+
+  it('deduplicates recovery search against explicitly loaded tool schemas', async () => {
+    const { catalog } = setup();
+    const search = catalog.resolve(['search memory']);
+    if (!search.ok) throw new Error('search catalog failed');
+    const assembler = new ModelAgentPromptContextAssembler({ systemPromptBuilder: new SystemPromptBuilder(async () => ''), getSessionId: async () => 'session', getToolCatalogService: async () => catalog,
+      prepareIndividualSkills: async () => ({ skills: [], tools: search.value }) });
+    const prompt = await assembler.buildSystemPrompt(snapshot(128000, [{ ...record, toolSelectors: ['search memory', 'searchManager memory'] }]));
+    expect(prompt?.match(/"command": "search memory"/g)).toHaveLength(1);
+  });
+
+  it('preserves state and provides recovery discovery guidance if its full schema cannot fit', async () => {
+    const { catalog } = setup();
+    const assembler = new ModelAgentPromptContextAssembler({ systemPromptBuilder: new SystemPromptBuilder(async () => ''), getSessionId: async () => 'session', getToolCatalogService: async () => catalog });
+    const input = snapshot(4096, [{ ...record, retainedTokensAtCompaction: 4000 }]);
+    const prompt = await assembler.buildSystemPrompt(input);
+    expect(prompt).toContain(savedState.conversationContext);
+    expect(prompt).not.toContain('"command": "search memory"');
+    expect(prompt).toContain('<previous_tools_pending_discovery>');
+    expect(prompt).toContain('discover it with getTools');
+    expect(await assembler.buildSystemPrompt(snapshot(128000, []))).not.toContain('"command": "search memory"');
   });
 
   it('preserves the complete replacement handoff after a saved-state context changes models', () => {

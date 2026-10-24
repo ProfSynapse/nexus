@@ -1,6 +1,6 @@
 import type { CliToolSchema } from '../../../agents/toolManager/types';
 import type { PreparedWorkflow, PreparedInstruction, ServiceResult, ToolCatalogPort } from '../../../services/instructions/types';
-import { selectPreviousToolSchemas } from '../../../services/chat/CompactionToolContext';
+import { selectPreviousToolSchemas, selectConversationRecoverySchema } from '../../../services/chat/CompactionToolContext';
 import { selectCompactionTraceContext } from '../../../services/chat/CompactionTraceContext';
 import type { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import type { CompactedContext } from '../../../services/chat/ContextCompactionService';
@@ -110,25 +110,39 @@ export class ModelAgentPromptContextAssembler {
     };
     let prompt = await this.deps.systemPromptBuilder.build(promptOptions);
     const retainedReserve = snapshot.compactionFrontier.at(-1)?.retainedTokensAtCompaction ?? 0;
+    const compacted = snapshot.compactionFrontier.length > 0 || !!snapshot.latestCompactionRecord;
+    const selectors = snapshot.compactionToolSelectors
+      ?? snapshot.compactionFrontier.flatMap(record => record.toolSelectors ?? []);
+    const catalog = compacted || selectors.length ? await this.deps.getToolCatalogService?.() : null;
+    // Recovery must be discoverable even if this conversation never used search.
+    // Reserve the state and recent turns before allocating its full schema.
+    if (compacted) {
+      const recoveryBudget = Math.max(0, Math.floor(effectiveWindow * 0.75)
+        - Math.ceil((prompt?.length ?? 0) / 4) - retainedReserve);
+      const recovery = catalog ? selectConversationRecoverySchema(catalog, recoveryBudget,
+        [...(preparedWorkflow?.preloadedTools ?? []), ...individual.tools])
+        : { tools: [], deferred: ['search memory'] };
+      promptOptions.preloadedTools = [...individual.tools, ...recovery.tools];
+      promptOptions.deferredToolSelectors = recovery.deferred;
+      prompt = await this.deps.systemPromptBuilder.build(promptOptions);
+    }
     const traceContext = [...snapshot.compactionFrontier].reverse().find(record => record.traceContext)?.traceContext
       ?? snapshot.latestCompactionRecord?.traceContext;
     const traceBudget = Math.max(0, Math.min(Math.floor(effectiveWindow * 0.05),
       Math.floor(effectiveWindow * 0.75) - Math.ceil((prompt?.length ?? 0) / 4) - retainedReserve));
     promptOptions.recentTraceContext = selectCompactionTraceContext(traceContext, traceBudget);
     if (promptOptions.recentTraceContext) prompt = await this.deps.systemPromptBuilder.build(promptOptions);
-    const selectors = snapshot.compactionToolSelectors
-      ?? snapshot.compactionFrontier.flatMap(record => record.toolSelectors ?? []);
     if (selectors.length) {
       const window = effectiveWindow;
       const stateReserve = snapshot.compactionFrontier.length ? 0 : Math.floor(window * 0.1);
       const budget = Math.max(0, Math.min(Math.floor(window * 0.15),
         Math.floor(window * 0.75) - Math.ceil((prompt?.length ?? 0) / 4) - stateReserve - retainedReserve));
-      const catalog = await this.deps.getToolCatalogService?.();
       const selected = catalog ? selectPreviousToolSchemas(selectors, catalog, budget,
-        [...(preparedWorkflow?.preloadedTools ?? []), ...individual.tools])
+        [...(preparedWorkflow?.preloadedTools ?? []), ...(promptOptions.preloadedTools ?? [])])
         : { tools: [], deferred: [...new Set(selectors)] };
       prompt = await this.deps.systemPromptBuilder.build({ ...promptOptions,
-        preloadedTools: [...individual.tools, ...selected.tools], deferredToolSelectors: selected.deferred });
+        preloadedTools: [...(promptOptions.preloadedTools ?? []), ...selected.tools],
+        deferredToolSelectors: [...new Set([...(promptOptions.deferredToolSelectors ?? []), ...selected.deferred])] });
     }
     if ((preparedWorkflow || individual.skills.length) && snapshot.selectedModel && Math.ceil((prompt?.length ?? 0) / 4) > Math.max(0, effectiveWindow - (snapshot.contextTokenTracker?.getStatus().usedTokens ?? 0) - 2048)) {
       throw new Error('Loaded instructions and tools exceed this model context budget. Load fewer skills or choose a larger model.');

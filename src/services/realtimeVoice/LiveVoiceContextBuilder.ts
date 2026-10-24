@@ -107,6 +107,7 @@ export class LiveVoiceContextBuilder {
     return [
       '<compaction_context>',
       '<instruction>Compressed older conversation context. Use it for continuity, but rely on recent messages for current details.</instruction>',
+      '<history_recovery>Search missing earlier details before guessing. Use search memory with memoryTypes ["conversations"] and --session-name set to the current session name or ID; --window-size 3 retrieves surrounding turns. Discover the schema with getTools if it is not preloaded. Search depends on an available conversation index; report unavailable search or no matches instead of inventing history.</history_recovery>',
       ...records,
       '</compaction_context>',
     ].join('\n');

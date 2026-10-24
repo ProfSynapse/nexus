@@ -265,3 +265,8 @@ Controlled mutations that omitted the raw transcript or disabled schema preloads
 ### 2026-10-24 — Original goal/memory timeline after compaction
 
 The timeline-omission mutation failed the prompt integration regression. In the actual dedicated test vault, inspecting the storage facade before integration caught an incorrect assumed subrepository shape: HybridStorageAdapter exposes getTraces directly, not a traces property. Corrected the source contract and fixtures. Real useTools trace metadata also showed a successful dispatch wrapping a failed content read; timeline outcomes now use batch.results success flags. Session scoping, chronological ordering, legacy fields, cold-cache behavior, budget previews and XML escaping have regressions. Existing in-app guidance covered discovery of these runtime contracts; no protocol change.
+
+
+### 2026-10-24 — Conversation recovery schema preloading
+
+The actual SearchMemoryTool and ToolCatalogService supply test schemas, including session scoping and surrounding-turn flags. Omitting the recovery-preload branch made the regression fail. Full and bounded recovery schemas, never-previously-used search, duplicate preloads and state-first exhausted budgets are covered. Live marker and natural-language conversation queries in the scratch session returned no matches; no successful transcript retrieval is claimed. Existing test guidance applied; no protocol change.
