@@ -462,6 +462,49 @@ describe('AnthropicAdapter', () => {
       ]);
     });
 
+    it('strips Nexus message metadata while preserving native content blocks during compaction', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return sseResponse(sse(
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Summary' } },
+          { type: 'message_stop' }
+        ));
+      });
+
+      // Context preservation passes stored ConversationMessages, rather than
+      // the {role, content} objects built for ordinary chat. Anthropic rejects
+      // their top-level id/timestamp/conversationId fields with HTTP 400.
+      const history = [
+        { role: 'system', content: 'Summarize the context', id: 'system_1' },
+        { role: 'user', content: 'Earlier context', id: 'user_1', timestamp: 1, conversationId: 'chat_1' },
+        { role: 'assistant', content: [
+          { type: 'thinking', thinking: 'Reviewing context', signature: 'signed-thinking' },
+          { type: 'tool_use', id: 'toolu_1', name: 'search', input: { q: 'x' } }
+        ], id: 'assistant_1', metadata: { state: 'complete' } },
+        { role: 'user', content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', content: '{"hits":1}' }
+        ], id: 'result_1' },
+        { role: 'user', content: 'Summarize this transcript', id: 'handoff_summary_1', timestamp: 2, conversationId: 'chat_1' }
+      ];
+      const original = JSON.parse(JSON.stringify(history));
+
+      const chunks = await collect(new AnthropicAdapter('ak-test').generateStreamAsync('', {
+        conversationHistory: history
+      }));
+
+      const body = JSON.parse(requests[0].body ?? '{}');
+      expect(body.messages).toEqual(history.slice(1).map(message => ({
+        role: message.role,
+        content: message.content
+      })));
+      expect(body.system).toEqual([{
+        type: 'text', text: 'Summarize the context', cache_control: { type: 'ephemeral' }
+      }]);
+      expect(concatContent(chunks)).toBe('Summary');
+      expect(history).toEqual(original);
+    });
+
     it('asks for prompt caching on the system block and the last tool, and sends structured history verbatim', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {

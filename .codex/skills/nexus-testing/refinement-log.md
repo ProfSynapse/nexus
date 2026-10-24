@@ -243,3 +243,11 @@ Bounded-storage work (traces, chat checkpoints) in the "Nexus Redesign Test" vau
 - Without a TTY the CLI printed nothing (`version` still did); wrapping in `script -qec` fixed every command.
 - Multi-line `eval` scripts were loaded from a file with `window.eval(require('fs').readFileSync(...))`.
 - Change: protocols/live-loop.md steps 1 and 5. Files: protocols/live-loop.md, refinement-log.md.
+
+### 2026-10-24 — Anthropic compaction request envelope
+
+The new request-body regression failed before the adapter fix. The gated provider smoke now checks Anthropic streaming with Nexus message metadata and an invalid-model rejection in addition to non-streaming generation. Only transport responses are fixtures in the unit test; live checks establish API acceptance. No testing protocol change.
+
+### 2026-10-24 — Provider compaction acceptance comparison
+
+Added gated provider-compaction-live-smoke.test.ts using the real preservation service and streaming orchestrator with a synthetic transcript. Transport variants compare current and metadata-free envelopes and deliberately restore the old Anthropic bug. The report records field names and statuses, never headers/keys. Optional plugin settings supply saved credentials because the repo OpenRouter key failed authentication while its saved plugin credential succeeded. Default gate skip was verified.

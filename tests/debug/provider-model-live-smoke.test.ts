@@ -19,6 +19,8 @@
  * Every call sends a temperature, as the chat view always does (default 0.5),
  * so a model that rejects sampling parameters fails here instead of in chat.
  * MODEL_SMOKE_TEMPERATURE overrides the value; set it to "none" to omit it.
+ * Anthropic also checks streaming with stored compaction-message metadata and
+ * rejection of an invalid model; fixtures cannot prove API request acceptance.
  */
 
 import * as fs from 'node:fs';
@@ -289,5 +291,42 @@ describeLive('generic provider model live smoke', () => {
       expect(response.text.trim().length).toBeGreaterThan(0);
       expect(response.text.toUpperCase()).toContain('OK');
     });
+
+    if (target.provider === 'anthropic') {
+      it(`streams ${target.model} with Nexus compaction message metadata`, async () => {
+        const adapter = createAdapter(target.provider);
+        let text = '';
+        let complete = false;
+        for await (const chunk of adapter.generateStreamAsync('', {
+          model: target.model,
+          maxTokens: 64,
+          enableThinking: false,
+          conversationHistory: [{
+            id: 'handoff_summary_smoke', role: 'user', timestamp: Date.now(),
+            conversationId: 'compaction-smoke',
+            content: 'Reply with exactly this token and no other words: OK'
+          }]
+        })) {
+          text += chunk.content;
+          complete ||= chunk.complete;
+        }
+        expect(text.toUpperCase()).toContain('OK');
+        expect(complete).toBe(true);
+      });
+
+      it('surfaces an Anthropic streaming rejection instead of completing silently', async () => {
+        const adapter = createAdapter(target.provider);
+        const consume = async () => {
+          for await (const chunk of adapter.generateStreamAsync('OK', {
+            model: 'nexus-invalid-model-for-error-smoke', maxTokens: 64
+          })) {
+            expect(chunk.complete).toBe(false);
+          }
+        };
+        await expect(consume()).rejects.toMatchObject({
+          name: 'ProviderHttpError', response: { status: 404 }
+        });
+      });
+    }
   }
 });

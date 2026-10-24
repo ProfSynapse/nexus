@@ -158,7 +158,10 @@ export class AnthropicAdapter extends BaseAdapter {
       const requestParams: Record<string, unknown> = {
         model: this.normalizeModelId(options?.model || this.currentModel),
         max_tokens: maxTokens,
-        messages: messages.filter(msg => msg.role !== 'system'),
+        // Compaction can supply stored Nexus messages. Only the API envelope
+        // belongs on the wire; retain native tool/thinking blocks inside content.
+        messages: messages.filter(msg => msg.role !== 'system')
+          .map(({ role, content }) => ({ role, content })),
         temperature: options?.temperature,
         stream: true
       };

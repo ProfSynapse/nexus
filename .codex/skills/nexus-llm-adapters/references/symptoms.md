@@ -14,6 +14,7 @@ end quietly. Treat missing output as a swallowed failure until proven otherwise.
 
 | Symptom | Mechanism | Read |
 |---|---|---|
+| Anthropic compaction fails with `messages.0.id: Extra inputs are not permitted` | Context preservation sends stored Nexus messages through `conversationHistory`, including internal envelope fields. Serialize only `role` and `content` at the Anthropic request boundary; retain nested tool IDs and thinking signatures unchanged. | `src/services/llm/adapters/anthropic/AnthropicAdapter.ts`, `tests/unit/AnthropicAdapter.test.ts` |
 | Thinking opens and closes between tool calls or after a message redraw | The display treats a reasoning-segment boundary as the end of the whole turn, or redraw infers a different disclosure state. Keep it stable through the turn and preserve manual choices before queued native toggle events. | `reasoning-rendering.md` |
 | A truncated or malformed tool response has no useful stop reason in the saved message | The adapter reduced the provider's response boundary to a generic stop, or the processor discarded the extracted finish reason. Preserve raw stop metadata separately, pass the normalized finish reason on the completion chunk, and keep each response boundary across tool rounds. | `streaming-contract.md` |
 | Chat bubble is blank and **nothing was logged** | The stream ended without emitting. Almost always a provider error frame delivered over HTTP 200 with no `extractError` wired, so the pump drained and the generator returned. | `streaming-contract.md` |

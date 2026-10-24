@@ -97,6 +97,13 @@ grep -A4 'setup-node' .github/workflows/release.yml
 
 If yours differs, treat a green local build as necessary but not sufficient.
 
+When machine policy requires pnpm, import the committed npm lockfile into a
+temporary pnpm lockfile and use a temporary workspace with `nodeLinker: hoisted`.
+Strict pnpm isolation cannot resolve npm-hoisted transitive imports such as the
+ESLint config's `globals`. Approve only the install scripts already declared by
+the repo. Keep these temporary files out of the release commit; do not reuse a
+different checkout's installed dependencies as proof of a locked build.
+
 ### 7. Stage everything the build regenerated
 ```bash
 git status
