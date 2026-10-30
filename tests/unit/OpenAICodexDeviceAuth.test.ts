@@ -19,21 +19,41 @@ function token(): string {
   return `header.${claims}.signature`;
 }
 
+const deviceStart = { device_auth_id: 'device-id', user_code: 'ABCD-1234', interval: 5 };
+const approval = { authorization_code: 'auth-code', code_verifier: 'verifier', code_challenge: 'challenge' };
+const tokens = () => ({ access_token: 'access', refresh_token: 'refresh', id_token: token(), expires_in: 3600 });
+
+/** Run a flow to completion, advancing fake timers past every poll interval. */
+async function settle<T>(promise: Promise<T>): Promise<T> {
+  let done = false;
+  const tracked = promise.finally(() => { done = true; });
+  tracked.catch(() => undefined);
+  while (!done) {
+    await jest.advanceTimersByTimeAsync(5000);
+  }
+  return tracked;
+}
+
 describe('OpenAICodexDeviceAuth', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
     __setRequestUrlMock(mockRequestUrl);
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('requests a device code, polls approval, and exchanges for OAuth tokens', async () => {
     mockRequestUrl
-      .mockResolvedValueOnce(reply(200, { device_auth_id: 'device-id', user_code: 'ABCD-1234', interval: '0' }))
+      .mockResolvedValueOnce(reply(200, { ...deviceStart, interval: '5' }))
       .mockResolvedValueOnce(reply(403))
-      .mockResolvedValueOnce(reply(200, { authorization_code: 'auth-code', code_verifier: 'verifier', code_challenge: 'challenge' }))
-      .mockResolvedValueOnce(reply(200, { access_token: 'access', refresh_token: 'refresh', id_token: token(), expires_in: 3600 }));
+      .mockResolvedValueOnce(reply(200, approval))
+      .mockResolvedValueOnce(reply(200, tokens()));
 
     const onDeviceCode = jest.fn();
-    const result = await new OpenAICodexDeviceAuth().start(onDeviceCode);
+    const result = await settle(new OpenAICodexDeviceAuth().start(onDeviceCode));
 
     expect(onDeviceCode).toHaveBeenCalledWith('ABCD-1234', 'https://auth.openai.com/codex/device');
     expect(result.apiKey).toBe('access');
@@ -51,7 +71,21 @@ describe('OpenAICodexDeviceAuth', () => {
     const exchange = mockRequestUrl.mock.calls[3][0];
     expect(exchange.url).toBe('https://auth.openai.com/oauth/token');
     expect(new URLSearchParams(exchange.body).get('redirect_uri')).toBe('https://auth.openai.com/deviceauth/callback');
-  }, 10000);
+  });
+
+  it('waits the server-provided interval between polls', async () => {
+    mockRequestUrl
+      .mockResolvedValueOnce(reply(200, deviceStart))
+      .mockResolvedValueOnce(reply(200, approval))
+      .mockResolvedValueOnce(reply(200, tokens()));
+
+    const flow = new OpenAICodexDeviceAuth().start(jest.fn());
+    await jest.advanceTimersByTimeAsync(4999);
+    expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+
+    await settle(flow);
+    expect(mockRequestUrl).toHaveBeenCalledTimes(3);
+  });
 
   it('rejects malformed device authorization responses', async () => {
     mockRequestUrl.mockResolvedValueOnce(reply(200, { user_code: 'MISSING-ID' }));
@@ -59,41 +93,59 @@ describe('OpenAICodexDeviceAuth', () => {
       .rejects.toThrow('invalid response');
   });
 
-  it('rejects unavailable device-code authorization', async () => {
+  it('explains how to recover when device-code login cannot start', async () => {
     mockRequestUrl.mockResolvedValueOnce(reply(404));
     await expect(new OpenAICodexDeviceAuth().start(jest.fn()))
-      .rejects.toThrow();
+      .rejects.toThrow(/HTTP 404.*ChatGPT security settings/);
   });
+
   it('treats HTTP 404 during polling as pending and continues until approval', async () => {
     mockRequestUrl
-      .mockResolvedValueOnce(reply(200, { device_auth_id: 'device-id', user_code: 'ABCD-1234', interval: 0 }))
+      .mockResolvedValueOnce(reply(200, deviceStart))
       .mockResolvedValueOnce(reply(404))
-      .mockResolvedValueOnce(reply(200, { authorization_code: 'auth-code', code_verifier: 'verifier', code_challenge: 'challenge' }))
-      .mockResolvedValueOnce(reply(200, { access_token: 'access', refresh_token: 'refresh', id_token: token(), expires_in: 3600 }));
+      .mockResolvedValueOnce(reply(200, approval))
+      .mockResolvedValueOnce(reply(200, tokens()));
 
-    const result = await new OpenAICodexDeviceAuth().start(jest.fn());
+    const result = await settle(new OpenAICodexDeviceAuth().start(jest.fn()));
     expect(result.apiKey).toBe('access');
     expect(mockRequestUrl).toHaveBeenCalledTimes(4);
-  }, 10000);
+  });
 
   it('rejects invalid approval data without attempting token exchange', async () => {
     mockRequestUrl
-      .mockResolvedValueOnce(reply(200, { device_auth_id: 'device-id', user_code: 'ABCD-1234', interval: 0 }))
+      .mockResolvedValueOnce(reply(200, deviceStart))
       .mockResolvedValueOnce(reply(200, { authorization_code: 'auth-code' }));
 
-    await expect(new OpenAICodexDeviceAuth().start(jest.fn()))
+    await expect(settle(new OpenAICodexDeviceAuth().start(jest.fn())))
       .rejects.toThrow('invalid approval');
     expect(mockRequestUrl).toHaveBeenCalledTimes(2);
-  }, 10000);
+  });
 
   it('stops polling on unexpected server errors', async () => {
     mockRequestUrl
-      .mockResolvedValueOnce(reply(200, { device_auth_id: 'device-id', user_code: 'ABCD-1234', interval: 0 }))
+      .mockResolvedValueOnce(reply(200, deviceStart))
       .mockResolvedValueOnce(reply(500, { error: 'server error' }));
 
-    await expect(new OpenAICodexDeviceAuth().start(jest.fn()))
+    await expect(settle(new OpenAICodexDeviceAuth().start(jest.fn())))
       .rejects.toThrow();
     expect(mockRequestUrl).toHaveBeenCalledTimes(2);
-  }, 10000);
+  });
 
+  it('stops polling as soon as the flow is cancelled', async () => {
+    mockRequestUrl
+      .mockResolvedValueOnce(reply(200, deviceStart))
+      .mockResolvedValue(reply(403));
+
+    const controller = new AbortController();
+    const flow = new OpenAICodexDeviceAuth().start(jest.fn(), controller.signal);
+    const outcome = expect(flow).rejects.toThrow('cancelled');
+
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+
+    controller.abort();
+    await outcome;
+    await jest.advanceTimersByTimeAsync(60_000);
+    expect(mockRequestUrl).toHaveBeenCalledTimes(2);
+  });
 });
