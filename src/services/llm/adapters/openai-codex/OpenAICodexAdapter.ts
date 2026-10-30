@@ -15,7 +15,9 @@
  * - Token refresh: proactive refresh when access_token nears expiry
  * - Cost: $0 (subscription-based, not per-token)
  *
- * Desktop only: uses OAuth callback server integration, but outbound requests use requestUrl.
+ * Runs on desktop and mobile. Desktop signs in through the OAuth callback server;
+ * mobile uses device-code login (OpenAICodexDeviceAuth). On mobile the stream is
+ * buffered by requestUrl, so output arrives when the request completes.
  *
  * Used by: AdapterRegistry (initializes this adapter when openai-codex is
  * enabled with OAuth state), StreamingOrchestrator (for streaming inference).
@@ -40,15 +42,19 @@ import {
 } from '../../streaming/streamErrorFrames';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { mapOpenAIThinkingEffort } from '../../utils/ThinkingEffortMapper';
+import {
+  CODEX_OAUTH_CLIENT_ID,
+  CODEX_OAUTH_TOKEN_ENDPOINT
+} from '../../../oauth/providers/OpenAICodexOAuthProvider';
 
 /** Codex API endpoint (requires ChatGPT subscription) */
 const CODEX_API_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
 
 /** OpenAI OAuth token endpoint for refresh */
-const OAUTH_TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token';
+const OAUTH_TOKEN_ENDPOINT = CODEX_OAUTH_TOKEN_ENDPOINT;
 
 /** OAuth client ID (same as used during PKCE flow) */
-const OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const OAUTH_CLIENT_ID = CODEX_OAUTH_CLIENT_ID;
 
 /** Proactive refresh threshold: refresh if token expires within 5 minutes */
 const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;

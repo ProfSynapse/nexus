@@ -56,6 +56,7 @@ export interface OAuthFlowConfig {
 export class OAuthFlowManager {
   private config: OAuthFlowConfig;
   private isConnecting = false;
+  private flowAbort: AbortController | null = null;
 
   constructor(config: OAuthFlowConfig) {
     this.config = config;
@@ -126,6 +127,7 @@ export class OAuthFlowManager {
    */
   cancelIfActive(): void {
     if (this.isConnecting) {
+      this.flowAbort?.abort();
       OAuthService.getInstance().cancelFlow();
     }
   }
@@ -135,9 +137,14 @@ export class OAuthFlowManager {
    */
   private async executeFlow(params: Record<string, string>): Promise<void> {
     this.setConnecting(true);
+    const abort = new AbortController();
+    this.flowAbort = abort;
 
     try {
-      const result = await this.config.oauthConfig.startFlow(params, this.config.callbacks.onDeviceCode);
+      const result = await this.config.oauthConfig.startFlow(params, this.config.callbacks.onDeviceCode, abort.signal);
+
+      // The modal closed mid-flow: a late approval must not persist or notify.
+      if (abort.signal.aborted) return;
 
       if (result.success && result.apiKey) {
         await Promise.resolve(this.config.callbacks.onConnect({
@@ -153,9 +160,11 @@ export class OAuthFlowManager {
         new Notice(`${this.config.oauthConfig.providerLabel} connection failed: ${errorMsg}`);
       }
     } catch (error) {
+      if (abort.signal.aborted) return;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       new Notice(`${this.config.oauthConfig.providerLabel} connection failed: ${errorMsg}`);
     } finally {
+      if (this.flowAbort === abort) this.flowAbort = null;
       this.setConnecting(false);
     }
   }

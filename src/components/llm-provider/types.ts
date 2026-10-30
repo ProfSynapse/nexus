@@ -110,10 +110,14 @@ export interface OAuthModalConfig {
     required: boolean;
     defaultValue?: string;
   }>;
-  /** Start the OAuth flow with collected params, returns the API key on success */
+  /**
+   * Start the OAuth flow with collected params, returns the API key on success.
+   * `signal` aborts when the modal closes; device flows must stop polling on it.
+   */
   startFlow(
     params: Record<string, string>,
-    onDeviceCode?: (userCode: string, verificationUri: string) => void
+    onDeviceCode?: (userCode: string, verificationUri: string) => void,
+    signal?: AbortSignal
   ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }>;
 }
 

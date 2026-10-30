@@ -214,16 +214,17 @@ export class ProvidersTab {
     private attachMobileCodexOAuthConfig(): void {
         this.providerConfigs['openai-codex'].oauthConfig = {
             providerLabel: 'ChatGPT',
-            startFlow: (_params, onDeviceCode) => this.startCodexDeviceFlow(onDeviceCode),
+            startFlow: (_params, onDeviceCode, signal) => this.startCodexDeviceFlow(onDeviceCode, signal),
         };
     }
 
     private async startCodexDeviceFlow(
         onDeviceCode?: (userCode: string, verificationUri: string) => void,
+        signal?: AbortSignal,
     ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }> {
         try {
             const { OpenAICodexDeviceAuth } = await import('../../services/oauth/providers/OpenAICodexDeviceAuth');
-            const result = await new OpenAICodexDeviceAuth().start((code, url) => onDeviceCode?.(code, url));
+            const result = await new OpenAICodexDeviceAuth().start((code, url) => onDeviceCode?.(code, url), signal);
             return { success: true, apiKey: result.apiKey, refreshToken: result.refreshToken, expiresAt: result.expiresAt, metadata: result.metadata };
         } catch (error) {
             return { success: false, error: error instanceof Error ? error.message : 'Codex device login failed' };
@@ -232,7 +233,8 @@ export class ProvidersTab {
 
     /**
      * Attach OAuth configurations to providers that support OAuth connect.
-     * Only called on desktop where the OAuth callback server can run.
+     * Desktop only: these flows need the localhost callback server or Electron.
+     * Mobile Codex login is attached by attachMobileCodexOAuthConfig().
      */
     private attachOAuthConfigs(): void {
         const oauthService = OAuthService.getInstance();
@@ -280,7 +282,7 @@ export class ProvidersTab {
                     providerLabel: 'GitHub Copilot',
                     experimental: true,
                     experimentalWarning: 'This connects via an undocumented GitHub Copilot proxy. Requires an active GitHub Copilot subscription.',
-                    startFlow: (_params, onDeviceCode) => this.startGithubCopilotDeviceFlow(onDeviceCode),
+                    startFlow: (_params, onDeviceCode, signal) => this.startGithubCopilotDeviceFlow(onDeviceCode, signal),
                 },
             };
         }
@@ -338,12 +340,13 @@ export class ProvidersTab {
      * Bypasses OAuthService.startFlow() since device flow has no redirect callback.
      */
     private async startGithubCopilotDeviceFlow(
-        onDeviceCode?: (userCode: string, verificationUri: string) => void
+        onDeviceCode?: (userCode: string, verificationUri: string) => void,
+        signal?: AbortSignal
     ): Promise<{ success: boolean; apiKey?: string; error?: string }> {
         try {
             const { GithubCopilotOAuthProvider } = await import('../../services/oauth/providers/GithubCopilotOAuthProvider');
             const provider = new GithubCopilotOAuthProvider();
-            const result = await provider.startDeviceFlow(onDeviceCode);
+            const result = await provider.startDeviceFlow(onDeviceCode, signal);
             return {
                 success: true,
                 apiKey: result.apiKey,

@@ -167,7 +167,7 @@ export const getMobileUnavailableFeatures = (): string[] => {
 export const MOBILE_COMPATIBLE_PROVIDERS = [
     'openai-compatible', // Named HTTP endpoints use requestUrl on mobile
     'openai',       // Uses requestUrl-backed REST transport
-    'openai-codex', // Uses buffered requestUrl SSE transport; requires existing OAuth credentials
+    'openai-codex', // Buffered requestUrl SSE transport; device-code login on mobile
     'anthropic',    // Uses requestUrl-backed REST transport
     'google',       // Uses requestUrl-backed REST transport
     'mistral',      // Uses requestUrl-backed REST transport

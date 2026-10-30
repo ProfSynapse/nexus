@@ -17,6 +17,7 @@
 import { Notice, Platform } from 'obsidian';
 import { IOAuthProvider, OAuthProviderConfig, OAuthResult } from '../IOAuthProvider';
 import { ProviderHttpClient } from '../../llm/adapters/shared/ProviderHttpClient';
+import { abortableDelay, throwIfAborted } from '../DeviceFlowCancellation';
 
 interface GithubCopilotOAuthDesktopModuleMap {
   electron: {
@@ -115,11 +116,20 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
    * @param code - The device_code from the device flow initiation
    */
   async exchangeCode(code: string, _codeVerifier: string, _callbackUrl: string): Promise<OAuthResult> {
+    return this.pollDeviceToken(code);
+  }
+
+  /**
+   * Poll until the user approves the device code, it expires, or `signal` aborts.
+   */
+  private async pollDeviceToken(code: string, signal?: AbortSignal): Promise<OAuthResult> {
     const startTime = Date.now();
     let pollInterval = POLL_INTERVAL_MS;
 
     while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
+      throwIfAborted(signal);
       const response = await ProviderHttpClient.request({
+        signal,
         url: TOKEN_URL,
         provider: 'github-copilot',
         operation: 'pollDeviceToken',
@@ -146,14 +156,14 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
 
       if (res.error === 'authorization_pending') {
         // User hasn't completed flow yet — wait and retry
-        await new Promise(resolve => window.setTimeout(resolve, pollInterval));
+        await abortableDelay(pollInterval, signal);
         continue;
       }
 
       if (res.error === 'slow_down') {
         // GitHub is asking us to increase the polling interval
         pollInterval = (res.interval ?? 10) * 1000;
-        await new Promise(resolve => window.setTimeout(resolve, pollInterval));
+        await abortableDelay(pollInterval, signal);
         continue;
       }
 
@@ -184,9 +194,14 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
    *
    * @returns OAuthResult with the GitHub OAuth token (ghu_*)
    */
-  async startDeviceFlow(onCode?: (userCode: string, verificationUri: string) => void): Promise<OAuthResult> {
+  async startDeviceFlow(
+    onCode?: (userCode: string, verificationUri: string) => void,
+    signal?: AbortSignal,
+  ): Promise<OAuthResult> {
     // Step 1: Request device code
+    throwIfAborted(signal);
     const deviceResponse = await ProviderHttpClient.request({
+      signal,
       url: DEVICE_CODE_URL,
       provider: 'github-copilot',
       operation: 'requestDeviceCode',
@@ -224,7 +239,7 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
       );
     }
 
-    // Step 4: Poll for token using exchangeCode
-    return this.exchangeCode(deviceData.device_code, '', '');
+    // Step 4: Poll for token
+    return this.pollDeviceToken(deviceData.device_code, signal);
   }
 }

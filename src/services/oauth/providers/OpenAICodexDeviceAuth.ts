@@ -4,12 +4,17 @@
  * No Node.js, Electron, localhost listener or client secret required.
  */
 import { ProviderHttpClient } from '../../llm/adapters/shared/ProviderHttpClient';
-import { OpenAICodexOAuthProvider } from './OpenAICodexOAuthProvider';
+import {
+  CODEX_OAUTH_CLIENT_ID,
+  CODEX_OAUTH_ISSUER,
+  OpenAICodexOAuthProvider,
+} from './OpenAICodexOAuthProvider';
 import type { OAuthResult } from '../IOAuthProvider';
+import { abortableDelay, throwIfAborted } from '../DeviceFlowCancellation';
 
-const ISSUER = 'https://auth.openai.com';
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const ISSUER = CODEX_OAUTH_ISSUER;
 const MAX_WAIT_MS = 15 * 60 * 1000;
+const CANCELLED = 'Codex device login cancelled';
 
 interface DeviceStart {
   device_auth_id: string;
@@ -23,23 +28,27 @@ interface DeviceApproval {
   code_challenge: string;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => window.setTimeout(resolve, ms));
-}
-
 export class OpenAICodexDeviceAuth {
   async start(
     onDeviceCode: (userCode: string, verificationUrl: string) => void,
+    signal?: AbortSignal,
   ): Promise<OAuthResult> {
+    throwIfAborted(signal, CANCELLED);
     const start = await ProviderHttpClient.request<DeviceStart>({
       url: `${ISSUER}/api/accounts/deviceauth/usercode`,
       provider: 'openai-codex',
       operation: 'Codex device authorization',
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: CLIENT_ID }),
+      body: JSON.stringify({ client_id: CODEX_OAUTH_CLIENT_ID }),
+      signal,
     });
-    ProviderHttpClient.assertOk(start, 'Could not start Codex device login');
+    if (!start.ok) {
+      throw new Error(
+        `Could not start Codex device login (HTTP ${start.status}). `
+        + 'If device code sign-in is turned off for your ChatGPT account, enable it in ChatGPT security settings and try again.'
+      );
+    }
     const data = start.json;
     if (!data?.device_auth_id || !data.user_code) {
       throw new Error('Codex device authorization returned an invalid response');
@@ -52,7 +61,8 @@ export class OpenAICodexDeviceAuth {
 
     const deadline = Date.now() + MAX_WAIT_MS;
     while (Date.now() < deadline) {
-      await delay(intervalMs);
+      await abortableDelay(intervalMs, signal);
+      throwIfAborted(signal, CANCELLED);
       const response = await ProviderHttpClient.request<DeviceApproval>({
         url: `${ISSUER}/api/accounts/deviceauth/token`,
         provider: 'openai-codex',
@@ -63,7 +73,9 @@ export class OpenAICodexDeviceAuth {
           device_auth_id: data.device_auth_id,
           user_code: data.user_code,
         }),
+        signal,
       });
+      throwIfAborted(signal, CANCELLED);
       // The official Codex CLI treats 403 and 404 as pending authorization.
       if (response.status === 403 || response.status === 404) continue;
       ProviderHttpClient.assertOk(response, 'Codex device authorization failed');

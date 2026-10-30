@@ -133,4 +133,37 @@ describe('OAuthFlowManager notice timing', () => {
     expect(noticeMock).toHaveBeenCalledWith('Failed to disconnect from ChatGPT: disk full');
     expect(noticeMock).not.toHaveBeenCalledWith('Disconnected from ChatGPT');
   });
+
+  it('aborts the flow signal on cancel and drops a late approval', async () => {
+    const deferred = createDeferred<{ success: boolean; apiKey?: string }>();
+    let flowSignal: AbortSignal | undefined;
+    const startFlow = jest.fn((_params: Record<string, string>, _onCode: unknown, signal?: AbortSignal) => {
+      flowSignal = signal;
+      return deferred.promise;
+    });
+    const onConnect = jest.fn();
+    const manager = new OAuthFlowManager({
+      oauthConfig: { providerLabel: 'ChatGPT', startFlow },
+      providerId: 'openai-codex',
+      app: new App(),
+      callbacks: {
+        onConnect,
+        onDisconnect: jest.fn(),
+        onConnectingChange: jest.fn(),
+      },
+    });
+
+    const connectPromise = manager.connect();
+    expect(flowSignal?.aborted).toBe(false);
+
+    manager.cancelIfActive();
+    expect(flowSignal?.aborted).toBe(true);
+
+    deferred.resolve({ success: true, apiKey: 'late-token' });
+    await connectPromise;
+
+    expect(onConnect).not.toHaveBeenCalled();
+    expect(noticeMock).not.toHaveBeenCalled();
+    expect(manager.connecting).toBe(false);
+  });
 });

@@ -16,16 +16,19 @@ import { IOAuthProvider, OAuthProviderConfig, OAuthResult } from '../IOAuthProvi
 import { ProviderHttpClient } from '../../llm/adapters/shared/ProviderHttpClient';
 
 /** Public OAuth client ID shared across Codex CLI tools (Cline, OpenCode, Roo Code) */
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+export const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const CLIENT_ID = CODEX_OAUTH_CLIENT_ID;
 
 /** OpenAI OAuth issuer */
-const ISSUER = 'https://auth.openai.com';
+export const CODEX_OAUTH_ISSUER = 'https://auth.openai.com';
+const ISSUER = CODEX_OAUTH_ISSUER;
 
 /** Authorization endpoint */
 const AUTH_ENDPOINT = `${ISSUER}/oauth/authorize`;
 
 /** Token exchange and refresh endpoint */
-const TOKEN_ENDPOINT = `${ISSUER}/oauth/token`;
+export const CODEX_OAUTH_TOKEN_ENDPOINT = `${ISSUER}/oauth/token`;
+const TOKEN_ENDPOINT = CODEX_OAUTH_TOKEN_ENDPOINT;
 
 /**
  * JWT claims structure from OpenAI id_token / access_token.
