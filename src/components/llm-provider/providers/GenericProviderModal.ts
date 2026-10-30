@@ -18,8 +18,14 @@ import { LLMValidationService } from '../../../services/llm/validation/Validatio
 import { ModelWithProvider } from '../../../services/StaticModelsService';
 import { renderOAuthBanner, updateConnectButtonState, renderCliStatusBanner, updateCheckStatusButtonState } from '../../shared/OAuthBannerComponent';
 import { OAuthFlowManager } from '../../../services/oauth/OAuthFlowManager';
+import { getDeviceOAuthState } from '../../../services/oauth/DeviceOAuthState';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { fetchListedModelIds, isModelListed } from '../../../services/llm/validation/ProviderModelAvailability';
+
+/** Banner hint when the account is signed in elsewhere but not on this device. */
+function missingOnThisDeviceHint(providerLabel: string): string {
+  return `${providerLabel} isn't signed in on this device. Reconnect to use it here.`;
+}
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -288,10 +294,16 @@ export class GenericProviderModal implements IProviderModal {
 
     this.hideDeviceCode();
 
+    const label = this.config.oauthConfig.providerLabel;
+    const state = getDeviceOAuthState(
+      this.config.config.driverKind ?? this.config.providerId,
+      { ...this.config.config, apiKey: this.apiKey },
+    );
     const result = renderOAuthBanner(this.oauthBannerContainer, {
-      providerLabel: this.config.oauthConfig.providerLabel,
-      isConnected: !!this.config.config.oauth?.connected,
-      reconnectRequired: this.config.config.oauth?.reconnectRequired,
+      providerLabel: label,
+      isConnected: state.connected,
+      reconnectRequired: state.reconnectRequired,
+      reconnectHint: state.missingOnThisDevice ? missingOnThisDeviceHint(label) : undefined,
       onConnect: () => this.primaryFlowManager?.connect(),
       onDisconnect: () => this.primaryFlowManager?.disconnect(),
     });
@@ -340,10 +352,13 @@ export class GenericProviderModal implements IProviderModal {
       this.secondaryCheckStatusButton = result.checkStatusButton;
     } else {
       // Standard OAuth connect/disconnect banner
+      const label = secondary.oauthConfig.providerLabel;
+      const state = getDeviceOAuthState(secondary.config.driverKind ?? secondary.providerId, secondary.config);
       const result = renderOAuthBanner(this.secondaryBannerContainer, {
-        providerLabel: secondary.oauthConfig.providerLabel,
-        isConnected: !!secondary.config.oauth?.connected,
-        reconnectRequired: secondary.config.oauth?.reconnectRequired,
+        providerLabel: label,
+        isConnected: state.connected,
+        reconnectRequired: state.reconnectRequired,
+        reconnectHint: state.missingOnThisDevice ? missingOnThisDeviceHint(label) : undefined,
         onConnect: () => this.secondaryFlowManager?.connect(),
         onDisconnect: () => this.secondaryFlowManager?.disconnect(),
       });

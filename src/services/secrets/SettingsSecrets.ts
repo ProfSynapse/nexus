@@ -30,6 +30,7 @@ import {
   llmOAuthRefreshSecretId,
   remoteAgentApiKeySecretId
 } from './SecretStore';
+import { usesDeviceOAuthTokens } from '../oauth/DeviceOAuthState';
 
 /**
  * One secret field located within a settings object: a stable secretStorage id
@@ -38,6 +39,8 @@ import {
 interface SecretFieldRef {
   id: string;
   clearWhenEmpty?: boolean;
+  /** Names the credential in the error raised when clearing it fails. */
+  clearLabel?: string;
   read(): string | undefined;
   write(value: string): void;
 }
@@ -67,13 +70,26 @@ function collectSecretFields(settings: MCPSettings): SecretFieldRef[] {
   const refs: SecretFieldRef[] = [];
 
   for (const [providerId, config] of providerEntries(settings)) {
+    // OAuth tokens that this device dropped (disconnect, rejected refresh) must
+    // leave secretStorage too, or hydration restores them on the next load.
+    const deviceTokens = usesDeviceOAuthTokens(config.driverKind ?? providerId);
     refs.push({
       id: llmApiKeySecretId(providerId),
-      clearWhenEmpty: config.driverKind === 'openai-compatible',
+      clearWhenEmpty: config.driverKind === 'openai-compatible' || deviceTokens,
+      clearLabel: deviceTokens ? 'OAuth access token' : 'OpenAI-compatible API key',
       read: () => config.apiKey,
       write: (value) => { config.apiKey = value; }
     });
-    if (config.oauth) {
+    if (deviceTokens) {
+      // Collected even after disconnect removes `oauth`, so the token is cleared.
+      refs.push({
+        id: llmOAuthRefreshSecretId(providerId),
+        clearWhenEmpty: true,
+        clearLabel: 'OAuth refresh token',
+        read: () => (config.oauth ? config.oauth.refreshToken : ''),
+        write: (value) => { if (config.oauth) config.oauth.refreshToken = value; }
+      });
+    } else if (config.oauth) {
       const oauth = config.oauth;
       refs.push({
         id: llmOAuthRefreshSecretId(providerId),
@@ -101,6 +117,7 @@ function collectSecretFields(settings: MCPSettings): SecretFieldRef[] {
     refs.push({
       id: remoteAgentApiKeySecretId(connection.id),
       clearWhenEmpty: true,
+      clearLabel: 'remote agent API key',
       read: () => connection.apiKey,
       write: (value) => { connection.apiKey = value; }
     });
@@ -160,7 +177,7 @@ export function stripSecretsForPersist(
       // An endpoint can intentionally switch from bearer auth to no auth.
       // Otherwise hydration would restore its previous stored credential.
       if (field.clearWhenEmpty && store.get(field.id) && !store.clear(field.id)) {
-        throw new Error(`Failed to clear the stored ${field.id.startsWith('nexus-remote-agent-') ? 'remote agent' : 'OpenAI-compatible'} API key`);
+        throw new Error(`Failed to clear the stored ${field.clearLabel ?? 'credential'}`);
       }
       field.write('');
       continue;

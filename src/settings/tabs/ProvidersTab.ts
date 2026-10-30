@@ -28,6 +28,7 @@ import { GeminiCliAuthService } from '../../services/external/GeminiCliAuthServi
 import { BRAND_NAME } from '../../constants/branding';
 import { OpenAICompatibleModal } from '../../components/openai-compatible/OpenAICompatibleModal';
 import { isCompatibleEndpoint } from '../../components/openai-compatible/OpenAICompatibleEditSession';
+import { getDeviceOAuthState, usesDeviceOAuthTokens } from '../../services/oauth/DeviceOAuthState';
 
 /**
  * Provider display configuration
@@ -672,7 +673,9 @@ export class ProvidersTab {
         if (providerId === 'webllm') return true;
         if (providerId === 'anthropic-claude-code') return !!config.oauth?.connected;
         if (providerId === 'google-gemini-cli') return !!config.oauth?.connected;
-        if (providerId === 'github-copilot') return !!(config.oauth?.connected && config.apiKey);
+        if (usesDeviceOAuthTokens(config.driverKind ?? providerId)) {
+            return getDeviceOAuthState(config.driverKind ?? providerId, config).connected;
+        }
         // Other providers need an API key
         return !!config.apiKey;
     }

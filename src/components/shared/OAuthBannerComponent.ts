@@ -19,6 +19,8 @@ export interface OAuthBannerConfig {
   isConnected: boolean;
   /** Whether the previous connection expired and needs reauthorization */
   reconnectRequired?: boolean;
+  /** Overrides the default "connection expired" hint shown when reconnecting */
+  reconnectHint?: string;
   /** Called when the connect button is clicked */
   onConnect: () => void | Promise<void>;
   /** Called when the disconnect button is clicked */
@@ -70,7 +72,7 @@ export function renderOAuthBanner(
     const connectDiv = container.createDiv('oauth-connect-standalone');
     if (config.reconnectRequired) {
       connectDiv.createEl('p', {
-        text: `${config.providerLabel} connection expired. Reconnect to continue.`,
+        text: config.reconnectHint ?? `${config.providerLabel} connection expired. Reconnect to continue.`,
         cls: 'oauth-reconnect-hint',
       });
     }

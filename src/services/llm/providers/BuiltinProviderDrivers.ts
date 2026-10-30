@@ -235,10 +235,12 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
         }
 
         const { OpenAICodexAdapter } = await import('../adapters/openai-codex/OpenAICodexAdapter');
+        const { readAccessTokenExpiry } = await import('../../oauth/providers/OpenAICodexOAuthProvider');
         const tokens: CodexOAuthTokens = {
           accessToken: config.apiKey,
           refreshToken: oauth.refreshToken,
-          expiresAt: oauth.expiresAt || 0,
+          // The synced expiresAt may belong to another device's token.
+          expiresAt: readAccessTokenExpiry(config.apiKey) ?? oauth.expiresAt ?? 0,
           accountId: oauth.metadata.accountId,
         };
         return new OpenAICodexAdapter(tokens, (newTokens) => {
@@ -252,11 +254,11 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
         }, (rejectedRefreshToken) => {
           const oauthState = config.oauth;
           if (!oauthState?.connected || oauthState.refreshToken !== rejectedRefreshToken) return;
+          // Only this device's tokens were rejected. The connected flag syncs to
+          // other devices, which hold their own tokens, so leave it set; the
+          // banner reads a missing local token as "reconnect on this device".
           config.apiKey = '';
-          oauthState.connected = false;
-          oauthState.reconnectRequired = true;
-          delete oauthState.refreshToken;
-          delete oauthState.expiresAt;
+          oauthState.refreshToken = '';
           onSettingsDirty?.();
           new Notice('ChatGPT connection expired. Reconnect in Nexus settings.', 10000);
         });

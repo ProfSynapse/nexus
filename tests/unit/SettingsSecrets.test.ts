@@ -92,6 +92,53 @@ describe('SettingsSecrets boundary (unit)', () => {
     expect(map.get(`nexus-llm-${first}-apikey`)).toBe('');
   });
 
+  it('removes dropped device OAuth tokens so hydration cannot restore them', () => {
+    const { api, map } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    const oauth = { connected: true, providerId: 'openai-codex', connectedAt: 1, refreshToken: 'codex-rt' };
+    settings.llmProviders!.providers['openai-codex'] = { apiKey: 'codex-at', enabled: true, oauth };
+    stripSecretsForPersist(settings, store);
+    expect(map.get('nexus-llm-openai-codex-apikey')).toBe('codex-at');
+
+    // Refresh token rejected on this device: tokens cleared, synced flags kept.
+    settings.llmProviders!.providers['openai-codex'].apiKey = '';
+    oauth.refreshToken = '';
+    const saved = stripSecretsForPersist(settings, store).settings;
+    hydrateSecrets(saved, store);
+    expect(saved.llmProviders!.providers['openai-codex'].apiKey).toBe('');
+    expect(saved.llmProviders!.providers['openai-codex'].oauth?.refreshToken).toBe('');
+    expect(saved.llmProviders!.providers['openai-codex'].oauth?.connected).toBe(true);
+  });
+
+  it('removes the refresh token when disconnect drops the oauth record', () => {
+    const { api, map } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    settings.llmProviders!.providers['github-copilot'] = {
+      apiKey: 'ghu-token', enabled: true,
+      oauth: { connected: true, providerId: 'github-copilot', connectedAt: 1, refreshToken: 'gh-rt' },
+    };
+    stripSecretsForPersist(settings, store);
+    expect(map.get('nexus-llm-github-copilot-oauth-refresh')).toBe('gh-rt');
+
+    settings.llmProviders!.providers['github-copilot'].apiKey = '';
+    delete settings.llmProviders!.providers['github-copilot'].oauth;
+    stripSecretsForPersist(settings, store);
+    expect(map.get('nexus-llm-github-copilot-apikey')).toBe('');
+    expect(map.get('nexus-llm-github-copilot-oauth-refresh')).toBe('');
+  });
+
+  it('keeps an emptied non-OAuth provider key in secretStorage as before', () => {
+    const { api, map } = createMockSecretStorage();
+    const store = new SecretStore({ secretStorage: api });
+    const settings = settingsWithSecrets();
+    stripSecretsForPersist(settings, store);
+    settings.llmProviders!.providers.openrouter.apiKey = '';
+    stripSecretsForPersist(settings, store);
+    expect(map.get('nexus-llm-openrouter-apikey')).toBe('sk-or');
+  });
+
   it('rejects a failed endpoint key clear instead of reporting a saved unauthenticated configuration', () => {
     const { api } = createMockSecretStorage();
     const store = new SecretStore({ secretStorage: api });
