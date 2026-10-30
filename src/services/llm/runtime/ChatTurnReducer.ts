@@ -161,6 +161,9 @@ export function reduceChatTurn(
         metadata,
       };
     }
+    case 'provider.retrying':
+      // Status only: nothing about the turn's content changes while it waits.
+      return state;
     case 'response.resolved':
       return {
         ...state,

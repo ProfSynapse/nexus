@@ -65,6 +65,8 @@ import type { HybridStorageAdapter, ExternalSyncEvent } from '../../database/ada
 import type { ModelOption, PromptOption } from './types/SelectionTypes';
 import type { ToolEventData as ChatServiceToolEventData } from '../../services/chat/ToolCallService';
 import type { BranchViewContext } from './components/BranchHeader';
+import type { OverloadRetryNotice } from '../../services/llm/adapters/types';
+import { describeOverloadRetry } from '../../services/llm/adapters/shared/ProviderErrorMessages';
 
 export const CHAT_VIEW_TYPE = CHAT_VIEW_TYPES.current;
 type ChatToolEventData = Parameters<ToolEventCoordinator['handleToolEvent']>[2];
@@ -104,6 +106,8 @@ export class ChatView extends ItemView {
 
   // Disposal guard - prevents polling loops from operating on detached DOM
   private isClosing = false;
+  /** Whether the status line currently holds an overload retry notice, so only that is cleared. */
+  private showingRetryNotice = false;
 
   // Search debounce timer for conversation search input
   private searchDebounceTimer: number | null = null;
@@ -589,7 +593,8 @@ export class ChatView extends ItemView {
       onGenerationAborted: (messageId, _partialContent) => this.sendCoordinator.handleGenerationAborted(messageId),
       // Token usage tracking for local models with limited context
       onUsageAvailable: (usage) => this.modelAgentManager.recordTokenUsage(usage.promptTokens, usage.completionTokens),
-      onCostUpdate: () => this.toolStatusBar?.updateCost()
+      onCostUpdate: () => this.toolStatusBar?.updateCost(),
+      onProviderRetrying: (messageId, notice) => this.handleProviderRetrying(messageId, notice)
     };
     this.messageManager = new MessageManager(this.chatService, this.branchManager, messageEvents);
 
@@ -1080,9 +1085,25 @@ export class ChatView extends ItemView {
     void this.updateContextProgress();
   }
 
+  /** Show "Google AI is overloaded. Retrying 2/4…" on the status line while a retry waits. */
+  private handleProviderRetrying(messageId: string, notice: OverloadRetryNotice | null): void {
+    if (notice) {
+      this.showingRetryNotice = true;
+      this.toolStatusBarController?.pushStatus(messageId, {
+        text: describeOverloadRetry(notice.provider, notice.retry, notice.maxRetries),
+        state: 'present'
+      });
+    } else if (this.showingRetryNotice) {
+      this.showingRetryNotice = false;
+      this.toolStatusBar?.clearStatus();
+    }
+  }
+
   private handleLoadingStateChanged(loading: boolean): void {
     // Tool status subscriptions cover every send/retry/abort path.
     if (loading) {
+      // A new turn supersedes the last turn's error (shown until dismissed).
+      this.uiStateController.clearError();
       // Re-arm the tool ticker for THIS turn. The previous turn's completion
       // unsubscribed the ToolEventCoordinator from the state machine
       // (clearToolNameCache), and the old re-subscribe lived in a streaming
@@ -1091,6 +1112,8 @@ export class ChatView extends ItemView {
       // (send, retry, alternative), making the subscription unconditional.
       this.toolEventCoordinator.beginTurn();
     } else {
+      // Retries ran out or the turn ended some other way: drop a stale "Retrying" line.
+      this.handleProviderRetrying('', null);
       this.subagentIntegration.flushPendingRefresh();
       // Uniform teardown: MessageManager's finally block funnels completion,
       // abort AND error through here, so an errored turn (which never emits

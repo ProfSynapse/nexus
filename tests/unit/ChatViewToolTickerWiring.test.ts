@@ -56,6 +56,22 @@ describe('ChatView — tool ticker turn brackets (source guard)', () => {
     expect(loadingBranch).toContain('toolEventCoordinator.beginTurn()');
   });
 
+  it('clears the previous turn\'s error on loading start, never on loading end', () => {
+    // Errors stay until dismissed (#429). MessageManager reports an error before
+    // its finally block ends loading, so clearing on loading end would erase it at once.
+    const loadingBranch = loadingHandler.split(/\belse\b/)[0];
+    const elseBranch = loadingHandler.slice(loadingHandler.search(/\belse\b/));
+    expect(loadingBranch).toContain('uiStateController.clearError()');
+    expect(elseBranch).not.toContain('clearError');
+  });
+
+  it('drops a stale overload "Retrying X/Y" line when loading ends', () => {
+    // Retries can run out with no output, so the stream never clears the notice itself.
+    const elseBranch = loadingHandler.slice(loadingHandler.search(/\belse\b/));
+    expect(elseBranch).toContain("handleProviderRetrying('', null)");
+    expect(source).toContain('onProviderRetrying: (messageId, notice) => this.handleProviderRetrying(messageId, notice)');
+  });
+
   it('tears the coordinator down on loading end (clearToolNameCache)', () => {
     // Loading-end fires from MessageManager's finally block — completion,
     // abort AND error — so teardown here cannot be skipped by errored turns.

@@ -298,3 +298,48 @@ describe('MessageStreamHandler - isLoading clearing (issue #271 claim b)', () =>
     }
   });
 });
+
+describe('MessageStreamHandler - overload retry notice (#429)', () => {
+  it('reports each retry as X/Y and clears the notice once output starts', async () => {
+    const mockChatService = createMockChatService();
+    const onProviderRetrying = jest.fn();
+    const handler = new MessageStreamHandler(mockChatService as unknown as ChatService, {
+      onStreamingUpdate: jest.fn(),
+      onToolCallsDetected: jest.fn(),
+      onProviderRetrying,
+    });
+    mockChatService.generateResponseStreaming.mockImplementation(streamOf([
+      { type: 'provider.retrying', provider: 'google', retry: 1, maxRetries: 4, delayMs: 600 },
+      { type: 'provider.retrying', provider: 'google', retry: 2, maxRetries: 4, delayMs: 1500 },
+      { type: 'assistant.delta', text: 'Hi' },
+      { type: 'assistant.delta', text: ' there' },
+      { type: 'turn.completed' },
+    ]));
+
+    await handler.streamResponse(conversationWithLoadingPlaceholder(), 'hi', 'msg_ai', {});
+
+    expect(onProviderRetrying.mock.calls).toEqual([
+      ['msg_ai', { provider: 'google', retry: 1, maxRetries: 4, delayMs: 600 }],
+      ['msg_ai', { provider: 'google', retry: 2, maxRetries: 4, delayMs: 1500 }],
+      ['msg_ai', null],
+    ]);
+  });
+
+  it('never touches the status line when nothing was retried', async () => {
+    const mockChatService = createMockChatService();
+    const onProviderRetrying = jest.fn();
+    const handler = new MessageStreamHandler(mockChatService as unknown as ChatService, {
+      onStreamingUpdate: jest.fn(),
+      onToolCallsDetected: jest.fn(),
+      onProviderRetrying,
+    });
+    mockChatService.generateResponseStreaming.mockImplementation(streamOf([
+      { type: 'assistant.delta', text: 'Hi' },
+      { type: 'turn.completed' },
+    ]));
+
+    await handler.streamResponse(conversationWithLoadingPlaceholder(), 'hi', 'msg_ai', {});
+
+    expect(onProviderRetrying).not.toHaveBeenCalled();
+  });
+});

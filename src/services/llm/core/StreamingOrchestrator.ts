@@ -26,6 +26,7 @@ import { ToolContinuationService, StreamYield } from './ToolContinuationService'
 import type { BaseAdapter } from '../adapters/BaseAdapter';
 import type { ChatRuntimeEvent } from '../runtime/ChatRuntimeEvent';
 import { mapProviderStreamChunk } from '../runtime/ProviderStreamEventMapper';
+import { streamWithOverloadRetry } from '../adapters/shared/OverloadRetry';
 
 // Re-export types for backward compatibility
 export type { ConversationMessage, GoogleMessage, StreamingOptions, StreamYield };
@@ -91,7 +92,11 @@ export class StreamingOrchestrator {
     options: StreamingOptions | undefined,
     state: { detectedToolCalls: ChatToolCall[]; assistantText: string }
   ): AsyncGenerator<ChatRuntimeEvent, void, unknown> {
-    for await (const chunk of adapter.generateStreamAsync(prompt, generateOptions)) {
+    for await (const chunk of streamWithOverloadRetry(
+      () => adapter.generateStreamAsync(prompt, generateOptions),
+      generateOptions.abortSignal,
+      provider
+    )) {
       state.assistantText += chunk.content;
       if (chunk.toolCalls && chunk.complete) {
         const responseContent = provider === 'anthropic' && Array.isArray(chunk.metadata?.anthropicResponseContent)

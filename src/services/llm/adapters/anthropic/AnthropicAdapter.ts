@@ -335,8 +335,7 @@ export class AnthropicAdapter extends BaseAdapter {
           if (event.type !== 'error' && !event.error) {
             return null;
           }
-          const message = extractStreamErrorMessage(event, 'Anthropic streaming error');
-          return message ? `Anthropic stream error: ${message}` : 'Anthropic stream error';
+          return extractStreamErrorMessage(event, 'Anthropic streaming error') ?? 'Anthropic streaming error';
         },
         extractUsage: (event: AnthropicStreamEvent) =>
           event.type === 'message_start' || event.type === 'message_delta' ? usage : undefined,

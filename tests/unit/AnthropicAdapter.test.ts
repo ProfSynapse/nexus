@@ -657,7 +657,8 @@ describe('AnthropicAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe('PROVIDER_STREAM_ERROR');
       expect(error.provider).toBe('anthropic');
-      expect(error.message).toContain('Overloaded');
+      expect(error.message).toBe('Anthropic is overloaded right now. Wait a moment and try again, or switch to a different model. (HTTP 529)');
+      expect(error.technicalMessage).toBe('Overloaded');
       // A cumulative usage snapshot may precede a later provider error, but
       // the failed stream must never emit a successful completion chunk.
       expect(chunks).not.toContainEqual(expect.objectContaining({ complete: true }));
@@ -688,7 +689,8 @@ describe('AnthropicAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe('AUTHENTICATION_ERROR');
       expect(error.provider).toBe('anthropic');
-      expect(error.message).toBe('generation failed: invalid x-api-key');
+      expect(error.message).toBe('Anthropic did not accept the API key. Check it in Nexus settings under Providers. (HTTP 401)');
+      expect(error.technicalMessage).toBe('generation failed: invalid x-api-key');
       expect(calls).toBe(1);
     });
 
@@ -713,7 +715,9 @@ describe('AnthropicAdapter', () => {
 
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^Anthropic.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
       expect(calls).toBe(4);
     });
   });

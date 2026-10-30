@@ -10,6 +10,10 @@ import type { ChatRuntimeEvent } from './ChatRuntimeEvent';
 export function mapProviderStreamChunk(chunk: StreamChunk): ChatRuntimeEvent[] {
   const events: ChatRuntimeEvent[] = [];
 
+  if (chunk.overloadRetry) {
+    events.push({ type: 'provider.retrying', ...chunk.overloadRetry });
+  }
+
   if (chunk.content) {
     events.push({ type: 'assistant.delta', text: chunk.content });
   }

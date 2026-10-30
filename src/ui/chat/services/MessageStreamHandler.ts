@@ -15,6 +15,7 @@ import { projectTurn } from '../../../services/chat/ChatTurnStore';
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
+import type { OverloadRetryNotice } from '../../../services/llm/adapters/types';
 import {
   ConversationData,
   ReasoningSegment,
@@ -37,6 +38,8 @@ export interface StreamHandlerEvents {
     isComplete: boolean,
     segments?: ReasoningSegment[]
   ) => void;
+  /** An overloaded provider is being retried (notice), or output has started (null). */
+  onProviderRetrying?: (messageId: string, notice: OverloadRetryNotice | null) => void;
 }
 
 export interface StreamOptions {
@@ -113,6 +116,7 @@ export class MessageStreamHandler {
     let reasoningAccumulator = '';
     let reasoningSegments: ReasoningSegment[] = [];
     let sawTerminalEvent = false;
+    let showingRetryNotice = false;
 
     // Stream the AI response
     for await (const chunk of this.chatService.generateResponseStreaming(
@@ -147,6 +151,15 @@ export class MessageStreamHandler {
       resolvedProvider = turnState.provider;
       resolvedModel = turnState.model;
       finalCost = turnState.cost;
+
+      if (event.type === 'provider.retrying') {
+        showingRetryNotice = true;
+        const { provider, retry, maxRetries, delayMs } = event;
+        this.events.onProviderRetrying?.(aiMessageId, { provider, retry, maxRetries, delayMs });
+      } else if (showingRetryNotice && (event.type === 'assistant.delta' || event.type === 'reasoning.delta' || event.type === 'tool.snapshot')) {
+        showingRetryNotice = false;
+        this.events.onProviderRetrying?.(aiMessageId, null);
+      }
 
       if (event.type === 'cost.updated') {
         const message = conversation.messages.find(msg => msg.id === aiMessageId);

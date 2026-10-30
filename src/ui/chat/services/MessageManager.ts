@@ -70,6 +70,7 @@ export interface MessageManagerEvents {
   // Token usage for context tracking (optional - for local models)
   onUsageAvailable?: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
   onCostUpdate?: () => void;
+  onProviderRetrying?: (messageId: string, notice: import('../../../services/llm/adapters/types').OverloadRetryNotice | null) => void;
 }
 
 export class MessageManager {
@@ -99,7 +100,8 @@ export class MessageManager {
       onToolCallsDetected: events.onToolCallsDetected,
       onToolLimitReached: events.onToolLimitReached,
       onReasoningUpdate: events.onReasoningUpdate,
-      onCostUpdate: events.onCostUpdate
+      onCostUpdate: events.onCostUpdate,
+      onProviderRetrying: events.onProviderRetrying
     });
 
     this.abortHandler = new AbortHandler(chatService, {

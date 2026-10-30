@@ -17,6 +17,7 @@ import { GoogleAdapter } from '../../src/services/llm/adapters/google/GoogleAdap
 import { GOOGLE_DEFAULT_MODEL } from '../../src/services/llm/adapters/google/GoogleModels';
 import { LLMProviderError } from '../../src/services/llm/adapters/types';
 import { ProviderHttpError } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
+import { streamWithOverloadRetry, OVERLOAD_MAX_RETRIES } from '../../src/services/llm/adapters/shared/OverloadRetry';
 import { loadEvalToolFixtures } from '../eval/fixtures/tools';
 import {
   jsonResponse,
@@ -268,6 +269,81 @@ describe('GoogleAdapter', () => {
       expect((error as ProviderHttpError).response.status).toBe(401);
     });
 
+    // #429 end to end on the mobile (buffered) path: the adapter raises a readable
+    // error, and streamWithOverloadRetry -- what the chat runs it through -- backs off.
+    describe('overloaded and quota errors on the mobile stream path (#429)', () => {
+      const overloaded = () => jsonResponse(503, {
+        error: { code: 503, message: 'The model is overloaded. Please try again later.', status: 'UNAVAILABLE' }
+      });
+      const chatStream = (adapter: GoogleAdapter, options?: { abortSignal?: AbortSignal }) =>
+        collect(streamWithOverloadRetry(() => adapter.generateStreamAsync('hi', options), options?.abortSignal));
+
+      beforeEach(() => {
+        jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      });
+
+      it('backs off and streams the eventual answer', async () => {
+        jest.useFakeTimers();
+        let calls = 0;
+        __setRequestUrlMock(async () => ++calls <= 2
+          ? overloaded()
+          : sseResponse(sse({ candidates: [{ content: { parts: [{ text: 'G-ALIVE' }] }, finishReason: 'STOP' }] })));
+
+        const pending = chatStream(new GoogleAdapter('gk-test'));
+        await jest.advanceTimersByTimeAsync(20_000);
+
+        expect(concatContent(await pending)).toBe('G-ALIVE');
+        expect(calls).toBe(3);
+      });
+
+      it('gives up after the last retry with a readable error', async () => {
+        jest.useFakeTimers();
+        let calls = 0;
+        __setRequestUrlMock(async () => { calls++; return overloaded(); });
+
+        const pending = captureError(chatStream(new GoogleAdapter('gk-test')));
+        await jest.advanceTimersByTimeAsync(60_000);
+        const error = await pending;
+
+        expect(calls).toBe(OVERLOAD_MAX_RETRIES + 1);
+        expect((error as ProviderHttpError).response.status).toBe(503);
+        expect((error as Error).message).toBe(
+          'Google AI is overloaded right now. Wait a moment and try again, or switch to a different model. (HTTP 503)'
+        );
+      });
+
+      it('does not retry a 429 quota rejection', async () => {
+        let calls = 0;
+        __setRequestUrlMock(async () => {
+          calls++;
+          return jsonResponse(429, { error: { code: 429, message: 'Quota exceeded. Please retry in 27s.', status: 'RESOURCE_EXHAUSTED' } });
+        });
+
+        const error = await captureError(chatStream(new GoogleAdapter('gk-test')));
+
+        expect(calls).toBe(1);
+        expect((error as Error).message).toBe(
+          'Google AI says you have hit a rate limit or usage quota. Try again in 27 seconds. ' +
+          'If this keeps happening, check your plan and usage limits with the provider. (HTTP 429)'
+        );
+      });
+
+      it('stops waiting when the user aborts', async () => {
+        jest.useFakeTimers();
+        let calls = 0;
+        __setRequestUrlMock(async () => { calls++; return overloaded(); });
+        const controller = new AbortController();
+
+        const pending = captureError(chatStream(new GoogleAdapter('gk-test'), { abortSignal: controller.signal }));
+        await jest.advanceTimersByTimeAsync(100);
+        controller.abort();
+        const error = await pending;
+
+        expect(calls).toBe(1);
+        expect((error as Error).name).toBe('AbortError');
+      });
+    });
+
     it('uses thinkingLevel and omits deprecated sampling parameters for Gemini 3.6 Flash', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
@@ -389,7 +465,8 @@ describe('GoogleAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe('AUTHENTICATION_ERROR');
       expect(error.provider).toBe('google');
-      expect(error.message).toBe('generation failed: API key not valid');
+      expect(error.message).toBe('Google AI did not accept the API key. Check it in Nexus settings under Providers. (HTTP 401)');
+      expect(error.technicalMessage).toBe('generation failed: API key not valid');
       expect(calls).toBe(1);
     });
 
@@ -414,7 +491,9 @@ describe('GoogleAdapter', () => {
 
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^Google AI.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
       expect(calls).toBe(4);
     });
   });

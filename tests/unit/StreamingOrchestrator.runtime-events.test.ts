@@ -6,6 +6,7 @@ import type { BaseAdapter } from '../../src/services/llm/adapters/BaseAdapter';
 import type { StreamChunk } from '../../src/services/llm/adapters/types';
 import type { IAdapterRegistry } from '../../src/services/llm/core/AdapterRegistry';
 import { StreamingOrchestrator } from '../../src/services/llm/core/StreamingOrchestrator';
+import { createProviderStreamError } from '../../src/services/llm/streaming/streamErrorFrames';
 import type { ChatRuntimeEvent } from '../../src/services/llm/runtime/ChatRuntimeEvent';
 import { createInitialChatTurnState, reduceChatTurn } from '../../src/services/llm/runtime/ChatTurnReducer';
 import type { LLMProviderSettings } from '../../src/types';
@@ -98,6 +99,104 @@ describe('StreamingOrchestrator canonical runtime events', () => {
     await expect(collect(orchestrator)).rejects.toThrow(
       "Provider 'openrouter' ended its stream without a response.completed event."
     );
+  });
+
+  describe('overloaded provider (#429)', () => {
+    const overloaded = () => createProviderStreamError(
+      'Overloaded', 'openrouter', { error: { code: 503, message: 'Overloaded' } }
+    );
+    /** Plays scripted attempts in order; an Error entry is thrown as that attempt's failure. */
+    function adapterWithAttempts(attemptScripts: Array<StreamChunk[] | Error>): BaseAdapter & { calls: () => number } {
+      let calls = 0;
+      return {
+        calls: () => calls,
+        async *generateStreamAsync() {
+          const script = attemptScripts[calls++] ?? [];
+          if (script instanceof Error) throw script;
+          for (const chunk of script) yield chunk;
+        },
+      } as unknown as BaseAdapter & { calls: () => number };
+    }
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
+
+    it('retries the turn before any output instead of failing it', async () => {
+      const adapter = adapterWithAttempts([overloaded(), [{ content: 'Hi', complete: true }]]);
+      const pending = collect(new StreamingOrchestrator(registryWith(adapter), settings()));
+      await jest.advanceTimersByTimeAsync(10_000);
+
+      const events = await pending;
+      expect(adapter.calls()).toBe(2);
+      expect(events.filter(event => event.type === 'provider.retrying')).toEqual([
+        expect.objectContaining({ provider: 'openrouter', retry: 1, maxRetries: 4 }),
+      ]);
+      expect(events.some(event => event.type === 'assistant.delta' && event.text === 'Hi')).toBe(true);
+      expect(events.filter(event => event.type.startsWith('turn.'))).toEqual([{ type: 'turn.completed' }]);
+    });
+
+    it('retries a tool continuation before any output', async () => {
+      const toolCall = { id: 'call-1', type: 'function' as const, function: { name: 'content_read', arguments: '{}' } };
+      const adapter = adapterWithAttempts([
+        [{ content: '', complete: true, toolCalls: [toolCall], toolCallsReady: true }],
+        overloaded(),
+        [{ content: 'Done', complete: true }],
+      ]);
+      const toolExecutor: IToolExecutor = {
+        executeToolCalls: jest.fn(async () => [{ id: 'call-1', name: 'content_read', success: true, result: {} }]),
+      };
+      const orchestrator = new StreamingOrchestrator(registryWith(adapter), settings(), toolExecutor);
+      const events: ChatRuntimeEvent[] = [];
+      const pending = (async () => {
+        for await (const event of orchestrator.generateResponseStream(
+          [{ role: 'user', content: 'read it' }],
+          { tools: [{ type: 'function', function: { name: 'content_read', description: 'Read.', parameters: { type: 'object' } } }] }
+        )) events.push(event);
+      })();
+      await jest.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      expect(adapter.calls()).toBe(3);
+      expect(events.some(event => event.type === 'assistant.delta' && event.text === 'Done')).toBe(true);
+      expect(events.filter(event => event.type.startsWith('turn.'))).toEqual([{ type: 'turn.completed' }]);
+    });
+
+    it('retries a second-level (recursive) tool continuation before any output', async () => {
+      const call = (id: string) => ({ id, type: 'function' as const, function: { name: 'content_read', arguments: '{}' } });
+      const adapter = adapterWithAttempts([
+        [{ content: '', complete: true, toolCalls: [call('call-1')], toolCallsReady: true }],
+        // The first continuation asks for another tool, so the next request is the recursive one.
+        [{ content: '', complete: true, toolCalls: [call('call-2')], toolCallsReady: true }],
+        overloaded(),
+        [{ content: 'Done', complete: true }],
+      ]);
+      const toolExecutor: IToolExecutor = {
+        executeToolCalls: jest.fn(async (calls: Array<{ id: string }>) =>
+          calls.map(c => ({ id: c.id, name: 'content_read', success: true, result: {} }))),
+      };
+      const orchestrator = new StreamingOrchestrator(registryWith(adapter), settings(), toolExecutor);
+      const events: ChatRuntimeEvent[] = [];
+      const pending = (async () => {
+        for await (const event of orchestrator.generateResponseStream(
+          [{ role: 'user', content: 'read both' }],
+          { tools: [{ type: 'function', function: { name: 'content_read', description: 'Read.', parameters: { type: 'object' } } }] }
+        )) events.push(event);
+      })();
+      await jest.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      expect(adapter.calls()).toBe(4);
+      expect(toolExecutor.executeToolCalls).toHaveBeenCalledTimes(2);
+      expect(events.filter(event => event.type === 'provider.retrying')).toHaveLength(1);
+      expect(events.some(event => event.type === 'assistant.delta' && event.text === 'Done')).toBe(true);
+      expect(events.filter(event => event.type.startsWith('turn.'))).toEqual([{ type: 'turn.completed' }]);
+    });
   });
 
   it('keeps a tool response boundary non-terminal and settles once after continuation', async () => {

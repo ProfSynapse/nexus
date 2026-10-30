@@ -58,4 +58,12 @@ describe('ProviderStreamEventMapper', () => {
       type: 'response.completed', finishReason: 'length', stopReason: 'max_tokens', stopSequence: null
     });
   });
+
+  it('maps a retry status chunk to a status-only provider.retrying event', () => {
+    expect(mapProviderStreamChunk({
+      content: '',
+      complete: false,
+      overloadRetry: { provider: 'google', retry: 2, maxRetries: 4, delayMs: 1800 },
+    })).toEqual([{ type: 'provider.retrying', provider: 'google', retry: 2, maxRetries: 4, delayMs: 1800 }]);
+  });
 });

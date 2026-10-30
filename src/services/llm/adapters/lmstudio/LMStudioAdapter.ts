@@ -22,6 +22,7 @@ import {
   ToolCall
 } from '../types';
 import { ToolCallContentParser } from './ToolCallContentParser';
+import { ProviderHttpError } from '../shared/ProviderHttpClient';
 import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
 import { isThinkingModelName } from '../shared/thinkingModels';
 
@@ -418,7 +419,10 @@ export class LMStudioAdapter extends BaseAdapter {
         yield chunk;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      // Match on the provider's own words: `message` may be the reworded, human-facing one.
+      const msg = err instanceof ProviderHttpError || err instanceof LLMProviderError
+        ? err.technicalMessage ?? err.message
+        : err instanceof Error ? err.message : String(err);
       if (usedDraft && !producedRealOutput && this.isDraftModelError(msg)) {
         this.markDraftIncompatible(model, msg);
         delete requestBody.draft_model;

@@ -15,16 +15,80 @@
  */
 
 import { LLMProviderError } from '../adapters/types';
+import { describeProviderHttpFailure } from '../adapters/shared/ProviderErrorMessages';
 
 /** Code stamped on every LLMProviderError raised from an in-stream error frame. */
 export const PROVIDER_STREAM_ERROR_CODE = 'PROVIDER_STREAM_ERROR';
 
 /**
- * Build the error a processor throws when a stream carried a fatal error frame.
- * Callers (e.g. the LM Studio draft-model retry) branch on the code.
+ * HTTP-equivalent status for the error labels providers put in a frame:
+ * Anthropic `error.type`, google.rpc.Status `error.status`, OpenAI `error.code`.
  */
-export function createProviderStreamError(message: string, provider: string): LLMProviderError {
-  return new LLMProviderError(message, provider, PROVIDER_STREAM_ERROR_CODE);
+const STATUS_BY_ERROR_LABEL: Record<string, number> = {
+  overloaded_error: 529,
+  rate_limit_error: 429,
+  api_error: 500,
+  timeout_error: 504,
+  authentication_error: 401,
+  permission_error: 403,
+  not_found_error: 404,
+  invalid_request_error: 400,
+  request_too_large: 413,
+  UNAVAILABLE: 503,
+  RESOURCE_EXHAUSTED: 429,
+  INTERNAL: 500,
+  DEADLINE_EXCEEDED: 504,
+  UNAUTHENTICATED: 401,
+  PERMISSION_DENIED: 403,
+  NOT_FOUND: 404,
+  INVALID_ARGUMENT: 400,
+  server_error: 500,
+  rate_limit_exceeded: 429,
+  insufficient_quota: 429,
+  invalid_api_key: 401,
+  model_not_found: 404,
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+/**
+ * The HTTP status an error frame stands for, or null when it carries nothing
+ * recognisable. Handles `{"error":{...}}`, Anthropic's `{"type":"error","error":{...}}`
+ * and the Responses API's `{"type":"error","code":...}` / `response.failed` frames.
+ */
+export function streamErrorFrameStatus(frame: unknown): number | null {
+  const record = asRecord(frame);
+  if (!record) return null;
+  const error = asRecord(record.error)
+    ?? asRecord(asRecord(record.response)?.error)
+    ?? (record.type === 'error' ? record : null);
+  if (!error) return null;
+
+  if (typeof error.code === 'number' && error.code >= 400 && error.code < 600) return error.code;
+  for (const label of [error.type, error.status, error.code]) {
+    if (typeof label === 'string' && label in STATUS_BY_ERROR_LABEL) return STATUS_BY_ERROR_LABEL[label];
+  }
+  return null;
+}
+
+/**
+ * Build the error a processor throws when a stream carried a fatal error frame.
+ * Callers (e.g. the LM Studio draft-model retry) branch on the code. When the
+ * frame names a status, `message` becomes the same plain-language sentence an
+ * HTTP failure gets; the provider's own words stay on `technicalMessage`.
+ */
+export function createProviderStreamError(message: string, provider: string, frame?: unknown): LLMProviderError {
+  const status = streamErrorFrameStatus(frame);
+  const error = new LLMProviderError(
+    status === null ? message : describeProviderHttpFailure(provider, status, message),
+    provider,
+    PROVIDER_STREAM_ERROR_CODE
+  );
+  error.technicalMessage = message;
+  if (status !== null) error.httpStatus = status;
+  return error;
 }
 
 function firstNonEmptyString(...values: unknown[]): string | null {

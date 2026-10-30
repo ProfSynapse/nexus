@@ -211,7 +211,8 @@ describe('GroqAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe('PROVIDER_STREAM_ERROR');
       expect(error.provider).toBe('groq');
-      expect(error.message).toBe('Rate limit reached for model');
+      expect(error.message).toMatch(/^Groq says you have hit a rate limit or usage quota\..*\(HTTP 429\)$/);
+      expect(error.technicalMessage).toBe('Rate limit reached for model');
       expect(seen.join('')).toBe('partial');
     });
 
@@ -252,7 +253,9 @@ describe('GroqAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
       expect(error.provider).toBe('groq');
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^Groq.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
     });
   });
 

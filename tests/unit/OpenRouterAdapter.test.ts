@@ -343,7 +343,8 @@ describe('OpenRouterAdapter', () => {
 
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe('AUTHENTICATION_ERROR');
-      expect(error.message).toBe('streaming generation failed: No auth credentials found');
+      expect(error.message).toBe('OpenRouter did not accept the API key. Check it in Nexus settings under Providers. (HTTP 401)');
+      expect(error.technicalMessage).toBe('streaming generation failed: No auth credentials found');
     });
   });
 
@@ -361,7 +362,9 @@ describe('OpenRouterAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
       expect(error.provider).toBe('openrouter');
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^OpenRouter.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
     });
   });
 

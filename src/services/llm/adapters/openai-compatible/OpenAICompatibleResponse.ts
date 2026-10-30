@@ -1,6 +1,6 @@
 import { createParser } from 'eventsource-parser';
 import { LLMProviderError, type StreamChunk, type ToolCall } from '../types';
-import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
+import { createProviderStreamError, extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { synthesizeToolCallId } from '../../utils/toolCallId';
 import { mapOpenAiCompatFinishReason } from '../shared/OpenAICompatHelpers';
@@ -48,7 +48,7 @@ export interface OpenAICompatibleCompletion {
 
 export function normalizeOpenAICompatibleCompletion(value: unknown, provider: string): OpenAICompatibleCompletion {
   const error = extractStreamErrorMessage(value);
-  if (error) throw new LLMProviderError(error, provider, 'PROVIDER_STREAM_ERROR');
+  if (error) throw createProviderStreamError(error, provider, value);
   const response = asRecord(value);
   const choice = asRecord(Array.isArray(response?.choices) ? response.choices[0] : undefined);
   const message = asRecord(choice?.message);
@@ -108,7 +108,7 @@ export async function* processOpenAICompatibleStream(
       const frame: unknown = JSON.parse(event.data);
       const error = extractStreamErrorMessage(frame)
         ?? (event.event === 'error' ? 'Endpoint reported a streaming error.' : null);
-      if (error) throw new LLMProviderError(error, provider, 'PROVIDER_STREAM_ERROR');
+      if (error) throw createProviderStreamError(error, provider, frame);
       const parsed = asRecord(frame);
       if (!parsed || !Array.isArray(parsed.choices)) throw protocolError('Malformed completion stream frame.', provider);
       usage = TokenUsageExtractor.normalize(parsed.usage) ?? usage;

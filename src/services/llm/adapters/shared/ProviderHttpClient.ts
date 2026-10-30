@@ -13,6 +13,7 @@ import { LLMProviderError } from '../types';
 import { hasNodeRuntime, isDesktop } from '../../../../utils/platform';
 import { desktopRequire } from '../../../../utils/desktopRequire';
 import { isRetryableConnectFailure, ProviderConnectionError } from './ProviderConnectionError';
+import { describeProviderHttpFailure } from './ProviderErrorMessages';
 
 export interface ProviderHttpRequest {
   url: string;
@@ -54,10 +55,12 @@ interface ErrorLikeResponse {
   data: unknown;
   text: string;
   json: unknown;
+  /** Kept so a caller can honour Retry-After; header names may be any case. */
+  headers?: Record<string, string | string[] | undefined>;
 }
 
 /** Keep the provider's actionable explanation visible in logs and chat errors. */
-function providerErrorDetail(response: ErrorLikeResponse): string {
+export function providerErrorDetail(response: Pick<ErrorLikeResponse, 'json' | 'data'>): string {
   const body = response.json ?? response.data;
   if (typeof body !== 'object' || body === null) return '';
 
@@ -78,12 +81,20 @@ function providerErrorDetail(response: ErrorLikeResponse): string {
 
 export class ProviderHttpError extends Error {
   response: ErrorLikeResponse;
+  /** Operation, status and the provider's raw explanation, for logs. */
+  technicalMessage: string;
 
-  constructor(message: string, response: ErrorLikeResponse) {
+  /**
+   * With a provider id, `message` is the human-readable sentence shown in chat;
+   * without one it stays the technical message.
+   */
+  constructor(message: string, response: ErrorLikeResponse, provider?: string) {
     const detail = providerErrorDetail(response);
-    super(detail ? `${message}: ${detail}` : message);
+    const technicalMessage = detail ? `${message}: ${detail}` : message;
+    super(provider ? describeProviderHttpFailure(provider, response.status, detail) : technicalMessage);
     this.name = 'ProviderHttpError';
     this.response = response;
+    this.technicalMessage = technicalMessage;
   }
 }
 
@@ -137,7 +148,9 @@ export class ProviderHttpClient {
             data: response.json ?? response.text,
             text: response.text,
             json: response.json,
-          }
+            headers: response.headers,
+          },
+          config.provider
         );
       } catch (error) {
         lastError = error;
@@ -173,7 +186,8 @@ export class ProviderHttpClient {
 
   static assertOk<TJson = unknown>(
     response: ProviderHttpResponse<TJson>,
-    message?: string
+    message?: string,
+    provider?: string
   ): ProviderHttpResponse<TJson> {
     if (response.ok) {
       return response;
@@ -187,7 +201,9 @@ export class ProviderHttpClient {
         data: response.json ?? response.text,
         text: response.text,
         json: response.json,
-      }
+        headers: response.headers,
+      },
+      provider
     );
   }
 
@@ -199,6 +215,7 @@ export class ProviderHttpClient {
    * the native Node.js HTTP stack available in Electron for true wire-level streaming.
    *
    * Falls back to a buffered requestUrl approach on mobile where Node.js is unavailable.
+   * An overloaded refusal is retried a layer up, by streamWithOverloadRetry.
    */
   static async requestStream(
     config: ProviderStreamRequest
@@ -267,7 +284,9 @@ export class ProviderHttpClient {
                 data: errorJson ?? errorBody,
                 text: errorBody,
                 json: errorJson,
-              }
+                headers: res.headers,
+              },
+              config.provider
             ));
           });
           res.on('error', (err) => reject(err));
@@ -369,7 +388,9 @@ export class ProviderHttpClient {
           data: errorJson ?? response.text,
           text: response.text,
           json: errorJson,
-        }
+          headers: response.headers,
+        },
+        config.provider
       );
     }
 

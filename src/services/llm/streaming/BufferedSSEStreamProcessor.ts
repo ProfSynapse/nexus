@@ -67,6 +67,7 @@ export class BufferedSSEStreamProcessor {
     let metadata: Record<string, unknown> | undefined = undefined;
     // A fatal error frame delivered over HTTP 200; thrown after the queue drains.
     let streamError: string | undefined = undefined;
+    let streamErrorFrame: unknown;
     const toolCallsAccumulator: Map<number, BufferedToolCall> = new Map();
 
     const parser = createParser((event: ParseEvent) => {
@@ -97,6 +98,7 @@ export class BufferedSSEStreamProcessor {
           const errorMessage = options.extractError(parsed);
           if (errorMessage) {
             streamError = errorMessage;
+            streamErrorFrame = parsed;
             isCompleted = true;
             return;
           }
@@ -240,7 +242,8 @@ export class BufferedSSEStreamProcessor {
     if (streamError) {
       throw createProviderStreamError(
         streamError,
-        options.providerName || options.debugLabel || 'llm'
+        options.providerName || options.debugLabel || 'llm',
+        streamErrorFrame
       );
     }
   }

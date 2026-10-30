@@ -32,6 +32,8 @@ export type ChatRuntimeEvent =
   | { type: 'cost.updated'; cost: MessageCost }
   | { type: 'response.metadata'; metadata: Record<string, unknown> }
   | { type: 'response.resolved'; provider?: string; model?: string }
+  /** Transient UI status: the provider is overloaded and the request will be retried. */
+  | { type: 'provider.retrying'; provider?: string; retry: number; maxRetries: number; delayMs: number }
   | {
       type: 'response.completed';
       finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
