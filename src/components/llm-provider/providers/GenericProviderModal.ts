@@ -232,25 +232,42 @@ export class GenericProviderModal implements IProviderModal {
     this.deviceCodeEl.removeClass('oauth-device-code-hidden');
 
     this.deviceCodeEl.createEl('p', {
-      text: 'Enter this code at github.com/login/device:',
+      text: 'Enter this code at the following sign-in page:',
       cls: 'oauth-device-code-instruction',
     });
 
     const row = this.deviceCodeEl.createDiv('oauth-device-code-row');
     row.createSpan({ text: userCode, cls: 'oauth-device-code-value' });
 
-    const copyBtn = row.createEl('button', { text: 'Copy' });
+    const copyBtn = row.createEl('button', { text: 'Copy code' });
     copyBtn.addEventListener('click', () => {
-      void navigator.clipboard.writeText(userCode);
-      copyBtn.textContent = 'Copied!';
-      window.setTimeout(() => {
-        copyBtn.textContent = 'Copy';
-      }, 2000);
+      void navigator.clipboard.writeText(userCode).then(() => {
+        copyBtn.textContent = 'Copied!';
+        window.setTimeout(() => { copyBtn.textContent = 'Copy code'; }, 2000);
+      });
     });
 
-    this.deviceCodeEl.createEl('p', {
-      text: `Browser opened to ${verificationUri}`,
+    const linkRow = this.deviceCodeEl.createDiv('oauth-device-code-row');
+    const link = linkRow.createEl('a', {
+      text: verificationUri,
+      href: verificationUri,
       cls: 'oauth-device-code-url',
+    });
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+
+    const linkActions = linkRow.createDiv('oauth-device-code-actions');
+    const openBtn = linkActions.createEl('button', { text: 'Open link' });
+    openBtn.addEventListener('click', () => {
+      window.open(verificationUri, '_blank');
+    });
+
+    const copyLinkBtn = linkActions.createEl('button', { text: 'Copy link' });
+    copyLinkBtn.addEventListener('click', () => {
+      void navigator.clipboard.writeText(verificationUri).then(() => {
+        copyLinkBtn.textContent = 'Copied!';
+        window.setTimeout(() => { copyLinkBtn.textContent = 'Copy link'; }, 2000);
+      });
     });
   }
 

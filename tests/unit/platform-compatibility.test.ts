@@ -19,13 +19,13 @@ describe('platform compatibility', () => {
     expect(platform.isProviderCompatible('groq')).toBe(true);
   });
 
-  it('keeps local and codex providers desktop only', async () => {
+  it('keeps local providers desktop only while allowing Codex on mobile', async () => {
     Platform.isMobile = true;
     Platform.isDesktop = false;
 
     const platform = await import('../../src/utils/platform');
 
-    expect(platform.isProviderCompatible('openai-codex')).toBe(false);
+    expect(platform.isProviderCompatible('openai-codex')).toBe(true);
     expect(platform.isProviderCompatible('ollama')).toBe(false);
     expect(platform.isProviderCompatible('lmstudio')).toBe(false);
     expect(platform.isProviderCompatible('webllm')).toBe(false);

@@ -200,12 +200,34 @@ export class ProvidersTab {
             }, this.services.app.vault);
         }
 
-        // Attach OAuth configs to providers that support it (desktop only)
+        // Desktop uses a localhost callback server; mobile Codex uses device-code OAuth.
         if (isDesktop()) {
             this.attachOAuthConfigs();
+        } else {
+            this.attachMobileCodexOAuthConfig();
         }
 
         this.render();
+    }
+
+    /** Attach mobile Codex device-code login without a localhost callback server. */
+    private attachMobileCodexOAuthConfig(): void {
+        this.providerConfigs['openai-codex'].oauthConfig = {
+            providerLabel: 'ChatGPT',
+            startFlow: (_params, onDeviceCode) => this.startCodexDeviceFlow(onDeviceCode),
+        };
+    }
+
+    private async startCodexDeviceFlow(
+        onDeviceCode?: (userCode: string, verificationUri: string) => void,
+    ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }> {
+        try {
+            const { OpenAICodexDeviceAuth } = await import('../../services/oauth/providers/OpenAICodexDeviceAuth');
+            const result = await new OpenAICodexDeviceAuth().start((code, url) => onDeviceCode?.(code, url));
+            return { success: true, apiKey: result.apiKey, refreshToken: result.refreshToken, expiresAt: result.expiresAt, metadata: result.metadata };
+        } catch (error) {
+            return { success: false, error: error instanceof Error ? error.message : 'Codex device login failed' };
+        }
     }
 
     /**
@@ -737,7 +759,7 @@ export class ProvidersTab {
             config: { ...providerConfig },
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
-            oauthOnly: providerId === 'github-copilot',
+            oauthOnly: providerId === 'github-copilot' || providerId === 'openai-codex',
             onSave: async (updatedConfig: LLMProviderConfig) => {
                 await this.persistProviderConfig(settings, providerId, updatedConfig, displayConfig.name);
             }

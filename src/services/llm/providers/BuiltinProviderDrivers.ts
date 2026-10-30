@@ -220,7 +220,7 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
     defineDriver({
       kind: 'openai-codex',
       displayName: 'OpenAI Codex',
-      compatibility: 'desktop-only',
+      compatibility: 'all',
       shouldInitialize: (config) => Boolean(
         config?.enabled
         && config.oauth?.connected

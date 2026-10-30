@@ -203,7 +203,7 @@ describe('AdapterRegistry provider instances', () => {
       { kind: 'mistral', compatibility: 'all' },
       { kind: 'groq', compatibility: 'all' },
       { kind: 'deepseek', compatibility: 'all' },
-      { kind: 'openai-codex', compatibility: 'desktop-only' },
+      { kind: 'openai-codex', compatibility: 'all' },
       { kind: 'anthropic-claude-code', compatibility: 'desktop-only' },
       { kind: 'google-gemini-cli', compatibility: 'desktop-only' },
       { kind: 'github-copilot', compatibility: 'desktop-only' },

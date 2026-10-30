@@ -7449,8 +7449,30 @@ body.is-mobile .nexus-branch-task {
 .oauth-device-code-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
     gap: var(--space-s);
     margin-bottom: var(--space-s);
+}
+
+.oauth-device-code-container {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.oauth-device-code-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-s);
+    max-width: 100%;
+}
+
+.oauth-device-code-actions button,
+.oauth-device-code-row > button {
+    max-width: 100%;
+    white-space: normal;
 }
 
 .oauth-device-code-value {
@@ -7466,6 +7488,10 @@ body.is-mobile .nexus-branch-task {
     color: var(--text-faint);
     font-size: 0.8em;
     margin: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    min-width: 0;
+    flex: 1 1 100%;
 }
 
 /* Consent modal */

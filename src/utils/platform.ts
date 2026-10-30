@@ -167,6 +167,7 @@ export const getMobileUnavailableFeatures = (): string[] => {
 export const MOBILE_COMPATIBLE_PROVIDERS = [
     'openai-compatible', // Named HTTP endpoints use requestUrl on mobile
     'openai',       // Uses requestUrl-backed REST transport
+    'openai-codex', // Uses buffered requestUrl SSE transport; requires existing OAuth credentials
     'anthropic',    // Uses requestUrl-backed REST transport
     'google',       // Uses requestUrl-backed REST transport
     'mistral',      // Uses requestUrl-backed REST transport
@@ -182,7 +183,6 @@ export const MOBILE_COMPATIBLE_PROVIDERS = [
  * Providers that remain desktop only due to local runtime or desktop-specific OAuth.
  */
 export const DESKTOP_ONLY_PROVIDERS = [
-    'openai-codex',  // OAuth callback server remains desktop only
     'anthropic-claude-code', // Local Claude Code runtime + desktop auth
     'google-gemini-cli', // Local Gemini CLI runtime + desktop auth
     'github-copilot', // OAuth device flow requires desktop
