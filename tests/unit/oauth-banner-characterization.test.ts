@@ -156,6 +156,41 @@ describe('GenericProviderModal OAuth banner characterization', () => {
     });
   });
 
+  describe('per-device OAuth tokens', () => {
+    function codexConfig(apiKey: string): ProviderModalConfig {
+      const config = createMockProviderConfig(true);
+      config.providerId = 'openai-codex';
+      config.config.apiKey = apiKey;
+      config.config.oauth = { connected: true, providerId: 'openai-codex', connectedAt: Date.now() };
+      return config;
+    }
+
+    function connectArea(config: ProviderModalConfig) {
+      const container: TrackingElement = createTrackingElement();
+      new GenericProviderModal(config, createMockDeps()).render(container);
+      const banner = container._children.find(c => c._cls === 'oauth-banner-container');
+      return {
+        connected: banner?._children.find(c => c._cls === 'oauth-connected-banner'),
+        connectDiv: banner?._children.find(c => c._cls === 'oauth-connect-standalone'),
+      };
+    }
+
+    it('offers to reconnect when the account is signed in on another device only', () => {
+      const { connected, connectDiv } = connectArea(codexConfig(''));
+      expect(connected).toBeUndefined();
+      expect(connectDiv?._children.find(c => c._cls === 'oauth-reconnect-hint')?.textContent)
+        .toBe("ChatGPT isn't signed in on this device. Reconnect to use it here.");
+      expect(connectDiv?._children.find(c => c._cls === 'mod-cta oauth-connect-btn')?.textContent)
+        .toBe('Reconnect with ChatGPT');
+    });
+
+    it('shows connected when this device holds a token', () => {
+      const { connected, connectDiv } = connectArea(codexConfig('codex-access-token'));
+      expect(connected).toBeDefined();
+      expect(connectDiv).toBeUndefined();
+    });
+  });
+
   describe('secondary OAuth banner', () => {
     it('renders secondary OAuth section when secondaryOAuthProvider is configured', () => {
       const config = createMockProviderConfig(false);

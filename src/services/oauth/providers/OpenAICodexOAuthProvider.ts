@@ -35,6 +35,7 @@ const TOKEN_ENDPOINT = CODEX_OAUTH_TOKEN_ENDPOINT;
  * Used to extract the chatgpt_account_id needed for API calls.
  */
 interface IdTokenClaims {
+  exp?: number;
   chatgpt_account_id?: string;
   organizations?: Array<{ id: string }>;
   email?: string;
@@ -70,6 +71,16 @@ function parseJwtClaims(token: string): IdTokenClaims | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Expiry of an access token, in epoch ms, read from its own `exp` claim.
+ * Prefer this over the synced `oauth.expiresAt`: tokens are per device, so the
+ * synced value may describe another device's token.
+ */
+export function readAccessTokenExpiry(accessToken: string): number | undefined {
+  const exp = parseJwtClaims(accessToken)?.exp;
+  return typeof exp === 'number' && Number.isFinite(exp) && exp > 0 ? exp * 1000 : undefined;
 }
 
 /**

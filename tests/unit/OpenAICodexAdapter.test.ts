@@ -133,7 +133,7 @@ describe('OpenAICodexAdapter', () => {
     expect(refreshed[0].accessToken).toBe('refreshed-at');
   });
 
-  it('marks a rejected Codex refresh token for reconnection and persists the state', async () => {
+  it('clears only this device\'s tokens when its refresh token is rejected', async () => {
     const config = {
       enabled: true,
       apiKey: 'test-access-token',
@@ -169,9 +169,51 @@ describe('OpenAICodexAdapter', () => {
     }).rejects.toMatchObject({ code: 'AUTHENTICATION_ERROR' });
 
     expect(config.apiKey).toBe('');
-    expect(config.oauth).toMatchObject({ connected: false, reconnectRequired: true });
-    expect(config.oauth.refreshToken).toBeUndefined();
+    expect(config.oauth.refreshToken).toBe('');
+    // The synced flags stay: other devices hold their own, still-valid tokens.
+    expect(config.oauth).toMatchObject({ connected: true, reconnectRequired: false });
     expect(onSettingsDirty).toHaveBeenCalledTimes(1);
+    await instance.dispose();
+  });
+
+  it('times refresh from this device\'s access token, not the synced expiry', async () => {
+    const exp = Math.floor((Date.now() + 3600_000) / 1000);
+    const claims = btoa(JSON.stringify({ exp })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const config = {
+      enabled: true,
+      apiKey: `header.${claims}.signature`,
+      oauth: {
+        connected: true,
+        providerId: 'openai-codex',
+        connectedAt: Date.now(),
+        refreshToken: 'test-refresh-token',
+        // Written by another device whose token has already expired.
+        expiresAt: Date.now() - 1000,
+        metadata: { accountId: 'acct-test-123' },
+      },
+    };
+    const registration = createBuiltinProviderDrivers().find(({ driver }) => driver.kind === 'openai-codex');
+    const instance = await registration!.driver.createInstance({
+      instanceId: providerInstanceId('openai-codex'),
+      displayName: 'OpenAI Codex',
+      config,
+    });
+    const seenUrls: string[] = [];
+    __setRequestUrlMock(async (request) => {
+      seenUrls.push(request.url);
+      return {
+        status: 200,
+        headers: {},
+        text: 'data: {"type":"response.completed","response":{"id":"resp_1"}}\n\n',
+        json: {},
+        arrayBuffer: new ArrayBuffer(0),
+      };
+    });
+
+    for await (const chunk of instance.adapter.generateStreamAsync('hello')) void chunk;
+
+    expect(seenUrls.some((url) => url.includes('/oauth/token'))).toBe(false);
+    expect(seenUrls).toHaveLength(1);
     await instance.dispose();
   });
 
