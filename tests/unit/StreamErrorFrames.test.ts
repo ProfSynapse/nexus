@@ -15,6 +15,7 @@ import { SSEStreamProcessor } from '../../src/services/llm/streaming/SSEStreamPr
 import { BufferedSSEStreamProcessor } from '../../src/services/llm/streaming/BufferedSSEStreamProcessor';
 import {
   PROVIDER_STREAM_ERROR_CODE,
+  streamErrorFrameStatus,
   extractStreamErrorMessage,
   extractResponsesApiStreamError
 } from '../../src/services/llm/streaming/streamErrorFrames';
@@ -260,7 +261,9 @@ describe.each([
 
     expect(error).toBeInstanceOf(LLMProviderError);
     expect(error.code).toBe(PROVIDER_STREAM_ERROR_CODE);
-    expect(error.message).toBe('Rate limit exceeded');
+    // The frame's 429 code turns it into the readable sentence; the provider's words stay for logs.
+    expect(error.message).toMatch(/rate limit or usage quota.*\(HTTP 429\)$/);
+    expect(error.technicalMessage).toBe('Rate limit exceeded');
     expect(error.provider).toBe('test-provider');
   });
 
@@ -273,7 +276,7 @@ describe.each([
       for await (const chunk of stream) {
         seen.push(chunk);
       }
-    })()).rejects.toThrow('Rate limit exceeded');
+    })()).rejects.toThrow('rate limit or usage quota');
 
     expect(seen.map(chunk => chunk.content).join('')).toBe('partial');
     expect(seen.some(chunk => chunk.complete)).toBe(false);
@@ -348,7 +351,9 @@ describe('processStream honours extractError on the iterable branch', () => {
 
     expect(error).toBeInstanceOf(LLMProviderError);
     expect(error.code).toBe(PROVIDER_STREAM_ERROR_CODE);
-    expect(error.message).toBe('Rate limit exceeded');
+    // The frame's 429 code turns it into the readable sentence; the provider's words stay for logs.
+    expect(error.message).toMatch(/rate limit or usage quota.*\(HTTP 429\)$/);
+    expect(error.technicalMessage).toBe('Rate limit exceeded');
   });
 
   it('completes normally when every chunk is ordinary', async () => {
@@ -378,5 +383,27 @@ describe('the standalone processors name the provider from their options', () =>
     )) as LLMProviderError;
 
     expect(error.provider).toBe('explicit-provider');
+  });
+});
+
+describe('streamErrorFrameStatus', () => {
+  it.each([
+    ['Anthropic error event', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }, 529],
+    ['google.rpc.Status', { error: { code: 503, message: 'The model is overloaded.', status: 'UNAVAILABLE' } }, 503],
+    ['google.rpc.Status without a code', { error: { message: 'quota', status: 'RESOURCE_EXHAUSTED' } }, 429],
+    ['OpenAI string code', { error: { message: 'x', code: 'insufficient_quota' } }, 429],
+    ['Responses API error event', { type: 'error', code: 'server_error', message: 'x' }, 500],
+    ['Responses API response.failed', { type: 'response.failed', response: { error: { code: 'rate_limit_exceeded' } } }, 429],
+  ])('reads the status from a %s frame', (_label, frame, status) => {
+    expect(streamErrorFrameStatus(frame)).toBe(status);
+  });
+
+  it.each([
+    ['a plain string error', { error: "model 'x' not found" }],
+    ['an unknown label', { error: { message: 'x', type: 'something_new' } }],
+    ['a numeric code outside HTTP errors', { error: { message: 'x', code: 42 } }],
+    ['a content frame', { choices: [{ delta: { content: 'hi' } }] }],
+  ])('returns null for %s, leaving the provider wording as the message', (_label, frame) => {
+    expect(streamErrorFrameStatus(frame)).toBeNull();
   });
 });

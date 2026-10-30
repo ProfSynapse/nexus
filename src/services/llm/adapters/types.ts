@@ -44,6 +44,15 @@ export interface GenerateOptions {
   previousResponseId?: string;
 }
 
+/** Emitted while a request the provider refused as overloaded waits to be retried. */
+export interface OverloadRetryNotice {
+  provider?: string;
+  /** 1-based number of the retry about to be sent. */
+  retry: number;
+  maxRetries: number;
+  delayMs: number;
+}
+
 export interface StreamChunk {
   content: string;
   complete: boolean;
@@ -57,6 +66,8 @@ export interface StreamChunk {
   reasoningComplete?: boolean;  // True when reasoning finished
   reasoningId?: string;         // Unique ID for the reasoning block (OpenAI)
   reasoningEncryptedContent?: string; // OpenAI: encrypted_content for multi-turn preservation
+  /** Set only on the status chunk streamWithOverloadRetry yields before a retry. */
+  overloadRetry?: OverloadRetryNotice;
 }
 
 export interface SearchResult {
@@ -232,6 +243,11 @@ export interface ProviderCapabilities {
 }
 
 export class LLMProviderError extends Error {
+  /** The provider's raw wording when `message` was rewritten for people; read this when matching on error text. */
+  technicalMessage?: string;
+  /** HTTP status the failure stands for, including one read from an in-stream error frame. */
+  httpStatus?: number;
+
   constructor(
     message: string,
     public provider: string,

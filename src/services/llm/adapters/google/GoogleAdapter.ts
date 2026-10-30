@@ -304,7 +304,8 @@ export class GoogleAdapter extends BaseAdapter {
         method: 'POST',
         headers: this.buildGoogleHeaders(),
         body: JSON.stringify(this.buildGenerateContentBody(request)),
-        timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 120_000
+        timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 120_000,
+        signal: options?.abortSignal
       });
 
       const webSources = new Map<string, SearchResult>();

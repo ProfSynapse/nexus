@@ -34,6 +34,7 @@ import { StreamChunkProcessor } from '../streaming/StreamChunkProcessor';
 import {
   ProviderHttpClient,
   ProviderHttpError,
+  providerErrorDetail,
   ProviderHttpRequest,
   ProviderHttpResponse,
   ProviderStreamRequest
@@ -46,6 +47,7 @@ import {
 } from '../streaming/SSEStreamProcessor';
 import { pumpSseEventQueue } from './shared/SseStreamPump';
 import { createProviderStreamError } from '../streaming/streamErrorFrames';
+import { describeProviderHttpFailure } from './shared/ProviderErrorMessages';
 import type { AnthropicThinkingBlock } from '../../../types/llm/ProviderTypes';
 
 // Browser-compatible hash function (djb2 algorithm)
@@ -204,6 +206,7 @@ export abstract class BaseAdapter {
     let metadata: Record<string, unknown> | undefined = undefined;
     let observedFinishReason: StreamChunk['finishReason'] | undefined;
     let streamError: string | undefined = undefined;
+    let streamErrorFrame: unknown;
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
     const parser = createParser((event) => {
@@ -234,6 +237,7 @@ export abstract class BaseAdapter {
           const errMsg = options.extractError(parsed);
           if (errMsg) {
             streamError = errMsg;
+            streamErrorFrame = parsed;
             pumpState.isCompleted = true;
             return;
           }
@@ -387,7 +391,7 @@ export abstract class BaseAdapter {
     });
 
     if (streamError) {
-      throw createProviderStreamError(streamError, this.name);
+      throw createProviderStreamError(streamError, this.name, streamErrorFrame);
     }
   }
 
@@ -403,6 +407,7 @@ export abstract class BaseAdapter {
     let isCompleted = false;
     // A fatal error line delivered over HTTP 200; thrown once parsing stops.
     let streamError: string | undefined = undefined;
+    let streamErrorFrame: unknown;
 
     try {
       for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
@@ -424,6 +429,7 @@ export abstract class BaseAdapter {
               const errorMessage = options.extractError(parsed);
               if (errorMessage) {
                 streamError = errorMessage;
+                streamErrorFrame = parsed;
                 isCompleted = true;
                 break;
               }
@@ -455,7 +461,7 @@ export abstract class BaseAdapter {
     }
 
     if (streamError) {
-      throw createProviderStreamError(streamError, this.name);
+      throw createProviderStreamError(streamError, this.name, streamErrorFrame);
     }
   }
 
@@ -502,7 +508,7 @@ export abstract class BaseAdapter {
         if (options.extractError) {
           const errorMessage = options.extractError(chunk as Record<string, unknown>);
           if (errorMessage) {
-            throw createProviderStreamError(errorMessage, this.name);
+            throw createProviderStreamError(errorMessage, this.name, chunk);
           }
         }
 
@@ -724,7 +730,7 @@ export abstract class BaseAdapter {
     response: ProviderHttpResponse<TJson>,
     message?: string
   ): ProviderHttpResponse<TJson> {
-    return ProviderHttpClient.assertOk(response, message);
+    return ProviderHttpClient.assertOk(response, message, this.name);
   }
 
   /**
@@ -783,7 +789,7 @@ export abstract class BaseAdapter {
         (errorObj?.message as string) ||
         (responseData?.message as string) ||
         error.response.text ||
-        error.message;
+        error.technicalMessage;
 
       let errorCode = 'HTTP_ERROR';
       if (status === 400) errorCode = 'INVALID_REQUEST';
@@ -792,12 +798,7 @@ export abstract class BaseAdapter {
       if (status === 429) errorCode = 'RATE_LIMIT_ERROR';
       if (status >= 500) errorCode = 'SERVER_ERROR';
 
-      throw new LLMProviderError(
-        `${operation} failed: ${message}`,
-        this.name,
-        errorCode,
-        error
-      );
+      throw this.httpFailure(operation, status, message, providerErrorDetail(error.response), errorCode, error);
     }
 
     if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -823,12 +824,8 @@ export abstract class BaseAdapter {
       if (status >= 500) errorCode = 'SERVER_ERROR';
 
       const normalizedError = error instanceof Error ? error : new Error(message || operation);
-      throw new LLMProviderError(
-        `${operation} failed: ${message}`,
-        this.name,
-        errorCode,
-        normalizedError
-      );
+      const detail = providerErrorDetail({ json: null, data: responseError.response.data });
+      throw this.httpFailure(operation, status, message, detail, errorCode, normalizedError);
     }
 
     const fallbackMessage = error instanceof Error ? error.message : String(error);
@@ -839,6 +836,21 @@ export abstract class BaseAdapter {
       'UNKNOWN_ERROR',
       normalizedError
     );
+  }
+
+  /** A provider HTTP failure worded for people, with the raw explanation kept for logs. */
+  private httpFailure(
+    operation: string,
+    status: number,
+    rawMessage: string | undefined,
+    detail: string,
+    errorCode: string,
+    cause: Error
+  ): LLMProviderError {
+    const error = new LLMProviderError(describeProviderHttpFailure(this.name, status, detail), this.name, errorCode, cause);
+    error.technicalMessage = `${operation} failed: ${rawMessage}`;
+    error.httpStatus = status;
+    return error;
   }
 
   protected validateSchema(data: unknown, schema: JsonObject): boolean {

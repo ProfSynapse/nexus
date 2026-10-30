@@ -142,3 +142,9 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 ## 2026-10-24 — Explicit conversation recovery after compaction
 
 - User requested an instruction to search earlier conversation and a preloaded recovery tool. Recovery search now takes priority over optional trace/schema extras after the saved state and recent turns. Small contexts can receive catalog-derived essential recovery arguments; do not invent tool signatures or claim an unindexed/empty search recovered evidence.
+
+## 2026-10-30 — Blank red error panel with Gemini on iOS (#429)
+
+- Observation: the symptom table had no row for a visible-but-empty error. The provider error was surfaced correctly, but `.chat-error` painted `--text-error` on `--background-modifier-error`, which Obsidian defines as the same red. The skill's "blank = swallowed stream" framing pointed at the adapter first, when the fault was in CSS.
+- Change: added a symptoms.md row for the red-on-red error box, the shared overload retry, and where the readable vs technical error text lives.
+- Lesson: rewording `message` for people silently broke LM Studio's draft-model fallback, which regex-matched `err.message`; only a status-coded fixture exposed it. The symptoms row now says to match on `technicalMessage`.

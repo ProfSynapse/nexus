@@ -382,7 +382,9 @@ describe('MistralAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
       expect(error.provider).toBe('mistral');
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^Mistral AI.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
     });
   });
 

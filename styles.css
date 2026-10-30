@@ -1699,13 +1699,29 @@ body.theme-light .message-content {
 
 /* Error Display */
 .chat-error {
-    background: var(--background-modifier-error);
+    /* Obsidian defines both of these as --color-red; a solid error background
+       makes the --text-error message invisible (#429). Tint it instead. */
+    background: rgba(var(--background-modifier-error-rgb), 0.1);
     color: var(--text-error);
     padding: 0.75rem 1rem;
     margin: 0.5rem 1rem;
     border-radius: 6px;
     border-left: 4px solid var(--text-error);
     animation: errorSlideIn 0.3s ease-out;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.chat-error-text {
+    flex: 1;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.chat-error-dismiss {
+    flex: none;
+    color: var(--text-error);
 }
 
 @keyframes errorSlideIn {
@@ -2993,7 +3009,7 @@ a:hover {
 }
 
 .dimension-warning-container {
-    background-color: var(--background-modifier-error-rgb);
+    background-color: rgba(var(--background-modifier-error-rgb), 0.1);
     border: 1px solid var(--text-error);
     border-radius: 4px;
     padding: 12px;
@@ -4967,7 +4983,7 @@ body.is-mobile .message-action-btn.message-branch-next {
 .nexus-error {
     color: var(--text-error);
     padding: 16px;
-    background: var(--background-modifier-error);
+    background: rgba(var(--background-modifier-error-rgb), 0.1);
     border-radius: 6px;
 }
 
@@ -9476,7 +9492,7 @@ body.is-mobile .nexus-task-board-shell {
     padding: var(--space-m);
     margin-top: var(--space-m);
     color: var(--text-error);
-    background: var(--background-modifier-error);
+    background: rgba(var(--background-modifier-error-rgb), 0.1);
     border-radius: var(--radius-s);
     overflow-wrap: anywhere;
 }

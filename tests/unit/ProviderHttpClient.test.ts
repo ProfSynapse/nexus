@@ -244,9 +244,35 @@ describe('ProviderHttpClient', () => {
       provider: 'anthropic',
       operation: 'streaming generation'
     })).rejects.toMatchObject({
-      message: `streaming generation failed with HTTP 400: ${explanation}`,
+      message: `Anthropic rejected the request: ${explanation} (HTTP 400)`,
+      technicalMessage: `streaming generation failed with HTTP 400: ${explanation}`,
       response: { status: 400, json: body, text: JSON.stringify(body) }
     });
+  });
+
+  // #429: overload retries live in streamWithOverloadRetry, one layer up, so they
+  // also cover overload frames after HTTP 200. The transport makes one attempt and
+  // keeps the headers that retry layer reads Retry-After from.
+  it.each([503, 500])('makes a single stream attempt on HTTP %i and keeps the response headers', async (status) => {
+    let calls = 0;
+    __setRequestUrlMock(async () => {
+      calls++;
+      return {
+        status,
+        headers: { 'retry-after': '2' },
+        text: '{"error":{"message":"busy"}}',
+        json: { error: { message: 'busy' } },
+        arrayBuffer: new ArrayBuffer(0)
+      };
+    });
+
+    const error = await ProviderHttpClient.requestStream({
+      url: 'https://example.com/stream', provider: 'openai', operation: 'streaming generation'
+    }).then(() => null, (e: unknown) => e) as ProviderHttpError;
+
+    expect(calls).toBe(1);
+    expect(error.response.headers).toEqual({ 'retry-after': '2' });
+    expect(error.message).toMatch(/^OpenAI .*\(HTTP \d{3}\)$/);
   });
 
   it.each([

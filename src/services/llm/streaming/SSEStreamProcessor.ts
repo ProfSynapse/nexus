@@ -158,6 +158,7 @@ export class SSEStreamProcessor {
     // A fatal error frame delivered over HTTP 200. Recorded here, thrown once the
     // already-queued events have drained, so partial output is not lost.
     let streamError: string | undefined = undefined;
+    let streamErrorFrame: unknown;
 
     // Tool call accumulation system
     const toolCallsAccumulator: Map<number, ToolCall> = new Map();
@@ -208,6 +209,7 @@ export class SSEStreamProcessor {
           const errorMessage = options.extractError(parsed);
           if (errorMessage) {
             streamError = errorMessage;
+            streamErrorFrame = parsed;
             isCompleted = true;
             return;
           }
@@ -417,7 +419,8 @@ export class SSEStreamProcessor {
       if (streamError) {
         throw createProviderStreamError(
           streamError,
-          options.providerName || options.debugLabel || 'llm'
+          options.providerName || options.debugLabel || 'llm',
+        streamErrorFrame
         );
       }
 

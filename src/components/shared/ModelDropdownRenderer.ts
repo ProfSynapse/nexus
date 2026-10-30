@@ -9,30 +9,7 @@
 import { Setting } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { sortModelsNewestFirst } from '../../utils/modelOrdering';
-
-/**
- * Provider display names shared across all model dropdown sections
- */
-const PROVIDER_NAMES: Record<string, string> = {
-  webllm: 'Nexus (Local)',
-  ollama: 'Ollama',
-  lmstudio: 'LM Studio',
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  'anthropic-claude-code': 'Claude Code',
-  google: 'Google AI',
-  'google-gemini-cli': 'Antigravity CLI',
-  mistral: 'Mistral AI',
-  groq: 'Groq',
-  deepseek: 'DeepSeek',
-  deepgram: 'Deepgram',
-  assemblyai: 'AssemblyAI',
-  openrouter: 'OpenRouter',
-  requesty: 'Requesty',
-  perplexity: 'Perplexity',
-  'openai-codex': 'ChatGPT',
-  'github-copilot': 'GitHub Copilot'
-};
+import { PROVIDER_NAMES } from '../../services/llm/providers/providerDisplayNames';
 
 export { PROVIDER_NAMES };
 

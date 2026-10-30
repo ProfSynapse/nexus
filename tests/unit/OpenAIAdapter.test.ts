@@ -385,7 +385,9 @@ describe('OpenAIAdapter', () => {
       expect(error).toBeInstanceOf(LLMProviderError);
       expect(error.code).toBe(code);
       expect(error.provider).toBe('openai');
-      expect(error.message).toBe(`generation failed: ${providerMessage}`);
+      // People see a readable sentence naming the provider; its own words stay for logs.
+      expect(error.message).toMatch(new RegExp(`^OpenAI.*\\(HTTP ${status}\\)$`));
+      expect(error.technicalMessage).toBe(`generation failed: ${providerMessage}`);
     });
   });
 

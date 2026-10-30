@@ -204,6 +204,40 @@ describe('MessageManager interrupt flow', () => {
     expect(events.onGenerationAborted).not.toHaveBeenCalled();
   });
 
+  it('forwards overload retry notices to the view (#429)', async () => {
+    const conversation = createConversation({ messages: [] });
+    const mockChatService = createMockChatService({ conversation });
+    mockChatService.getConversation.mockImplementation(async () => conversation);
+    mockChatService.generateResponseStreaming.mockImplementation(
+      (_conversationId: string, _userMessage: string, options?: { messageId?: string }) => {
+        async function* stream() {
+          const id = options?.messageId || 'msg_ai';
+          yield envelope(id, { type: 'provider.retrying', provider: 'anthropic', retry: 1, maxRetries: 4, delayMs: 700 });
+          yield envelope(id, { type: 'assistant.delta', text: 'Response' });
+          yield envelope(id, { type: 'turn.completed' });
+        }
+        return stream();
+      }
+    );
+    const onProviderRetrying = jest.fn();
+    const manager = new MessageManager(
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
+      {
+        onMessageAdded: jest.fn(), onAIMessageStarted: jest.fn(), onStreamingUpdate: jest.fn(),
+        onConversationUpdated: jest.fn(), onLoadingStateChanged: jest.fn(), onError: jest.fn(),
+        onToolCallsDetected: jest.fn(), onToolExecutionStarted: jest.fn(), onToolExecutionCompleted: jest.fn(),
+        onMessageIdUpdated: jest.fn(), onGenerationAborted: jest.fn(), onProviderRetrying
+      }
+    );
+
+    await manager.sendMessage(conversation, 'Hello');
+
+    expect(onProviderRetrying).toHaveBeenNthCalledWith(1, expect.any(String),
+      { provider: 'anthropic', retry: 1, maxRetries: 4, delayMs: 700 });
+    expect(onProviderRetrying).toHaveBeenLastCalledWith(expect.any(String), null);
+  });
+
   it('loading state transitions through true then false during generation', async () => {
     const conversation = createConversation({ messages: [] });
     const mockChatService = createMockChatService({ conversation });

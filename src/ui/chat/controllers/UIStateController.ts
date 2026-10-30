@@ -3,7 +3,6 @@
  */
 
 import { setIcon, Component } from 'obsidian';
-import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 
 export interface UIStateControllerEvents {
   onSidebarToggled: (visible: boolean) => void;
@@ -12,15 +11,12 @@ export interface UIStateControllerEvents {
 export class UIStateController {
   private sidebarVisible = false;
   private onOpenProviderSettings?: () => void;
-  private timeouts: ManagedTimeoutTracker;
 
   constructor(
     private containerEl: HTMLElement,
     private events: UIStateControllerEvents,
     private component: Component
-  ) {
-    this.timeouts = new ManagedTimeoutTracker(component);
-  }
+  ) {}
 
   private registerClickHandler(element: HTMLElement, handler: () => void): void {
     this.component.registerDomEvent(element, 'click', handler);
@@ -146,17 +142,28 @@ export class UIStateController {
   }
 
   /**
-   * Show error message with auto-dismiss
+   * Show an error until the user dismisses it or starts another turn. It used to
+   * vanish after five seconds, too soon to read a provider's quota message on a
+   * phone (#429). Only the latest error is kept.
    */
   showError(message: string): void {
-    // Create a temporary error display
-    const container = this.containerEl.querySelector('.message-display-container');
-    if (container) {
-      const errorEl = container.createDiv('chat-error');
-      errorEl.textContent = message;
-      
-      this.timeouts.schedule(() => errorEl.remove(), 5000);
-    }
+    const container = this.containerEl.querySelector<HTMLElement>('.message-display-container');
+    if (!container) return;
+
+    this.clearError();
+    const errorEl = container.createDiv({ cls: 'chat-error', attr: { role: 'alert' } });
+    errorEl.createSpan({ cls: 'chat-error-text', text: message });
+    const dismiss = errorEl.createEl('button', {
+      cls: 'chat-error-dismiss clickable-icon',
+      attr: { 'aria-label': 'Dismiss error', type: 'button' }
+    });
+    setIcon(dismiss, 'x');
+    this.registerClickHandler(dismiss, () => errorEl.remove());
+  }
+
+  /** Remove any error shown by showError. */
+  clearError(): void {
+    this.containerEl.querySelectorAll('.chat-error').forEach(el => el.remove());
   }
 
   /**

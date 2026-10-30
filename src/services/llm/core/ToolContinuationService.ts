@@ -23,6 +23,7 @@ import {
 } from './ProviderMessageBuilder';
 import type { ChatRuntimeEvent } from '../runtime/ChatRuntimeEvent';
 import { mapProviderStreamChunk } from '../runtime/ProviderStreamEventMapper';
+import { streamWithOverloadRetry } from '../adapters/shared/OverloadRetry';
 
 // Union type for tool calls from different sources
 type ToolCallUnion = AdapterToolCall | ChatToolCall;
@@ -127,7 +128,11 @@ export class ToolContinuationService {
       let responseCompleted = false;
       let assistantResponseText = '';
 
-      for await (const chunk of adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions)) {
+      for await (const chunk of streamWithOverloadRetry(
+        () => adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions),
+        options?.abortSignal,
+        provider
+      )) {
         preserveAnthropicResponseContent(chunk, provider);
         assistantResponseText += chunk.content;
         for (const event of mapProviderStreamChunk(chunk)) {
@@ -265,7 +270,11 @@ export class ToolContinuationService {
     let responseCompleted = false;
     let assistantResponseText = '';
 
-    for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
+    for await (const recursiveChunk of streamWithOverloadRetry(
+      () => adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions),
+      options?.abortSignal,
+      provider
+    )) {
       preserveAnthropicResponseContent(recursiveChunk, provider);
       assistantResponseText += recursiveChunk.content;
       for (const event of mapProviderStreamChunk(recursiveChunk)) {

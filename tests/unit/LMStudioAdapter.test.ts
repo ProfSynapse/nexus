@@ -159,16 +159,19 @@ describe('LMStudioAdapter', () => {
   });
 
   describe('draft-model in-stream error fallback', () => {
-    it('drops the draft and retries when LM Studio returns a fatal error frame over a 200 stream', async () => {
+    const draftRejection = 'Failed to load draft model. SpeculativeDecodingNotSupportedError: Speculative decoding is not supported for batched MLX models.';
+    it.each([
+      ['plain', { error: { message: draftRejection } }],
+      // A status in the frame rewords `message` for people; detection must still see the raw text.
+      ['status-coded', { error: { message: draftRejection, code: 500 } }],
+    ])('drops the draft and retries when LM Studio returns a fatal %s error frame over a 200 stream', async (_label, errorFrame) => {
       // The real failure mode (esp. batched MLX): HTTP 200, then an {"error":{...}} SSE frame
       // and zero content. Without handling, the stream ends silently empty (blank bubble).
       const bodies: string[] = [];
       __setRequestUrlMock(async (req) => {
         bodies.push(req.body ?? '');
         if ((req.body ?? '').includes('"draft_model"')) {
-          return sseResponse(sse(
-            { error: { message: 'Failed to load draft model. SpeculativeDecodingNotSupportedError: Speculative decoding is not supported for batched MLX models.' } }
-          ));
+          return sseResponse(sse(errorFrame));
         }
         return sseResponse(sse(
           { choices: [{ delta: { content: 'Hello' } }] },
