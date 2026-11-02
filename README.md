@@ -4,12 +4,14 @@
 
 [![Release](https://img.shields.io/github/v/release/ProfSynapse/claudesidian-mcp?label=release)](https://github.com/ProfSynapse/claudesidian-mcp/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Obsidian](https://img.shields.io/badge/Obsidian-1.11%2B-6f42c1)](https://obsidian.md/plugins)
+[![Obsidian](https://img.shields.io/badge/Obsidian-1.11%2B-6f42c1)](https://obsidian.md/plugins?id=nexus)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-43853d)](package.json)
 
 # Nexus MCP for Obsidian
 
 Nexus gives AI agents and built-in chat access to your Obsidian vault so you can read, write, search, organize, and automate notes in natural language while keeping storage local to the vault.
+
+Install **[Nexus from Obsidian’s Community plugins](https://obsidian.md/plugins?id=nexus)**.
 
 Nexus can be used in two ways:
 - Inside Obsidian with native chat (hook up to your favorite provider or agentic platform!)
@@ -25,14 +27,24 @@ Want a guided path? **[Your AI Second Brain](https://www.synapticlabs.ai/learn/y
 
 ## Setup
 
-- Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, and `main.js`
-- Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
+1. In Obsidian, open **Settings → Community plugins → Browse**. Enable community plugins if prompted.
+2. Search for **Nexus**, select it, then choose **Install** and **Enable**.
+
+Then choose how you want to use Nexus:
+
 - Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md) for chat, live voice, read-aloud, and built-in audio/video generation
 - External agent over MCP: use **Nexus settings -> Get started -> Connect an external agent** to connect Claude Desktop, Claude Code, Codex or Antigravity in one click, or follow its **Other agents** steps for any other MCP client, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
 - External agent over CLI (no MCP config): install the `nexus` command from **Get started -> Connect an external agent -> Command line** so shell agents (Claude Code, Cursor, Codex) can drive your vault directly — see the [Nexus CLI guide](guide/nexus-cli.md). Installation is user-triggered, writes only outside the vault, and on Windows adds the Nexus directory to the current user's PATH without administrator rights; uninstall removes only entries Nexus recorded as its own.
 - Optional desktop features: [Semantic search](guide/semantic-search.md), [Adaptive search](guide/adaptive-search.md), and [Apps and integrations](guide/apps.md)
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
+
+<details>
+<summary>Manual installation (optional)</summary>
+
+Download `manifest.json`, `styles.css`, and `main.js` from [GitHub Releases](https://github.com/ProfSynapse/nexus/releases), put them in your vault’s `.obsidian/plugins/nexus/` folder, then enable **Nexus** in Obsidian.
+
+</details>
 
 ## Mobile Support (Experimental)
 
