@@ -14,7 +14,7 @@ Status: **published**. Canonical public course landing page; HTTP 200 and page t
 
 Placements:
 
-- `README.md:24`
+- `README.md:26`
 - `guide/visual-tour.md:77`
 - `media/WORKFLOW.md:165`
 
@@ -1100,7 +1100,7 @@ Source: media/chat-workflow-evidence.json
 
 Placements:
 
-- `README.md:22`
+- `README.md:24`
 - `guide/native-chat.md:35`
 - `guide/visual-tour.md:13`
 
@@ -1120,7 +1120,7 @@ Source: media/chat-workflow-evidence.json
 
 Placements:
 
-- `README.md:20`
+- `README.md:22`
 - `guide/visual-tour.md:11`
 
 Refresh recipe: Capture genuine chat in a fictional vault. Establish source meeting briefly; type/send request and pull back immediately. Ask Nexus to open the saved plan, open the project board, and mark one fictional task done. Record actual tool-driven screen/card changes rather than manual navigation. Cut long waits and label sped-up typing. Independently diff all task fields, allow only intended status/completion changes, preserve timestamps/raw source, remove temporary credentials, and inspect the full encoded cut before swapping docs.
