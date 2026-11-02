@@ -35,6 +35,7 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 | Feature | Mobile | Desktop |
 |---------|--------|---------|
 | Native chat | Yes | Yes |
+| ChatGPT and GitHub Copilot sign-in | Yes | Yes |
 | Workspace memory and tasks | Yes | Yes |
 | Skills (author and load) | Yes | Yes |
 | MCP clients (Claude Desktop, Cursor, etc.) | No | Yes |
@@ -57,7 +58,9 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 |---|---|
 | Chat and models | `openrouter.ai`, `api.openai.com`, `api.anthropic.com`, `generativelanguage.googleapis.com`, `api.mistral.ai`, `api.groq.com`, `api.deepseek.com`, `api.perplexity.ai`, `router.requesty.ai`, `api.githubcopilot.com` |
 | Voice and transcription | `api.elevenlabs.io`, `api.deepgram.com`, `api.assemblyai.com`, `streaming.assemblyai.com` |
-| Sign-in flows | `auth.openai.com` and `chatgpt.com` (OpenAI Codex), `api.github.com` (GitHub Copilot) |
+| Sign-in flows | `auth.openai.com` and `chatgpt.com` (OpenAI Codex), `github.com` and `api.github.com` (GitHub Copilot) |
+
+Sign-in requests begin when you choose Connect. ChatGPT on mobile and GitHub Copilot poll for approval while the provider window remains open; closing it cancels polling.
 
 Ollama and LM Studio talk to your own machine and leave it entirely.
 

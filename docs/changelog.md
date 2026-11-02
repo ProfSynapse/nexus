@@ -1,5 +1,17 @@
 # Nexus Changelog
 
+## November 2026
+
+**v5.21.3** — Better compaction recovery, mobile ChatGPT sign-in, and clearer provider failures
+
+- Compaction preserves a saved state with the active task, exact paths and next steps before shortening chat context. Later replies receive recent goal/memory entries and previously used tool schemas when space allows, plus instructions to search earlier conversation for missing details. The full transcript stays saved ([#427](https://github.com/ProfSynapse/nexus/pull/427)).
+- ChatGPT (Codex) sign-in now works on mobile through a device code, without a local callback server. Copy the code from Nexus and complete sign-in in your browser ([#428](https://github.com/ProfSynapse/nexus/pull/428)).
+- Closing the provider window cancels pending ChatGPT and GitHub Copilot device-code polling, so abandoned sign-in attempts do not keep running ([#430](https://github.com/ProfSynapse/nexus/pull/430)).
+- ChatGPT and GitHub Copilot connection status reflects tokens on the current device. A synced connection without a local token offers to reconnect instead of appearing ready to use ([#431](https://github.com/ProfSynapse/nexus/pull/431)).
+- Provider errors explain failed keys, unavailable models, quota limits and server problems. Overloaded requests retry up to four times with increasing waits before any reply output arrives; the chat shows the retry count and Stop cancels the wait ([#432](https://github.com/ProfSynapse/nexus/pull/432), [#429](https://github.com/ProfSynapse/nexus/issues/429)).
+
+---
+
 ## October 2026
 
 **v5.21.2** — Reliable compaction, smaller activity records, and recovery of interrupted replies

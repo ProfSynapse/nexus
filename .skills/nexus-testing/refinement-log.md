@@ -270,3 +270,7 @@ The timeline-omission mutation failed the prompt integration regression. In the 
 ### 2026-10-24 — Conversation recovery schema preloading
 
 The actual SearchMemoryTool and ToolCatalogService supply test schemas, including session scoping and surrounding-turn flags. Omitting the recovery-preload branch made the regression fail. Full and bounded recovery schemas, never-previously-used search, duplicate preloads and state-first exhausted budgets are covered. Live marker and natural-language conversation queries in the scratch session returned no matches; no successful transcript retrieval is claimed. Existing test guidance applied; no protocol change.
+
+### 2026-11-02 — Release candidate verification on Linux
+
+Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching artifact hashes, a vault-asserted running-version check and ready hybrid storage. The vault-first TTY wrapper worked for eval, plugin:reload, dev:errors and dev:screenshot; the packaged verifier completed VERIFIED. The CLI `version` command worked; `--version` launched an unhelpful GUI probe before the verifier fell back. Existing live-loop guidance covered the required targeting and version checks; no protocol change.

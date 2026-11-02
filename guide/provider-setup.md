@@ -126,7 +126,7 @@ Use this if you have an active [GitHub Copilot](https://github.com/features/copi
 3. Copy the device code shown in Nexus, then complete the GitHub auth flow in the browser window that opens
 4. After authorization, choose one of the fetched Copilot models in chat
 
-Desktop only. Experimental.
+Available on desktop and mobile. Experimental.
 
 ---
 
@@ -136,10 +136,12 @@ Use this if you have an active ChatGPT Plus or Pro subscription and want support
 
 1. In Nexus, go to **Settings -> Providers -> OpenAI**
 2. Click **Connect** under **ChatGPT (Codex)**
-3. Sign in with your ChatGPT account in the browser window that opens
+3. On desktop, sign in with your ChatGPT account in the browser window that opens. On mobile, copy the device code shown in Nexus and enter it on the sign-in page; enable device-code sign-in in your ChatGPT security settings if requested
 4. In chat settings, select a model labeled **(ChatGPT)**
 
-Desktop only. Experimental.
+Available on desktop and mobile. Experimental. Closing the provider window cancels pending device-code sign-in for ChatGPT and GitHub Copilot.
+
+ChatGPT and GitHub Copilot sign-in is checked per device. If synced settings show an account connected elsewhere but this device has no token, Nexus offers to reconnect here. Sign in separately on each device.
 
 If ChatGPT rejects a saved refresh token during a Codex request, Nexus shows a notice and changes the provider card to **Reconnect with ChatGPT**. Open the OpenAI provider settings and reconnect to continue. Opening Settings alone does not check the connection.
 

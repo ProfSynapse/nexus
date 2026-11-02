@@ -67,6 +67,7 @@ do not hand-revert it, or the next bump churns it again.
   Temporary pnpm lock/workspace files used to install from the npm lockfile
   are local tooling, not a package-manager migration. Record the installation
   method and any difference from the release workflow's Node/npm environment.
+  Confirm transitive build imports resolve before building: `node -e "require.resolve('globals'); require.resolve('tslib')"`. An existing isolated pnpm install can remain isolated after requesting hoisting; missing `globals` breaks ESLint and missing `tslib` breaks TypeScript. Expose the already-locked packages locally or recreate the hoisted layout; do not add or upgrade dependencies solely to repair local module visibility.
 - Only raise `minAppVersion` in `manifest.json` if the release genuinely requires
   a newer Obsidian. Bump it *before* this step so the new `versions.json` entry
   picks up the right value.

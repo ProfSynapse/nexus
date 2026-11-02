@@ -1,0 +1,3782 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-02T12:23:41.998Z",
+  "selector": "--help",
+  "toolCount": 80,
+  "agentCount": 14,
+  "agents": {
+    "baseManager": 5,
+    "canvasManager": 4,
+    "composer": 2,
+    "contentManager": 6,
+    "data": 2,
+    "elevenlabs": 3,
+    "ingestManager": 2,
+    "memoryManager": 12,
+    "promptManager": 12,
+    "searchManager": 4,
+    "skills": 6,
+    "storageManager": 6,
+    "taskManager": 11,
+    "webTools": 5
+  },
+  "tools": [
+    {
+      "agent": "baseManager",
+      "tool": "analyze",
+      "description": "Execute a base file (.base) and return the rows it produces - filters applied, formulas evaluated, exactly what the base shows in Obsidian. Returns rowCount vs returned with a truncated flag; raise limit to see more.",
+      "command": "base analyze",
+      "usage": "base analyze <path> [--view <view>] [--limit <limit>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "view",
+          "flag": "--view",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Name of the view to execute (default: the first view in the file). Use baseManager.read to see the view names. (string)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum rows to return (default: 25, max: 1000). rowCount always reports how many rows matched, so a truncated answer still says what it left out. (number)"
+        }
+      ],
+      "examples": [
+        "base analyze \"path-value\" --view \"view-value\" --limit 1"
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "list",
+      "description": "List base files (.base) in the vault with view and formula counts",
+      "command": "base list",
+      "usage": "base list [--folder <folder>] [--recursive]",
+      "arguments": [
+        {
+          "name": "folder",
+          "flag": "--folder",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Folder to search (default: whole vault). Example: \"projects/dashboards\" (string)"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Search subfolders (default: true) (boolean)"
+        }
+      ],
+      "examples": [
+        "base list --folder \"folder-value\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "read",
+      "description": "Read a base file (.base) and return its parsed config: filters, formulas, properties, summaries and views",
+      "command": "base read",
+      "usage": "base read <path>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the base file (with or without .base extension) (string)"
+        }
+      ],
+      "examples": [
+        "base read \"path-value\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "update",
+      "description": "Modify an EXISTING base file (.base). Replaces ONLY the top-level sections you supply (filters, formulas, properties, summaries, views) and keeps the rest - unlike canvasManager.update, which replaces whole arrays. Fails if the base does not exist - use baseManager.write to create one. The merged config is validated before anything is written.",
+      "command": "base update",
+      "usage": "base update <path> [--config <config>] [--filters <filters>] [--formulas <formulas>] [--properties <properties>] [--summaries <summaries>] [--views <views>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the existing base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "config",
+          "flag": "--config",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sections to replace, as YAML (preferred) or JSON. Only the top-level keys present here are replaced; the rest of the file is kept. (string)"
+        },
+        {
+          "name": "filters",
+          "flag": "--filters",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Global filters applied to every view. Either an expression string ('status == \"done\"') or an object with exactly one of and/or/not holding an array of filters. (object)"
+        },
+        {
+          "name": "formulas",
+          "flag": "--formulas",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Computed properties: { name: \"expression\" }. Reference them elsewhere as formula.<name>. Subtracting two dates yields a Duration - access .days/.hours before rounding. (object)"
+        },
+        {
+          "name": "properties",
+          "flag": "--properties",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Per-property settings: { \"property-id\": { displayName: \"...\" } }. Property ids are bare/note.X (frontmatter), file.X (metadata) or formula.X (computed). (object)"
+        },
+        {
+          "name": "summaries",
+          "flag": "--summaries",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom summary formulas: { name: \"values.mean().round(2)\" }. Views may then use the name alongside the built-ins (Average, Min, Max, Sum, Range, Median, Stddev, Earliest, Latest, Checked, Unchecked, Empty, Filled, Unique). (object)"
+        },
+        {
+          "name": "views",
+          "flag": "--views",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Views to render. Each: { type: table|cards|list|map, name, filters?, groupBy?: { property, direction: ASC|DESC }, order?: [property ids], limit?, summaries?: { property: summaryName } }. (Array of an object)"
+        }
+      ],
+      "examples": [
+        "base update \"path-value\" --config \"config-value\" --filters '{\"key\":\"value\"}' --formulas '{\"key\":\"value\"}' --properties '{\"key\":\"value\"}' --summaries '{\"key\":\"value\"}' --views \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "baseManager",
+      "tool": "write",
+      "description": "Create a NEW base file (.base). Fails if the base already exists - use baseManager.update to modify an existing one. The config is validated before anything is written; a rejection lists every problem with its path and code.",
+      "command": "base write",
+      "usage": "base write <path> [--config <config>] [--filters <filters>] [--formulas <formulas>] [--properties <properties>] [--summaries <summaries>] [--views <views>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path for the new base file (with or without .base extension) (string)"
+        },
+        {
+          "name": "config",
+          "flag": "--config",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whole base config as YAML (preferred) or JSON. Top-level keys: filters, formulas, properties, summaries, views. Individual section arguments below override what this contains. Defaults to a single empty table view when nothing is supplied. (string)"
+        },
+        {
+          "name": "filters",
+          "flag": "--filters",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Global filters applied to every view. Either an expression string ('status == \"done\"') or an object with exactly one of and/or/not holding an array of filters. (object)"
+        },
+        {
+          "name": "formulas",
+          "flag": "--formulas",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Computed properties: { name: \"expression\" }. Reference them elsewhere as formula.<name>. Subtracting two dates yields a Duration - access .days/.hours before rounding. (object)"
+        },
+        {
+          "name": "properties",
+          "flag": "--properties",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Per-property settings: { \"property-id\": { displayName: \"...\" } }. Property ids are bare/note.X (frontmatter), file.X (metadata) or formula.X (computed). (object)"
+        },
+        {
+          "name": "summaries",
+          "flag": "--summaries",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom summary formulas: { name: \"values.mean().round(2)\" }. Views may then use the name alongside the built-ins (Average, Min, Max, Sum, Range, Median, Stddev, Earliest, Latest, Checked, Unchecked, Empty, Filled, Unique). (object)"
+        },
+        {
+          "name": "views",
+          "flag": "--views",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Views to render. Each: { type: table|cards|list|map, name, filters?, groupBy?: { property, direction: ASC|DESC }, order?: [property ids], limit?, summaries?: { property: summaryName } }. (Array of an object)"
+        }
+      ],
+      "examples": [
+        "base write \"path-value\" --config \"config-value\" --filters '{\"key\":\"value\"}' --formulas '{\"key\":\"value\"}' --properties '{\"key\":\"value\"}' --summaries '{\"key\":\"value\"}' --views \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "canvasManager",
+      "tool": "list",
+      "description": "List canvas files in the vault with node/edge counts",
+      "command": "canvas list",
+      "usage": "canvas list [--folder <folder>] [--recursive]",
+      "arguments": [
+        {
+          "name": "folder",
+          "flag": "--folder",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Folder to search (default: vault root). Example: \"projects/diagrams\" (string)"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Search subfolders (default: true) (boolean)"
+        }
+      ],
+      "examples": [
+        "canvas list --folder \"folder-value\""
+      ]
+    },
+    {
+      "agent": "canvasManager",
+      "tool": "read",
+      "description": "Read the structure of a canvas file (nodes and edges)",
+      "command": "canvas read",
+      "usage": "canvas read <path>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the canvas file (with or without .canvas extension) (string)"
+        }
+      ],
+      "examples": [
+        "canvas read \"path-value\""
+      ]
+    },
+    {
+      "agent": "canvasManager",
+      "tool": "update",
+      "description": "Modify an EXISTING canvas file. Replaces nodes and/or edges arrays. Fails if canvas does not exist - use canvasManager.write to create new canvases.",
+      "command": "canvas update",
+      "usage": "canvas update <path> [--nodes <nodes>] [--edges <edges>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the existing canvas file (with or without .canvas extension) (string)"
+        },
+        {
+          "name": "nodes",
+          "flag": "--nodes",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Full nodes array (replaces existing nodes). Omit to keep existing nodes. (Array of an object)"
+        },
+        {
+          "name": "edges",
+          "flag": "--edges",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Full edges array (replaces existing edges). Omit to keep existing edges. (Array of an object)"
+        }
+      ],
+      "examples": [
+        "canvas update \"path-value\" --nodes \"value-1,value-2\" --edges \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "canvasManager",
+      "tool": "write",
+      "description": "Create a NEW canvas file. Fails if canvas already exists - use canvasManager.update to modify existing canvases.",
+      "command": "canvas write",
+      "usage": "canvas write <path> [--nodes <nodes>] [--edges <edges>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path for the new canvas file (with or without .canvas extension) (string)"
+        },
+        {
+          "name": "nodes",
+          "flag": "--nodes",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Initial nodes. Each node needs: type (text/file/link/group), x, y, width, height. IDs auto-generated if missing. (Array of an object)"
+        },
+        {
+          "name": "edges",
+          "flag": "--edges",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Initial edges connecting nodes (Array of an object)"
+        }
+      ],
+      "examples": [
+        "canvas write \"path-value\" --nodes \"value-1,value-2\" --edges \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "composer",
+      "tool": "compose",
+      "description": "Merge multiple vault files of the same type into a single output. Supports markdown (.md), PDF (.pdf), and audio (.mp3, .wav, .ogg, .webm). Audio supports concat (sequential) and mix (layered tracks with volume/fade) modes. Note: WebM audio encoding runs at real-time speed (encoding time equals audio duration).",
+      "command": "composer compose",
+      "usage": "composer compose [--files <files>] <format> <outputPath> [--separator <separator>] [--include-headers] [--header-level <headerLevel>] [--frontmatter-handling <frontmatterHandling>] [--max-file-size-mb <maxFileSizeMb>] [--max-total-size-mb <maxTotalSizeMb>] [--audio-mode <audioMode>] [--tracks <tracks>] [--output-format <outputFormat>] [--duration <duration>] [--overwrite]",
+      "arguments": [
+        {
+          "name": "files",
+          "flag": "--files",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Vault-relative paths of files to compose. All files must be the same type. Required for concat mode (default). (Array of a string)"
+        },
+        {
+          "name": "format",
+          "flag": "--format",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Output format. Determines which composer handles the operation. (One of: [\"markdown\", \"pdf\", \"audio\"])"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative path for the output file. Parent directories are created automatically. (string)"
+        },
+        {
+          "name": "separator",
+          "flag": "--separator",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Markdown only: separator between file sections. Default: \"\\n---\\n\" (string)"
+        },
+        {
+          "name": "includeHeaders",
+          "flag": "--include-headers",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Markdown only: prepend each file's name as a heading. Default: false (boolean)"
+        },
+        {
+          "name": "headerLevel",
+          "flag": "--header-level",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Markdown only: heading level for file headers. Default: 2 (One of: [1, 2, 3, 4, 5, 6])"
+        },
+        {
+          "name": "frontmatterHandling",
+          "flag": "--frontmatter-handling",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Markdown only: how to handle YAML frontmatter. \"first\" keeps only the first file's frontmatter. \"merge\" shallow-merges all. \"strip\" removes all. Default: \"first\" (One of: [\"first\", \"merge\", \"strip\"])"
+        },
+        {
+          "name": "maxFileSizeMb",
+          "flag": "--max-file-size-mb",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Per-file size limit in MB. Default: 50 (number)"
+        },
+        {
+          "name": "maxTotalSizeMb",
+          "flag": "--max-total-size-mb",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Aggregate size limit for all input files in MB. Default: 200 (number)"
+        },
+        {
+          "name": "audioMode",
+          "flag": "--audio-mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio only: \"concat\" joins files sequentially. \"mix\" layers tracks with individual volume/offset/fade. Default: \"concat\" (One of: [\"concat\", \"mix\"])"
+        },
+        {
+          "name": "tracks",
+          "flag": "--tracks",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio mix mode only: track definitions with per-track volume, offset, and fade controls. (Array of an object)"
+        },
+        {
+          "name": "outputFormat",
+          "flag": "--output-format",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio only: output encoding format. Default: \"wav\" (One of: [\"wav\", \"webm\"])"
+        },
+        {
+          "name": "duration",
+          "flag": "--duration",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio only: total output duration in seconds. Trims if shorter than composed audio. Default: full duration. (number)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, overwrite existing file at outputPath. Default: false (boolean)"
+        }
+      ],
+      "examples": [
+        "composer compose --files \"value-1,value-2\" \"format-value\" \"outputPath-value\" --separator \"separator-value\" --header-level 1 --frontmatter-handling \"frontmatterHandling-value\" --max-file-size-mb 1 --max-total-size-mb 1 --audio-mode \"audioMode-value\" --tracks \"value-1,value-2\" --output-format \"outputFormat-value\" --duration 1"
+      ]
+    },
+    {
+      "agent": "composer",
+      "tool": "listFormats",
+      "description": "List supported composition formats, their file extensions, and platform availability.",
+      "command": "composer list-formats",
+      "usage": "composer list-formats",
+      "arguments": [],
+      "examples": [
+        "composer list-formats"
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "insert",
+      "description": "Insert new content into a note at a specific position. Does not modify existing content — use replace for that.",
+      "command": "content insert",
+      "usage": "content insert <path> <content> <startLine>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the note to modify (e.g. \"folder/note.md\"). Do not include a leading slash. (string)"
+        },
+        {
+          "name": "content",
+          "flag": "--content",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The text to insert into the note. For multi-line content, use newline characters (\\n). This content is added without modifying any existing text. (string)"
+        },
+        {
+          "name": "startLine",
+          "flag": "--start-line",
+          "type": "number",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Where to insert the content (1-indexed). Use -1 to append to the end of the note. Use 1 to prepend at the beginning. Any other number inserts before that line, pushing existing content down. (number)"
+        }
+      ],
+      "examples": [
+        "content insert \"path-value\" \"content-value\" 1"
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "read",
+      "description": "Read content from a file with line range",
+      "command": "content read",
+      "usage": "content read <path> <startLine> [--end-line <endLine>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the file to read (string)"
+        },
+        {
+          "name": "startLine",
+          "flag": "--start-line",
+          "type": "number",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Start line (1-based), REQUIRED - forces intentional positioning. Use 1 to read from beginning. (number)"
+        },
+        {
+          "name": "endLine",
+          "flag": "--end-line",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] End line (1-based, inclusive). If omitted, reads to end of file. (number)"
+        }
+      ],
+      "examples": [
+        "content read \"path-value\" 1 --end-line 1"
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "removeProperty",
+      "description": "Remove a frontmatter property from a note. Pass a value to drop just that item from a list property; omit it to remove the whole property.",
+      "command": "content remove-property",
+      "usage": "content remove-property <path> <property> [--value <value>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the note file (string)"
+        },
+        {
+          "name": "property",
+          "flag": "--property",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Frontmatter property name to remove (e.g. \"tags\", \"aliases\", \"status\") (string)"
+        },
+        {
+          "name": "value",
+          "flag": "--value",
+          "type": "oneOfArray",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional. Omit to remove the whole property. Pass a value to remove only that item from a list property — the inverse of set-property --mode merge — e.g. --value \"[[Note]]\" to drop one link, or --value \"a,b\" to drop several. Removing the last item removes the property too. It is an error if the value is not present."
+        }
+      ],
+      "examples": [
+        "content remove-property \"path-value\" \"property-value\" --value \"value-value\""
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "replace",
+      "description": "Replace or delete existing content in a note. Validates that the content at the specified lines matches before making changes. If the content has moved, returns the new line numbers.",
+      "command": "content replace",
+      "usage": "content replace <path> <start> <end> <content>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the note to modify (e.g. \"folder/note.md\"). Do not include a leading slash. (string)"
+        },
+        {
+          "name": "start",
+          "flag": "--start",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The opening line(s) of the range you want to replace, copied as-is from your read — keep the exact words but don't worry about quote/apostrophe style or invisible spacing; matching is normalization-tolerant. Must match exactly one location in the file. If a single line is not unique, extend `start` to multiple lines using \\n until it identifies one location only. (string)"
+        },
+        {
+          "name": "end",
+          "flag": "--end",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The closing line(s) of the range. Same rules as `start`. Must come after `start` in the file. (string)"
+        },
+        {
+          "name": "content",
+          "flag": "--content",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] What to write in place of the range from `start` through `end` (inclusive of both anchor lines). Set to an empty string to delete the range entirely. (string)"
+        }
+      ],
+      "examples": [
+        "content replace \"path-value\" \"start-value\" \"end-value\" \"content-value\""
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "setProperty",
+      "description": "Set a frontmatter property on a note. Supports \"replace\" (default) and \"merge\" (array union with dedup) modes.",
+      "command": "content set-property",
+      "usage": "content set-property <path> <property> <value> [--mode <mode>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the note file (string)"
+        },
+        {
+          "name": "property",
+          "flag": "--property",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Frontmatter property name (e.g. \"tags\", \"aliases\", \"status\") (string)"
+        },
+        {
+          "name": "value",
+          "flag": "--value",
+          "type": "oneOfArray",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Value to set: a string, number, boolean, or array of strings. Pass a single value (including an Obsidian wikilink) verbatim — e.g. --value \"[[Note]]\" — do NOT add wrapping brackets. For multiple values use a comma-separated list: --value \"[[A]],[[B]]\". The CLI parses these reliably; no bracket-escaping is needed."
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to apply the value. 'replace' overwrites (default). 'merge' performs array union with dedup for list fields; equivalent to replace for scalars. (One of: [\"replace\", \"merge\"])"
+        }
+      ],
+      "examples": [
+        "content set-property \"path-value\" \"property-value\" \"value-value\" --mode \"mode-value\""
+      ]
+    },
+    {
+      "agent": "contentManager",
+      "tool": "write",
+      "description": "Create a new file or overwrite existing file",
+      "command": "content write",
+      "usage": "content write <path> <content> [--overwrite]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the file to create or overwrite (string)"
+        },
+        {
+          "name": "content",
+          "flag": "--content",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Content to write to the file (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Overwrite if file exists (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "content write \"path-value\" \"content-value\""
+      ]
+    },
+    {
+      "agent": "data",
+      "tool": "listCapabilities",
+      "description": "List the Python packages and input formats supported by the Data Analysis sandbox.",
+      "command": "data list-capabilities",
+      "usage": "data list-capabilities",
+      "arguments": [],
+      "examples": [
+        "data list-capabilities"
+      ]
+    },
+    {
+      "agent": "data",
+      "tool": "runPython",
+      "description": "Run Python (pandas) against vault CSV/Excel files in an isolated runtime (off-thread, no Node, in-memory filesystem), returning a bounded result. Provide `code` and optional `inputs` (a map of variable name -> vault path); read them in Python via `inputs['name']`, e.g. `pd.read_csv(inputs['budget'])` or `pd.read_excel(inputs['sales'])`. Return a JSON-serializable value (results over 1500 rows are rejected — aggregate or limit). Desktop only. Isolation is best-effort (blocks accidental network/vault access), not a hard sandbox for untrusted code.",
+      "command": "data run-python",
+      "usage": "data run-python <code> [--inputs <inputs>] [--max-rows <maxRows>] [--max-output-bytes <maxOutputBytes>] [--max-input-bytes <maxInputBytes>] [--timeout-ms <timeoutMs>] [--output-path <outputPath>]",
+      "arguments": [
+        {
+          "name": "code",
+          "flag": "--code",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Python source to execute. Read inputs via the injected `inputs` dict, e.g. `pd.read_csv(inputs['budget'])`. The final expression / returned value is sent back (must be JSON-serializable; results over maxRows are rejected). (string)"
+        },
+        {
+          "name": "inputs",
+          "flag": "--inputs",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Map of variable name -> vault-relative file path (.csv/.xlsx). Each file is read by the host and exposed to Python as inputs['name']. (object)"
+        },
+        {
+          "name": "maxRows",
+          "flag": "--max-rows",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject results with more than this many rows (default 1500, hard max 10000). (number)"
+        },
+        {
+          "name": "maxOutputBytes",
+          "flag": "--max-output-bytes",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject results whose serialized JSON exceeds this many bytes (default ~512KB). (number)"
+        },
+        {
+          "name": "maxInputBytes",
+          "flag": "--max-input-bytes",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reject input files larger than this many bytes (default ~10MB). (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Wall-clock budget; runaway code is terminated (default 5000, hard max 30000). (number)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional vault path to write the result JSON to after a successful run. (string)"
+        }
+      ],
+      "examples": [
+        "data run-python \"code-value\" --inputs '{\"key\":\"value\"}' --max-rows 1 --max-output-bytes 1 --max-input-bytes 1 --timeout-ms 1 --output-path \"outputPath-value\""
+      ]
+    },
+    {
+      "agent": "elevenlabs",
+      "tool": "generateMusic",
+      "description": "Generate music from a text prompt describing genre, mood, instruments, tempo, and lyrics. Saves audio to vault.",
+      "command": "elevenlabs generate-music",
+      "usage": "elevenlabs generate-music <prompt> [--music-length-ms <musicLengthMs>] [--output-path <outputPath>] [--output-format <outputFormat>] [--force-instrumental]",
+      "arguments": [
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text description of the music to generate. Can define genre, mood, instruments, vocals, tempo, structure, and lyrics (max 4100 chars). Do NOT reference copyrighted artists or lyrics. (string)"
+        },
+        {
+          "name": "musicLengthMs",
+          "flag": "--music-length-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Length of the song in milliseconds (3000-600000, i.e. 3s to 10min). If omitted, the model chooses based on the prompt. (number)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Output file path in vault (default: audio/music-{timestamp}.mp3) (string)"
+        },
+        {
+          "name": "outputFormat",
+          "flag": "--output-format",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio format (default: mp3_44100_128). Options: mp3_22050_32, mp3_44100_64, mp3_44100_128, mp3_44100_192 (string)"
+        },
+        {
+          "name": "forceInstrumental",
+          "flag": "--force-instrumental",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, guarantees instrumental output with no vocals (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "elevenlabs generate-music \"prompt-value\" --music-length-ms 1 --output-path \"outputPath-value\" --output-format \"outputFormat-value\""
+      ]
+    },
+    {
+      "agent": "elevenlabs",
+      "tool": "listVoices",
+      "description": "List available ElevenLabs voices with their IDs, names, and categories.",
+      "command": "elevenlabs list-voices",
+      "usage": "elevenlabs list-voices [--category <category>]",
+      "arguments": [
+        {
+          "name": "category",
+          "flag": "--category",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by category: premade, cloned, generated, professional (One of: [\"premade\", \"cloned\", \"generated\", \"professional\"])"
+        }
+      ],
+      "examples": [
+        "elevenlabs list-voices --category \"category-value\""
+      ]
+    },
+    {
+      "agent": "elevenlabs",
+      "tool": "soundEffects",
+      "description": "Generate cinematic sound effects from text descriptions (e.g., \"thunder rolling across a mountain valley\").",
+      "command": "elevenlabs sound-effects",
+      "usage": "elevenlabs sound-effects <prompt> [--duration-seconds <durationSeconds>] [--prompt-influence <promptInfluence>] [--output-path <outputPath>]",
+      "arguments": [
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text description of the sound effect to generate (e.g., \"ocean waves crashing on rocks\") (string)"
+        },
+        {
+          "name": "durationSeconds",
+          "flag": "--duration-seconds",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Duration in seconds (0.5-30). If omitted, optimal duration is guessed from prompt. (number)"
+        },
+        {
+          "name": "promptInfluence",
+          "flag": "--prompt-influence",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How closely to follow the text prompt (0.0-1.0) (number)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Output file path in vault (default: audio/sfx-{timestamp}.mp3) (string)"
+        }
+      ],
+      "examples": [
+        "elevenlabs sound-effects \"prompt-value\" --duration-seconds 1 --prompt-influence 1 --output-path \"outputPath-value\""
+      ]
+    },
+    {
+      "agent": "ingestManager",
+      "tool": "capabilities",
+      "description": "List available OCR models and audio transcription models that the ingest pipeline supports. Use before ingest to discover valid provider/model options.",
+      "command": "ingest capabilities",
+      "usage": "ingest capabilities",
+      "arguments": [],
+      "examples": [
+        "ingest capabilities"
+      ]
+    },
+    {
+      "agent": "ingestManager",
+      "tool": "run",
+      "description": "Ingest a PDF or audio file into a structured markdown note. PDF: text extraction (default) or vision OCR. Audio: speech transcription using explicit ingest-supported models. Output note created alongside the original file.",
+      "command": "ingest run",
+      "usage": "ingest run <filePath> [--mode <mode>] [--ocr-provider <ocrProvider>] [--ocr-model <ocrModel>]",
+      "arguments": [
+        {
+          "name": "filePath",
+          "flag": "--file-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the file to ingest (PDF, DOCX, PPTX, or audio). Relative to vault root. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] PDF processing mode only. \"text\" = free text extraction (default). \"vision\" = OCR via LLM vision (requires ocrProvider + ocrModel). (One of: [\"text\", \"vision\"])"
+        },
+        {
+          "name": "ocrProvider",
+          "flag": "--ocr-provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Provider for vision-based OCR (e.g., \"openai\", \"anthropic\", \"google\", \"ollama\"). Required when mode=\"vision\". (string)"
+        },
+        {
+          "name": "ocrModel",
+          "flag": "--ocr-model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Model for vision-based OCR (e.g., \"gpt-4o\", \"claude-sonnet-4-6\"). Required when mode=\"vision\". (string)"
+        }
+      ],
+      "examples": [
+        "ingest run \"filePath-value\" --mode \"mode-value\" --ocr-provider \"ocrProvider-value\" --ocr-model \"ocrModel-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "archiveState",
+      "description": "Archive a state (soft delete). State will be hidden from lists but can be restored.",
+      "command": "memory archive-state",
+      "usage": "memory archive-state <name> [--restore]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name or ID of the state to archive or restore (REQUIRED). (string)"
+        },
+        {
+          "name": "restore",
+          "flag": "--restore",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, restores the state from archive. If false/omitted, archives the state. (boolean)"
+        }
+      ],
+      "examples": [
+        "memory archive-state \"name-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "archiveWorkspace",
+      "description": "Archive a workspace (soft delete). Workspace will be hidden from lists but can be restored.",
+      "command": "memory archive-workspace",
+      "usage": "memory archive-workspace <name> [--restore]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the workspace to archive or restore (REQUIRED) (string)"
+        },
+        {
+          "name": "restore",
+          "flag": "--restore",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, restores the workspace from archive. If false/omitted, archives the workspace. (boolean)"
+        }
+      ],
+      "examples": [
+        "memory archive-workspace \"name-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "createState",
+      "description": "Create a state with restoration context for later resumption",
+      "command": "memory create-state",
+      "usage": "memory create-state <name> <conversationContext> <activeTask> --active-files <activeFiles> --next-steps <nextSteps> [--tags <tags>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Short descriptive title for this save point (string)"
+        },
+        {
+          "name": "conversationContext",
+          "flag": "--conversation-context",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Detailed markdown summary enabling seamless resumption. Structure with headings:\n\n## Original Request\nWhat the user asked for and their goal\n\n## Key Decisions Made\n- Decision and reasoning\n- Decision and reasoning\n\n## Important Context\nBackground info, constraints, or discoveries from the conversation\n\n## Current Status\nWhat is complete, what is in progress, any blockers (string)"
+        },
+        {
+          "name": "activeTask",
+          "flag": "--active-task",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The specific task in progress when saving (string)"
+        },
+        {
+          "name": "activeFiles",
+          "flag": "--active-files",
+          "type": "array<string>",
+          "required": true,
+          "positional": false,
+          "description": "[REQUIRED] File paths being edited or referenced (Array of a string)"
+        },
+        {
+          "name": "nextSteps",
+          "flag": "--next-steps",
+          "type": "array<string>",
+          "required": true,
+          "positional": false,
+          "description": "[REQUIRED] Specific action items to resume work, in priority order (Array of a string)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional tags for categorization (Array of a string)"
+        }
+      ],
+      "examples": [
+        "memory create-state \"name-value\" \"conversationContext-value\" \"activeTask-value\" --active-files \"value-1,value-2\" --next-steps \"value-1,value-2\" --tags \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "createWorkspace",
+      "description": "Create a new workspace with structured context data",
+      "command": "memory create-workspace",
+      "usage": "memory create-workspace <name> <description> <rootFolder> <purpose> [--workflows <workflows>] [--key-files <keyFiles>] [--preferences <preferences>] [--dedicated-agent-id <dedicatedAgentId>] [--related-folders <relatedFolders>] [--related-files <relatedFiles>] [--key-file-instructions <keyFileInstructions>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Workspace name. This name can be used directly in follow-up workspace commands such as load-workspace and update-workspace; the UUID is not required unless you prefer it. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Brief description of the workspace purpose (string)"
+        },
+        {
+          "name": "rootFolder",
+          "flag": "--root-folder",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Root folder path for this workspace (string)"
+        },
+        {
+          "name": "purpose",
+          "flag": "--purpose",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Overall purpose and goals for this workspace (string)"
+        },
+        {
+          "name": "workflows",
+          "flag": "--workflows",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Workflows for different situations. Each workflow may also bind a prompt and schedule. (Array of an object) [min items: 1]"
+        },
+        {
+          "name": "keyFiles",
+          "flag": "--key-files",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Key file paths for quick reference (Array of a string)"
+        },
+        {
+          "name": "preferences",
+          "flag": "--preferences",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] User preferences or workspace settings (string)"
+        },
+        {
+          "name": "dedicatedAgentId",
+          "flag": "--dedicated-agent-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] ID of dedicated prompt for this workspace (string)"
+        },
+        {
+          "name": "relatedFolders",
+          "flag": "--related-folders",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Related folder paths (Array of a string)"
+        },
+        {
+          "name": "relatedFiles",
+          "flag": "--related-files",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Related file paths (Array of a string)"
+        },
+        {
+          "name": "keyFileInstructions",
+          "flag": "--key-file-instructions",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Instructions for working with key files (string)"
+        }
+      ],
+      "examples": [
+        "memory create-workspace \"name-value\" \"description-value\" \"rootFolder-value\" \"purpose-value\" --workflows \"value-1,value-2\" --key-files \"value-1,value-2\" --preferences \"preferences-value\" --dedicated-agent-id \"dedicatedAgentId-value\" --related-folders \"value-1,value-2\" --related-files \"value-1,value-2\" --key-file-instructions \"keyFileInstructions-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "listStates",
+      "description": "List states with optional filtering and sorting",
+      "command": "memory list-states",
+      "usage": "memory list-states [--include-archived] [--tags <tags>] [--page <page>] [--page-size <pageSize>] [--order <order>]",
+      "arguments": [
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include archived states (default: false) (boolean)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by tags (Array of a string)"
+        },
+        {
+          "name": "page",
+          "flag": "--page",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Page number for pagination (0-indexed, default: 0) (number) [min: 0]"
+        },
+        {
+          "name": "pageSize",
+          "flag": "--page-size",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Number of items per page (default: all items if not specified) (number) [min: 1]"
+        },
+        {
+          "name": "order",
+          "flag": "--order",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sort order by creation date (default: desc) (One of: [\"asc\", \"desc\"])"
+        }
+      ],
+      "examples": [
+        "memory list-states --tags \"value-1,value-2\" --page 1 --page-size 1 --order \"order-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "listWorkspaces",
+      "description": "List every available workspace with filters and sorting. Prefer searchWorkspaces when you already have a name fragment.",
+      "command": "memory list-workspaces",
+      "usage": "memory list-workspaces [--include-archived] [--sort-by <sortBy>] [--order <order>] [--limit <limit>]",
+      "arguments": [
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include archived workspaces (default: false) (boolean)"
+        },
+        {
+          "name": "sortBy",
+          "flag": "--sort-by",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Field to sort workspaces by (One of: [\"name\", \"created\", \"lastAccessed\"])"
+        },
+        {
+          "name": "order",
+          "flag": "--order",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sort order (ascending or descending) (One of: [\"asc\", \"desc\"])"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum number of workspaces to return (number)"
+        }
+      ],
+      "examples": [
+        "memory list-workspaces --sort-by \"sortBy-value\" --order \"order-value\" --limit 1"
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "loadState",
+      "description": "Load a saved workspace-scoped state with restored context",
+      "command": "memory load-state",
+      "usage": "memory load-state <name>",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the state to load (REQUIRED). Use listStates to see available states. (string)"
+        }
+      ],
+      "examples": [
+        "memory load-state \"name-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "loadWorkspace",
+      "description": "Load a workspace by ID and restore context and state",
+      "command": "memory load-workspace",
+      "usage": "memory load-workspace <workspace> [--workflow <workflow>] [--limit <limit>] [--recursive]",
+      "arguments": [
+        {
+          "name": "workspace",
+          "flag": "--workspace",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Workspace name or ID to load (REQUIRED). Use a name you have actually seen — from the workspace list in getTools, from search-workspaces/list-workspaces, or from the create-workspace you just made. Do NOT infer a name from how the user phrased the request; \"load my research workspace\" does not mean a workspace named \"Research\" exists. If you do not have a confirmed name, run \"memory search-workspaces --query <fragment> --load\" first: it auto-loads on a single match and lists candidates otherwise. A near-miss here is recovered (single close match auto-loads, otherwise candidates are returned) — but recovery costs a round trip that discovery would have saved. (string)"
+        },
+        {
+          "name": "workflow",
+          "flag": "--workflow",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional exact workflow name or ID to preload instructions and required tool schemas. Loading never runs it. Omit to load the workspace and clear the active workflow; there is no default workflow. (string)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional limit for sessions, states, and recentActivity returned (default: 5) (number) [min: 1, max: 20]"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Show full recursive file structure (true) or top-level folders only (false). Default: false (top-level only, folders marked with trailing /) (boolean)"
+        }
+      ],
+      "examples": [
+        "memory load-workspace \"workspace-value\" --workflow \"workflow-value\" --limit 1"
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "run",
+      "description": "Run a workflow immediately and create a fresh conversation for it.",
+      "command": "memory run",
+      "usage": "memory run [--workflow-id <workflowId>] [--workflow-name <workflowName>] [--open-in-chat]",
+      "arguments": [
+        {
+          "name": "workflowId",
+          "flag": "--workflow-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Workflow ID to run. (string)"
+        },
+        {
+          "name": "workflowName",
+          "flag": "--workflow-name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Workflow name to run if workflowId is not known. (string)"
+        },
+        {
+          "name": "openInChat",
+          "flag": "--open-in-chat",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Open and focus the new conversation in chat. Defaults to false for tool-driven runs. (boolean)"
+        }
+      ],
+      "examples": [
+        "memory run --workflow-id \"workflowId-value\" --workflow-name \"workflowName-value\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "searchWorkspaces",
+      "description": "Find workspaces by name, description, or folder without listing them all. Pass --load to auto-load when exactly one workspace matches.",
+      "command": "memory search-workspaces",
+      "usage": "memory search-workspaces <query> [--load] [--limit <limit>] [--include-archived]",
+      "arguments": [
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Free-text query matched against workspace name, description, folder, and id. Partial words work (e.g. \"resear\" matches \"Research\"). (string)"
+        },
+        {
+          "name": "load",
+          "flag": "--load",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Auto-load the workspace when the search matches exactly one (default: false). With 0 or 2+ matches nothing is loaded and the match list is returned instead. (boolean)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum matches to return (default: 10). Does not affect the auto-load decision, which uses the full match count. (number)"
+        },
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include archived workspaces in the search (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "memory search-workspaces \"query-value\" --limit 1"
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "updateState",
+      "description": "Update state metadata (name, description, tags). Snapshot context is immutable.",
+      "command": "memory update-state",
+      "usage": "memory update-state <name> [--new-name <newName>] [--description <description>] [--tags <tags>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name or ID of the state to update (REQUIRED). This selects the target state. (string)"
+        },
+        {
+          "name": "newName",
+          "flag": "--new-name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New name for the state (optional). This renames the state; it is not the target identifier. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New description for the state (optional). (string)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New tags array for the state (optional, replaces the prior tag list). (Array of a string)"
+        }
+      ],
+      "examples": [
+        "memory update-state \"name-value\" --new-name \"newName-value\" --description \"description-value\" --tags \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "memoryManager",
+      "tool": "updateWorkspace",
+      "description": "Update workspace properties. Pass only fields to change - others remain unchanged.",
+      "command": "memory update-workspace",
+      "usage": "memory update-workspace <id> [--name <name>] [--description <description>] [--root-folder <rootFolder>] [--purpose <purpose>] [--workflows <workflows>] [--key-files <keyFiles>] [--preferences <preferences>] [--dedicated-agent-id <dedicatedAgentId>]",
+      "arguments": [
+        {
+          "name": "id",
+          "flag": "--id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Workspace ID or name to update (REQUIRED). This selects the target workspace; using the workspace name is fine and the UUID is not required. (string)"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New workspace name (optional). This renames the workspace; it is not the target identifier. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New workspace description (optional) (string)"
+        },
+        {
+          "name": "rootFolder",
+          "flag": "--root-folder",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New root folder path (optional, will create if needed) (string)"
+        },
+        {
+          "name": "purpose",
+          "flag": "--purpose",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New workspace purpose (optional, updates context.purpose) (string)"
+        },
+        {
+          "name": "workflows",
+          "flag": "--workflows",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New workflows array (optional, replaces context.workflows) (Array of an object)"
+        },
+        {
+          "name": "keyFiles",
+          "flag": "--key-files",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New key files array (optional, replaces context.keyFiles) (Array of a string)"
+        },
+        {
+          "name": "preferences",
+          "flag": "--preferences",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New preferences text (optional, updates context.preferences) (string)"
+        },
+        {
+          "name": "dedicatedAgentId",
+          "flag": "--dedicated-agent-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] ID of custom agent to set as workspace dedicated agent (optional, updates context.dedicatedAgent). Pass empty string to remove dedicated agent. (string)"
+        }
+      ],
+      "examples": [
+        "memory update-workspace \"id-value\" --name \"name-value\" --description \"description-value\" --root-folder \"rootFolder-value\" --purpose \"purpose-value\" --workflows \"value-1,value-2\" --key-files \"value-1,value-2\" --preferences \"preferences-value\" --dedicated-agent-id \"dedicatedAgentId-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "archive",
+      "description": "Archive a custom prompt by disabling it (preserves configuration for restoration)",
+      "command": "prompt archive",
+      "usage": "prompt archive <name>",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name or ID of the prompt to archive. Prompt will be disabled but configuration preserved for restoration via updatePrompt. (string) [min length: 1]"
+        }
+      ],
+      "examples": [
+        "prompt archive \"name-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "checkGeneratedArtifact",
+      "description": "Check a previously timed-out generated artifact job and save the completed output to its requested vault path.",
+      "command": "prompt check-generated-artifact",
+      "usage": "prompt check-generated-artifact <jobId> [--poll-interval-ms <pollIntervalMs>] [--timeout-ms <timeoutMs>]",
+      "arguments": [
+        {
+          "name": "jobId",
+          "flag": "--job-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Nexus generated artifact job ID returned by a timed-out generation tool call. (string)"
+        },
+        {
+          "name": "pollIntervalMs",
+          "flag": "--poll-interval-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional polling interval while waiting for completion. Default: 5000. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional maximum time to wait in this status check. Default: 30000. (number)"
+        }
+      ],
+      "examples": [
+        "prompt check-generated-artifact \"jobId-value\" --poll-interval-ms 1 --timeout-ms 1"
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "create",
+      "description": "Create a new custom prompt",
+      "command": "prompt create",
+      "usage": "prompt create <name> <description> <prompt> [--is-enabled]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the prompt (must be unique) (string) [min length: 1, max length: 100]"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Description of what this prompt does (string) [min length: 1, max length: 500]"
+        },
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The actual prompt text/persona (string) [min length: 1]"
+        },
+        {
+          "name": "isEnabled",
+          "flag": "--is-enabled",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether the prompt is enabled (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt create \"name-value\" \"description-value\" \"prompt-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "execute",
+      "description": "Execute one or more LLM prompts. For single: pass one item. For multiple: supports sequencing (sequence: 0,1,2), parallel groups, and result forwarding (includePreviousResults: true).",
+      "command": "prompt execute",
+      "usage": "prompt execute --prompts <prompts> [--merge-responses]",
+      "arguments": [
+        {
+          "name": "prompts",
+          "flag": "--prompts",
+          "type": "array<object>",
+          "required": true,
+          "positional": false,
+          "description": "[REQUIRED] Array of text and/or image generation requests to execute in batch (Array of an object) [min items: 1, max items: 100]"
+        },
+        {
+          "name": "mergeResponses",
+          "flag": "--merge-responses",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether to merge all responses into a single result (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt execute --prompts \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "generateAudio",
+      "description": "Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.",
+      "command": "prompt generate-audio",
+      "usage": "prompt generate-audio [--mode <mode>] <prompt> [--provider <provider>] [--model <model>] [--voice <voice>] <outputPath> [--overwrite]",
+      "arguments": [
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Audio generation mode. Voice is currently supported; music and sfx will be unlocked by provider capability in a later phase. (One of: [\"voice\"])"
+        },
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text to convert into voice audio. (string)"
+        },
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech provider. Defaults to Voice settings. (One of: [\"openai\", \"elevenlabs\", \"google\", \"mistral\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. (string)"
+        },
+        {
+          "name": "voice",
+          "flag": "--voice",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider voice ID. Defaults to Voice settings or the model default. (string)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative output path for the generated audio file, usually ending in .mp3. (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, replace an existing file at outputPath. Default: false. (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt generate-audio --mode \"mode-value\" \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --voice \"voice-value\" \"outputPath-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "generateImage",
+      "description": "Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.",
+      "command": "prompt generate-image",
+      "usage": "prompt generate-image <prompt> [--provider <provider>] [--model <model>] [--aspect-ratio <aspectRatio>] [--number-of-images <numberOfImages>] [--image-size <imageSize>] [--reference-images <referenceImages>] <savePath>",
+      "arguments": [
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text prompt describing the image to generate (string) [min length: 1, max length: 32000]"
+        },
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] AI provider (default: google). Available: openai, google, openrouter (One of: [\"openai\", \"google\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash (One of: [\"gemini-nano-banana-2.1\", \"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\"])"
+        },
+        {
+          "name": "aspectRatio",
+          "flag": "--aspect-ratio",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Aspect ratio for the generated image (One of: [\"1:1\", \"2:3\", \"3:2\", \"3:4\", \"4:3\", \"4:5\", \"5:4\", \"9:16\", \"16:9\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"])"
+        },
+        {
+          "name": "numberOfImages",
+          "flag": "--number-of-images",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Number of images to generate (1-4) (number) [min: 1, max: 4]"
+        },
+        {
+          "name": "imageSize",
+          "flag": "--image-size",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image, gemini-nano-banana-2.1 and gemini-3-pro-image. Not accepted by the FLUX models. (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
+        },
+        {
+          "name": "referenceImages",
+          "flag": "--reference-images",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Reference images for style/composition. Max 14 for the Gemini models; per-model limits apply on OpenRouter; up to 16 on OpenAI (Array of a string) [max items: 14]"
+        },
+        {
+          "name": "savePath",
+          "flag": "--save-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative path for the image. Extension may change based on API response format. (string) [pattern: ^[^/].*\\.(png|jpg|jpeg|webp)$]"
+        }
+      ],
+      "examples": [
+        "prompt generate-image \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --aspect-ratio \"aspectRatio-value\" --number-of-images 1 --image-size \"imageSize-value\" --reference-images \"value-1,value-2\" \"savePath-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "generateVideo",
+      "description": "Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.",
+      "command": "prompt generate-video",
+      "usage": "prompt generate-video <prompt> [--provider <provider>] [--model <model>] <outputPath> [--overwrite] [--aspect-ratio <aspectRatio>] [--resolution <resolution>] [--seconds <seconds>] [--reference-image <referenceImage>] [--generate-audio] [--negative-prompt <negativePrompt>] [--poll-interval-ms <pollIntervalMs>] [--timeout-ms <timeoutMs>]",
+      "arguments": [
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Text description of the video to generate. (string)"
+        },
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional video provider. Defaults to Video generation settings. (One of: [\"google\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Google: gemini-omni-1.1-flash (retired Veo 3.1 preview ids are mapped to it). OpenRouter: e.g. google/veo-3.1-fast, google/veo-3.1. (string)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault-relative output path for the generated MP4 file, ending in .mp4. (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, replace an existing file at outputPath. Default: false. (boolean)"
+        },
+        {
+          "name": "aspectRatio",
+          "flag": "--aspect-ratio",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional output aspect ratio. Defaults to Video generation settings or model default. (One of: [\"16:9\", \"9:16\", \"1:1\"])"
+        },
+        {
+          "name": "resolution",
+          "flag": "--resolution",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. 360p is Google Gemini Omni Flash only. (One of: [\"360p\", \"720p\", \"1080p\", \"4k\"])"
+        },
+        {
+          "name": "seconds",
+          "flag": "--seconds",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional clip duration in seconds. Provider/model support varies; Google Gemini Omni Flash accepts whole seconds from 3 to 10. (number)"
+        },
+        {
+          "name": "referenceImage",
+          "flag": "--reference-image",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional vault-relative image path to guide image-to-video or reference-to-video generation. (string)"
+        },
+        {
+          "name": "generateAudio",
+          "flag": "--generate-audio",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether to ask the provider to generate audio when the selected model supports it. Google Gemini Omni Flash always generates audio and rejects false. (boolean)"
+        },
+        {
+          "name": "negativePrompt",
+          "flag": "--negative-prompt",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional negative prompt for providers/models that support it. Google Gemini Omni Flash has no negative prompt, so it is appended to the prompt as \"Do not include: ...\". (string)"
+        },
+        {
+          "name": "pollIntervalMs",
+          "flag": "--poll-interval-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional polling interval for asynchronous jobs. Default: 10000. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional timeout for asynchronous jobs. Default: 600000. (number)"
+        }
+      ],
+      "examples": [
+        "prompt generate-video \"prompt-value\" --provider \"provider-value\" --model \"model-value\" \"outputPath-value\" --aspect-ratio \"aspectRatio-value\" --resolution \"resolution-value\" --seconds 1 --reference-image \"referenceImage-value\" --negative-prompt \"negativePrompt-value\" --poll-interval-ms 1 --timeout-ms 1"
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "get",
+      "description": "Get a custom prompt for persona adoption - does NOT execute tasks automatically",
+      "command": "prompt get",
+      "usage": "prompt get [--id <id>] [--name <name>]",
+      "arguments": [
+        {
+          "name": "id",
+          "flag": "--id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Unique ID or name of the prompt to retrieve for persona adoption (will try ID first, then name) (string)"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Name of the prompt to retrieve for persona adoption (string)"
+        }
+      ],
+      "examples": [
+        "prompt get --id \"id-value\" --name \"name-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "list",
+      "description": "List all custom prompts",
+      "command": "prompt list",
+      "usage": "prompt list [--enabled-only] [--include-archived]",
+      "arguments": [
+        {
+          "name": "enabledOnly",
+          "flag": "--enabled-only",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, only return enabled prompts (boolean)"
+        },
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, include archived (disabled) prompts in results. Default false filters out archived prompts. (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt list"
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "listModels",
+      "description": "List available LLM models grouped by provider",
+      "command": "prompt list-models",
+      "usage": "prompt list-models",
+      "arguments": [],
+      "examples": [
+        "prompt list-models"
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "subagent",
+      "description": "Spawn an autonomous subagent to work on a task in the background.\n\nThe subagent runs independently, using tools as needed, until it completes.\nResults are delivered into the originating chat when the subagent finishes.\n\nUse for:\n- Deep research tasks requiring multiple searches\n- Analysis tasks that need file reading and processing\n- Complex operations you want to run in parallel\n\nLocal subagents have access to Nexus tools via getTools.\nFor a connected remote agent, supply its target ID and a self-contained task and context.\nRemote agents use their own tools and environment; they do not automatically have access\nto Nexus tools, this conversation, or the vault. Do not resubmit a task while it is running.\nRemote targets do not accept local persona, toolset, contextFiles, maxIterations, or continueBranchId.\n\nTo continue a subagent that hit max iterations, provide continueBranchId.",
+      "command": "prompt sub",
+      "usage": "prompt sub <task> [--target <target>] [--task-context <taskContext>] [--persona <persona>] [--toolset <toolset>] [--context-files <contextFiles>] [--max-iterations <maxIterations>] [--continue-branch-id <continueBranchId>]",
+      "arguments": [
+        {
+          "name": "task",
+          "flag": "--task",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Clear description of what the subagent should accomplish (string)"
+        },
+        {
+          "name": "target",
+          "flag": "--target",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Connected remote agent ID from the system prompt. Omit to run a local Nexus subagent. (string)"
+        },
+        {
+          "name": "taskContext",
+          "flag": "--task-context",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Self-contained context for the task. For remote agents, include relevant contents rather than vault paths. (string)"
+        },
+        {
+          "name": "persona",
+          "flag": "--persona",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional custom agent/persona name to use (string)"
+        },
+        {
+          "name": "toolset",
+          "flag": "--toolset",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Hand off specific tools to the subagent. Format: { \"agentName\": [\"tool1\", \"tool2\"] }. Tool schemas are pre-filled in subagent system prompt so it can use useTool directly without calling getTools first. (object)"
+        },
+        {
+          "name": "contextFiles",
+          "flag": "--context-files",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] File paths to read - content will be included in the subagent context (Array of a string)"
+        },
+        {
+          "name": "maxIterations",
+          "flag": "--max-iterations",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum iterations before pausing (default: 10) (number)"
+        },
+        {
+          "name": "continueBranchId",
+          "flag": "--continue-branch-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Branch ID to continue from max_iterations state (string)"
+        }
+      ],
+      "examples": [
+        "prompt sub \"task-value\" --target \"target-value\" --task-context \"taskContext-value\" --persona \"persona-value\" --toolset '{\"key\":\"value\"}' --context-files \"value-1,value-2\" --max-iterations 1 --continue-branch-id \"continueBranchId-value\""
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "update",
+      "description": "Update an existing custom prompt",
+      "command": "prompt update",
+      "usage": "prompt update <id> [--name <name>] [--description <description>] [--prompt <prompt>] [--is-enabled]",
+      "arguments": [
+        {
+          "name": "id",
+          "flag": "--id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Unique ID of the prompt to update (string) [min length: 1]"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New name for the prompt (must be unique) (string) [min length: 1, max length: 100]"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New description for the prompt (string) [min length: 1, max length: 500]"
+        },
+        {
+          "name": "prompt",
+          "flag": "--prompt",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New prompt text/persona (string) [min length: 1]"
+        },
+        {
+          "name": "isEnabled",
+          "flag": "--is-enabled",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether the prompt is enabled (boolean)"
+        }
+      ],
+      "examples": [
+        "prompt update \"id-value\" --name \"name-value\" --description \"description-value\" --prompt \"prompt-value\""
+      ]
+    },
+    {
+      "agent": "searchManager",
+      "tool": "content",
+      "description": "Search vault files. Set semantic=true for AI-powered conceptual search using local embeddings (best for concepts/related ideas), or semantic=false for keyword/fuzzy search (best for exact matches). Semantic search is desktop-only and becomes available once the embedding system initializes in the background (first run may take longer while the model downloads).",
+      "command": "search content",
+      "usage": "search content <query> [--semantic] [--limit <limit>] [--include-content] [--snippet-length <snippetLength>] [--paths <paths>]",
+      "arguments": [
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Search query to find files and content. (string)"
+        },
+        {
+          "name": "semantic",
+          "flag": "--semantic",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] true = AI-powered conceptual search (desktop only, best for concepts/related ideas). false = keyword/fuzzy search (default, best for exact matches). (boolean)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum number of results to return (default: 10) (number) [min: 1, max: 50]"
+        },
+        {
+          "name": "includeContent",
+          "flag": "--include-content",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] For keyword search only: include content snippets (default: true). Ignored for semantic search. (boolean)"
+        },
+        {
+          "name": "snippetLength",
+          "flag": "--snippet-length",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] For keyword search only: length of content snippets (default: 200). Ignored for semantic search. (number) [min: 50, max: 1000]"
+        },
+        {
+          "name": "paths",
+          "flag": "--paths",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Restrict search to specific folder paths. Supports glob patterns. (Array of a string)"
+        }
+      ],
+      "examples": [
+        "search content \"query-value\" --limit 1 --snippet-length 1 --paths \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "searchManager",
+      "tool": "directory",
+      "description": "FOCUSED directory search with REQUIRED paths parameter. Search for files and/or folders within specific directory paths using fuzzy matching and optional workspace context. Requires: query (search terms) and paths (directory paths to search - cannot be empty).",
+      "command": "search directory",
+      "usage": "search directory <query> --paths <paths> [--search-type <searchType>] [--file-types <fileTypes>] [--depth <depth>] [--pattern <pattern>] [--date-range <dateRange>] [--limit <limit>] [--include-content]",
+      "arguments": [
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Search term to find in file/folder names and paths. Fuzzy matching is automatic. (string) [min length: 1]"
+        },
+        {
+          "name": "paths",
+          "flag": "--paths",
+          "type": "array<string>",
+          "required": true,
+          "positional": false,
+          "description": "[REQUIRED] Directory paths to search within. Supports glob patterns. Use [\"/\"] for entire vault. (Array of a string) [min items: 1]"
+        },
+        {
+          "name": "searchType",
+          "flag": "--search-type",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] What to search for: \"files\", \"folders\", or \"both\" (One of: [\"files\", \"folders\", \"both\"])"
+        },
+        {
+          "name": "fileTypes",
+          "flag": "--file-types",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by file extensions without dots (Array of a string)"
+        },
+        {
+          "name": "depth",
+          "flag": "--depth",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum directory depth to search (1-10) (number) [min: 1, max: 10]"
+        },
+        {
+          "name": "pattern",
+          "flag": "--pattern",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Regular expression pattern to filter paths (string)"
+        },
+        {
+          "name": "dateRange",
+          "flag": "--date-range",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter results by modification date range (object)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum number of results (1-100) (number) [min: 1, max: 100]"
+        },
+        {
+          "name": "includeContent",
+          "flag": "--include-content",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include content snippets from files (boolean)"
+        }
+      ],
+      "examples": [
+        "search directory \"query-value\" --paths \"value-1,value-2\" --search-type \"searchType-value\" --file-types \"value-1,value-2\" --depth 1 --pattern \"pattern-value\" --date-range '{\"key\":\"value\"}' --limit 1"
+      ]
+    },
+    {
+      "agent": "searchManager",
+      "tool": "memory",
+      "description": "Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId or sessionName): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., \"how did we implement auth?\").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you need.\n- Use sessionName + windowSize to get full context around a named session match.\n\nREQUIRES: query. Optional: workspaceId accepts the workspace name from load-workspace; omit it to search the global workspace.",
+      "command": "search memory",
+      "usage": "search memory <query> [--memory-types <memoryTypes>] [--session-name <sessionName>] [--window-size <windowSize>] [--date-range <dateRange>] [--limit <limit>] [--tool-call-filters <toolCallFilters>] [--search-method <searchMethod>]",
+      "arguments": [
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] What to search for. Use natural language for conversations ('how did we handle auth?') or specific terms for tool history ('contentManager read'). Examples: 'authentication implementation', 'database migration error', 'what tools were used for file editing' (string) [min length: 1]"
+        },
+        {
+          "name": "memoryTypes",
+          "flag": "--memory-types",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Which memory to search. 'conversations' = past chat Q&A pairs, 'traces' = tool execution history, 'sessions' = named work sessions, 'states' = workspace snapshots. Defaults to all available types. Narrow to specific types if you know what you need. (Array of a string)"
+        },
+        {
+          "name": "sessionName",
+          "flag": "--session-name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Human-readable session name returned by load-workspace. Use this to scope search to a named session without changing the top-level chat sessionId. (string)"
+        },
+        {
+          "name": "windowSize",
+          "flag": "--window-size",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Number of conversation turns before/after each match to include. Default 3. Only used in scoped mode (when sessionId is provided). (number) [min: 1, max: 20]"
+        },
+        {
+          "name": "dateRange",
+          "flag": "--date-range",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter results by date range (object)"
+        },
+        {
+          "name": "limit",
+          "flag": "--limit",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum number of results to return (number) [min: 1, max: 100]"
+        },
+        {
+          "name": "toolCallFilters",
+          "flag": "--tool-call-filters",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Additional filters for tool call traces (object)"
+        },
+        {
+          "name": "searchMethod",
+          "flag": "--search-method",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to match results. 'mixed' (default, recommended) combines approaches for best coverage. 'semantic' prioritizes meaning-based matching. 'exact' requires literal keyword matches. (One of: [\"semantic\", \"exact\", \"mixed\"])"
+        }
+      ],
+      "examples": [
+        "search memory \"query-value\" --memory-types \"value-1,value-2\" --session-name \"sessionName-value\" --window-size 1 --date-range '{\"key\":\"value\"}' --limit 1 --tool-call-filters '{\"key\":\"value\"}' --search-method \"searchMethod-value\""
+      ]
+    },
+    {
+      "agent": "searchManager",
+      "tool": "queryNotes",
+      "description": "Run a read-only SQL SELECT over the notes index — your vault's notes + frontmatter as a queryable database. Filter by arbitrary frontmatter properties, compute aggregates, and sort/group, all in SQL (SQLite does the work; there is no separate query language).\n\nTABLES:\n- notes(n): id, path, basename, folder, ext, title, ctime, mtime, size, tags_json, links_json, frontmatter_json (ctime/mtime are epoch ms).\n- note_properties(p): note_id, key, key_raw, value_text, value_num, value_type, position — one row per frontmatter property (per list element). This is the INDEXED filter path.\n\nPATTERNS:\n- Filter by a property: ... WHERE EXISTS (SELECT 1 FROM note_properties p WHERE p.note_id = n.id AND p.key = 'status' AND p.value_text = 'active').\n- Dates/numbers: compare p.value_num (dates stored as epoch ms).\n- Project a value: SELECT json_extract(n.frontmatter_json, '$.status') AS status FROM notes n.\n\nOnly a single SELECT/WITH statement is allowed. Pass describe=true to get live columns + the distinct property keys present in the vault.",
+      "command": "search query-notes",
+      "usage": "search query-notes [--sql <sql>] [--params <params>] [--max-rows <maxRows>] [--describe]",
+      "arguments": [
+        {
+          "name": "sql",
+          "flag": "--sql",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] A single read-only SELECT/WITH statement. Example: \"SELECT path, json_extract(frontmatter_json,'$.status') AS status FROM notes LIMIT 20\". (string)"
+        },
+        {
+          "name": "params",
+          "flag": "--params",
+          "type": "array<unknown>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional positional bind values for ? placeholders. (Array of any)"
+        },
+        {
+          "name": "maxRows",
+          "flag": "--max-rows",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Max rows to return (default 500, hard cap 5000). (number) [min: 1, max: 5000]"
+        },
+        {
+          "name": "describe",
+          "flag": "--describe",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Return the index schema + distinct frontmatter keys instead of running sql. (boolean)"
+        }
+      ],
+      "examples": [
+        "search query-notes --sql \"sql-value\" --params \"value-1,value-2\" --max-rows 1"
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "archiveSkill",
+      "description": "Archive a skill (soft, reversible) so it is hidden from listSkills, or restore an archived skill. This is the only \"delete\" available to the model; hard delete is UI-only.",
+      "command": "skills archive-skill",
+      "usage": "skills archive-skill <name> [--source <source>] [--restore]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the skill to archive or restore. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to disambiguate when the name exists across providers. (string)"
+        },
+        {
+          "name": "restore",
+          "flag": "--restore",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, restore (un-archive) the skill instead of archiving it. Default: false (boolean)"
+        }
+      ],
+      "examples": [
+        "skills archive-skill \"name-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "createSkill",
+      "description": "Create a new skill from name/description/body. Validated before writing. Defaults to the vault-native \"nexus\" provider when no source is given.",
+      "command": "skills create-skill",
+      "usage": "skills create-skill [--frontmatter <frontmatter>] [--tool-selectors <toolSelectors>] <name> <description> <body> [--source <source>]",
+      "arguments": [
+        {
+          "name": "frontmatter",
+          "flag": "--frontmatter",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional frontmatter metadata; existing keys are preserved on update. (object)"
+        },
+        {
+          "name": "toolSelectors",
+          "flag": "--tool-selectors",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Required Nexus tool selectors. An explicit empty array clears dependencies. (Array of a string)"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill name — lowercase-hyphenated; becomes the folder name. Must be unique within the provider. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill description — the discovery signal surfaced in listSkills. Non-empty, sane length. (string)"
+        },
+        {
+          "name": "body",
+          "flag": "--body",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] SKILL.md body — the playbook the agent reads back and follows. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id. Default: \"nexus\" (vault-native). (string)"
+        }
+      ],
+      "examples": [
+        "skills create-skill --frontmatter '{\"key\":\"value\"}' --tool-selectors \"value-1,value-2\" \"name-value\" \"description-value\" \"body-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "listSkills",
+      "description": "List discovered skills, recency-ordered, with name/provider/description. Optionally filter by search query, provider source, or include archived skills.",
+      "command": "skills list-skills",
+      "usage": "skills list-skills [--search <search>] [--source <source>] [--include-archived]",
+      "arguments": [
+        {
+          "name": "search",
+          "flag": "--search",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional case-insensitive query matched against skill name/description. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id (e.g. \"claude\", \"codex\", \"nexus\") to filter by source. (string)"
+        },
+        {
+          "name": "includeArchived",
+          "flag": "--include-archived",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, include archived skills in the result. Default: false (boolean)"
+        }
+      ],
+      "examples": [
+        "skills list-skills --search \"search-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "loadSkill",
+      "description": "Load a skill — returns its SKILL.md body, the skill folder listing, a nudge to open bundled files with the existing `content read` tool, and recent usage history. These are instructions to read and follow — do NOT auto-execute them.",
+      "command": "skills load-skill",
+      "usage": "skills load-skill <name> [--source <source>] [--recursive] [--include-history]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Skill name (folder name) to load. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id. Required only when the name is ambiguous across providers. (string)"
+        },
+        {
+          "name": "recursive",
+          "flag": "--recursive",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Show the full recursive file tree (true) or top-level items only (false). Default: false (top-level only, folders marked with a trailing /). (boolean)"
+        },
+        {
+          "name": "includeHistory",
+          "flag": "--include-history",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, include recent usage history with this skill. Default: true (boolean)"
+        }
+      ],
+      "examples": [
+        "skills load-skill \"name-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "syncSkills",
+      "description": "Import provider skills into the vault mirror and/or sync edited skills back to their origin dotfolders. Providers are auto-discovered from the vault-root scan. Cross-platform via vault.adapter.",
+      "command": "skills sync-skills",
+      "usage": "skills sync-skills [--direction <direction>] [--source <source>]",
+      "arguments": [
+        {
+          "name": "direction",
+          "flag": "--direction",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] \"import\" provider → mirror, \"sync-back\" mirror → provider, or \"both\". Default: \"both\" (One of: [\"import\", \"sync-back\", \"both\"])"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to sync. Omit to sync every discovered provider. (string)"
+        }
+      ],
+      "examples": [
+        "skills sync-skills --direction \"direction-value\" --source \"source-value\""
+      ]
+    },
+    {
+      "agent": "skills",
+      "tool": "updateSkill",
+      "description": "Update an existing skill's description and/or body, optionally renaming it. Validated before writing; archives the prior version and syncs back to the origin if provider-sourced.",
+      "command": "skills update-skill",
+      "usage": "skills update-skill [--repair-references-from <repairReferencesFrom>] [--frontmatter <frontmatter>] [--tool-selectors <toolSelectors>] <name> [--source <source>] [--description <description>] [--body <body>] [--rename <rename>]",
+      "arguments": [
+        {
+          "name": "repairReferencesFrom",
+          "flag": "--repair-references-from",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Explicit prior qualified identity returned by a partial rename failure. Target the returned new name/source and pass this field to retry updating workflow attachments. (object)"
+        },
+        {
+          "name": "frontmatter",
+          "flag": "--frontmatter",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional frontmatter metadata; existing keys are preserved on update. (object)"
+        },
+        {
+          "name": "toolSelectors",
+          "flag": "--tool-selectors",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Required Nexus tool selectors. An explicit empty array clears dependencies. (Array of a string)"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Name of the skill to update. (string)"
+        },
+        {
+          "name": "source",
+          "flag": "--source",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional provider id to disambiguate when the name exists across providers. (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new description. Validated for non-empty and sane length. (string)"
+        },
+        {
+          "name": "body",
+          "flag": "--body",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new SKILL.md body. (string)"
+        },
+        {
+          "name": "rename",
+          "flag": "--rename",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional new name — lowercase-hyphenated. Renames the skill folder. (string)"
+        }
+      ],
+      "examples": [
+        "skills update-skill --repair-references-from '{\"key\":\"value\"}' --frontmatter '{\"key\":\"value\"}' --tool-selectors \"value-1,value-2\" \"name-value\" --source \"source-value\" --description \"description-value\" --body \"body-value\" --rename \"rename-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "archive",
+      "description": "Safely archive a file or folder (moves to .archive/ with timestamp)",
+      "command": "storage archive",
+      "usage": "storage archive <path>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to file or folder to archive (string)"
+        }
+      ],
+      "examples": [
+        "storage archive \"path-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "copy",
+      "description": "Duplicate a file",
+      "command": "storage copy",
+      "usage": "storage copy <path> <newPath> [--overwrite]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Source file path (string)"
+        },
+        {
+          "name": "newPath",
+          "flag": "--new-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Destination path for the copy (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Overwrite if destination exists (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "storage copy \"path-value\" \"newPath-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "createFolder",
+      "description": "Create a new folder in the vault",
+      "command": "storage create-folder",
+      "usage": "storage create-folder <path>",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path of the folder to create (REQUIRED) (string)"
+        }
+      ],
+      "examples": [
+        "storage create-folder \"path-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "list",
+      "description": "List contents of a directory",
+      "command": "storage list",
+      "usage": "storage list [--path <path>] [--filter <filter>]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Directory path (optional). Use empty string (\"\"), \"/\" or \".\" for vault root. Defaults to vault root. (string)"
+        },
+        {
+          "name": "filter",
+          "flag": "--filter",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional filter pattern. Supports glob patterns (* for any chars, ? for single char) or regular expressions. Examples: \"*deep*\", \"test*\", \".*regex.*\" (string)"
+        }
+      ],
+      "examples": [
+        "storage list --path \"path-value\" --filter \"filter-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "move",
+      "description": "Move or rename a file or folder",
+      "command": "storage move",
+      "usage": "storage move <path> <newPath> [--overwrite]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Source path (file or folder) (string)"
+        },
+        {
+          "name": "newPath",
+          "flag": "--new-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Destination path. Uses Obsidian rename semantics, so internal links are updated when enabled in Obsidian settings. (string)"
+        },
+        {
+          "name": "overwrite",
+          "flag": "--overwrite",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Overwrite if destination exists (default: false) (boolean)"
+        }
+      ],
+      "examples": [
+        "storage move \"path-value\" \"newPath-value\""
+      ]
+    },
+    {
+      "agent": "storageManager",
+      "tool": "open",
+      "description": "Open a file in the editor",
+      "command": "storage open",
+      "usage": "storage open <path> [--mode <mode>] [--focus]",
+      "arguments": [
+        {
+          "name": "path",
+          "flag": "--path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Path to the file to open (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the file (tab, split, window, or current) (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "focus",
+          "flag": "--focus",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether to focus the opened file (boolean)"
+        }
+      ],
+      "examples": [
+        "storage open \"path-value\" --mode \"mode-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "archiveProject",
+      "description": "Archive a project by setting its status to 'archived' (soft-delete). The project and its tasks remain queryable but are excluded from active listings. Requires a projectId (from createProject or listProjects).",
+      "command": "task archive-project",
+      "usage": "task archive-project <projectId>",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project ID to archive (REQUIRED — from createProject or listProjects) (string)"
+        }
+      ],
+      "examples": [
+        "task archive-project \"projectId-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "create",
+      "description": "Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.",
+      "command": "task create",
+      "usage": "task create <projectId> <title> [--description <description>] [--parent-task-id <parentTaskId>] [--priority <priority>] [--due-date <dueDate>] [--assignee <assignee>] [--tags <tags>] [--depends-on <dependsOn>] [--linked-notes <linkedNotes>] [--metadata <metadata>]",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project ID to create the task in (REQUIRED — from createProject or listProjects) (string)"
+        },
+        {
+          "name": "title",
+          "flag": "--title",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Task title (REQUIRED) (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task description (optional) (string)"
+        },
+        {
+          "name": "parentTaskId",
+          "flag": "--parent-task-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Parent task ID or taskRef to nest this task under as a subtask (optional — from createTask or listTasks) (string)"
+        },
+        {
+          "name": "priority",
+          "flag": "--priority",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task priority (default: medium) (One of: [\"critical\", \"high\", \"medium\", \"low\"])"
+        },
+        {
+          "name": "dueDate",
+          "flag": "--due-date",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow) (number)"
+        },
+        {
+          "name": "assignee",
+          "flag": "--assignee",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Assignee name or identifier (optional) (string)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Tags for categorization (optional) (Array of a string)"
+        },
+        {
+          "name": "dependsOn",
+          "flag": "--depends-on",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task IDs or taskRefs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error. (Array of a string)"
+        },
+        {
+          "name": "linkedNotes",
+          "flag": "--linked-notes",
+          "type": "array<unknown>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Vault notes to link to this task. Each item is EITHER a plain string vault path (linkType defaults to \"reference\") OR an object { notePath, linkType } to set the relationship explicitly. linkType values: input = the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output = the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference = related/contextual note the task does NOT consume (association only, not part of the data flow). Links can also be added or changed after creation via the linkNote tool or updateTask addNoteLinks. (Array of any)"
+        },
+        {
+          "name": "metadata",
+          "flag": "--metadata",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom metadata key-value pairs (optional) (object)"
+        }
+      ],
+      "examples": [
+        "task create \"projectId-value\" \"title-value\" --description \"description-value\" --parent-task-id \"parentTaskId-value\" --priority \"priority-value\" --due-date 1 --assignee \"assignee-value\" --tags \"value-1,value-2\" --depends-on \"value-1,value-2\" --linked-notes \"value-1,value-2\" --metadata '{\"key\":\"value\"}'"
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "createProject",
+      "description": "Create a new project within a workspace. Projects organize tasks and must have a unique name per workspace. Requires a workspaceId (from loadWorkspace or createWorkspace). Returns the new projectId.",
+      "command": "task create-project",
+      "usage": "task create-project <name> [--description <description>] [--metadata <metadata>]",
+      "arguments": [
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project name (REQUIRED — must be unique within the workspace) (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Project description (optional) (string)"
+        },
+        {
+          "name": "metadata",
+          "flag": "--metadata",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom metadata key-value pairs (optional) (object)"
+        }
+      ],
+      "examples": [
+        "task create-project \"name-value\" --description \"description-value\" --metadata '{\"key\":\"value\"}'"
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "linkNote",
+      "description": "Create or remove a bidirectional link between a vault note and a task. Link types: reference (related note), output (task produces this note), input (task consumes this note). Use action=unlink to remove an existing link.",
+      "command": "task link-note",
+      "usage": "task link-note <taskId> <notePath> [--link-type <linkType>] [--action <action>]",
+      "arguments": [
+        {
+          "name": "taskId",
+          "flag": "--task-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Task ID or short taskRef to link the note to (REQUIRED — from createTask or listTasks) (string)"
+        },
+        {
+          "name": "notePath",
+          "flag": "--note-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Vault note path, e.g. \"folder/note.md\" (REQUIRED) (string)"
+        },
+        {
+          "name": "linkType",
+          "flag": "--link-type",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Type of link (default: reference). input=the task DEPENDS ON / CONSUMES this note (required source material; a precondition — forms a data-flow edge). output=the task PRODUCES this note (the artifact/result — forms a data-flow edge). reference=related/contextual note the task does NOT consume (association only, not part of the data flow). (One of: [\"reference\", \"output\", \"input\"])"
+        },
+        {
+          "name": "action",
+          "flag": "--action",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Action to perform (default: link) (One of: [\"link\", \"unlink\"])"
+        }
+      ],
+      "examples": [
+        "task link-note \"taskId-value\" \"notePath-value\" --link-type \"linkType-value\" --action \"action-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "list",
+      "description": "List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including dependencies and timestamps.",
+      "command": "task list",
+      "usage": "task list <projectId> [--status <status>] [--priority <priority>] [--assignee <assignee>] [--parent-task-id <parentTaskId>] [--include-subtasks] [--sort-by <sortBy>] [--sort-order <sortOrder>] [--page <page>] [--page-size <pageSize>]",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project ID (REQUIRED — from createProject or listProjects) (string)"
+        },
+        {
+          "name": "status",
+          "flag": "--status",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by task status (One of: [\"todo\", \"in_progress\", \"done\", \"cancelled\"])"
+        },
+        {
+          "name": "priority",
+          "flag": "--priority",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by priority (One of: [\"critical\", \"high\", \"medium\", \"low\"])"
+        },
+        {
+          "name": "assignee",
+          "flag": "--assignee",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by assignee (string)"
+        },
+        {
+          "name": "parentTaskId",
+          "flag": "--parent-task-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by parent task ID or taskRef (subtasks of this task) (string)"
+        },
+        {
+          "name": "includeSubtasks",
+          "flag": "--include-subtasks",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Include subtasks in results (default: true) (boolean)"
+        },
+        {
+          "name": "sortBy",
+          "flag": "--sort-by",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sort field (default: updated) (One of: [\"created\", \"updated\", \"priority\", \"title\", \"dueDate\"])"
+        },
+        {
+          "name": "sortOrder",
+          "flag": "--sort-order",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Sort direction (default: desc) (One of: [\"asc\", \"desc\"])"
+        },
+        {
+          "name": "page",
+          "flag": "--page",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Page number (0-indexed, default: 0) (number) [min: 0]"
+        },
+        {
+          "name": "pageSize",
+          "flag": "--page-size",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Items per page (default: 20) (number) [min: 1, max: 100]"
+        }
+      ],
+      "examples": [
+        "task list \"projectId-value\" --status \"status-value\" --priority \"priority-value\" --assignee \"assignee-value\" --parent-task-id \"parentTaskId-value\" --sort-by \"sortBy-value\" --sort-order \"sortOrder-value\" --page 1 --page-size 1"
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "listProjects",
+      "description": "List projects in a workspace with optional status filter (active/completed/archived). Returns paginated project objects with id, name, description, status, and timestamps. Use to discover projectIds for task operations.",
+      "command": "task list-projects",
+      "usage": "task list-projects [--status <status>] [--page <page>] [--page-size <pageSize>]",
+      "arguments": [
+        {
+          "name": "status",
+          "flag": "--status",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Filter by project status (One of: [\"active\", \"completed\", \"archived\"])"
+        },
+        {
+          "name": "page",
+          "flag": "--page",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Page number (0-indexed, default: 0) (number) [min: 0]"
+        },
+        {
+          "name": "pageSize",
+          "flag": "--page-size",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Items per page (default: 20) (number) [min: 1, max: 100]"
+        }
+      ],
+      "examples": [
+        "task list-projects --status \"status-value\" --page 1 --page-size 1"
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "move",
+      "description": "Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId (from createTask or listTasks).",
+      "command": "task move",
+      "usage": "task move <taskId> [--project-id <projectId>] [--parent-task-id <parentTaskId>]",
+      "arguments": [
+        {
+          "name": "taskId",
+          "flag": "--task-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Task ID or short taskRef to move (REQUIRED — from createTask or listTasks) (string)"
+        },
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Target project ID to move the task to (from createProject or listProjects — must be in the same workspace) (string)"
+        },
+        {
+          "name": "parentTaskId",
+          "flag": "--parent-task-id",
+          "type": "unknown",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New parent task ID or taskRef (null to make top-level, string to nest under another task) (string | null)"
+        }
+      ],
+      "examples": [
+        "task move \"taskId-value\" --project-id \"projectId-value\" --parent-task-id \"parentTaskId-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "open",
+      "description": "Open the native Task Board workspace view in Obsidian. Optional filters let you preselect a workspace, project, or search query before the board is shown.",
+      "command": "task open",
+      "usage": "task open [--project-id <projectId>] [--search <search>] [--mode <mode>]",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional project ID to preselect in the board filter. (string)"
+        },
+        {
+          "name": "search",
+          "flag": "--search",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional search query to prefill in the board search input. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the task board view. (One of: [\"tab\", \"split\", \"current\", \"sidebar\"])"
+        }
+      ],
+      "examples": [
+        "task open --project-id \"projectId-value\" --search \"search-value\" --mode \"mode-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "query",
+      "description": "DAG-aware queries on a project's tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId.",
+      "command": "task query",
+      "usage": "task query <projectId> <query> [--task-id <taskId>]",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project ID to query (REQUIRED — from createProject or listProjects) (string)"
+        },
+        {
+          "name": "query",
+          "flag": "--query",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Query type (REQUIRED). nextActions: tasks with status=todo whose dependencies are all done — these are ready to start. blockedTasks: tasks waiting on incomplete dependencies, returned with their blocker details. dependencyTree: full upstream/downstream dependency graph for a specific task (requires taskId). (One of: [\"nextActions\", \"blockedTasks\", \"dependencyTree\"])"
+        },
+        {
+          "name": "taskId",
+          "flag": "--task-id",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task ID or short taskRef (REQUIRED for dependencyTree query — from createTask or listTasks) (string)"
+        }
+      ],
+      "examples": [
+        "task query \"projectId-value\" \"query-value\" --task-id \"taskId-value\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "update",
+      "description": "Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).",
+      "command": "task update",
+      "usage": "task update <taskId> [--title <title>] [--description <description>] [--status <status>] [--priority <priority>] [--due-date <dueDate>] [--assignee <assignee>] [--tags <tags>] [--add-dependencies <addDependencies>] [--remove-dependencies <removeDependencies>] [--add-note-links <addNoteLinks>] [--remove-note-links <removeNoteLinks>] [--metadata <metadata>] [--metadata-mode <metadataMode>] [--remove-metadata-keys <removeMetadataKeys>]",
+      "arguments": [
+        {
+          "name": "taskId",
+          "flag": "--task-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Task ID or short taskRef to update (REQUIRED — from createTask or listTasks) (string)"
+        },
+        {
+          "name": "title",
+          "flag": "--title",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New task title (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New task description (string)"
+        },
+        {
+          "name": "status",
+          "flag": "--status",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New task status (setting to done auto-records completedAt timestamp) (One of: [\"todo\", \"in_progress\", \"done\", \"cancelled\"])"
+        },
+        {
+          "name": "priority",
+          "flag": "--priority",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New task priority (One of: [\"critical\", \"high\", \"medium\", \"low\"])"
+        },
+        {
+          "name": "dueDate",
+          "flag": "--due-date",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow) (number)"
+        },
+        {
+          "name": "assignee",
+          "flag": "--assignee",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New assignee name or identifier (string)"
+        },
+        {
+          "name": "tags",
+          "flag": "--tags",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Replace entire tags array with these values (Array of a string)"
+        },
+        {
+          "name": "addDependencies",
+          "flag": "--add-dependencies",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task IDs or taskRefs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error. (Array of a string)"
+        },
+        {
+          "name": "removeDependencies",
+          "flag": "--remove-dependencies",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Task IDs or taskRefs to remove from this task's dependencies (Array of a string)"
+        },
+        {
+          "name": "addNoteLinks",
+          "flag": "--add-note-links",
+          "type": "array<object>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Vault notes to link to this task (Array of an object)"
+        },
+        {
+          "name": "removeNoteLinks",
+          "flag": "--remove-note-links",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Vault note paths to unlink from this task (Array of a string)"
+        },
+        {
+          "name": "metadata",
+          "flag": "--metadata",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom metadata. Shallow-merged by default: supplied top-level keys overwrite matching keys and all other stored keys survive. Nested objects are replaced whole. Use metadataMode \"replace\" with {} to clear all metadata. (object)"
+        },
+        {
+          "name": "metadataMode",
+          "flag": "--metadata-mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to apply metadata. \"merge\" is the default. \"replace\" stores exactly the supplied metadata object and requires metadata; it cannot be combined with removeMetadataKeys. (One of: [\"merge\", \"replace\"])"
+        },
+        {
+          "name": "removeMetadataKeys",
+          "flag": "--remove-metadata-keys",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Top-level metadata keys to delete after applying a merge patch. Merge mode only. (Array of a string)"
+        }
+      ],
+      "examples": [
+        "task update \"taskId-value\" --title \"title-value\" --description \"description-value\" --status \"status-value\" --priority \"priority-value\" --due-date 1 --assignee \"assignee-value\" --tags \"value-1,value-2\" --add-dependencies \"value-1,value-2\" --remove-dependencies \"value-1,value-2\" --add-note-links \"value-1,value-2\" --remove-note-links \"value-1,value-2\" --metadata '{\"key\":\"value\"}' --metadata-mode \"metadataMode-value\" --remove-metadata-keys \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "taskManager",
+      "tool": "updateProject",
+      "description": "Update a project's name, description, status (active/completed/archived), or custom metadata. Requires a projectId (from createProject or listProjects).",
+      "command": "task update-project",
+      "usage": "task update-project <projectId> [--name <name>] [--description <description>] [--status <status>] [--metadata <metadata>] [--metadata-mode <metadataMode>] [--remove-metadata-keys <removeMetadataKeys>]",
+      "arguments": [
+        {
+          "name": "projectId",
+          "flag": "--project-id",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Project ID to update (REQUIRED — from createProject or listProjects) (string)"
+        },
+        {
+          "name": "name",
+          "flag": "--name",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New project name (string)"
+        },
+        {
+          "name": "description",
+          "flag": "--description",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New project description (string)"
+        },
+        {
+          "name": "status",
+          "flag": "--status",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] New project status (One of: [\"active\", \"completed\", \"archived\"])"
+        },
+        {
+          "name": "metadata",
+          "flag": "--metadata",
+          "type": "object",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Custom metadata. Shallow-merged by default: supplied top-level keys overwrite matching keys and all other stored keys survive. Nested objects are replaced whole. Use metadataMode \"replace\" with {} to clear all metadata. (object)"
+        },
+        {
+          "name": "metadataMode",
+          "flag": "--metadata-mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to apply metadata. \"merge\" is the default. \"replace\" stores exactly the supplied metadata object and requires metadata; it cannot be combined with removeMetadataKeys. (One of: [\"merge\", \"replace\"])"
+        },
+        {
+          "name": "removeMetadataKeys",
+          "flag": "--remove-metadata-keys",
+          "type": "array<string>",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Top-level metadata keys to delete after applying a merge patch. Merge mode only. (Array of a string)"
+        }
+      ],
+      "examples": [
+        "task update-project \"projectId-value\" --name \"name-value\" --description \"description-value\" --status \"status-value\" --metadata '{\"key\":\"value\"}' --metadata-mode \"metadataMode-value\" --remove-metadata-keys \"value-1,value-2\""
+      ]
+    },
+    {
+      "agent": "webTools",
+      "tool": "capture-markdown",
+      "description": "Extract a webpage as Markdown with metadata frontmatter and save it to the vault. Fetches the URL directly (works on mobile); falls back to the desktop Web Viewer for pages that need JavaScript or a signed-in session.",
+      "command": "web capture-markdown",
+      "usage": "web capture-markdown [--url <url>] <outputPath> [--transport <transport>] [--mode <mode>] [--min-word-count <minWordCount>] [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "arguments": [
+        {
+          "name": "url",
+          "flag": "--url",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Page to capture. Required unless transport is \"browser\", which can capture the already-open Web Viewer tab. (string)"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Destination note path in the vault. Required so the caller explicitly chooses where the Markdown capture is saved. (string)"
+        },
+        {
+          "name": "transport",
+          "flag": "--transport",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How to retrieve the page. \"fetch\" downloads it directly and is the only option on mobile. \"browser\" renders it in the desktop Web Viewer, which handles JavaScript-rendered and signed-in pages. \"auto\" fetches first and falls back to the browser on desktop. (One of: [\"auto\", \"fetch\", \"browser\"])"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab when the browser transport is used. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "minWordCount",
+          "flag": "--min-word-count",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Under \"auto\", a fetch result with fewer words than this is treated as a JavaScript-rendered shell and retried in the browser. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum time to wait for the Web Viewer page to load (browser transport only). (number)"
+        },
+        {
+          "name": "settleMs",
+          "flag": "--settle-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Extra delay after page load before reading the DOM (browser transport only). (number)"
+        }
+      ],
+      "examples": [
+        "web capture-markdown --url \"url-value\" \"outputPath-value\" --transport \"transport-value\" --mode \"mode-value\" --min-word-count 1 --timeout-ms 1 --settle-ms 1"
+      ]
+    },
+    {
+      "agent": "webTools",
+      "tool": "capture-pdf",
+      "description": "Print the current Web Viewer page to PDF and save it to the vault. Desktop only.",
+      "command": "web capture-pdf",
+      "usage": "web capture-pdf [--url <url>] [--mode <mode>] <outputPath> [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "arguments": [
+        {
+          "name": "url",
+          "flag": "--url",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional URL to open in Web Viewer before capturing. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab when url is provided. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Destination PDF path in the vault. Required so the caller explicitly chooses where the document is saved. (string)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum time to wait for page load. (number)"
+        },
+        {
+          "name": "settleMs",
+          "flag": "--settle-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Extra delay after page load before printing. (number)"
+        }
+      ],
+      "examples": [
+        "web capture-pdf --url \"url-value\" --mode \"mode-value\" \"outputPath-value\" --timeout-ms 1 --settle-ms 1"
+      ]
+    },
+    {
+      "agent": "webTools",
+      "tool": "capture-png",
+      "description": "Capture the current Web Viewer page as a PNG image and save it to the vault. Desktop only.",
+      "command": "web capture-png",
+      "usage": "web capture-png [--url <url>] [--mode <mode>] <outputPath> [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "arguments": [
+        {
+          "name": "url",
+          "flag": "--url",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional URL to open in Web Viewer before capturing. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab when url is provided. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "outputPath",
+          "flag": "--output-path",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] Destination PNG path in the vault. Required so the caller explicitly chooses where the image is saved. (string)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum time to wait for page load. (number)"
+        },
+        {
+          "name": "settleMs",
+          "flag": "--settle-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Extra delay after page load before capturing. (number)"
+        }
+      ],
+      "examples": [
+        "web capture-png --url \"url-value\" --mode \"mode-value\" \"outputPath-value\" --timeout-ms 1 --settle-ms 1"
+      ]
+    },
+    {
+      "agent": "webTools",
+      "tool": "links",
+      "description": "Extract links from the current Web Viewer page. Desktop only.",
+      "command": "web links",
+      "usage": "web links [--url <url>] [--mode <mode>] [--max-links <maxLinks>] [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "arguments": [
+        {
+          "name": "url",
+          "flag": "--url",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional URL to open in Web Viewer before extracting links. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab when url is provided. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "maxLinks",
+          "flag": "--max-links",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum number of links to return. (number)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum time to wait for page load. (number)"
+        },
+        {
+          "name": "settleMs",
+          "flag": "--settle-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Extra delay after page load before extracting links. (number)"
+        }
+      ],
+      "examples": [
+        "web links --url \"url-value\" --mode \"mode-value\" --max-links 1 --timeout-ms 1 --settle-ms 1"
+      ]
+    },
+    {
+      "agent": "webTools",
+      "tool": "open",
+      "description": "Open a webpage in Obsidian Web Viewer. Desktop only.",
+      "command": "web open",
+      "usage": "web open <url> [--mode <mode>] [--focus] [--timeout-ms <timeoutMs>] [--settle-ms <settleMs>]",
+      "arguments": [
+        {
+          "name": "url",
+          "flag": "--url",
+          "type": "string",
+          "required": true,
+          "positional": true,
+          "description": "[REQUIRED] The webpage URL to open in Obsidian Web Viewer. (string)"
+        },
+        {
+          "name": "mode",
+          "flag": "--mode",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Where to open the Web Viewer tab. (One of: [\"tab\", \"split\", \"window\", \"current\"])"
+        },
+        {
+          "name": "focus",
+          "flag": "--focus",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Whether to focus the Web Viewer tab after opening it. (boolean)"
+        },
+        {
+          "name": "timeoutMs",
+          "flag": "--timeout-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Maximum time to wait for the page to load. (number)"
+        },
+        {
+          "name": "settleMs",
+          "flag": "--settle-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Extra delay after load before returning, to allow client-side rendering to settle. (number)"
+        }
+      ],
+      "examples": [
+        "web open \"url-value\" --mode \"mode-value\" --timeout-ms 1 --settle-ms 1"
+      ]
+    }
+  ],
+  "nexusVersion": "5.21.3"
+}

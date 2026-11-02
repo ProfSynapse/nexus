@@ -67,6 +67,10 @@ Previously used tools are resolved against the current tool catalog. Their full 
 
 Switching to a smaller model applies its budget to the next send. If necessary, Nexus summarizes older context and retains the latest exchanges; the full transcript stays saved. If the prompt still exceeds the budget afterward, the send stops and your draft is restored. Switching back to a larger model does not automatically put compacted messages back into the prompt.
 
+## Provider errors and retries
+
+Provider failures name the service and explain whether to check your key, choose another model, wait for quota, or retry. If a provider reports overload before any reply output arrives, Nexus retries up to four times with increasing waits and shows the retry count. Stop cancels the wait. Once reply output has arrived, a failure is shown without replaying that request.
+
 ## Web search and costs
 
 Enable **Web search** in chat settings to let supported Anthropic, OpenAI, OpenRouter, or Gemini 3+ models search when needed. Sources appear with the reply. Older direct Gemini models do not expose this option because native chat also uses Nexus tools.
