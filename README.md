@@ -17,6 +17,12 @@ Nexus can be used in two ways:
 
 > Nexus is the successor to Claudesidian. Legacy installs in `.obsidian/plugins/claudesidian-mcp/` still work.
 
+![Ask Nexus to open a saved plan, open its task board, and move the QA task to Done through chat](media/demos/chat-open-and-update.gif)
+
+*Ask Nexus to open your notes, bring up your board, and mark a task done while chat stays in the sidebar. [Watch the full 36-second workflow](media/demos/nexus-chat-workflow.mp4), from source meeting to saved plan and completed QA. Real Anthropic chat with fictional data. [Visual tour and verification](guide/visual-tour.md).*
+
+Want a guided path? **[Your AI Second Brain](https://www.synapticlabs.ai/learn/your-ai-second-brain)** is Synaptic Labs' course on building an Obsidian knowledge system with AI agents, Nexus, skills and workflows, with a practice Seed Vault and step-by-step lessons.
+
 ## Setup
 
 - Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, and `main.js`

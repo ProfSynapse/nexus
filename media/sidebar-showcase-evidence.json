@@ -1,0 +1,129 @@
+{
+  "revision": 6,
+  "capturedAt": "2026-10-30",
+  "visualStoryboardApproved": true,
+  "visualApprovalWords": [
+    "looks good",
+    "proceed"
+  ],
+  "finishedVideoApproval": "pending",
+  "plugin": {
+    "version": "5.21.1",
+    "releaseTag": "5.21.1",
+    "mainJsSha256": "5634b40f255c5b71d8c9c968b22f5ff32f910e414d0760b5526dd0cc2a117004"
+  },
+  "application": "Obsidian1.14.5 / Linux",
+  "viewport": {
+    "width": 1860,
+    "height": 1000
+  },
+  "provider": "Anthropic",
+  "model": "claude-sonnet-4-6",
+  "fictionalData": true,
+  "authenticatedModelRun": true,
+  "sourceNote": "Meetings/Launch Check-in.md",
+  "createdNote": "Projects/Launch Plan.md",
+  "sourceCapture": {
+    "nativeFrameCount": 1286,
+    "cadence": "Event-driven;60fps cap, median active interval28.83ms",
+    "masterFps": 30,
+    "masterFrames": 1888,
+    "masterDurationSeconds": 62.933333,
+    "masterSha256": "80c56cdc215fb34fa7b3404ad04b441b5eaa0726721742319d61d996531f3c15",
+    "rawSourceRetainedPrivately": true
+  },
+  "edit": {
+    "version": 6,
+    "sourceSha256": "80c56cdc215fb34fa7b3404ad04b441b5eaa0726721742319d61d996531f3c15",
+    "durationInFrames": 1470,
+    "fps": 30,
+    "keepSegments": [
+      {
+        "from": 0,
+        "to": 150,
+        "source": 1.089396,
+        "rate": 1
+      },
+      {
+        "from": 150,
+        "to": 420,
+        "source": 6.089396,
+        "rate": 1,
+        "cap": 14.896396000000001
+      },
+      {
+        "from": 420,
+        "to": 480,
+        "source": 14.936396,
+        "rate": 1
+      },
+      {
+        "from": 480,
+        "to": 540,
+        "source": 28,
+        "rate": 0.8
+      },
+      {
+        "from": 540,
+        "to": 720,
+        "source": 36.8,
+        "rate": 0.65,
+        "cap": 40.6
+      },
+      {
+        "from": 720,
+        "to": 930,
+        "source": 40.6,
+        "rate": 1,
+        "cap": 45
+      },
+      {
+        "from": 930,
+        "to": 1170,
+        "source": 45,
+        "rate": 1
+      },
+      {
+        "from": 1170,
+        "to": 1470,
+        "source": 53,
+        "rate": 1,
+        "cap": 62.7
+      }
+    ],
+    "notes": "Original recording retained. Source time monotonic. Long tool waits omitted, actual reply slowed, completed response held. Native quick switcher and board click included.",
+    "visualApproval": {
+      "decision": "looks good",
+      "followUp": "proceed",
+      "scope": "Revision5 framing and full cut; finished render review still pending"
+    },
+    "compositionSha256": "35a2dc163e51fc3ad375e43e3860190f01902104a70ada8dea3135095de853ca",
+    "sourceMasterTiming": "1888 CFR30fps frames,62.933333s; each frame selected from native timestamps with static holds preserved"
+  },
+  "verification": {
+    "sourceNoteReadBack": true,
+    "createdNoteReadBack": true,
+    "taskRecordsExactlyUnchanged": true,
+    "samDateInPlanIsModelInferenceNotStoredDeadline": true,
+    "savedNoteOpenedThroughNativeQuickSwitcher": true,
+    "taskBoardOpenedThroughNativeUserClick": true,
+    "temporaryProviderCredentialRemoved": true,
+    "exactKeyArtifactScanHits": 0
+  },
+  "coursePromotion": "https://www.synapticlabs.ai/learn/your-ai-second-brain",
+  "studio": {
+    "commit": "99b3a1da40fd8c1c12b5743eea556b2db5d0cf82",
+    "composition": "NexusSidebarShowcase",
+    "compositionSha256": "35a2dc163e51fc3ad375e43e3860190f01902104a70ada8dea3135095de853ca",
+    "renderWorker": "RTX3090",
+    "fullVideoSha256": "fbe5b56159e4a0ee0e132156cfbf2efbc04ea7747c1b5ebd4961457d647e72bd"
+  },
+  "output": {
+    "durationSeconds": 49,
+    "frames": 1470,
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "audio": "silent"
+  }
+}

@@ -1,5 +1,9 @@
 # Nexus local CLI (`nexus`)
 
+![Nexus Command line setup with agent targets and installation status](../media/screenshots/cli-setup.png)
+
+*Released Nexus 5.21.1 practice-vault capture. This example computer already has the CLI installed; new computers use Install.*
+
 Drive a running Nexus (Obsidian) vault from the shell — for external coding
 agents (Claude Code, Codex, Cursor…) — with **no MCP configuration**. The CLI is
 a thin client over the same local socket `connector.js` uses; the plugin server

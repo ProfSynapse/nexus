@@ -29,6 +29,14 @@ Type special characters to trigger context-aware suggestions:
 
 ## Tool Calls
 
+![The launch plan opened by Nexus beside the actual follow-up request in sidebar chat](../media/screenshots/agent-opened-plan.png)
+
+This released Nexus 5.21.1 capture uses fictional meeting notes and a real
+Anthropic response. [Watch the full 36-second workflow](../media/demos/nexus-chat-workflow.mp4)
+to see the source note, prompt and streamed reply, then follow-up chat requests
+that open the saved plan, open the board and complete QA. Typing is accelerated
+and waits are shortened. [Capture and verification details](visual-tour.md).
+
 When the AI uses tools during a conversation, you see them as collapsible panels with live streaming results. Each tool call shows the agent, tool name, parameters, and output.
 
 If a model sends malformed tool arguments, Nexus returns an error that lets it correct that call and continue. Calls that already succeeded are not repeated.

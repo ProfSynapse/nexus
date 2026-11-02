@@ -1,0 +1,205 @@
+{
+  "revision": 2,
+  "reason": "User feedback: the original clip showed task editing and did not show the chat interaction. Replaced the hero with full-width native chat, real typing/send, streaming response and tool status; outputs are only the closing scenes.",
+  "capturedAt": "2026-10-30",
+  "plugin": {
+    "version": "5.21.1",
+    "releaseTag": "5.21.1",
+    "mainJsSha256": "5634b40f255c5b71d8c9c968b22f5ff32f910e414d0760b5526dd0cc2a117004"
+  },
+  "application": "Obsidian 1.14.5 / Linux",
+  "viewport": {
+    "width": 1281,
+    "height": 801
+  },
+  "provider": "Anthropic",
+  "model": "claude-sonnet-4-6",
+  "fictionalData": true,
+  "authenticatedModelRun": true,
+  "sourceNote": "Meetings/Launch Check-in.md",
+  "createdNote": "Projects/Action Brief.md",
+  "createdNoteSha256": "dec78384b081d48701666729a1d04ede5458d5038b40eeec0d85a72933d5818e",
+  "existingTasks": [
+    {
+      "title": "Finish the getting-started guide",
+      "owner": "Maya",
+      "dueDateUtc": "2026-11-03",
+      "status": "in_progress",
+      "inputNote": "Meetings/Launch Check-in.md"
+    },
+    {
+      "title": "Verify note search and sharing (QA)",
+      "owner": "Eli",
+      "dueDateUtc": "2026-11-04",
+      "status": "todo",
+      "inputNote": "Meetings/Launch Check-in.md"
+    },
+    {
+      "title": "Publish the beta announcement",
+      "owner": "Sam",
+      "dueDateUtc": null,
+      "status": "todo",
+      "inputNote": "Meetings/Launch Check-in.md"
+    }
+  ],
+  "verification": {
+    "generatedBriefReadBack": true,
+    "existingTaskIdsOwnersDeadlinesStatusesLinksAndUpdateTimesUnchanged": true,
+    "outputOpenedInActualObsidianQuickSwitcher": true,
+    "taskFormFootageSeconds": 0,
+    "nativeChatFootageSeconds": 20.209,
+    "nativeChatShare": 0.7427
+  },
+  "edit": {
+    "durationSeconds": 27.209,
+    "chatSeconds": 20.209,
+    "chatShare": 0.7427,
+    "scenes": [
+      {
+        "sourceTake": "chat-live",
+        "sourceStart": 1793384531.374,
+        "sourceEnd": 1793384536.683,
+        "outputStart": 0,
+        "outputEnd": 5.309000015258789,
+        "scene": "chat",
+        "caption": "1. Ask Nexus in chat"
+      },
+      {
+        "sourceTake": "chat-live",
+        "sourceStart": 1793384540.692,
+        "sourceEnd": 1793384544.192,
+        "outputStart": 5.309000015258789,
+        "outputEnd": 8.809000015258789,
+        "scene": "chat",
+        "caption": "2. Nexus reads the note and checks existing tasks"
+      },
+      {
+        "sourceTake": "chat-live",
+        "sourceStart": 1793384556.4420002,
+        "sourceEnd": 1793384563.842,
+        "outputStart": 8.809000015258789,
+        "outputEnd": 16.20899987220764,
+        "scene": "chat",
+        "caption": "3. Watch the real reply stream into chat"
+      },
+      {
+        "sourceTake": "chat-results",
+        "sourceStart": 1793384671.812,
+        "sourceEnd": 1793384675.812,
+        "outputStart": 16.20899987220764,
+        "outputEnd": 20.20899987220764,
+        "scene": "chat",
+        "caption": "4. Review the answer in the same conversation"
+      },
+      {
+        "sourceTake": "chat-ending",
+        "sourceStart": 1793384772.907,
+        "sourceEnd": 1793384774.907,
+        "outputStart": 20.20899987220764,
+        "outputEnd": 22.20899987220764,
+        "scene": "tool-history",
+        "caption": "5. Inspect completed tool actions"
+      },
+      {
+        "sourceTake": "chat-ending",
+        "sourceStart": 1793384777.833,
+        "sourceEnd": 1793384780.833,
+        "outputStart": 22.20899987220764,
+        "outputEnd": 25.20899987220764,
+        "scene": "output-note",
+        "caption": "6. Open the note Nexus actually saved"
+      },
+      {
+        "sourceTake": "chat-ending",
+        "sourceStart": 1793384783.585,
+        "sourceEnd": 1793384785.585,
+        "outputStart": 25.20899987220764,
+        "outputEnd": 27.20899987220764,
+        "scene": "task-board",
+        "caption": "7. Check the existing project tasks"
+      }
+    ],
+    "mp4Bytes": 791072,
+    "gifBytes": 2495034
+  },
+  "qualifications": [
+    "Real recorded chat; cuts shorten waiting, not a model response-time benchmark. No transcript or tool results were synthesized.",
+    "One initial read call failed for a missing start line; the model discovered the schema and recovered within the same turn. The tool-history excerpt shows the later completed calls; the uncut private recording retains the failure.",
+    "The reply did not provide a clickable output-note link. The saved note was opened through the real Obsidian quick switcher.",
+    "Tasks shown at the end are the existing verified Atlas Launch tasks from the earlier run; this new chat did not create or edit them."
+  ],
+  "privateUncutChatMasterSha256": "2a2b8f4e07df6e57bc07acafee61ce7ae94cbcca53d92e980bd9f7aef86d954a",
+  "cleanup": {
+    "isolatedAppAndDisplayStopped": true,
+    "temporaryProviderCredentialCopyRemoved": true,
+    "exactCredentialAbsentFromPrivateArtifactsAndPublicMedia": true
+  },
+  "previousTaskWalkthrough": {
+    "capturedAt": "2026-10-30",
+    "plugin": {
+      "version": "5.21.1",
+      "releaseTag": "5.21.1",
+      "mainJsSha256": "5634b40f255c5b71d8c9c968b22f5ff32f910e414d0760b5526dd0cc2a117004"
+    },
+    "application": "Obsidian 1.14.5 / Linux",
+    "viewport": {
+      "width": 1439,
+      "height": 959
+    },
+    "provider": "Anthropic",
+    "model": "claude-sonnet-4-6",
+    "fictionalData": true,
+    "authenticatedModelRun": true,
+    "sourceNote": "Meetings/Launch Check-in.md",
+    "sourceSha256": "acedb68df626f5aef64151e462324a5feb8be275d5c743ecfd28309e89479ece",
+    "createdNote": "Projects/Launch Follow-through.md",
+    "createdNoteSha256": "107cd6c91ba8ef40dc5b1d8c5deedd10037e324b7774e1935159b41d86fc4b26",
+    "tasks": [
+      {
+        "title": "Finish the getting-started guide",
+        "owner": "Maya",
+        "dueDateUtc": "2026-11-03",
+        "status": "in_progress",
+        "inputNote": "Meetings/Launch Check-in.md"
+      },
+      {
+        "title": "Verify note search and sharing (QA)",
+        "owner": "Eli",
+        "dueDateUtc": "2026-11-04",
+        "status": "todo",
+        "inputNote": "Meetings/Launch Check-in.md"
+      },
+      {
+        "title": "Publish the beta announcement",
+        "owner": "Sam",
+        "dueDateUtc": null,
+        "status": "todo",
+        "inputNote": "Meetings/Launch Check-in.md"
+      }
+    ],
+    "announcementPrerequisites": [
+      "Finish the getting-started guide",
+      "Verify note search and sharing (QA)"
+    ],
+    "verification": {
+      "noteAndTasksSurvivedAppRestart": true,
+      "allInputLinksReadBack": true,
+      "dependencyGraphReadBack": true,
+      "calendarDatesIndependentlyConvertedFromStoredTimestamps": true,
+      "statusChangeSavedThroughRealTaskEditor": true
+    },
+    "qualifications": [
+      "This is a follow-up walkthrough of real persisted outputs, not a timing demonstration of model inference.",
+      "The first AI turn saved incorrect deadline timestamps. Two follow-up turns corrected year/day errors; final stored dates were independently checked.",
+      "The task board does not expose every dependency. Stored dependency queries independently confirmed the two prerequisites.",
+      "Raw application frames and the complete authenticated-run master are retained privately; no working-vault material or credentials appear in these public artifacts."
+    ],
+    "privateFullRunMasterSha256": "80e8d2c4abcce6c352f379352400f00604d3a2897048fe5cbf131b8a68cca8c1",
+    "privateFullRunDurationSeconds": 190.37,
+    "cleanup": {
+      "isolatedAppAndDisplayStopped": true,
+      "temporaryProviderCredentialCopyRemoved": true,
+      "exactCredentialNotFoundInPrivatePilotArtifacts": true
+    }
+  }
+}

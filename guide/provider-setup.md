@@ -1,5 +1,9 @@
 # Provider Setup
 
+![Nexus Providers list; the example providers are not connected](../media/screenshots/providers.png)
+
+*Released Nexus 5.21.1 practice-vault capture. Connect and test your own provider; a provider card does not prove authentication.*
+
 Use this guide if you want to chat with Nexus directly inside Obsidian.
 
 Open **Settings -> Nexus -> Providers**, choose a provider, connect it, then select a model in chat.

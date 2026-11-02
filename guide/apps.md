@@ -1,5 +1,9 @@
 # Apps
 
+![Nexus Apps list with available capabilities and Install controls](../media/screenshots/apps.png)
+
+*Released Nexus 5.21.1 practice-vault capture. Availability and installation do not prove successful app execution.*
+
 Apps are optional tool domains that extend Nexus with third-party integrations and desktop workflows. Each app brings its own tools, credentials, and API connections; enable only what you need.
 
 ---

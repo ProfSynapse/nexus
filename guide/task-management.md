@@ -1,5 +1,11 @@
 # Task Management
 
+![Ask Nexus to mark QA done and watch the task move from Todo to Done](../media/demos/chat-complete-qa.gif)
+
+*Released Nexus 5.21.1 / Obsidian 1.14.5 with fictional data and real Anthropic chat. The agent opens the board and completes QA through chat; the status change was independently verified. Other task records, owners and deadlines stay unchanged. Board status does not show every dependency; inspect task details or tool results. [Watch the full workflow](visual-tour.md).*
+
+![Task details showing Maya, the checked deadline and the meeting linked as Input](../media/screenshots/task-linked-note.png)
+
 Workspace-scoped project and task management with DAG dependency tracking.
 
 ---

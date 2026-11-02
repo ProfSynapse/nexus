@@ -1,5 +1,9 @@
 # Workspace Memory
 
+![Practice workspace with purpose, preferences and key-file references](../media/screenshots/workspace-context.png)
+
+*Released Nexus 5.21.1 practice-vault capture. Key-file references still need to be read for their contents.*
+
 Synced Nexus data lives under the storage root configured in settings:
 
 ```

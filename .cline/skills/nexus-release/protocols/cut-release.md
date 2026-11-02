@@ -196,6 +196,17 @@ sources. Confirm the push landed before tagging. The workflow builds the tagged 
 from the remote; a tag on an unpushed commit cannot be resolved.
 
 ### 10. Run the readiness check — it MUST exit clean
+Repeat the media gates from `doc-review.md` against the actual previous release
+tag after committing the final source/docs changes:
+
+```bash
+python3 scripts/media.py check
+python3 scripts/media.py review --base <previous-release-tag> --head HEAD
+```
+
+Resolve every pending visual review before tagging. Review new feature coverage
+manually as well; dependency matches alone cannot find missing demonstrations.
+
 ```bash
 python3 .claude/skills/nexus-release/scripts/check_release_ready.py --tag X.Y.Z
 ```
