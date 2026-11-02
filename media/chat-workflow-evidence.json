@@ -1,0 +1,257 @@
+{
+  "revision": 7,
+  "date": "2026-10-30",
+  "pluginVersion": "5.21.1",
+  "application": "Obsidian1.14.5 / Linux",
+  "releasedBundleSha256": "5634b40f255c5b71d8c9c968b22f5ff32f910e414d0760b5526dd0cc2a117004",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "fictionalData": true,
+  "sameConversationAcrossTwoActualCaptures": true,
+  "conversationId": "3c4ab25a-0a53-464f-a38d-635e2352c160",
+  "sourceNote": "Meetings/Launch Check-in.md",
+  "savedPlan": "Projects/Launch Plan.md",
+  "followUpPrompts": [
+    "Open Projects/Launch Plan.md in a main tab. Keep chat here. Confirm briefly.",
+    "Open the Atlas Launch task board. Confirm briefly.",
+    "Mark \"Verify note search and sharing (QA)\" done. Confirm briefly."
+  ],
+  "actualFollowUpToolCalls": [
+    {
+      "tool": "storage open --path \"Projects/Launch Plan.md\" --target main",
+      "success": false,
+      "error": "Unknown flag \"--target\" for storageManager.open. Call getTools first to inspect supported flags."
+    },
+    {
+      "tool": "storage open",
+      "success": true,
+      "error": null
+    },
+    {
+      "tool": "storage open \"Projects/Launch Plan.md\" --mode tab --focus",
+      "success": true,
+      "error": null
+    },
+    {
+      "tool": "task open",
+      "success": true,
+      "error": null
+    },
+    {
+      "tool": "task open --project-id \"a0fb6652-57c6-4747-a25a-d18462bed3bd\" --mode tab",
+      "success": true,
+      "error": null
+    },
+    {
+      "tool": "task update",
+      "success": true,
+      "error": null
+    },
+    {
+      "tool": "task update \"7cc8144e-d17e-456a-92c5-30634b3ad3f3\" --status done",
+      "success": true,
+      "error": null
+    }
+  ],
+  "taskDiff": {
+    "7cc8144e-d17e-456a-92c5-30634b3ad3f3": {
+      "completedAt": {
+        "before": null,
+        "after": 1793389064980
+      },
+      "updated": {
+        "before": 1793383548917,
+        "after": 1793389064981
+      },
+      "status": {
+        "before": "todo",
+        "after": "done"
+      }
+    }
+  },
+  "verification": {
+    "planOpenedByModelTool": true,
+    "boardOpenedByModelTool": true,
+    "qaChangedTodoToDoneByModelTool": true,
+    "unrelatedTasksAndTaskFieldsExactlyUnchanged": true,
+    "taskStatusIndependentlyReadBack": true,
+    "ownersDeadlinesAndNoteLinksUnchanged": true,
+    "temporaryProviderKeyRemoved": true,
+    "exactKeyArtifactScanHits": 0
+  },
+  "notes": "Opening plan first tried unsupported --target, then model discovered schema and successfully used --mode tab. Full source retained; edited waiting is labeled. No user quick-switcher/board-click substitute used for follow-ups.",
+  "edit": {
+    "version": 7,
+    "durationInFrames": 1086,
+    "fps": 30,
+    "sources": {
+      "intro": {
+        "path": "public/projects/nexus-sidebar-showcase/intro-source.mp4",
+        "sha256": "80c56cdc215fb34fa7b3404ad04b441b5eaa0726721742319d61d996531f3c15"
+      },
+      "follow": {
+        "path": "public/projects/nexus-sidebar-showcase/follow-source.mp4",
+        "sha256": "58c0b56e3c03f73bbc8746a1de761b3ea49e9fcf0ae71037495dcd9cfaf52d5c"
+      }
+    },
+    "keepSegments": [
+      {
+        "from": 0,
+        "to": 60,
+        "source": 1.089396,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 60,
+        "to": 213,
+        "source": 7.1,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 213,
+        "to": 233,
+        "source": 14.27,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 233,
+        "to": 263,
+        "source": 14.936396,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 263,
+        "to": 374,
+        "source": 36.8,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 374,
+        "to": 395,
+        "source": 40.5,
+        "rate": 1,
+        "src": "intro"
+      },
+      {
+        "from": 395,
+        "to": 505,
+        "source": 2.65,
+        "rate": 1.5,
+        "src": "follow",
+        "cap": 8.1
+      },
+      {
+        "from": 505,
+        "to": 521,
+        "source": 8.1,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 521,
+        "to": 554,
+        "source": 16.3,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 554,
+        "to": 599,
+        "source": 19.4,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 599,
+        "to": 688,
+        "source": 23.95,
+        "rate": 1.35,
+        "src": "follow"
+      },
+      {
+        "from": 688,
+        "to": 703,
+        "source": 28,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 703,
+        "to": 742,
+        "source": 34.45,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 742,
+        "to": 775,
+        "source": 35.9,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 775,
+        "to": 885,
+        "source": 39.75,
+        "rate": 1.4,
+        "src": "follow"
+      },
+      {
+        "from": 885,
+        "to": 900,
+        "source": 44.9,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 900,
+        "to": 951,
+        "source": 50.9,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 951,
+        "to": 1002,
+        "source": 53.1,
+        "rate": 1,
+        "src": "follow"
+      },
+      {
+        "from": 1002,
+        "to": 1086,
+        "source": 54.8,
+        "rate": 1,
+        "src": "follow"
+      }
+    ],
+    "notes": "Raw sources retained; waits and typing pauses condensed. Follow-up typing accelerated1.35\u20131.5x and labeled; response/screen transitions retained at actual speed. No manually opened output or board in continuation.",
+    "userDirection": "Reduce idle time; ask agent to open plan, open board and update task.",
+    "finishedRenderApproval": "pending"
+  },
+  "compositionSha256": "5d9d86d8dcadcc5defe55e810c9e2e76303c081165e8f19c326264d46497fc9c",
+  "finishedRenderApproval": {
+    "date": "2026-11-02",
+    "decision": "approved",
+    "userWords": "looks great",
+    "revision": 7
+  },
+  "render": {
+    "durationSeconds": 36.2,
+    "frames": 1086,
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "bytes": 2880647,
+    "sha256": "91966f465422c255c969199b2a0ef1f27ac2c4b0505e6a5ad2934d8131ff853f",
+    "workerLocalReviewHashesMatch": true,
+    "encodedTemporalSamples": 35,
+    "qaBeforeFrame": 924,
+    "qaAfterFrame": 936
+  }
+}

@@ -36,9 +36,55 @@ Surfaces that most often need a change:
 | `README.md` | the **Use Cases** and **Mobile Support (Experimental)** sections |
 | `README.md` **Network Use** | every outbound request and what triggers it. Any new host, user-entered URL, or request made without a user action (startup checks, polling) must be listed, and the "nothing is sent when the plugin loads" claim re-checked. Find them with `grep -rn "setInterval\|requestUrl\|WebSocket" ` over the files the release changed |
 | `<repo>/guide/` feature pages | e.g. task management, workspace memory, semantic search, adaptive search, the CLI guide |
+| `<repo>/media/catalog.json`, `<repo>/media/INDEX.md` | screenshot/GIF/video sources, capture versions, refresh recipes and every discovered repository placement |
+| `README.md`, `<repo>/guide/visual-tour.md` | Your AI Second Brain course callout and verified public landing URL |
 
 Confirm exact tool names, flags and enum values against `<repo>/src/` rather than
 copying a previous doc forward.
+
+### 3a. Review visual coverage and refresh affected media
+
+Read `<repo>/media/WORKFLOW.md`. The media directory and `scripts/media.py` are
+also in scope for this phase; this does not broaden permission to edit internal
+plans or publish changes to the course, CMS or Drive.
+
+```bash
+python3 scripts/media.py index
+python3 scripts/media.py review --base <previous-release-tag> --head HEAD
+```
+
+The review compares committed trees. For each flagged screenshot/GIF/video,
+inspect the candidate app, replace stale visuals or record why the existing
+asset remains accurate using `approve`. The report lists affected source files,
+every discovered placement and the capture recipe. Use `replace` for a stable-path
+swap that updates hashes and metadata without hunting down documentation links.
+Do not approve by source inspection alone or fake an authenticated result.
+
+Manually compare the user-facing changes from step 2 with the catalog's planned
+coverage and dependency globs: new features, renamed source files, dynamic media
+references and external course placements may not trigger an existing asset.
+Record missing coverage explicitly. Keep historical recordings labeled with
+their capture version; check every frame for privacy and readable UI.
+Check that each demo visibly shows the feature its caption advertises. A chat
+hero must show the prompt, real streaming reply and tool activity; a task editor
+or completed note alone is not a chat demonstration. Review the exported clip,
+not only the source screenshots or a successful model-run receipt.
+
+Verify the course CTA points to the current public landing page and remains
+optional alongside complete product setup docs. Source-only course recordings
+are inputs, not finished public demos. Course/source changes need their own
+authorization; updating this repository is not authorization to publish there.
+
+Before tagging, both media commands must exit cleanly:
+
+```bash
+python3 scripts/media.py check
+python3 scripts/media.py review --base <previous-release-tag> --head HEAD
+```
+
+Run the final review after intended source changes are committed. An approval
+is tied to a fingerprint of watched committed files and invalidates when those
+files change again. Regenerate the index after moving or adding placements.
 
 ### 4. Run the mechanical gate — do not rely on reading
 ```bash

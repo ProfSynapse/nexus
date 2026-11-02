@@ -25,6 +25,9 @@ Path convention: `<repo>/…` means relative to the Nexus repo root. Bare paths
    *before* the tag exists.
 2. **Bringing user-facing docs in line** (a phase of the above; also runnable on
    its own) → `protocols/doc-review.md`.
+   This includes the media catalog and usage index: identify screenshots/GIFs
+   affected by the release, review or replace them at stable paths, and verify
+   the Your AI Second Brain course callout. Follow `<repo>/media/WORKFLOW.md`.
 3. **Before pushing any tag** you MUST get a clean exit from the readiness
    check. It reproduces the workflow's own version guard locally, so a failure
    here is a failure you would otherwise discover *after* the tag exists:

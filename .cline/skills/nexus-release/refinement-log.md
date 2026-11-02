@@ -131,3 +131,17 @@ release verification step. | `protocols/cut-release.md`.
 - 2026-10-24 | Prepared 5.21.2 from the selected main tree with a locked build under the workflow’s Node 20.19.0. pnpm forwarded npm’s standalone argument separator to verify:obsidian, which rejected it; documented pnpm invocation without that separator. A vault-first TTY wrapper and an in-band readiness probe verified the installed candidate and a real synthetic Anthropic compaction without persisting credentials. | protocols/cut-release.md.
 
 - 2026-11-02 | Preparing 5.21.3 with pnpm 12 against the npm lockfile exposed local module-layout differences: requesting hoisting on an existing install still left `globals` and `tslib` unavailable at the root. ESLint and TypeScript failed until the already-locked transitive modules were exposed locally. Added a pre-build resolution check; no dependency changes. | protocols/cut-release.md.
+
+# 2026-10-30 — Media maintenance is part of release documentation
+
+Joseph requested a complete media index and an easy screenshot/GIF refresh
+process at release time. Added `media/catalog.json`, a generated reverse placement
+index and `scripts/media.py`; doc-review now reports impacted assets from the
+release diff, requires actual visual review, records retained/replaced decisions,
+and repeats media checks before tagging. Stable-path replacement updates hashes
+and capture metadata. README/visual-tour course promotion is included in review.
+Scope: repository documentation only; no release, course upload or publication
+authorized by this maintenance procedure. Source edits made in `.skills/` and
+mirrored with the repository sync command.
+
+- 2026-10-30 | Joseph's first pilot review found the hero mostly showed task editing and no chat. Added a release visual-review criterion: the exported clip must visibly demonstrate its advertised feature; chat heroes show the prompt, actual streaming reply and tool activity. Details are maintained in `media/WORKFLOW.md`; the chat-first replacement is indexed in the catalog.
