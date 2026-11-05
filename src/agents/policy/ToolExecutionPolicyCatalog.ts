@@ -50,9 +50,6 @@ export const TOOL_EXECUTION_POLICY_CATALOG: Readonly<Record<string, Readonly<Too
   'data/listCapabilities': readParallel,
   'data/runPython': vaultWrite,
 
-  'elevenlabs/generateMusic': externalWrite,
-  'elevenlabs/listVoices': readParallel,
-  'elevenlabs/soundEffects': externalWrite,
 
   'ingestManager/capabilities': readParallel,
   'ingestManager/run': externalWrite,
@@ -75,6 +72,7 @@ export const TOOL_EXECUTION_POLICY_CATALOG: Readonly<Record<string, Readonly<Too
   'promptManager/create': vaultWrite,
   'promptManager/execute': destructive,
   'promptManager/generateAudio': externalWrite,
+  'promptManager/listVoices': readParallel,
   'promptManager/generateImage': externalWrite,
   'promptManager/generateVideo': externalWrite,
   'promptManager/get': readParallel,

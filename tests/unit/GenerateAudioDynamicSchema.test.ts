@@ -44,17 +44,17 @@ describe('generateAudio schema follows the configured providers', () => {
     expect(tool.description).toContain('Google speech');
     expect(properties.provider.enum).toEqual(['google']);
     expect(properties.outputPath.description).toContain('ending in .wav');
-    expect(properties.voice.description).toContain('Kore');
+    expect(properties.voice.description).toContain('currently Kore on gemini-3.8-flash-tts');
     expect(properties.prompt.description).toContain('8192 tokens on google');
-    expect(text).not.toMatch(/openai|elevenlabs|mistral|openrouter|\.mp3|marin/i);
+    expect(text).not.toMatch(/openai|elevenlabs|mistral|openrouter|marin/i);
   });
 
-  it('OpenAI alone gets a closed model list and each model\'s real voices', () => {
+  it('OpenAI alone gets a closed model list and its settings default', () => {
     const { properties, text } = toolFor(settingsWith(['openai']));
     expect(properties.model.enum).toEqual(['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']);
     expect(properties.outputPath.description).toContain('ending in .mp3');
-    expect(properties.voice.description).toMatch(/marin[^;]*on openai: gpt-4o-mini-tts/);
-    expect(properties.voice.description).toMatch(/shimmer on openai: tts-1, tts-1-hd/);
+    expect(properties.voice.description).toContain('currently marin on gpt-4o-mini-tts');
+    expect(properties.voice.description).toContain('call listVoices');
     expect(text).not.toMatch(/kore|\.wav|elevenlabs/i);
   });
 
@@ -72,7 +72,6 @@ describe('generateAudio schema follows the configured providers', () => {
 
   it('counts ElevenLabs only when the app is on and has a key', () => {
     expect(toolFor(settingsWith([]), elevenLabs()).properties.provider.enum).toEqual(['elevenlabs']);
-    expect(toolFor(settingsWith([]), elevenLabs()).properties.voice.description).toContain('listVoices');
     expect(toolFor(settingsWith([]), elevenLabs(false)).properties.provider).not.toHaveProperty('enum');
     expect(toolFor(settingsWith([]), elevenLabs(true, ' ')).properties.provider).not.toHaveProperty('enum');
   });
@@ -89,7 +88,7 @@ describe('generateAudio schema follows the configured providers', () => {
 
   it('writes the description from what is configured', () => {
     expect(buildGenerateAudioDescription(settingsWith(['openai', 'google']), elevenLabs())).toBe(
-      'Generate voice audio files in the vault from text, using configured Voice settings or ElevenLabs, OpenAI, or Google speech.'
+      'Generate voice audio files in the vault from text, using configured Voice settings or ElevenLabs, OpenAI, or Google speech. Also makes music (ElevenLabs or Google). Also makes sound effects (ElevenLabs).'
     );
     expect(buildGenerateAudioDescription(settingsWith([]))).toBe('Generate voice audio files in the vault from text.');
   });

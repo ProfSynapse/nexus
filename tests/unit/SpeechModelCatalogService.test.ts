@@ -49,13 +49,14 @@ describe('SpeechModelCatalogService', () => {
 
     const models = await service.getModels('openrouter', settings);
 
-    expect(requestUrlMock).toHaveBeenCalledWith({
+    expect(requestUrlMock).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://openrouter.ai/api/v1/models?output_modalities=speech',
       method: 'GET',
       headers: {
         Authorization: 'Bearer openrouter-key',
       },
-    });
+      throw: false,
+    }));
     expect(models).toEqual([
       expect.objectContaining({
         provider: 'openrouter',

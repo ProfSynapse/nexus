@@ -1,19 +1,18 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-05T13:28:21.775Z",
+  "generatedAt": "2026-11-05T14:19:18.004Z",
   "selector": "--help",
-  "toolCount": 80,
-  "agentCount": 14,
+  "toolCount": 78,
+  "agentCount": 13,
   "agents": {
     "baseManager": 5,
     "canvasManager": 4,
     "composer": 2,
     "contentManager": 6,
     "data": 2,
-    "elevenlabs": 3,
     "ingestManager": 2,
     "memoryManager": 12,
-    "promptManager": 12,
+    "promptManager": 13,
     "searchManager": 4,
     "skills": 6,
     "storageManager": 6,
@@ -808,130 +807,6 @@
       ]
     },
     {
-      "agent": "elevenlabs",
-      "tool": "generateMusic",
-      "description": "Generate music from a text prompt describing genre, mood, instruments, tempo, and lyrics. Saves audio to vault.",
-      "command": "elevenlabs generate-music",
-      "usage": "elevenlabs generate-music <prompt> [--music-length-ms <musicLengthMs>] [--output-path <outputPath>] [--output-format <outputFormat>] [--force-instrumental]",
-      "arguments": [
-        {
-          "name": "prompt",
-          "flag": "--prompt",
-          "type": "string",
-          "required": true,
-          "positional": true,
-          "description": "[REQUIRED] Text description of the music to generate. Can define genre, mood, instruments, vocals, tempo, structure, and lyrics (max 4100 chars). Do NOT reference copyrighted artists or lyrics. (string)"
-        },
-        {
-          "name": "musicLengthMs",
-          "flag": "--music-length-ms",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Length of the song in milliseconds (3000-600000, i.e. 3s to 10min). If omitted, the model chooses based on the prompt. (number)"
-        },
-        {
-          "name": "outputPath",
-          "flag": "--output-path",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Output file path in vault (default: audio/music-{timestamp}.mp3) (string)"
-        },
-        {
-          "name": "outputFormat",
-          "flag": "--output-format",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Audio format (default: mp3_44100_128). Options: mp3_22050_32, mp3_44100_64, mp3_44100_128, mp3_44100_192 (string)"
-        },
-        {
-          "name": "forceInstrumental",
-          "flag": "--force-instrumental",
-          "type": "boolean",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] If true, guarantees instrumental output with no vocals (default: false) (boolean)"
-        }
-      ],
-      "examples": [
-        "elevenlabs generate-music \"prompt-value\" --music-length-ms 1 --output-path \"outputPath-value\" --output-format \"outputFormat-value\""
-      ]
-    },
-    {
-      "agent": "elevenlabs",
-      "tool": "listVoices",
-      "description": "List available ElevenLabs voices with their IDs, names, and categories.",
-      "command": "elevenlabs list-voices",
-      "usage": "elevenlabs list-voices [--category <category>]",
-      "arguments": [
-        {
-          "name": "category",
-          "flag": "--category",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Filter by category: premade, cloned, generated, professional (One of: [\"premade\", \"cloned\", \"generated\", \"professional\"])"
-        }
-      ],
-      "examples": [
-        "elevenlabs list-voices --category \"category-value\""
-      ]
-    },
-    {
-      "agent": "elevenlabs",
-      "tool": "soundEffects",
-      "description": "Generate cinematic sound effects from text descriptions (e.g., \"thunder rolling across a mountain valley\").",
-      "command": "elevenlabs sound-effects",
-      "usage": "elevenlabs sound-effects <prompt> [--duration-seconds <durationSeconds>] [--prompt-influence <promptInfluence>] [--loop] [--output-path <outputPath>]",
-      "arguments": [
-        {
-          "name": "prompt",
-          "flag": "--prompt",
-          "type": "string",
-          "required": true,
-          "positional": true,
-          "description": "[REQUIRED] Text description of the sound effect to generate (e.g., \"ocean waves crashing on rocks\") (string)"
-        },
-        {
-          "name": "durationSeconds",
-          "flag": "--duration-seconds",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Duration in seconds (0.5-30). If omitted, optimal duration is guessed from prompt. (number)"
-        },
-        {
-          "name": "promptInfluence",
-          "flag": "--prompt-influence",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] How closely to follow the text prompt (0.0-1.0) (number)"
-        },
-        {
-          "name": "loop",
-          "flag": "--loop",
-          "type": "boolean",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] If true, make a sound effect that loops smoothly (default: false) (boolean)"
-        },
-        {
-          "name": "outputPath",
-          "flag": "--output-path",
-          "type": "string",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Output file path in vault (default: audio/sfx-{timestamp}.mp3) (string)"
-        }
-      ],
-      "examples": [
-        "elevenlabs sound-effects \"prompt-value\" --duration-seconds 1 --prompt-influence 1 --output-path \"outputPath-value\""
-      ]
-    },
-    {
       "agent": "ingestManager",
       "tool": "capabilities",
       "description": "List available OCR models and audio transcription models that the ingest pipeline supports. Use before ingest to discover valid provider/model options.",
@@ -1701,17 +1576,41 @@
     {
       "agent": "promptManager",
       "tool": "generateAudio",
-      "description": "Generate voice audio files in the vault from text, using configured Voice settings or ElevenLabs, OpenAI, Google, Mistral, or OpenRouter speech.",
+      "description": "Generate voice audio files in the vault from text, using configured Voice settings or ElevenLabs, OpenAI, Google, Mistral, or OpenRouter speech. Also makes music (ElevenLabs, Google, or OpenRouter). Also makes sound effects (ElevenLabs).",
       "command": "prompt generate-audio",
-      "usage": "prompt generate-audio [--mode <mode>] <prompt> [--provider <provider>] [--model <model>] [--voice <voice>] <outputPath> [--overwrite]",
+      "usage": "prompt generate-audio [--type <type>] [--duration-seconds <durationSeconds>] [--instrumental] [--loop] <prompt> [--provider <provider>] [--model <model>] [--voice <voice>] <outputPath> [--overwrite]",
       "arguments": [
         {
-          "name": "mode",
-          "flag": "--mode",
+          "name": "type",
+          "flag": "--type",
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Audio generation mode. Only voice is available. (One of: [\"voice\"])"
+          "description": "[OPTIONAL] What to generate. speech reads text aloud, music makes a track, sfx makes a sound effect. (One of: [\"speech\", \"music\", \"sfx\"])"
+        },
+        {
+          "name": "durationSeconds",
+          "flag": "--duration-seconds",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional length for music or sfx, in seconds. If omitted, the model decides. 3-600s, usually close on elevenlabs: music_v2_5; requested in the prompt, so it can be far off on google: lyria-3.5; always 30s on google: lyria-3-clip-preview; requested in the prompt, so it can be far off on openrouter: google/lyria-3-pro-preview; always 30s on openrouter: google/lyria-3-clip-preview; 0.5-30s, usually close on elevenlabs: eleven_text_to_sound_v3 (number)"
+        },
+        {
+          "name": "instrumental",
+          "flag": "--instrumental",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Music with no vocals. guaranteed on elevenlabs: music_v2_5; requested in the prompt on google: lyria-3.5, lyria-3-clip-preview; requested in the prompt on openrouter: google/lyria-3-pro-preview, google/lyria-3-clip-preview (boolean)"
+        },
+        {
+          "name": "loop",
+          "flag": "--loop",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Make a sound effect that loops smoothly. Only on elevenlabs: eleven_text_to_sound_v3 (boolean)"
         },
         {
           "name": "prompt",
@@ -1719,7 +1618,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Text to convert into voice audio. Longest input: 10000 characters on elevenlabs: eleven_v4; 5000 characters on elevenlabs: eleven_v3; 40000 characters on elevenlabs: eleven_flash_v2_5; 2000 tokens on openai: gpt-4o-mini-tts; 8192 tokens on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts. (string)"
+          "description": "[REQUIRED] For speech, the text to read aloud. For music or sfx, a description of the sound. Longest input: 10000 characters on elevenlabs: eleven_v4; 5000 characters on elevenlabs: eleven_v3; 40000 characters on elevenlabs: eleven_flash_v2_5; 2000 tokens on openai: gpt-4o-mini-tts; 8192 tokens on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts. (string)"
         },
         {
           "name": "provider",
@@ -1735,7 +1634,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. Available: elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; openai: gpt-4o-mini-tts, tts-1, tts-1-hd; google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, assemblyai/assemblyai-tts-1, bytedance-seed/seed-audio-1-0, canopylabs/orpheus-3b-0.1-ft, deepgram/flux-tts, elevenlabs/eleven-flash-v2.5, elevenlabs/eleven-multilingual-v2, elevenlabs/eleven-v3, elevenlabs/eleven-v3-conversational, elevenlabs/eleven-v4, elevenlabs/eleven-v4-turbo, fish-audio/drama-3, fish-audio/s1, fish-audio/s2-pro, fish-audio/s2.1-pro, fish-audio/s2.1-pro-free:free, google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, hexgrad/kokoro-82m, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, microsoft/mai-voice-2.1, microsoft/mai-voice-2.1-flash, minimax/speech-2.8-hd, minimax/speech-2.8-turbo, mistralai/voxtral-mini-tts-2603, mistralai/voxtral-mini-tts-3-0, qwen/qwen-audio-3.0-tts-flash, qwen/qwen-audio-3.0-tts-plus, sesame/csm-1b, x-ai/grok-voice-tts-1.0. OpenRouter also takes any other speech model it lists. (string)"
+          "description": "[OPTIONAL] Optional model ID. Speech defaults to Voice settings or the provider default. Speech: elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; openai: gpt-4o-mini-tts, tts-1, tts-1-hd; google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, assemblyai/assemblyai-tts-1, bytedance-seed/seed-audio-1-0, canopylabs/orpheus-3b-0.1-ft, deepgram/flux-tts, elevenlabs/eleven-flash-v2.5, elevenlabs/eleven-multilingual-v2, elevenlabs/eleven-v3, elevenlabs/eleven-v3-conversational, elevenlabs/eleven-v4, elevenlabs/eleven-v4-turbo, fish-audio/drama-3, fish-audio/s1, fish-audio/s2-pro, fish-audio/s2.1-pro, fish-audio/s2.1-pro-free:free, google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, hexgrad/kokoro-82m, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, microsoft/mai-voice-2.1, microsoft/mai-voice-2.1-flash, minimax/speech-2.8-hd, minimax/speech-2.8-turbo, mistralai/voxtral-mini-tts-2603, mistralai/voxtral-mini-tts-3-0, qwen/qwen-audio-3.0-tts-flash, qwen/qwen-audio-3.0-tts-plus, sesame/csm-1b, x-ai/grok-voice-tts-1.0. OpenRouter also takes any other speech model it lists. Music: elevenlabs: music_v2_5; google: lyria-3.5, lyria-3-clip-preview; openrouter: google/lyria-3-pro-preview, google/lyria-3-clip-preview. Sound effects: elevenlabs: eleven_text_to_sound_v3. (string)"
         },
         {
           "name": "voice",
@@ -1743,7 +1642,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional voice. Each model has a working default, so omit this unless a specific voice is wanted. A voice from one model usually fails on another. Accepted: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar on openai: gpt-4o-mini-tts; alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer on openai: tts-1, tts-1-hd; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; george, sarah, adam, alice, bella, bill, brian, callum, charlie, chris, daniel, eric, harry, jessica, laura, liam, lily, matilda, river, roger, will on openrouter: elevenlabs/eleven-flash-v2.5, elevenlabs/eleven-multilingual-v2, elevenlabs/eleven-v3, elevenlabs/eleven-v3-conversational, elevenlabs/eleven-v4, elevenlabs/eleven-v4-turbo; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on openrouter: google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts. Other models on elevenlabs, mistral, openrouter take voice IDs from that provider. ElevenLabs voice IDs come from its listVoices tool. (string)"
+          "description": "[OPTIONAL] For speech only. Optional voice. Omit it to use the default from Voice settings, currently marin on gpt-4o-mini-tts. Voices differ by model and one from another model usually fails, so call listVoices to see what a model takes. (string)"
         },
         {
           "name": "outputPath",
@@ -1751,7 +1650,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Vault-relative output path for the generated audio file. The extension must match the model: .mp3 on elevenlabs; .mp3 on openai; .wav on google; .mp3 on mistral; .mp3 on openrouter except .wav for google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, mistralai/voxtral-mini-tts-3-0. (string)"
+          "description": "[REQUIRED] Vault-relative output path for the generated audio file. The extension must match the model: .mp3 on elevenlabs; .mp3 on openai; .wav on google; .mp3 on mistral; .mp3 on openrouter except .wav for google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, mistralai/voxtral-mini-tts-3-0. Music and sound effects end in .mp3. (string)"
         },
         {
           "name": "overwrite",
@@ -1763,7 +1662,7 @@
         }
       ],
       "examples": [
-        "prompt generate-audio --mode \"mode-value\" \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --voice \"voice-value\" \"outputPath-value\""
+        "prompt generate-audio --type \"type-value\" --duration-seconds 1 \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --voice \"voice-value\" \"outputPath-value\""
       ]
     },
     {
@@ -2055,6 +1954,42 @@
       "arguments": [],
       "examples": [
         "prompt list-models"
+      ]
+    },
+    {
+      "agent": "promptManager",
+      "tool": "listVoices",
+      "description": "List the voices a speech model takes, and which one is the default from Voice settings. Use before choosing a voice for generateAudio.",
+      "command": "prompt list-voices",
+      "usage": "prompt list-voices [--provider <provider>] [--model <model>] [--search <search>]",
+      "arguments": [
+        {
+          "name": "provider",
+          "flag": "--provider",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech provider. Defaults to Voice settings. (One of: [\"elevenlabs\", \"openai\", \"google\", \"mistral\", \"openrouter\"])"
+        },
+        {
+          "name": "model",
+          "flag": "--model",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional speech model ID, which needs provider too. Defaults to Voice settings or the provider default. Voices differ by model. (string)"
+        },
+        {
+          "name": "search",
+          "flag": "--search",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Optional text to match in a voice name, ID or description. (string)"
+        }
+      ],
+      "examples": [
+        "prompt list-voices --provider \"provider-value\" --model \"model-value\" --search \"search-value\""
       ]
     },
     {
