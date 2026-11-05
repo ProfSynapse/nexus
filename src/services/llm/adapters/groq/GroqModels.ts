@@ -46,22 +46,6 @@ export const GROQ_MODELS: ModelSpec[] = [
   },
 
   // Qwen models on Groq
-  {
-    provider: 'groq',
-    name: 'Qwen 3.6 27B',
-    apiName: 'qwen/qwen3.6-27b',
-    contextWindow: 131072,
-    maxTokens: 16384,
-    inputCostPerMillion: 0.60,
-    outputCostPerMillion: 3.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
   // Qwen 3.8 27B is held back until Groq lifts its preview rate limits: on
   // 2026-08-27 the key's per-model allocation was 8,000 tokens/min and 1,000
   // requests/day (vs 250k TPM for the other models) — below what a single
@@ -105,14 +89,11 @@ export const GROQ_MODEL_CATEGORIES = {
 
   // Reasoning-optimized
   REASONING: [
-    'openai/gpt-oss-120b',
-    'qwen/qwen3.6-27b'
+    'openai/gpt-oss-120b'
   ],
 
   // Vision-capable
-  VISION: [
-    'qwen/qwen3.6-27b'
-  ]
+  VISION: [] as string[]
 };
 
 /**

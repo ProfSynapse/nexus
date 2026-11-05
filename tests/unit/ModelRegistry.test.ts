@@ -130,9 +130,9 @@ describe('ModelRegistry GPT-5.5 models', () => {
 
 describe('ModelRegistry GPT-5.6 models', () => {
   const tiers = [
-    { suffix: 'sol', name: 'GPT-5.6 Sol', input: 5, output: 30 },
-    { suffix: 'terra', name: 'GPT-5.6 Terra', input: 2.5, output: 15 },
-    { suffix: 'luna', name: 'GPT-5.6 Luna', input: 1, output: 6 }
+    { suffix: 'sol', name: 'GPT-5.6 Sol', input: 4, output: 20 },
+    { suffix: 'terra', name: 'GPT-5.6 Terra', input: 2, output: 12 },
+    { suffix: 'luna', name: 'GPT-5.6 Luna', input: 0.2, output: 1.2 }
   ];
 
   it.each(tiers)('registers $name for OpenAI', ({ suffix, name, input, output }) => {
@@ -237,7 +237,7 @@ describe('ModelRegistry latest Gemini Flash models', () => {
   });
 
   it.each([
-    ['google/gemini-3.8-flash', 'Gemini 3.8 Flash', 0.75, 3.75, 0.075],
+    ['google/gemini-3.8-flash', 'Gemini 3.8 Flash', 0.825, 4.125, 0.0825],
     ['google/gemini-3.7-flash', 'Gemini 3.7 Flash', 0.75, 3.75, 0.075],
     ['google/gemini-3.6-flash', 'Gemini 3.6 Flash', 0.75, 3.75, 0.075],
     ['google/gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite', 0.3, 2.5, 0.03]
@@ -266,8 +266,8 @@ describe('ModelRegistry GLM 5.3 models', () => {
       name: 'GLM 5.3',
       contextWindow: 1048576,
       maxTokens: 131072,
-      inputCostPerMillion: 1.4,
-      outputCostPerMillion: 4.4,
+      inputCostPerMillion: 0.0699,
+      outputCostPerMillion: 1.4,
       capabilities: {
         supportsJSON: true,
         supportsImages: false,
@@ -300,10 +300,10 @@ describe('ModelRegistry Qwen3.8 27B model', () => {
   it('registers Qwen3.8 27B for OpenRouter with its live catalog metadata', () => {
     expect(ModelRegistry.findModel('openrouter', 'qwen/qwen3.8-27b')).toEqual(expect.objectContaining({
       name: 'Qwen3.8 27B',
-      contextWindow: 262144,
+      contextWindow: 1024000,
       maxTokens: 131072,
-      inputCostPerMillion: 0.45,
-      outputCostPerMillion: 3.20,
+      inputCostPerMillion: 0.15,
+      outputCostPerMillion: 1.875,
       capabilities: {
         supportsJSON: true,
         supportsImages: true,
@@ -321,8 +321,8 @@ describe('ModelRegistry DeepSeek V4 Pro 0813 model', () => {
       name: 'DeepSeek V4 Pro 0813',
       contextWindow: 1048576,
       maxTokens: 65536,
-      inputCostPerMillion: 0.435,
-      outputCostPerMillion: 0.87,
+      inputCostPerMillion: 0.103,
+      outputCostPerMillion: 4.11,
       capabilities: expect.objectContaining({
         supportsJSON: true,
         supportsImages: false,
@@ -348,9 +348,9 @@ describe('ModelRegistry DeepSeek Flash Latest alias', () => {
       name: 'DeepSeek Flash Latest',
       contextWindow: 1048576,
       maxTokens: 65536,
-      inputCostPerMillion: 0.049,
-      outputCostPerMillion: 1.20,
-      cacheReadCostPerMillion: 0.03,
+      inputCostPerMillion: 0.006,
+      outputCostPerMillion: 0.5,
+      cacheReadCostPerMillion: 0.005,
       capabilities: expect.objectContaining({
         supportsJSON: true,
         supportsImages: true,
@@ -372,9 +372,9 @@ describe('ModelRegistry DeepSeek Pro Latest alias', () => {
       name: 'DeepSeek Pro Latest',
       contextWindow: 1048576,
       maxTokens: 65536,
-      inputCostPerMillion: 0.2917,
-      outputCostPerMillion: 4.20,
-      cacheReadCostPerMillion: 0.29,
+      inputCostPerMillion: 0.0927,
+      outputCostPerMillion: 8,
+      cacheReadCostPerMillion: 0.0927,
       capabilities: expect.objectContaining({
         supportsJSON: true,
         supportsImages: false,
@@ -396,8 +396,8 @@ describe('ModelRegistry Kimi K3 model', () => {
       name: 'Kimi K3',
       contextWindow: 1048576,
       maxTokens: 131072,
-      inputCostPerMillion: 3,
-      outputCostPerMillion: 15,
+      inputCostPerMillion: 0.192,
+      outputCostPerMillion: 16,
       capabilities: expect.objectContaining({
         supportsJSON: true,
         supportsImages: true,

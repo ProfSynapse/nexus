@@ -8,6 +8,9 @@ import {
   ListModelsTool,
   ExecutePromptsTool,
   GenerateAudioTool,
+  buildGenerateAudioDescription,
+  buildGenerateImageDescription,
+  buildGenerateVideoDescription,
   GenerateImageTool,
   GenerateVideoTool,
   CheckGeneratedArtifactTool,
@@ -24,6 +27,8 @@ import { AgentManager } from '../../services/AgentManager';
 import { UsageTracker } from '../../services/UsageTracker';
 import { App, Vault, EventRef } from 'obsidian';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
+import { getConfiguredImageProviders } from '../../services/llm/imageModelCapabilities';
+import { listConfiguredSpeechProviders } from '../../services/llm/types/SpeechTypes';
 import { LLMProviderSettings } from '../../types';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 import { resolveVaultRoot } from '../../database/storage/VaultRootResolver';
@@ -81,6 +86,7 @@ export class PromptManagerAgent extends BaseAgent {
    * EventRef for settings change listener (Obsidian Events API)
    */
   private settingsEventRef: EventRef | null = null;
+  private appsEventRef: EventRef | null = null;
 
   /**
    * Subagent tool - stored for later executor wiring
@@ -179,14 +185,12 @@ export class PromptManagerAgent extends BaseAgent {
 
     // Register image generation tool only if an image-capable provider key is configured
     const llmProviders = settings.settings.llmProviders;
-    const hasGoogleKey = llmProviders?.providers?.google?.apiKey && llmProviders?.providers?.google?.enabled;
-    const hasOpenAIKey = llmProviders?.providers?.openai?.apiKey && llmProviders?.providers?.openai?.enabled;
-    const hasOpenRouterKey = llmProviders?.providers?.openrouter?.apiKey && llmProviders?.providers?.openrouter?.enabled;
+    const imageProviders = getConfiguredImageProviders(llmProviders);
 
-    if (hasGoogleKey || hasOpenAIKey || hasOpenRouterKey) {
+    if (imageProviders.length > 0) {
       this.registerLazyTool({
         slug: 'generateImage', name: 'Generate Image',
-        description: 'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.',
+        description: buildGenerateImageDescription(imageProviders),
         version: '2.1.0',
         factory: () => new GenerateImageTool({
           vault: this.vault,
@@ -198,7 +202,7 @@ export class PromptManagerAgent extends BaseAgent {
     if (this.shouldHaveGenerateAudio(llmProviders)) {
       this.registerLazyTool({
         slug: 'generateAudio', name: 'Generate Audio',
-        description: 'Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.',
+        description: buildGenerateAudioDescription(llmProviders, settings.settings.apps),
         version: '1.0.0',
         factory: () => new GenerateAudioTool({
           app: this.app,
@@ -213,7 +217,7 @@ export class PromptManagerAgent extends BaseAgent {
       const artifactJobsPath = this.getArtifactJobsPath();
       this.registerLazyTool({
         slug: 'generateVideo', name: 'Generate Video',
-        description: 'Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.',
+        description: buildGenerateVideoDescription(llmProviders),
         version: '1.0.0',
         factory: () => new GenerateVideoTool({
           app: this.app,
@@ -245,6 +249,9 @@ export class PromptManagerAgent extends BaseAgent {
     this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
       this.handleSettingsChange(newSettings);
     });
+    this.appsEventRef = LLMSettingsNotifier.onAppsChanged(() => {
+      this.refreshGenerateAudio(this.settings.settings.llmProviders);
+    });
   }
 
   /**
@@ -252,12 +259,10 @@ export class PromptManagerAgent extends BaseAgent {
    * Dynamically registers/unregisters GenerateImageTool based on API key availability
    */
   private handleSettingsChange(settings: LLMProviderSettings): void {
-    const hasGoogleKey = settings.providers?.google?.apiKey && settings.providers?.google?.enabled;
-    const hasOpenRouterKey = settings.providers?.openrouter?.apiKey && settings.providers?.openrouter?.enabled;
-    const shouldHaveGenerateImage = hasGoogleKey || hasOpenRouterKey;
+    this.executePromptsTool.setImageSettings(settings);
+
+    const shouldHaveGenerateImage = getConfiguredImageProviders(settings).length > 0;
     const hasGenerateImage = this.hasTool('generateImage');
-    const shouldHaveGenerateAudio = this.shouldHaveGenerateAudio(settings);
-    const hasGenerateAudio = this.hasTool('generateAudio');
     const shouldHaveGenerateVideo = this.shouldHaveGenerateVideo(settings);
     const hasGenerateVideo = this.hasTool('generateVideo');
     const hasCheckGeneratedArtifact = this.hasTool('checkGeneratedArtifact');
@@ -280,24 +285,7 @@ export class PromptManagerAgent extends BaseAgent {
       }));
     }
 
-    if (shouldHaveGenerateAudio && !hasGenerateAudio) {
-      this.registerTool(new GenerateAudioTool({
-        app: this.app,
-        vault: this.vault,
-        llmSettings: settings,
-        appsSettings: this.settings.settings.apps
-      }));
-    } else if (!shouldHaveGenerateAudio && hasGenerateAudio) {
-      this.unregisterTool('generateAudio');
-    } else if (shouldHaveGenerateAudio && hasGenerateAudio) {
-      this.unregisterTool('generateAudio');
-      this.registerTool(new GenerateAudioTool({
-        app: this.app,
-        vault: this.vault,
-        llmSettings: settings,
-        appsSettings: this.settings.settings.apps
-      }));
-    }
+    this.refreshGenerateAudio(settings);
 
     if (shouldHaveGenerateVideo && !hasGenerateVideo) {
       const artifactJobsPath = this.getArtifactJobsPath();
@@ -350,17 +338,32 @@ export class PromptManagerAgent extends BaseAgent {
   }
 
   private shouldHaveGenerateAudio(settings: LLMProviderSettings | undefined): boolean {
-    const openAIConfig = settings?.providers?.openai;
-    const hasOpenAISpeech = openAIConfig?.enabled === true && !!openAIConfig.apiKey?.trim();
-    const googleConfig = settings?.providers?.google;
-    const hasGoogleSpeech = googleConfig?.enabled === true && !!googleConfig.apiKey?.trim();
-    const mistralConfig = settings?.providers?.mistral;
-    const hasMistralSpeech = mistralConfig?.enabled === true && !!mistralConfig.apiKey?.trim();
-    const openRouterConfig = settings?.providers?.openrouter;
-    const hasOpenRouterSpeech = openRouterConfig?.enabled === true && !!openRouterConfig.apiKey?.trim();
-    const elevenLabsConfig = this.settings.settings.apps?.apps.elevenlabs;
-    const hasElevenLabsSpeech = elevenLabsConfig?.enabled === true && !!elevenLabsConfig.credentials.apiKey?.trim();
-    return hasOpenAISpeech || hasGoogleSpeech || hasMistralSpeech || hasOpenRouterSpeech || hasElevenLabsSpeech;
+    return listConfiguredSpeechProviders(settings, this.settings.settings.apps).length > 0;
+  }
+
+  /** Rebuild generateAudio from current settings. ElevenLabs keys live in Apps, so both changes land here. */
+  private refreshGenerateAudio(settings: LLMProviderSettings | undefined): void {
+    const shouldHaveGenerateAudio = this.shouldHaveGenerateAudio(settings);
+    const hasGenerateAudio = this.hasTool('generateAudio');
+
+    if (shouldHaveGenerateAudio && !hasGenerateAudio) {
+      this.registerTool(new GenerateAudioTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings ?? null,
+        appsSettings: this.settings.settings.apps
+      }));
+    } else if (!shouldHaveGenerateAudio && hasGenerateAudio) {
+      this.unregisterTool('generateAudio');
+    } else if (shouldHaveGenerateAudio && hasGenerateAudio) {
+      this.unregisterTool('generateAudio');
+      this.registerTool(new GenerateAudioTool({
+        app: this.app,
+        vault: this.vault,
+        llmSettings: settings ?? null,
+        appsSettings: this.settings.settings.apps
+      }));
+    }
   }
 
   private shouldHaveGenerateVideo(settings: LLMProviderSettings | undefined): boolean {
@@ -379,6 +382,10 @@ export class PromptManagerAgent extends BaseAgent {
     if (this.settingsEventRef) {
       LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
       this.settingsEventRef = null;
+    }
+    if (this.appsEventRef) {
+      LLMSettingsNotifier.unsubscribe(this.appsEventRef);
+      this.appsEventRef = null;
     }
   }
 

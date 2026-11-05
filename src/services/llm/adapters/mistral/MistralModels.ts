@@ -40,22 +40,6 @@ export const MISTRAL_MODELS: ModelSpec[] = [
   },
   {
     provider: 'mistral',
-    name: 'Mistral Saba',
-    apiName: 'mistral-saba-latest',
-    contextWindow: 128000,
-    maxTokens: 4096,
-    inputCostPerMillion: 0.20,
-    outputCostPerMillion: 0.60,
-    capabilities: {
-      supportsJSON: false,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'mistral',
     name: 'Magistral Medium',
     apiName: 'magistral-medium-latest',
     contextWindow: 40000,

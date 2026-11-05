@@ -18,6 +18,7 @@ import {
   ImageGenerationResponse,
   ImageValidationResult,
   ImageModel,
+  ImageModelFeatures,
   ImageUsage,
   AspectRatio,
   NanoBananaImageSize
@@ -32,7 +33,7 @@ import {
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
-import { DEFAULT_IMAGE_MODEL } from '../../types/ImageTypes';
+import { ALL_ASPECT_RATIOS, CORE_ASPECT_RATIOS, DEFAULT_IMAGE_MODEL, STANDARD_ASPECT_RATIOS } from '../../types/ImageTypes';
 
 type OutputFormat = 'png' | 'jpeg' | 'webp';
 
@@ -52,7 +53,11 @@ export interface OpenRouterImageModelSpec {
   pricingNote: string;
   maxReferenceImages: number;
   resolutions: OpenRouterResolution[] | null;
+  /** The endpoint's aspect_ratio values that the tool's enum can express. */
+  aspectRatios: readonly string[];
   contextWindow: number;
+  defaultQuality?: 'medium';
+  features?: ImageModelFeatures;
   lastUpdated: string;
 }
 
@@ -67,6 +72,9 @@ interface OpenRouterImagesRequestBody {
   aspect_ratio?: AspectRatio;
   resolution?: OpenRouterResolution;
   input_references?: OpenRouterImageReference[];
+  quality?: 'medium';
+  /** Provider passthrough, keyed by provider slug. See the endpoint's allowed_passthrough_parameters. */
+  provider?: { options: { openai: { complexity: string } } };
 }
 
 interface OpenRouterImagesResponse {
@@ -119,6 +127,9 @@ const ASPECT_RATIO_TO_DIMENSIONS: Record<string, [number, number]> = {
   '8:1': [1024, 128]
 };
 
+/** What MAI-Image-2.6 and Grok Imagine Image 2.0 list: CORE without 21:9. */
+const CORE_WITHOUT_ULTRAWIDE: readonly string[] = CORE_ASPECT_RATIOS.filter(ratio => ratio !== '21:9');
+
 /**
  * Model catalog. Every value comes from the model's own
  * /api/v1/images/models/<id>/endpoints entry. Gemini bills per output token
@@ -136,6 +147,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '1120 output tokens at $30/M for 1K; 2K and 4K use more tokens; no 512',
     maxReferenceImages: 14,
     resolutions: ['1K', '2K', '4K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-10-14'
   },
@@ -146,6 +158,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '1120 output tokens at $60/M for 1K or 2K; 4K is double',
     maxReferenceImages: 14,
     resolutions: ['512', '1K', '2K', '4K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
@@ -156,6 +169,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '4160 output tokens at $30/M at the default high quality',
     maxReferenceImages: 16,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 272000,
     lastUpdated: '2026-09-02'
   },
@@ -166,6 +180,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.03 per output megapixel',
     maxReferenceImages: 8,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 4096,
     lastUpdated: '2026-09-02'
   },
@@ -176,6 +191,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.06 per output megapixel, plus $0.06 per input megapixel',
     maxReferenceImages: 8,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 4096,
     lastUpdated: '2026-09-02'
   },
@@ -186,6 +202,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.014 per output megapixel; exactly one image per request',
     maxReferenceImages: 4,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 4096,
     lastUpdated: '2026-09-02'
   },
@@ -196,6 +213,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '1120 output tokens at $30/M; 1K only',
     maxReferenceImages: 14,
     resolutions: ['1K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
@@ -206,6 +224,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '1120 output tokens at $120/M for 1K or 2K; 4K is double',
     maxReferenceImages: 14,
     resolutions: ['1K', '2K', '4K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
@@ -216,6 +235,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '4160 output tokens at $30/M at the default high quality',
     maxReferenceImages: 16,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-09-02'
   },
@@ -228,6 +248,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     // The endpoint lists 1K, but OpenRouter rejects it: the model needs at
     // least 3,686,400 output pixels, so 2K is the real minimum.
     resolutions: ['2K', '4K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-09-02'
   },
@@ -238,6 +259,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.035 per image; 2K and 4K only',
     maxReferenceImages: 14,
     resolutions: ['2K', '4K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-09-02'
   },
@@ -248,6 +270,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; quality is left at auto, so a 1024x1024 image is ~439 tokens at medium and more at higher qualities',
     maxReferenceImages: 16,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-10-14'
   },
@@ -258,8 +281,38 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; quality is left at auto, so a 1024x1024 image is ~439 tokens at medium and more at higher qualities',
     maxReferenceImages: 16,
     resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-10-14'
+  },
+  // Added 2026-11-05 from /api/v1/images/models/<id>/endpoints. The listing also
+  // offers quality xhigh and max; svg and gif output and markup are not offered
+  // here, only on OpenAI direct. Medium is explicit because auto picks the spend.
+  'gpt-image-2.6-sunburst': {
+    openRouterId: 'openai/gpt-image-2.6-sunburst',
+    displayName: 'GPT Image 2.6 Sunburst (via OpenRouter)',
+    costPerImage: 0.0435,
+    pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; a 1024x1024 medium image was 1449 tokens on OpenAI direct',
+    maxReferenceImages: 16,
+    resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
+    contextWindow: 32000,
+    defaultQuality: 'medium',
+    features: { complexity: true },
+    lastUpdated: '2026-11-05'
+  },
+  'gpt-image-2.6-flare': {
+    openRouterId: 'openai/gpt-image-2.6-flare',
+    displayName: 'GPT Image 2.6 Flare (via OpenRouter)',
+    costPerImage: 0.0435,
+    pricingNote: '$30/M output image tokens, $8/M image and $5/M text input; a 1024x1024 medium image was 1449 tokens on OpenAI direct',
+    maxReferenceImages: 16,
+    resolutions: null,
+    aspectRatios: CORE_ASPECT_RATIOS,
+    contextWindow: 32000,
+    defaultQuality: 'medium',
+    features: { complexity: true },
+    lastUpdated: '2026-11-05'
   },
   'flux-3-image': {
     openRouterId: 'black-forest-labs/flux-3-image',
@@ -269,6 +322,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: 'Per image by resolution tier: 1K $0.048, 2K $0.10, 4K $0.607',
     maxReferenceImages: 10,
     resolutions: ['1K', '2K', '4K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 4096,
     lastUpdated: '2026-10-14'
   },
@@ -281,6 +335,7 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.045 per image, $0.09 at high resolution; $0.003 per reference image',
     maxReferenceImages: 14,
     resolutions: ['1K', '2K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-10-14'
   },
@@ -291,8 +346,46 @@ export const OPENROUTER_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenRouterIma
     pricingNote: '$0.018 per image; reference images free',
     maxReferenceImages: 14,
     resolutions: ['1K', '2K'],
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 32000,
     lastUpdated: '2026-10-14'
+  },
+  // Added 2026-11-05 from /api/v1/images/models/<id>/endpoints. The listings
+  // publish no context length; 32000 matches the other image-only entries.
+  'mai-image-2.6': {
+    openRouterId: 'microsoft/mai-image-2.6',
+    displayName: 'MAI-Image-2.6 (via OpenRouter)',
+    costPerImage: 0.039,
+    pricingNote: 'Measured 1024 output tokens at $38/M for 1024x1024; $8/M image and $5/M text input billed separately',
+    maxReferenceImages: 5,
+    resolutions: null,
+    aspectRatios: CORE_WITHOUT_ULTRAWIDE,
+    contextWindow: 32000,
+    lastUpdated: '2026-11-05'
+  },
+  'grok-imagine-image-2.0': {
+    openRouterId: 'x-ai/grok-imagine-image-2.0',
+    displayName: 'Grok Imagine Image 2.0 (via OpenRouter)',
+    costPerImage: 0.06,
+    pricingNote: 'Per image: medium 1K $0.06, medium 2K $0.08, low 1K $0.04, low 2K $0.06; $0.01 per reference image',
+    maxReferenceImages: 3,
+    resolutions: ['1K', '2K'],
+    aspectRatios: CORE_WITHOUT_ULTRAWIDE,
+    contextWindow: 32000,
+    lastUpdated: '2026-11-05'
+  },
+  'qwen-image-3': {
+    openRouterId: 'qwen/qwen-image-3',
+    displayName: 'Qwen Image 3 (via OpenRouter)',
+    costPerImage: 0.03,
+    pricingNote: '$0.03 per image at 1K or 2K; $0.003 per reference image',
+    maxReferenceImages: 3,
+    resolutions: ['1K', '2K'],
+    // The listing's 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 1:4 and 4:1,
+    // which is every ratio except 21:9 and the 1:8 and 8:1 extremes.
+    aspectRatios: ALL_ASPECT_RATIOS.filter(ratio => !['21:9', '1:8', '8:1'].includes(ratio)),
+    contextWindow: 32000,
+    lastUpdated: '2026-11-05'
   }
 };
 
@@ -319,13 +412,6 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   private readonly defaultModel = DEFAULT_IMAGE_MODEL;
 
-  // Aspect ratios accepted across the catalog. Individual endpoints may
-  // support fewer; OpenRouter rejects those with a 400 naming the parameter.
-  private readonly openRouterAspectRatios: string[] = [
-    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
-    '1:4', '4:1', '1:8', '8:1'
-  ];
-
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
     const apiKey = config?.apiKey || '';
     super(apiKey, DEFAULT_IMAGE_MODEL, config?.baseUrl);
@@ -345,6 +431,14 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    */
   setVault(vault: Vault): void {
     this.vault = vault;
+  }
+
+  protected getImageModelFeatures(model: string): ImageModelFeatures {
+    return this.modelSpecs[model]?.features ?? {};
+  }
+
+  protected getModelAspectRatios(model: string): readonly string[] | null {
+    return this.modelSpecs[model]?.aspectRatios ?? null;
   }
 
   /**
@@ -376,6 +470,13 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
       if (params.referenceImages && params.referenceImages.length > 0) {
         requestBody.input_references = await this.loadReferenceImages(params.referenceImages);
+      }
+
+      if (spec.defaultQuality) {
+        requestBody.quality = spec.defaultQuality;
+      }
+      if (params.complexity && spec.features?.complexity) {
+        requestBody.provider = { options: { openai: { complexity: params.complexity } } };
       }
 
       // Retries cover 408/409/429/5xx only; a 4xx parameter rejection or a
@@ -476,10 +577,6 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       return { isValid: false, errors, warnings, adjustedParams };
     }
 
-    if (params.aspectRatio && !this.openRouterAspectRatios.includes(params.aspectRatio)) {
-      errors.push(`Invalid aspect ratio. Supported ratios: ${this.openRouterAspectRatios.join(', ')}`);
-    }
-
     if (params.imageSize) {
       if (!spec.resolutions) {
         warnings.push(`${model} does not take a resolution; imageSize ${params.imageSize} ignored`);
@@ -488,10 +585,6 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         const supported = spec.resolutions.map(r => (r === '512' ? '512px' : r)).join(', ');
         errors.push(`imageSize ${params.imageSize} is not available for ${model}. Supported: ${supported}`);
       }
-    }
-
-    if (params.numberOfImages && params.numberOfImages > 1) {
-      warnings.push('OpenRouter image generation produces one image per request; numberOfImages ignored');
     }
 
     if (params.referenceImages && params.referenceImages.length > 0) {

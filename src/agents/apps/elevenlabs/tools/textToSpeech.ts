@@ -13,6 +13,7 @@ import { requestUrl, TFolder } from 'obsidian';
 import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { getSpeechModelsForProvider } from '../../../../services/llm/types/SpeechTypes';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -156,7 +157,10 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
       properties: {
         prompt: { type: 'string', description: 'Text prompt to convert to speech. Supports dialogue tags like [fearful], [whispered], etc.' },
         voiceId: { type: 'string', description: 'ElevenLabs voice ID (use listVoices to find IDs). Defaults to Sarah.' },
-        modelId: { type: 'string', description: 'Model ID. Options: eleven_multilingual_v2 (default), eleven_turbo_v2 (faster), eleven_monolingual_v1' },
+        modelId: {
+          type: 'string',
+          description: `Model ID. Defaults to the model chosen in Apps settings. Options: ${getSpeechModelsForProvider('elevenlabs').filter(model => !model.deprecated).map(model => model.id).join(', ')}`
+        },
         outputPath: { type: 'string', description: 'Output file path in vault (default: audio/tts-{timestamp}.mp3)' },
         stability: { type: 'number', description: 'Voice stability 0.0-1.0 (default: 0.5)' },
         similarityBoost: { type: 'number', description: 'Voice similarity boost 0.0-1.0 (default: 0.75)' },

@@ -1,7 +1,7 @@
 import type { ConversationAgentSettings } from '../../../../../services/llm/utils/SubagentModelResolver';
 import type { ThinkingEffort } from '../../../../../types/llm/ProviderTypes';
 import { CommonParameters } from '../../../../../types';
-import { AspectRatio } from '../../../../../services/llm/types/ImageTypes';
+import { AspectRatio, ImageComplexity, ImageVectorOrAnimationFormat, NanoBananaImageSize } from '../../../../../services/llm/types/ImageTypes';
 
 /**
  * Parameters for batch LLM prompt execution
@@ -70,6 +70,12 @@ export interface ImageGenerationRequest extends BaseBatchRequest {
   savePath: string;
   /** Reference images for style/composition guidance (vault-relative paths) */
   referenceImages?: string[];
+  imageSize?: NanoBananaImageSize;
+  complexity?: ImageComplexity;
+  outputFormat?: ImageVectorOrAnimationFormat;
+  frameCount?: number;
+  frameDurationMs?: number;
+  markupImage?: string;
 }
 
 /**
@@ -113,6 +119,12 @@ export interface ImagePromptConfig {
   savePath: string;
   /** Reference images for style/composition guidance (vault-relative paths) */
   referenceImages?: string[];
+  imageSize?: NanoBananaImageSize;
+  complexity?: ImageComplexity;
+  outputFormat?: ImageVectorOrAnimationFormat;
+  frameCount?: number;
+  frameDurationMs?: number;
+  markupImage?: string;
   id?: string;
   sequence?: number;
   parallelGroup?: string;
@@ -190,6 +202,8 @@ export interface PromptExecutionResult {
   savedTo?: string;
   /** Path where image was saved */
   imagePath?: string;
+  /** Set when a parameter had no effect or a retired image model was swapped */
+  note?: string;
   /** Only included on failure */
   error?: string;
 }
@@ -204,6 +218,7 @@ export interface InternalExecutionResult {
   success: boolean;
   response?: string;
   imagePath?: string;
+  note?: string;
   provider?: string;
   model?: string;
   /** Name of the custom prompt used (if any) */

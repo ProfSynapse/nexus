@@ -26,7 +26,7 @@ describe('VoiceCatalogService', () => {
   it('returns static Google Gemini TTS voices from the model catalog', async () => {
     const service = new VoiceCatalogService();
 
-    const voices = await service.getVoices('google', 'gemini-3.1-flash-tts-preview');
+    const voices = await service.getVoices('google', 'gemini-3.8-flash-tts');
 
     expect(voices).toEqual(expect.arrayContaining([
       { id: 'Kore', name: 'Kore', description: 'Firm' },

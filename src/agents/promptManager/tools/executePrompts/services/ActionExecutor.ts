@@ -266,7 +266,7 @@ export class ActionExecutor {
     imageConfig: ImagePromptConfig,
     sessionId?: string,
     context?: string
-  ): Promise<{ success: boolean; error?: string; imagePath?: string }> {
+  ): Promise<{ success: boolean; error?: string; imagePath?: string; note?: string }> {
     if (!this.agentManager) {
       return { success: false, error: 'Agent manager not available' };
     }
@@ -280,6 +280,12 @@ export class ActionExecutor {
         aspectRatio: imageConfig.aspectRatio,
         savePath: imageConfig.savePath,
         referenceImages: imageConfig.referenceImages,
+        imageSize: imageConfig.imageSize,
+        complexity: imageConfig.complexity,
+        outputFormat: imageConfig.outputFormat,
+        frameCount: imageConfig.frameCount,
+        frameDurationMs: imageConfig.frameDurationMs,
+        markupImage: imageConfig.markupImage,
         sessionId: sessionId || '',
         context: context || ''
       };
@@ -290,11 +296,12 @@ export class ActionExecutor {
         return { success: false, error: 'Invalid response from generateImage tool' };
       }
 
-      const data = imageResult.data as { imagePath?: string } | undefined;
+      const data = imageResult.data as { imagePath?: string; note?: string } | undefined;
       if (imageResult.success && data?.imagePath) {
         return {
           success: true,
-          imagePath: data.imagePath
+          imagePath: data.imagePath,
+          ...(data.note ? { note: data.note } : {})
         };
       } else {
         return {

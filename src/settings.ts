@@ -215,8 +215,10 @@ export class Settings {
 
     private adoptSettings(next: MCPSettings): void {
         const providersChanged = !settingsEqual(this.settings.llmProviders, next.llmProviders);
+        const appsChanged = !settingsEqual(this.settings.apps, next.apps);
         reconcileSettingsInPlace(this.settings, next);
         if (providersChanged && this.settings.llmProviders) LLMSettingsNotifier.notify(this.settings.llmProviders);
+        if (appsChanged) LLMSettingsNotifier.notifyAppsChanged();
     }
 
     /**

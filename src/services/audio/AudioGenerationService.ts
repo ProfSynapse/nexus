@@ -4,6 +4,7 @@ import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import { tryResolveVaultPath } from '../../core/vaultPath';
 import { SpeechSynthesisService } from '../readAloud/SpeechSynthesisService';
 import type { SpeechSynthesisRequest } from '../readAloud/SpeechSynthesisTypes';
+import { SPEECH_OUTPUT_EXTENSION, type SpeechProvider } from '../llm/types/SpeechTypes';
 
 export type AudioGenerationMode = 'voice';
 
@@ -78,6 +79,7 @@ export class AudioGenerationService {
       model: request.model,
       voice: request.voice,
     };
+    this.assertExtensionMatchesProvider(outputPath, speechRequest);
     const speechResult = await this.speechService.synthesize(speechRequest);
     this.assertExtensionMatchesMime(outputPath, speechResult.mimeType);
     await this.writeAudio(outputPath, speechResult.audioData, request.overwrite === true);
@@ -117,6 +119,26 @@ export class AudioGenerationService {
       throw new Error(
         `outputPath must end with one of: ${ALLOWED_AUDIO_EXTENSIONS.map(ext => `.${ext}`).join(', ')}.`
       );
+    }
+  }
+
+  /**
+   * Fail before synthesis when the provider will return a different file type
+   * than the path names, so the mistake is not paid for. A request that cannot
+   * resolve is left for synthesize() to report.
+   */
+  private assertExtensionMatchesProvider(outputPath: string, request: SpeechSynthesisRequest): void {
+    let provider: SpeechProvider;
+    try {
+      provider = this.speechService.resolveRequest(request).provider;
+    } catch {
+      return;
+    }
+
+    const expected = SPEECH_OUTPUT_EXTENSION[provider];
+    const actual = this.extensionOf(outputPath);
+    if (actual !== expected) {
+      throw new Error(`outputPath extension ".${actual}" does not match what ${provider} returns: use ".${expected}".`);
     }
   }
 

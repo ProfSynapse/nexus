@@ -30,6 +30,24 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6.1 Terra',
+    apiName: 'gpt-6.1-terra',
+    releaseDate: '2026-10-13',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://developers.openai.com/api/docs/models/gpt-6-astra
   {
     provider: 'openai-codex',
@@ -184,22 +202,6 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openai-codex',
-    name: 'GPT-5.2 Codex',
-    apiName: 'gpt-5.2-codex',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'openai-codex',
     name: 'GPT-5.2',
     apiName: 'gpt-5.2',
     contextWindow: 400000,
@@ -214,54 +216,6 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
       supportsThinking: false
     }
   },
-  {
-    provider: 'openai-codex',
-    name: 'GPT-5.1 Codex',
-    apiName: 'gpt-5.1-codex',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'openai-codex',
-    name: 'GPT-5.1 Codex Max',
-    apiName: 'gpt-5.1-codex-max',
-    contextWindow: 400000,
-    maxTokens: 128000,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'openai-codex',
-    name: 'GPT-5.1 Codex Mini',
-    apiName: 'gpt-5.1-codex-mini',
-    contextWindow: 200000,
-    maxTokens: 64000,
-    inputCostPerMillion: 0,
-    outputCostPerMillion: 0,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  }
 ];
 
 export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.6-sol';

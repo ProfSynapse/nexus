@@ -14,6 +14,12 @@ import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 
+/**
+ * Sent explicitly: with no model_id the API falls back to eleven_text_to_sound_v2,
+ * which it removes on 2027-03-01.
+ */
+const SOUND_EFFECTS_MODEL = 'eleven_text_to_sound_v3';
+
 type UnknownRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -40,6 +46,7 @@ interface SoundEffectsParams extends CommonParameters {
   prompt: string;
   durationSeconds?: number;
   promptInfluence?: number;
+  loop?: boolean;
   outputPath?: string;
 }
 
@@ -72,10 +79,14 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
 
     const body: Record<string, unknown> = {
       text: params.prompt,
+      model_id: SOUND_EFFECTS_MODEL,
     };
 
     if (params.durationSeconds !== undefined) {
       body.duration_seconds = Math.max(0.5, Math.min(30, params.durationSeconds));
+    }
+    if (params.loop !== undefined) {
+      body.loop = params.loop;
     }
     if (params.promptInfluence !== undefined) {
       body.prompt_influence = Math.max(0, Math.min(1, params.promptInfluence));
@@ -149,6 +160,7 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
         prompt: { type: 'string', description: 'Text description of the sound effect to generate (e.g., "ocean waves crashing on rocks")' },
         durationSeconds: { type: 'number', description: 'Duration in seconds (0.5-30). If omitted, optimal duration is guessed from prompt.' },
         promptInfluence: { type: 'number', description: 'How closely to follow the text prompt (0.0-1.0)' },
+        loop: { type: 'boolean', description: 'If true, make a sound effect that loops smoothly (default: false)' },
         outputPath: { type: 'string', description: 'Output file path in vault (default: audio/sfx-{timestamp}.mp3)' },
       },
       required: ['prompt'],

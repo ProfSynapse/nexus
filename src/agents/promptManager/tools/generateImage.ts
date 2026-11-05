@@ -11,7 +11,9 @@ import { CommonResult, CommonParameters } from '../../../types';
 import { createResult } from '../../../utils/schemaUtils';
 import { ImageGenerationService } from '../../../services/llm/ImageGenerationService';
 import { 
-  AspectRatio
+  AspectRatio,
+  ImageComplexity,
+  ImageVectorOrAnimationFormat
 } from '../../../services/llm/types/ImageTypes';
 import { SchemaBuilder } from '../../../utils/schemas/SchemaBuilder';
 import { Vault } from 'obsidian';
@@ -21,7 +23,124 @@ import {
   getRetiredImageModel,
   type RetiredModel
 } from '../../../services/llm/types/RetiredMediaModels';
-import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
+import { ALL_ASPECT_RATIOS, DEFAULT_IMAGE_MODEL, ImageProvider, NanoBananaImageSize } from '../../../services/llm/types/ImageTypes';
+import {
+  getConfiguredImageProviders,
+  ImageModelCapability,
+  listImageModelCapabilities
+} from '../../../services/llm/imageModelCapabilities';
+import { describeModelsByProvider, groupModels, joinWithOr } from '../../../services/llm/mediaModelText';
+
+const PROVIDER_PHRASES: Record<ImageProvider, string> = {
+  google: 'Google Nano Banana',
+  openai: 'OpenAI GPT Image',
+  openrouter: 'any OpenRouter image model'
+};
+
+const IMAGE_SIZE_ORDER: NanoBananaImageSize[] = ['512px', '1K', '2K', '4K'];
+
+/**
+ * Parameters that only some models take. Each appears only when a provider with
+ * a key has a model that accepts it, and names those models, so nothing here goes
+ * stale when a catalog changes. executePrompts shares this for its image requests.
+ */
+export function buildImageCapabilityProperties(models: ImageModelCapability[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+
+  if (models.length > 0) {
+    properties.aspectRatio = {
+      type: 'string',
+      enum: ALL_ASPECT_RATIOS.filter(ratio => models.some(model => model.aspectRatios.includes(ratio))),
+      description: `Aspect ratio for the generated image. Supported per model: ${groupModels(models, model => model.aspectRatios.join(', '))}`
+    };
+  }
+
+  const sized = models.filter(model => model.imageSizes.length > 0);
+  if (sized.length > 0) {
+    properties.imageSize = {
+      type: 'string',
+      enum: IMAGE_SIZE_ORDER.filter(size => sized.some(model => model.imageSizes.includes(size))),
+      description: `Image resolution. Models not listed do not take one. ${groupModels(sized, model => model.imageSizes.join(', '))}`
+    };
+  }
+
+  const withReferences = models.filter(model => model.maxReferenceImages > 0);
+  if (withReferences.length > 0) {
+    properties.referenceImages = {
+      type: 'array',
+      items: { type: 'string' },
+      maxItems: Math.max(...withReferences.map(model => model.maxReferenceImages)),
+      description: `Reference images for style/composition. Most per model: ${groupModels(withReferences, model => String(model.maxReferenceImages))}`
+    };
+  }
+
+  const withComplexity = models.filter(model => model.features.complexity);
+  if (withComplexity.length > 0) {
+    properties.complexity = {
+      type: 'string',
+      enum: ['low', 'medium', 'high'],
+      description: `How much the model plans before rendering. Omitted means high. Lower is faster and suits focused edits; higher helps dense text and complex layouts but can introduce unwanted changes. Same price at every level. Only on ${describeModelsByProvider(withComplexity)}`
+    };
+  }
+
+  const withSvgAndGif = models.filter(model => model.features.svgAndGif);
+  if (withSvgAndGif.length > 0) {
+    properties.outputFormat = {
+      type: 'string',
+      enum: ['svg', 'gif'],
+      description: `Make an editable SVG or an animated GIF instead of a raster image. Cannot use referenceImages. SVG is slow (up to a few minutes). For GIF, describe the motion and loop in the prompt. Omit for a raster image. Set provider and model to one of ${describeModelsByProvider(withSvgAndGif)}`
+    };
+    properties.frameCount = {
+      type: 'number',
+      minimum: 2,
+      maximum: 16,
+      description: 'Frames in the animation (default 9). Only with outputFormat gif.'
+    };
+    properties.frameDurationMs = {
+      type: 'number',
+      minimum: 20,
+      description: 'Milliseconds per frame, rounded to 10 (default 200). Only with outputFormat gif.'
+    };
+  }
+
+  const withMarkup = models.filter(model => model.features.markup);
+  if (withMarkup.length > 0) {
+    properties.markupImage = {
+      type: 'string',
+      description: `Vault path of a transparent PNG with circles or sketches showing where to edit the first reference image. Must match that image's width and height. Requires referenceImages. Say in the prompt to remove the marks from the result. Set provider and model to one of ${describeModelsByProvider(withMarkup)}`
+    };
+  }
+
+  return properties;
+}
+
+/** The savePath pattern for these models: SVG and GIF only when one can make them. */
+export function buildImageSavePathPattern(models: ImageModelCapability[]): string {
+  const extensions = ['png', 'jpg', 'jpeg', 'webp', ...(models.some(model => model.features.svgAndGif) ? ['svg', 'gif'] : [])];
+  return `^[^/].*\\.(${extensions.join('|')})$`;
+}
+
+/**
+ * The one-line description an agent sees before it asks for the full schema,
+ * so it has to mention an output type or an agent asked for one will not look.
+ * Written only from the providers that have a key.
+ */
+export function buildGenerateImageDescription(providers: readonly ImageProvider[]): string {
+  const models = listImageModelCapabilities(providers);
+  const sentences = [
+    `Generate images with ${joinWithOr(providers.map(provider => PROVIDER_PHRASES[provider])) || 'a configured image provider'}.`,
+    'Supports reference images for style/composition guidance.'
+  ];
+  const svgAndGif = models.filter(model => model.features.svgAndGif);
+  if (svgAndGif.length > 0) {
+    sentences.push(`Can also make SVG and animated GIF files (${describeModelsByProvider(svgAndGif)}).`);
+  }
+  const markup = models.filter(model => model.features.markup);
+  if (markup.length > 0) {
+    sentences.push(`Can edit from an annotated overlay (${describeModelsByProvider(markup)}).`);
+  }
+  return sentences.join(' ');
+}
 
 export interface GenerateImageParams extends CommonParameters {
   prompt: string;
@@ -31,6 +150,11 @@ export interface GenerateImageParams extends CommonParameters {
   numberOfImages?: number;
   imageSize?: '512px' | '1K' | '2K' | '4K';
   referenceImages?: string[]; // Vault-relative paths to reference images
+  complexity?: ImageComplexity;
+  outputFormat?: ImageVectorOrAnimationFormat;
+  frameCount?: number;
+  frameDurationMs?: number;
+  markupImage?: string; // Vault-relative transparent PNG annotating the first reference image
   savePath: string;
 }
 
@@ -56,7 +180,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     super(
       'generateImage',
       'Generate Image',
-      'Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.',
+      buildGenerateImageDescription(getConfiguredImageProviders(dependencies?.llmSettings)),
       '2.1.0'
     );
 
@@ -91,6 +215,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
    */
   setLLMSettings(llmSettings: LLMProviderSettings): void {
     this.llmSettings = llmSettings;
+    this.description = buildGenerateImageDescription(getConfiguredImageProviders(llmSettings));
     this.initializeImageService();
   }
 
@@ -138,6 +263,11 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         numberOfImages: params.numberOfImages,
         imageSize: params.imageSize,
         referenceImages: params.referenceImages,
+        complexity: params.complexity,
+        outputFormat: params.outputFormat,
+        frameCount: params.frameCount,
+        frameDurationMs: params.frameDurationMs,
+        markupImage: params.markupImage,
         savePath: params.savePath,
         sessionId: 'default',
         context: ''
@@ -149,7 +279,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         return createResult<GenerateImageModeResult>(
           false,
           undefined,
-          `Parameter validation failed: ${validation.errors.join(', ')}. Available providers: ${availableProviders.join(', ')}. Available models: ${availableModels.join(', ')}`
+          `Parameter validation failed: ${[...validation.errors, ...this.describeUnavailableFeatures(params)].join(', ')}. Available providers: ${availableProviders.join(', ')}. Available models: ${availableModels.join(', ')}`
         );
       }
 
@@ -162,6 +292,11 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         numberOfImages: params.numberOfImages,
         imageSize: params.imageSize,
         referenceImages: params.referenceImages,
+        complexity: params.complexity,
+        outputFormat: params.outputFormat,
+        frameCount: params.frameCount,
+        frameDurationMs: params.frameDurationMs,
+        markupImage: params.markupImage,
         savePath: params.savePath,
         sessionId: 'default',
         context: ''
@@ -176,13 +311,17 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       }
 
       // Return lean result - just the path, plus a note when a retired model
-      // id was swapped for its successor
+      // id was swapped for its successor or a parameter had no effect
+      const notes = [
+        ...(retiredModel ? [describeRetiredModelSubstitution(retiredModel)] : []),
+        ...(validation.warnings ?? [])
+      ];
       return createResult<GenerateImageModeResult>(
         true,
         result.data
           ? {
             imagePath: result.data.imagePath,
-            ...(retiredModel ? { note: describeRetiredModelSubstitution(retiredModel) } : {})
+            ...(notes.length > 0 ? { note: notes.join(' ') } : {})
           }
           : undefined
       );
@@ -194,6 +333,27 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  /** Models that can serve a request right now, from the providers with a key. */
+  private getAvailableCapabilities(): ImageModelCapability[] {
+    return listImageModelCapabilities(this.imageService?.getInitializedProviders() ?? []);
+  }
+
+  /**
+   * A caller can name a parameter this setup hides: a saved prompt, or a schema
+   * read before a key was removed. Say where it does work, or that nothing here
+   * offers it, so the agent stops retrying and can tell the user.
+   */
+  private describeUnavailableFeatures(params: GenerateImageParams): string[] {
+    const models = this.getAvailableCapabilities();
+    const describe = (label: string, supported: ImageModelCapability[]) => supported.length > 0
+      ? `${label} is available on ${describeModelsByProvider(supported)}`
+      : `${label} is not available with the configured providers`;
+    return [
+      ...(params.outputFormat ? [describe(`${params.outputFormat} output`, models.filter(model => model.features.svgAndGif))] : []),
+      ...(params.markupImage ? [describe('markupImage', models.filter(model => model.features.markup))] : [])
+    ];
   }
 
   /**
@@ -293,55 +453,38 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     const providerEnum = this.getAvailableProviderNames();
     const defaults = this.resolveDefaults();
 
+    const models = this.getAvailableCapabilities();
+
+    const properties: Record<string, unknown> = {
+      prompt: {
+        type: 'string',
+        description: 'Text prompt describing the image to generate',
+        minLength: 1,
+        maxLength: 32000
+      },
+      provider: {
+        type: 'string',
+        enum: providerEnum,
+        default: defaults.provider,
+        description: `AI provider (default: ${defaults.provider}). Available: ${providerEnum.join(', ')}`
+      },
+      model: {
+        type: 'string',
+        enum: modelEnum,
+        default: defaults.model,
+        description: `Image generation model (default: ${defaults.model}). Available: ${describeModelsByProvider(models) || modelEnum.join(', ')}`
+      },
+      ...buildImageCapabilityProperties(models),
+      savePath: {
+        type: 'string',
+        description: 'Vault-relative path for the image. Extension may change based on API response format.',
+        pattern: buildImageSavePathPattern(models)
+      }
+    };
+
     const toolSchema = {
       type: 'object',
-      properties: {
-        prompt: {
-          type: 'string',
-          description: 'Text prompt describing the image to generate',
-          minLength: 1,
-          maxLength: 32000
-        },
-        provider: {
-          type: 'string',
-          enum: providerEnum,
-          default: defaults.provider,
-          description: `AI provider (default: ${defaults.provider}). Available: ${providerEnum.join(', ')}`
-        },
-        model: {
-          type: 'string',
-          enum: modelEnum,
-          default: defaults.model,
-          description: `Image generation model (default: ${defaults.model}). Available: ${modelEnum.join(', ')}`
-        },
-        aspectRatio: {
-          type: 'string',
-          enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1'],
-          description: 'Aspect ratio for the generated image'
-        },
-        numberOfImages: {
-          type: 'number',
-          minimum: 1,
-          maximum: 4,
-          description: 'Number of images to generate (1-4)'
-        },
-        imageSize: {
-          type: 'string',
-          enum: ['512px', '1K', '2K', '4K'],
-          description: 'Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image, gemini-nano-banana-2.1 and gemini-3-pro-image. Not accepted by the FLUX models.'
-        },
-        referenceImages: {
-          type: 'array',
-          items: { type: 'string' },
-          maxItems: 14,
-          description: 'Reference images for style/composition. Max 14 for the Gemini models; per-model limits apply on OpenRouter; up to 16 on OpenAI'
-        },
-        savePath: {
-          type: 'string',
-          description: 'Vault-relative path for the image. Extension may change based on API response format.',
-          pattern: '^[^/].*\\.(png|jpg|jpeg|webp)$'
-        }
-      },
+      properties,
       required: ['prompt', 'savePath']
     };
 
@@ -365,7 +508,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
           type: 'object',
           properties: {
             imagePath: { type: 'string', description: 'Path where image was saved' },
-            note: { type: 'string', description: 'Set when the requested model was retired and its successor was used instead' }
+            note: { type: 'string', description: 'Set when the requested model was retired and its successor was used, or a parameter had no effect on this model' }
           }
         },
         error: { type: 'string' }

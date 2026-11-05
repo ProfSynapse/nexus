@@ -32,6 +32,18 @@ class LLMSettingsNotifierImpl extends Events {
   }
 
   /**
+   * Subscribe to Apps settings changes. ElevenLabs speech is keyed there, so a
+   * provider change alone does not cover it.
+   */
+  onAppsChanged(callback: () => void): EventRef {
+    return this.on('apps-changed', callback);
+  }
+
+  notifyAppsChanged(): void {
+    this.trigger('apps-changed');
+  }
+
+  /**
    * Unsubscribe using EventRef
    */
   unsubscribe(ref: EventRef): void {

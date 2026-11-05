@@ -11,6 +11,7 @@ import { SearchableCardManager, CardGroup } from '../../components/SearchableCar
 import { AppConfigModal, AppSettingsSection, AppCustomSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
 import type { BaseAppAgent } from '../../agents/apps/BaseAppAgent';
+import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 
 /**
  * CardItem-compatible representation of an app for SearchableCardManager
@@ -224,6 +225,7 @@ export class AppsTab {
     if (this.services.settings && this.services.appManager) {
       this.services.settings.settings.apps = this.services.appManager.getAppsSettings();
       await this.services.settings.saveSettings();
+      LLMSettingsNotifier.notifyAppsChanged();
     }
   }
 

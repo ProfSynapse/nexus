@@ -7,8 +7,8 @@ describe('Mistral Large 4 gateway registrations', () => {
       name: 'Mistral Large 4',
       contextWindow: 1048576,
       maxTokens: 262144,
-      inputCostPerMillion: 0.68,
-      outputCostPerMillion: 2.09,
+      inputCostPerMillion: 0.7,
+      outputCostPerMillion: 2.1,
       cacheReadCostPerMillion: 0.07,
       capabilities: {
         supportsJSON: true,

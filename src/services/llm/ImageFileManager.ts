@@ -148,7 +148,7 @@ export class ImageFileManager {
     }
 
     // Ensure the path has a valid image extension
-    const validExtensions = ['png', 'jpg', 'jpeg', 'webp'];
+    const validExtensions = ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'];
     const ext = pathUtils.extname(sanitized).toLowerCase().substring(1);
 
     if (!ext || !validExtensions.includes(ext)) {
@@ -215,7 +215,9 @@ export class ImageFileManager {
       'png': 'png',
       'jpeg': 'jpg',
       'jpg': 'jpg',
-      'webp': 'webp'
+      'webp': 'webp',
+      'svg': 'svg',
+      'gif': 'gif'
     };
     return extensions[format.toLowerCase() as keyof typeof extensions] || 'png';
   }

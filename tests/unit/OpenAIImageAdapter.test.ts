@@ -9,7 +9,7 @@ jest.mock('../../src/utils/platform', () => ({
   hasNodeRuntime: () => false,
 }));
 
-import { OpenAIImageAdapter } from '../../src/services/llm/adapters/openai/OpenAIImageAdapter';
+import { OPENAI_IMAGE_ASPECT_RATIOS, OpenAIImageAdapter } from '../../src/services/llm/adapters/openai/OpenAIImageAdapter';
 import { AspectRatio, ImageGenerationParams } from '../../src/services/llm/types/ImageTypes';
 import { jsonResponse, CapturedRequest } from './helpers/llmAdapterTestHarness';
 import { TFile } from '../mocks/obsidian';
@@ -73,7 +73,7 @@ describe('OpenAIImageAdapter', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  describe.each(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'])('%s', model => {
+  describe.each(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare', 'gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('%s', model => {
     it.each([false, true])('sends explicit medium quality and size (edit=%s)', async edit => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async request => {
@@ -118,6 +118,168 @@ describe('OpenAIImageAdapter', () => {
     });
   });
 
+  describe.each(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('%s features', model => {
+    function capture(respond: () => ReturnType<typeof imagesResponse> = () => imagesResponse(pngBase64(1024, 1024))) {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return respond();
+      });
+      return requests;
+    }
+
+    function multipart(request: CapturedRequest): string {
+      return Buffer.from(request.body as unknown as ArrayBuffer).toString('latin1');
+    }
+
+    it('leaves complexity to the endpoint unless the caller sets it', async () => {
+      const requests = capture();
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+      await adapter.generateImage(baseParams({ model }));
+      await adapter.generateImage(baseParams({ model, complexity: 'low' }));
+      expect(parsedBody(requests[0])).not.toHaveProperty('complexity');
+      expect(parsedBody(requests[1]).complexity).toBe('low');
+    });
+
+    it('asks for SVG with an authoring model and adds its tokens to the cost', async () => {
+      const svg = '<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"></svg>';
+      const requests = capture(() => jsonResponse(200, {
+        data: [{ b64_json: Buffer.from(svg).toString('base64') }],
+        output_format: 'svg',
+        size: '1024x1024',
+        usage: { input_tokens: 100, input_tokens_details: { text_tokens: 100, image_tokens: 0 }, output_tokens: 1000 },
+        svg_usage: { model: 'gpt-6-luna', input_tokens: 2000, output_tokens: 4000, reasoning_tokens: 1500, total_tokens: 6000 }
+      }));
+
+      const response = await new OpenAIImageAdapter({ apiKey: 'sk-test' }).generateImage(baseParams({ model, outputFormat: 'svg' }));
+
+      expect(parsedBody(requests[0])).toMatchObject({ output_format: 'svg', n: 1, svg: { model: 'gpt-6-luna' } });
+      expect(response.format).toBe('svg');
+      expect(response.imageData.toString('utf8')).toBe(svg);
+      expect(response.dimensions).toEqual({ width: 1024, height: 1024 });
+      // Image: 100 text at $5, 1000 output at $30. gpt-6-luna: 2000 in at $0.10, 4000 out at $0.50.
+      expect(response.metadata.reportedCostUsd).toBeCloseTo((100 * 5 + 1000 * 30 + 2000 * 0.1 + 4000 * 0.5) / 1000000, 8);
+    });
+
+    it('sends GIF frame settings and lets the endpoint size frames when no ratio is given', async () => {
+      const requests = capture(() => jsonResponse(200, {
+        data: [{ b64_json: Buffer.from('GIF89a').toString('base64') }],
+        output_format: 'gif',
+        size: '512x512',
+        usage: { input_tokens: 10, output_tokens: 500 }
+      }));
+
+      const response = await new OpenAIImageAdapter({ apiKey: 'sk-test' })
+        .generateImage(baseParams({ model, outputFormat: 'gif', frameCount: 4, frameDurationMs: 150 }));
+
+      expect(parsedBody(requests[0])).toMatchObject({ output_format: 'gif', size: 'auto', frame_count: 4, frame_duration_ms: 150 });
+      expect(response.format).toBe('gif');
+      expect(response.dimensions).toEqual({ width: 512, height: 512 });
+    });
+
+    it('sizes GIF frames for the sprite sheet rather than near a megapixel', async () => {
+      const requests = capture(() => imagesResponse(pngBase64(768, 432)));
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+      const params = baseParams({ model, outputFormat: 'gif', aspectRatio: AspectRatio.LANDSCAPE_16_9 });
+      expect(adapter.validateImageParams(params).isValid).toBe(true);
+      await adapter.generateImage(params);
+      expect(parsedBody(requests[0]).size).toBe('768x432');
+    });
+
+    it('never sends frame settings on a raster request', async () => {
+      const requests = capture();
+      await new OpenAIImageAdapter({ apiKey: 'sk-test' }).generateImage(baseParams({ model }));
+      const body = parsedBody(requests[0]);
+      expect(body.output_format).toBe('png');
+      expect(body).not.toHaveProperty('frame_count');
+      expect(body).not.toHaveProperty('frame_duration_ms');
+      expect(body).not.toHaveProperty('svg');
+    });
+
+    it('sends the markup overlay as its own part, after the images, with complexity', async () => {
+      const requests = capture();
+      const vault = makeVault({ 'refs/room.png': new Uint8Array([1, 2]), 'refs/circle.png': new Uint8Array([3, 4]) });
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: vault as never });
+      const params = baseParams({ model, referenceImages: ['refs/room.png'], markupImage: 'refs/circle.png', complexity: 'low' });
+
+      expect(adapter.validateImageParams(params).isValid).toBe(true);
+      await adapter.generateImage(params);
+
+      expect(requests[0].url).toBe('https://api.openai.com/v1/images/edits');
+      const body = multipart(requests[0]);
+      expect(body).toContain('name="complexity"\r\n\r\nlow');
+      expect(body).toMatch(/name="image\[\]"; filename="room\.png"/);
+      expect(body).toMatch(/name="markup"; filename="circle\.png"/);
+      expect(body.indexOf('name="markup"')).toBeGreaterThan(body.indexOf('name="image[]"'));
+    });
+
+    it.each([
+      ['GIF with reference images', { outputFormat: 'gif', referenceImages: ['refs/a.png'] }, /generation only/],
+      ['SVG with reference images', { outputFormat: 'svg', referenceImages: ['refs/a.png'] }, /generation only/],
+      ['frameCount without GIF', { frameCount: 4 }, /require outputFormat "gif"/],
+      ['frameDurationMs on SVG', { outputFormat: 'svg', frameDurationMs: 100 }, /require outputFormat "gif"/],
+      ['17 frames, which the endpoint rejects despite the guide', { outputFormat: 'gif', frameCount: 17 }, /2 to 16/],
+      ['1 frame', { outputFormat: 'gif', frameCount: 1 }, /2 to 16/],
+      ['a frame shorter than 20 ms', { outputFormat: 'gif', frameDurationMs: 10 }, /at least 20/],
+      ['a GIF ratio outside 1:3 to 3:1', { outputFormat: 'gif', aspectRatio: '4:1' }, /does not support aspect ratio 4:1/],
+      ['markup without a reference image', { markupImage: 'refs/m.png' }, /referenceImages is required/],
+      ['markup that is not a PNG', { markupImage: 'refs/m.webp', referenceImages: ['refs/a.png'] }, /transparent PNG/],
+    ])('rejects %s before anything is billed', (_label, overrides, message) => {
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: makeVault({}) as never });
+      const result = adapter.validateImageParams(baseParams({ model, ...(overrides as Partial<ImageGenerationParams>) }));
+      expect(result.isValid).toBe(false);
+      expect(result.errors.join(' ')).toMatch(message);
+    });
+  });
+
+  describe('models without the GPT Image 2.6 features', () => {
+    it.each(['gpt-image-2', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare'])('%s drops complexity with a warning and rejects the rest', async model => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async request => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test', vault: makeVault({}) as never });
+
+      const complexity = adapter.validateImageParams(baseParams({ model, complexity: 'low' }));
+      expect(complexity.isValid).toBe(true);
+      expect(complexity.warnings?.join(' ')).toMatch(/no complexity setting/);
+      await adapter.generateImage(baseParams({ model, complexity: 'low' }));
+      expect(parsedBody(requests[0])).not.toHaveProperty('complexity');
+
+      for (const outputFormat of ['svg', 'gif'] as const) {
+        expect(adapter.validateImageParams(baseParams({ model, outputFormat })).errors.join(' ')).toMatch(/cannot produce/);
+      }
+      const markup = adapter.validateImageParams(baseParams({ model, markupImage: 'refs/m.png', referenceImages: ['refs/a.png'] }));
+      expect(markup.errors.join(' ')).toMatch(/does not support markupImage/);
+    });
+  });
+
+  describe('generation deadline', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    function slowResponse(ms: number) {
+      __setRequestUrlMock(async () => {
+        await new Promise(resolve => setTimeout(resolve, ms));
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+    }
+
+    it('gives SVG longer than the two minutes a raster image gets', async () => {
+      slowResponse(200_000);
+      const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+
+      const svg = adapter.generateImageWithResponse(baseParams({ model: 'gpt-image-2.6-flare', outputFormat: 'svg' }));
+      await jest.advanceTimersByTimeAsync(200_000);
+      expect((await svg).result.success).toBe(true);
+
+      const raster = adapter.generateImageWithResponse(baseParams({ model: 'gpt-image-2.6-flare' }));
+      await jest.advanceTimersByTimeAsync(200_000);
+      expect((await raster).result.success).toBe(false);
+    });
+  });
+
   it('posts to /v1/images/generations with gpt-image-2 by default and exact pixels for the aspect ratio', async () => {
     const requests: CapturedRequest[] = [];
     __setRequestUrlMock(async (request) => {
@@ -151,9 +313,40 @@ describe('OpenAIImageAdapter', () => {
     expect(parsedBody(requests[0]).size).toBe('1024x1024');
   });
 
+  it.each(['gpt-image-2', 'gpt-image-2.6-flare'])('%s rejects ratios past 3:1, which the API refuses, before requesting', model => {
+    const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+    for (const ratio of ['1:4', '4:1', '1:8', '8:1'] as AspectRatio[]) {
+      const result = adapter.validateImageParams(baseParams({ model, aspectRatio: ratio }));
+      expect(result.isValid).toBe(false);
+      expect(result.errors.join(' ')).toContain(`does not support aspect ratio ${ratio}`);
+    }
+  });
+
+  it('has a GIF frame size for every offered ratio', async () => {
+    const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
+    for (const ratio of OPENAI_IMAGE_ASPECT_RATIOS as AspectRatio[]) {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(pngBase64(512, 512));
+      });
+      await adapter.generateImage(baseParams({ model: 'gpt-image-2.6-flare', outputFormat: 'gif', aspectRatio: ratio }));
+      const [w, h] = String(parsedBody(requests[0]).size).split('x').map(Number);
+      expect(w * h).toBeLessThanOrEqual(768 * 432);
+      const [rw, rh] = ratio.split(':').map(Number);
+      expect(w / h).toBeCloseTo(rw / rh, 2);
+    }
+  });
+
+  it('reports numberOfImages as ignored, since one request makes one image', () => {
+    const result = new OpenAIImageAdapter({ apiKey: 'sk-test' }).validateImageParams(baseParams({ numberOfImages: 3 }));
+    expect(result.isValid).toBe(true);
+    expect(result.warnings?.join(' ')).toMatch(/numberOfImages 3 ignored/);
+  });
+
   it('only derives gpt-image-2 sizes whose dimensions are divisible by 16', async () => {
     const adapter = new OpenAIImageAdapter({ apiKey: 'sk-test' });
-    for (const ratio of Object.values(AspectRatio)) {
+    for (const ratio of OPENAI_IMAGE_ASPECT_RATIOS as AspectRatio[]) {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
         requests.push(request);

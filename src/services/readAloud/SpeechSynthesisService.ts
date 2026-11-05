@@ -1,12 +1,14 @@
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import {
   buildSpeechProviderAvailability,
+  getSpeechAppCapabilityStates,
   getSpeechModel,
   resolveDefaultSpeechSelection,
   type SpeechAppCapabilityStates,
   type ResolvedSpeechSelection,
   type SpeechProvider,
 } from '../llm/types/SpeechTypes';
+import { getRetiredSpeechModel } from '../llm/types/RetiredMediaModels';
 import { ElevenLabsSpeechAdapter } from './ElevenLabsSpeechAdapter';
 import { GoogleSpeechAdapter } from './GoogleSpeechAdapter';
 import { MistralSpeechAdapter } from './MistralSpeechAdapter';
@@ -104,7 +106,8 @@ export class SpeechSynthesisService {
 
     const settingsDefault = this.llmSettings?.defaultSpeechModel;
     const defaultModel = settingsDefault?.provider === provider ? settingsDefault.model : undefined;
-    const model = request.model || defaultModel || providerAvailability.models?.[0]?.id;
+    const requested = request.model || defaultModel || providerAvailability.models?.[0]?.id;
+    const model = getRetiredSpeechModel(provider, requested)?.replacement ?? requested;
     if (!model) {
       return {
         provider,
@@ -179,17 +182,7 @@ export class SpeechSynthesisService {
   }
 
   private getAppStates(): SpeechAppCapabilityStates {
-    const elevenLabsConfig = this.options.appsSettings?.apps.elevenlabs;
-    if (!elevenLabsConfig) {
-      return {};
-    }
-
-    return {
-      elevenlabs: {
-        enabled: elevenLabsConfig.enabled,
-        configured: !!elevenLabsConfig.credentials.apiKey?.trim(),
-      }
-    };
+    return getSpeechAppCapabilityStates(this.options.appsSettings);
   }
 }
 

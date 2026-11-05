@@ -20,7 +20,7 @@ describe('SpeechModelCatalogService', () => {
     const googleModels = await service.getModels('google', DEFAULT_LLM_PROVIDER_SETTINGS);
 
     expect(models.map(model => model.id)).toContain('voxtral-mini-tts-2603');
-    expect(googleModels.map(model => model.id)).toContain('gemini-3.1-flash-tts-preview');
+    expect(googleModels.map(model => model.id)).toContain('gemini-3.8-flash-tts');
     expect(requestUrlMock).not.toHaveBeenCalled();
   });
 

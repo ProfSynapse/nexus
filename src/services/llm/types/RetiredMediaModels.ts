@@ -68,6 +68,45 @@ const RETIRED_VIDEO_MODELS: Readonly<Partial<Record<VideoProvider, Readonly<Reco
   },
 };
 
+// Speech and realtime ids, by provider. Every replacement shares its
+// predecessor's voices, so a saved voice keeps working.
+const RETIRED_SPEECH_MODELS: Readonly<Record<string, Readonly<Record<string, Omit<RetiredModel, 'id'>>>>> = {
+  google: {
+    'gemini-3.1-flash-tts-preview': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
+    'gemini-2.5-flash-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
+    'gemini-2.5-pro-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
+  },
+};
+
+const RETIRED_REALTIME_MODELS: Readonly<Record<string, Readonly<Record<string, Omit<RetiredModel, 'id'>>>>> = {
+  google: {
+    'gemini-3.1-flash-live-preview': { replacement: 'gemini-3.8-live', shutdown: '2026-11-17' },
+  },
+  openai: {
+    'gpt-realtime-mini': { replacement: 'gpt-realtime-2.1-mini', shutdown: '2027-01-20' },
+  },
+};
+
+function lookUpRetired(
+  table: Readonly<Record<string, Readonly<Record<string, Omit<RetiredModel, 'id'>>>>>,
+  provider: string | undefined,
+  model: string | undefined
+): RetiredModel | undefined {
+  if (!provider || !model || !Object.prototype.hasOwnProperty.call(table, provider)) return undefined;
+  const models = table[provider];
+  return Object.prototype.hasOwnProperty.call(models, model) ? { id: model, ...models[model] } : undefined;
+}
+
+/** The retirement record for a speech id on a provider, or undefined when the id is current. */
+export function getRetiredSpeechModel(provider: string | undefined, model: string | undefined): RetiredModel | undefined {
+  return lookUpRetired(RETIRED_SPEECH_MODELS, provider, model);
+}
+
+/** The retirement record for a realtime voice id on a provider, or undefined when the id is current. */
+export function getRetiredRealtimeModel(provider: string | undefined, model: string | undefined): RetiredModel | undefined {
+  return lookUpRetired(RETIRED_REALTIME_MODELS, provider, model);
+}
+
 /** The retirement record for an image id on a provider, or undefined when the id is current. */
 export function getRetiredImageModel(provider: string | undefined, model: string | undefined): RetiredModel | undefined {
   if (!provider || !model) return undefined;
@@ -111,7 +150,7 @@ export function listRetiredVideoModels(): Array<RetiredModel & { provider: Video
 }
 
 /**
- * Point saved image and video defaults that name a retired id at the
+ * Point saved image, video, speech and realtime defaults that name a retired id at the
  * documented successor, in place. Returns whether anything changed.
  *
  * Runs on every settings load, in memory only. It never writes data.json on
@@ -128,6 +167,20 @@ export function normalizeRetiredMediaDefaults(llmProviders: LLMProviderSettings 
   const retiredImage = getRetiredImageModel(image?.provider, image?.model);
   if (image && retiredImage) {
     llmProviders.defaultImageModel = { ...image, model: retiredImage.replacement };
+    changed = true;
+  }
+
+  const speech = llmProviders.defaultSpeechModel;
+  const retiredSpeech = getRetiredSpeechModel(speech?.provider, speech?.model);
+  if (speech && retiredSpeech) {
+    llmProviders.defaultSpeechModel = { ...speech, model: retiredSpeech.replacement };
+    changed = true;
+  }
+
+  const realtime = llmProviders.defaultRealtimeVoiceModel;
+  const retiredRealtime = getRetiredRealtimeModel(realtime?.provider, realtime?.model);
+  if (realtime && retiredRealtime) {
+    llmProviders.defaultRealtimeVoiceModel = { ...realtime, model: retiredRealtime.replacement };
     changed = true;
   }
 

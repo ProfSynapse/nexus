@@ -109,6 +109,9 @@ describe('model specs carry cache rates', () => {
       if (spec.apiName === 'gpt-6.1-sol') {
         expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.10, 6);
         expect(spec.cacheWriteCostPerMillion).toBeCloseTo(2.50, 6);
+      } else if (spec.apiName === 'gpt-6.1-terra') {
+        expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.05, 6);
+        expect(spec.cacheWriteCostPerMillion).toBeCloseTo(1.25, 6);
       } else {
         expect(spec.cacheReadCostPerMillion).toBeCloseTo(spec.inputCostPerMillion * 0.1, 6);
         expect(spec.cacheWriteCostPerMillion).toBeUndefined();

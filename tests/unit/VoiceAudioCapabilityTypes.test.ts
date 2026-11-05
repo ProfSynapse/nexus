@@ -49,17 +49,17 @@ describe('SpeechTypes', () => {
   });
 
   it('declares Google Gemini TTS voices separately from realtime voice', () => {
-    expect(getSpeechModel('google', 'gemini-3.1-flash-tts-preview')).toEqual(expect.objectContaining({
+    expect(getSpeechModel('google', 'gemini-3.8-flash-tts')).toEqual(expect.objectContaining({
       provider: 'google',
       defaultVoice: 'Kore',
       supportsInstructions: true,
       responseFormats: expect.arrayContaining(['wav', 'pcm'])
     }));
-    expect(getSpeechModel('google', 'gemini-3.1-flash-tts-preview')?.voices?.map(voice => voice.id)).toEqual(
+    expect(getSpeechModel('google', 'gemini-3.8-flash-tts')?.voices?.map(voice => voice.id)).toEqual(
       expect.arrayContaining(['Kore', 'Puck', 'Zephyr', 'Sulafat'])
     );
 
-    expect(getSpeechModel('google', 'gemini-3.1-flash-live-preview')).toBeUndefined();
+    expect(getSpeechModel('google', 'gemini-3.8-live')).toBeUndefined();
   });
 
   it('auto-selects the highest-priority configured speech provider', () => {
@@ -183,7 +183,7 @@ describe('SpeechTypes', () => {
   });
 
   it('keeps model declarations scoped by provider', () => {
-    expect(getSpeechModelsForProvider('google').map(model => model.id)).toContain('gemini-3.1-flash-tts-preview');
+    expect(getSpeechModelsForProvider('google').map(model => model.id)).toContain('gemini-3.8-flash-tts');
     expect(getSpeechModelsForProvider('mistral').map(model => model.id)).toContain('voxtral-mini-tts-2603');
     expect(getSpeechModelsForProvider('openrouter').map(model => model.id)).toContain('mistralai/voxtral-mini-tts-2603');
     expect(getSpeechModel('openrouter', 'deepgram/aura-2')).toEqual(expect.objectContaining({
@@ -205,7 +205,7 @@ describe('RealtimeVoiceTypes', () => {
   });
 
   it('uses a Google-native default voice for Google live models', () => {
-    const model = getRealtimeVoiceModel('google', 'gemini-3.1-flash-live-preview');
+    const model = getRealtimeVoiceModel('google', 'gemini-3.8-live');
 
     expect(model).toEqual(expect.objectContaining({
       defaultVoice: 'Kore',
@@ -327,7 +327,7 @@ describe('RealtimeVoiceTypes', () => {
       },
       defaultRealtimeVoiceModel: {
         provider: 'google',
-        model: 'gemini-3.1-flash-live-preview',
+        model: 'gemini-3.8-live',
         source: 'user'
       }
     });
@@ -336,7 +336,7 @@ describe('RealtimeVoiceTypes', () => {
 
     expect(selection).toEqual(expect.objectContaining({
       provider: 'google',
-      model: 'gemini-3.1-flash-live-preview',
+      model: 'gemini-3.8-live',
       source: 'user',
       status: 'invalid'
     }));

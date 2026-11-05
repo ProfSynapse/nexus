@@ -28,6 +28,14 @@ import {
   ActionExecutor
 } from './services';
 import { PromptParser } from './utils';
+import type { LLMProviderSettings } from '../../../../types/llm/ProviderTypes';
+import {
+  getConfiguredImageProviders,
+  ImageModelCapability,
+  listImageModelCapabilities
+} from '../../../../services/llm/imageModelCapabilities';
+import { describeModelsByProvider } from '../../../../services/llm/mediaModelText';
+import { buildImageCapabilityProperties, buildImageSavePathPattern } from '../generateImage';
 import { Recommendation } from '../../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
@@ -68,6 +76,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   private obsidianApp: App | null = null;
   private llmService: LLMService | null = null;
   private providerManager: LLMProviderManager | null = null;
+  private imageSettings: LLMProviderSettings | null = null;
   private agentManager: AgentManager | null = null;
   private promptStorage: CustomPromptStorageService | null = null;
   private usageTracker: UsageTracker | null = null;
@@ -348,6 +357,11 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   /**
    * Set the provider manager instance
    */
+  /** The latest provider settings, so image parameters follow a key being added or removed. */
+  setImageSettings(settings: LLMProviderSettings): void {
+    this.imageSettings = settings;
+  }
+
   setProviderManager(providerManager: LLMProviderManager): void {
     this.providerManager = providerManager;
     
@@ -378,7 +392,9 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   getParameterSchema(): JSONSchema {
     // Get defaults from data.json settings
     const defaultModel = this.providerManager?.getSettings()?.defaultModel;
-    const defaultImageModel = this.providerManager?.getSettings()?.defaultImageModel;
+    const llmSettings = this.imageSettings ?? this.providerManager?.getSettings();
+    const defaultImageModel = llmSettings?.defaultImageModel;
+    const imageModels = listImageModelCapabilities(getConfiguredImageProviders(llmSettings));
 
     const toolSchema = {
       properties: {
@@ -392,8 +408,10 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
             properties: {
               type: {
                 type: 'string',
-                enum: ['text', 'image'],
-                description: 'Type of request: "text" for LLM prompts, "image" for AI image generation'
+                enum: imageModels.length > 0 ? ['text', 'image'] : ['text'],
+                description: imageModels.length > 0
+                  ? 'Type of request: "text" for LLM prompts, "image" for AI image generation'
+                  : 'Type of request: "text" for LLM prompts. Image generation needs an image provider key.'
               },
               id: {
                 type: 'string',
@@ -426,12 +444,12 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
               // Text-specific properties
               provider: {
                 type: 'string',
-                description: `Optional. LLM provider to use. Defaults to configured agent model (${defaultModel?.provider || 'not set'}). For image generation, defaults to configured image provider (${defaultImageModel?.provider || 'not set'}). Use listModels to see available providers.`,
+                description: `Optional. LLM provider to use. Defaults to configured agent model (${defaultModel?.provider || 'not set'}). ${imageModels.length > 0 ? `For image generation, defaults to configured image provider (${defaultImageModel?.provider || 'not set'}). ` : ''}Use listModels to see available providers.`,
                 default: defaultModel?.provider
               },
               model: {
                 type: 'string',
-                description: `Optional. Model name to use. Defaults to configured agent model (${defaultModel?.model || 'not set'}). For image generation, defaults to configured image model (${defaultImageModel?.model || 'not set'}). Use listModels to see available models.`,
+                description: `Optional. Model name to use. Defaults to configured agent model (${defaultModel?.model || 'not set'}). ${imageModels.length > 0 ? `For image generation, defaults to configured image model (${defaultImageModel?.model || 'not set'}), and can be ${describeModelsByProvider(imageModels)}. ` : ''}Use listModels to see available models.`,
                 default: defaultModel?.model
               },
               contextFiles: {
@@ -471,24 +489,8 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
                 type: 'string',
                 description: 'Custom prompt name or ID to use (text requests only). Use listPrompts to see available prompts.'
               },
-              // Image-specific properties
-              savePath: {
-                type: 'string',
-                description: 'Vault-relative path to save generated image (image requests only)',
-                pattern: '^[^/].*\\.(png|jpg|jpeg|webp)$'
-              },
-              aspectRatio: {
-                type: 'string',
-                description: 'Image aspect ratio (image requests only)',
-                enum: ['1:1', '3:4', '4:3', '9:16', '16:9'],
-                default: '1:1'
-              },
-              referenceImages: {
-                type: 'array',
-                items: { type: 'string' },
-                maxItems: 14,
-                description: 'Reference images for style/composition (vault-relative paths, image requests only). Max count depends on the model used.'
-              }
+              // Image-specific properties, only for what a provider with a key offers
+              ...this.buildImageRequestProperties(imageModels)
             },
             required: ['type', 'prompt'],
             allOf: [
@@ -513,6 +515,22 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
     return this.getMergedSchema(toolSchema);
   }
 
+  private buildImageRequestProperties(models: ImageModelCapability[]): Record<string, unknown> {
+    if (models.length === 0) return {};
+    const properties: Record<string, unknown> = {
+      savePath: {
+        type: 'string',
+        description: 'Vault-relative path to save generated image. Extension may change based on API response format.',
+        pattern: buildImageSavePathPattern(models)
+      },
+      ...buildImageCapabilityProperties(models)
+    };
+    return Object.fromEntries(Object.entries(properties).map(([name, property]) => {
+      const schema = property as { description?: string };
+      return [name, { ...schema, description: `Image requests only. ${schema.description ?? ''}` }];
+    }));
+  }
+
   /**
    * Get result schema for MCP tool definition (lean format)
    * Type inferred from fields: response/savedTo = text, imagePath = image
@@ -531,6 +549,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
               response: { type: 'string', description: 'Text response (omitted if saved)' },
               savedTo: { type: 'string', description: 'Path where text was saved' },
               imagePath: { type: 'string', description: 'Path where image was saved' },
+              note: { type: 'string', description: 'Set when a parameter had no effect or a retired image model was swapped' },
               error: { type: 'string' }
             },
             required: ['success']

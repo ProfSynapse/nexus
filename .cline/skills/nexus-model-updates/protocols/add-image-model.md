@@ -105,6 +105,28 @@ endpoint actually accepts, proven by one live generation through the adapter.
   overcharges prompts or undercharges reference images.
 - Pattern: prices in the catalog are list prices at the default resolution; the
   actual charge is in the response and is what to report.
+- Pattern: declare what a model can do on its catalog entry (`features`,
+  `resolutions`, `aspectRatios`, `maxReferenceImages`) and let
+  `imageModelCapabilities.ts` carry it. Take `aspectRatios` from the endpoint's
+  `aspect_ratio` values; adapters validate against it. The `generateImage` and
+  `executePrompts` schemas are built from it per configured provider, so a
+  parameter appears only when a keyed provider has a model that takes it. Never name a model in the tool, and do not add a static description
+  to the lazy registration in `promptManager.ts`: `getTools` reads that copy
+  first. The committed catalog is exported with every key set, so it shows the
+  superset rather than what any one setup sees.
+- Pattern: a new version at the same token rates is not the same price. Token
+  use per image can change several-fold between versions, so measure
+  `usage.output_tokens` at the catalog's reference size and quality rather than
+  copying the predecessor's `costPerImage`.
+- Pattern: when the provider's guide and API reference disagree on a limit, ask
+  the endpoint. A deliberately invalid value is usually rejected before any
+  generation, so the 400 names the real range for free. Do not trust a 400's
+  list of enum values as complete, though: send a real value before ruling one
+  out.
+- Pattern: `BaseImageAdapter` races each generation against its own deadline, so
+  raising an adapter's request `timeoutMs` alone changes nothing. A slower output
+  type must override `getGenerationTimeoutMs`, or the caller gets a timeout for
+  an image that was still billed.
 - Anti-pattern: adding a model because it appears in `/api/v1/models`. That is
   the chat catalog; use `/api/v1/images/models` for image models.
 - Anti-pattern: leaving the `-preview` twin of a GA id as the only entry.

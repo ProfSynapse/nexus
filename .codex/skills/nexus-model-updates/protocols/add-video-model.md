@@ -72,5 +72,13 @@ provider accepts, on a transport the adapter already uses.
    are mapped there at load and call time; the catalog alone would turn them
    into "not available" errors.
 
+## Guidelines
+- Pattern: the `generateVideo` schema and description are built from
+  `VIDEO_MODELS` per configured provider, so a wrong declaration is what agents
+  read. Set `audioAlwaysOn` and `negativePrompt` deliberately. On OpenRouter,
+  `negativePrompt: 'native'` follows the listing's
+  `allowed_passthrough_parameters`; leaving it unset makes a request naming one
+  fail before it is billed. Never name a model in the tool.
+
 ## Next
 `verify-model.md` steps 1–3, then `self-refine.md`.
