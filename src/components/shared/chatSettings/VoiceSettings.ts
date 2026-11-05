@@ -17,6 +17,7 @@ import {
   type SpeechAppCapabilityStates,
   type SpeechProvider,
   type SpeechProviderAvailability,
+  getSpeechAppCapabilityStates
 } from '../../../services/llm/types/SpeechTypes';
 import {
   buildRealtimeVoiceProviderAvailability,
@@ -201,10 +202,7 @@ export class VoiceSettings {
   // ---------- Read aloud ----------
 
   private getSpeechAppStates(): SpeechAppCapabilityStates {
-    const elevenLabs = this.host.getAppsSettings()?.apps.elevenlabs;
-    return elevenLabs
-      ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials.apiKey?.trim() } }
-      : {};
+    return getSpeechAppCapabilityStates(this.host.getAppsSettings());
   }
 
   private getRealtimeAppStates(): RealtimeAppCapabilityStates {

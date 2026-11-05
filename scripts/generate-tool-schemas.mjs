@@ -375,6 +375,8 @@ function instantiateAgents() {
   llmSettings.providers.openai.enabled = true;
   llmSettings.providers.openrouter.apiKey = 'mock-openrouter-key';
   llmSettings.providers.openrouter.enabled = true;
+  llmSettings.providers.mistral.apiKey = 'mock-mistral-key';
+  llmSettings.providers.mistral.enabled = true;
   llmSettings.defaultImageModel = {
     provider: 'google',
     model: 'gemini-3.1-flash-image'
@@ -389,6 +391,8 @@ function instantiateAgents() {
   const settings = {
     settings: {
       llmProviders: llmSettings,
+      // ElevenLabs speech is keyed through Apps; the catalog is the every-key view.
+      apps: { apps: { elevenlabs: { enabled: true, credentials: { apiKey: 'mock-elevenlabs-key' }, installedAt: '', installedVersion: '' } } },
       customPrompts: { prompts: [] }
     }
   };

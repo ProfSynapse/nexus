@@ -124,6 +124,7 @@ export class RequestExecutor {
         prompt: config.prompt,
         success: result.success,
         imagePath: result.imagePath,
+        note: result.note,
         error: result.error,
         provider: config.provider,
         model: config.model,

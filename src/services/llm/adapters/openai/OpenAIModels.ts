@@ -36,6 +36,27 @@ export const OPENAI_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // https://developers.openai.com/api/docs/models/gpt-6.1-terra
+  {
+    provider: 'openai',
+    name: 'GPT-6.1 Terra',
+    apiName: 'gpt-6.1-terra',
+    releaseDate: '2026-10-13',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 1.00,
+    outputCostPerMillion: 5.00,
+    cacheReadCostPerMillion: 0.05,
+    cacheWriteCostPerMillion: 1.25,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://developers.openai.com/api/docs/models/gpt-6-astra
   {
     provider: 'openai',
@@ -100,9 +121,9 @@ export const OPENAI_MODELS: ModelSpec[] = [
     apiName: 'gpt-5.6-sol',
     contextWindow: 1050000,
     maxTokens: 128000,
-    inputCostPerMillion: 5.00,
-    outputCostPerMillion: 30.00,
-    cacheReadCostPerMillion: 0.5,
+    inputCostPerMillion: 4.00,
+    outputCostPerMillion: 20.00,
+    cacheReadCostPerMillion: 0.4,
     supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
@@ -118,9 +139,9 @@ export const OPENAI_MODELS: ModelSpec[] = [
     apiName: 'gpt-5.6-terra',
     contextWindow: 1050000,
     maxTokens: 128000,
-    inputCostPerMillion: 2.50,
-    outputCostPerMillion: 15.00,
-    cacheReadCostPerMillion: 0.25,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 12.00,
+    cacheReadCostPerMillion: 0.2,
     supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,
@@ -136,9 +157,9 @@ export const OPENAI_MODELS: ModelSpec[] = [
     apiName: 'gpt-5.6-luna',
     contextWindow: 1050000,
     maxTokens: 128000,
-    inputCostPerMillion: 1.00,
-    outputCostPerMillion: 6.00,
-    cacheReadCostPerMillion: 0.1,
+    inputCostPerMillion: 0.20,
+    outputCostPerMillion: 1.20,
+    cacheReadCostPerMillion: 0.02,
     supportsSamplingParams: false,
     capabilities: {
       supportsJSON: true,

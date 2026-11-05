@@ -172,7 +172,13 @@ export class PromptParser {
           model: imageRequest.model, // Resolved by generateImage.resolveDefaults() at execution time
           aspectRatio: imageRequest.aspectRatio,
           savePath: imageRequest.savePath,
-          referenceImages: imageRequest.referenceImages
+          referenceImages: imageRequest.referenceImages,
+          imageSize: imageRequest.imageSize,
+          complexity: imageRequest.complexity,
+          outputFormat: imageRequest.outputFormat,
+          frameCount: imageRequest.frameCount,
+          frameDurationMs: imageRequest.frameDurationMs,
+          markupImage: imageRequest.markupImage
         };
         return imageConfig;
       }

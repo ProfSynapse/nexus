@@ -224,6 +224,10 @@ export class VideoGenerationService {
       throw new Error(`Video model "${model.id}" does not support reference images.`);
     }
 
+    if (request.negativePrompt?.trim() && !model.negativePrompt) {
+      throw new Error(`Video model "${model.id}" does not support a negative prompt. Describe what you want in the prompt instead.`);
+    }
+
     return {
       prompt: request.prompt,
       provider: selection.provider,

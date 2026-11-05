@@ -1,6 +1,7 @@
 import { requestUrl, Vault } from 'obsidian';
 import { BRAND_NAME } from '../../../constants/branding';
 import {
+  getVideoModel,
   getVideoModelsForProvider,
   type VideoAspectRatio,
   type VideoModelDeclaration,
@@ -197,13 +198,22 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
     }
   }
 
+  private buildPrompt(request: ResolvedVideoGenerationRequest): string {
+    const negative = request.negativePrompt?.trim();
+    return negative && getVideoModel('openrouter', request.model)?.negativePrompt === 'appended'
+      ? `${request.prompt}\n\nDo not include: ${negative}`
+      : request.prompt;
+  }
+
   private async submitJob(request: ResolvedVideoGenerationRequest): Promise<OpenRouterVideoJob> {
     const body: Record<string, unknown> = {
       model: request.model,
-      prompt: request.prompt,
-      // The internal value is '4k' (Google's spelling); OpenRouter's resolution
-      // enum is case-sensitive and spells it '4K'.
-      resolution: request.resolution === '4k' ? '4K' : request.resolution,
+      prompt: this.buildPrompt(request),
+      // Internal values are lowercase (Google's spelling); OpenRouter's resolution
+      // enum is case-sensitive and spells these '2K' and '4K'.
+      resolution: request.resolution === '4k' || request.resolution === '2k'
+        ? request.resolution.toUpperCase()
+        : request.resolution,
       aspect_ratio: request.aspectRatio,
     };
 
@@ -215,8 +225,11 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
       body.generate_audio = request.generateAudio;
     }
 
-    if (request.negativePrompt) {
-      body.negative_prompt = request.negativePrompt;
+    // OpenRouter has no top-level field for this. Veo takes it as a provider
+    // passthrough, nested under `parameters` and keyed by the serving provider.
+    const negative = request.negativePrompt?.trim();
+    if (negative && getVideoModel('openrouter', request.model)?.negativePrompt === 'native') {
+      body.provider = { options: { 'google-vertex': { parameters: { negativePrompt: negative } } } };
     }
 
     if (request.referenceImage) {
@@ -412,9 +425,9 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
   }
 
   private asResolutions(values: string[] | undefined): VideoResolution[] {
-    const allowed: VideoResolution[] = ['720p', '1080p', '4k'];
+    const allowed: VideoResolution[] = ['720p', '1080p', '2k', '4k'];
     return (values ?? [])
-      .map(value => value === '4K' ? '4k' : value)
+      .map(value => value === '4K' ? '4k' : value === '2K' ? '2k' : value)
       .filter((value): value is VideoResolution => allowed.includes(value as VideoResolution));
   }
 }

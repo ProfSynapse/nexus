@@ -14,6 +14,9 @@ import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 
+/** Sent explicitly: with no model_id the API falls back to music_v1, which it removes on 2027-01-31. */
+const MUSIC_MODEL = 'music_v2_5';
+
 type UnknownRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -73,6 +76,7 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
 
     const body: Record<string, unknown> = {
       prompt: params.prompt,
+      model_id: MUSIC_MODEL,
     };
 
     if (params.musicLengthMs !== undefined) {

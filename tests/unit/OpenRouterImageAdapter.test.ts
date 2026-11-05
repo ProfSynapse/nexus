@@ -136,6 +136,35 @@ describe('OpenRouterImageAdapter', () => {
       expect(body).not.toHaveProperty('resolution');
     });
 
+    it.each(['gpt-image-2.6-sunburst', 'gpt-image-2.6-flare'])('%s sends explicit medium quality and passes complexity through to OpenAI', async model => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+
+      const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
+      await adapter.generateImage(baseParams({ model }));
+      await adapter.generateImage(baseParams({ model, complexity: 'medium' }));
+
+      expect(parsedBody(requests[0])).toMatchObject({ model: `openai/${model}`, quality: 'medium' });
+      expect(parsedBody(requests[0])).not.toHaveProperty('provider');
+      expect(parsedBody(requests[1]).provider).toEqual({ options: { openai: { complexity: 'medium' } } });
+    });
+
+    it('sends neither quality nor complexity to models that do not declare them', async () => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return imagesResponse(pngBase64(1024, 1024));
+      });
+
+      await new OpenRouterImageAdapter({ apiKey: 'or-test' }).generateImage(baseParams({ model: 'gpt-image-2.5-flare', complexity: 'low' }));
+
+      expect(parsedBody(requests[0])).not.toHaveProperty('quality');
+      expect(parsedBody(requests[0])).not.toHaveProperty('provider');
+    });
+
     it('sends vault reference images as data-URL input_references', async () => {
       const requests: CapturedRequest[] = [];
       __setRequestUrlMock(async (request) => {
@@ -247,6 +276,20 @@ describe('OpenRouterImageAdapter', () => {
   describe('validation', () => {
     const adapter = new OpenRouterImageAdapter({ apiKey: 'or-test' });
 
+    it.each(['svg', 'gif'] as const)('rejects %s output, which OpenRouter does not offer for GPT Image 2.6', outputFormat => {
+      const result = new OpenRouterImageAdapter({ apiKey: 'or-test' })
+        .validateImageParams(baseParams({ model: 'gpt-image-2.6-flare', outputFormat }));
+      expect(result.isValid).toBe(false);
+      expect(result.errors.join(' ')).toMatch(/cannot produce/);
+    });
+
+    it('rejects markup edits, which OpenRouter does not pass through', () => {
+      const result = new OpenRouterImageAdapter({ apiKey: 'or-test' }).validateImageParams(
+        baseParams({ model: 'gpt-image-2.6-flare', markupImage: 'refs/m.png', referenceImages: ['refs/a.png'] })
+      );
+      expect(result.errors.join(' ')).toMatch(/does not support markupImage/);
+    });
+
     it('fills in the default model', () => {
       const result = adapter.validateImageParams(baseParams());
       expect(result.isValid).toBe(true);
@@ -290,6 +333,45 @@ describe('OpenRouterImageAdapter', () => {
 
       const ok = adapter.validateImageParams(baseParams({ model: 'seedream-4.5', imageSize: '2K' }));
       expect(ok.isValid).toBe(true);
+    });
+
+    it.each([
+      ['gemini-3-pro-image', '1:4'],
+      ['flux-2-pro', '4:5'],
+      ['gpt-image-2.6-flare', '5:4'],
+      ['seedream-5-pro', '4:1']
+    ])('rejects %s at %s, which its endpoint does not list', (model, ratio) => {
+      const result = adapter.validateImageParams(baseParams({ model, aspectRatio: ratio as AspectRatio }));
+      expect(result.errors.join(' ')).toContain(`does not support aspect ratio ${ratio}`);
+    });
+
+    it.each([
+      ['gemini-nano-banana-2.1', '8:1'],
+      ['seedream-5-pro', '4:5'],
+      ['flux-3-image', '5:4']
+    ])('accepts %s at %s, which its endpoint lists', (model, ratio) => {
+      expect(adapter.validateImageParams(baseParams({ model, aspectRatio: ratio as AspectRatio })).isValid).toBe(true);
+    });
+
+    it.each([
+      ['mai-image-2.6', '21:9'],
+      ['grok-imagine-image-2.0', '4:5'],
+      ['qwen-image-3', '21:9'],
+      ['qwen-image-3', '1:8']
+    ])('rejects %s at %s, which its endpoint does not list', (model, ratio) => {
+      expect(adapter.validateImageParams(baseParams({ model, aspectRatio: ratio as AspectRatio })).errors.join(' ')).toContain('does not support aspect ratio');
+    });
+
+    it('accepts the extreme ratio Qwen Image 3 lists', () => {
+      expect(adapter.validateImageParams(baseParams({ model: 'qwen-image-3', aspectRatio: AspectRatio.WIDE_4_1 })).isValid).toBe(true);
+    });
+
+    it('holds each new model to its own reference limit and resolutions', () => {
+      const refs = (count: number) => Array.from({ length: count }, (_, i) => `refs/${i}.png`);
+      expect(adapter.validateImageParams(baseParams({ model: 'grok-imagine-image-2.0', referenceImages: refs(4) })).errors.join(' ')).toContain('Maximum is 3');
+      expect(adapter.validateImageParams(baseParams({ model: 'mai-image-2.6', referenceImages: refs(5) })).isValid).toBe(true);
+      expect(adapter.validateImageParams(baseParams({ model: 'qwen-image-3', imageSize: '4K' })).errors.join(' ')).toContain('not available');
+      expect(adapter.validateImageParams(baseParams({ model: 'mai-image-2.6', imageSize: '2K' })).warnings?.join(' ')).toContain('does not take a resolution');
     });
 
     it('rejects an aspect ratio outside the OpenRouter list', () => {

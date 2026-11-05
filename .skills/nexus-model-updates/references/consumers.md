@@ -70,3 +70,12 @@ only one. Capability flags for those models are derived by the adapter — for
 reasoning, from a name-matching heuristic in the shared adapter helpers, which
 affects defaults and capability display only. `nexus-llm-adapters` owns that
 path.
+
+## Speech models
+
+`SPEECH_MODELS` in `src/services/llm/types/SpeechTypes.ts` feeds the Voice settings
+pickers and the `generateAudio` schema, which is built per configured provider, so
+a wrong declaration is what agents and users read. Declared `voices` are per model:
+when adding a model, send each one to the endpoint, because a shared list hid four
+rejected voices. `SPEECH_OUTPUT_EXTENSION` must match what the provider's adapter
+requests. ElevenLabs is keyed through Apps, not `llmProviders`.

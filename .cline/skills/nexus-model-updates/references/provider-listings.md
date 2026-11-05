@@ -43,3 +43,28 @@ Anthropic: the `claude-api` skill is the maintained reference. OpenAI:
 `GET https://api.openai.com/v1/models` lists ids only, no pricing or limits.
 Where a provider has no listing endpoint, its public model page is the source
 and the entry must say so in a comment.
+
+## Checking for shutdowns
+
+A provider listing a model says nothing about how long it stays. Read the notices
+and match every id across every catalog, including speech, realtime, transcription
+and the subscription twins, whose ids can outlive the API's or vanish before it:
+
+- OpenRouter: `expiration_date` on `/api/v1/models`, plus any registered id the
+  listing no longer returns.
+- OpenAI, Google, Anthropic, Groq, Mistral: their deprecation pages. Anthropic's
+  "not sooner than" is a floor, not a shutdown date.
+- Parse table rows rather than scanning text near an id: a neighbouring row's date
+  otherwise reads as that model's.
+
+Export the real catalogs to compare. A regex over the source misses ids declared
+through a constant, which once reported a shipped flagship as missing.
+
+Read a replacement before removing its predecessor. It may be a different API, so
+removal can take a feature with it rather than swap a model. Retired ids go in
+`RetiredMediaModels.ts` so saved selections keep working.
+
+When bulk-refreshing prices from a listing, match on id and name together. Some ids
+are registered twice on purpose, as 200K and 1M context variants of one model, and
+a refresh keyed on id alone overwrites the smaller one. The registry gate catches
+this as a duplicate entry, so run it after any scripted edit.

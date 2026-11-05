@@ -3,7 +3,7 @@ import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 export type VideoProvider = 'google' | 'openrouter';
 export type VideoExecution = 'long-running-operation';
 export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
-export type VideoResolution = '360p' | '720p' | '1080p' | '4k';
+export type VideoResolution = '360p' | '720p' | '1080p' | '2k' | '4k';
 
 export interface VideoModelDeclaration {
   provider: VideoProvider;
@@ -12,6 +12,14 @@ export interface VideoModelDeclaration {
   execution: VideoExecution;
   supportsReferenceImage: boolean;
   supportsAudioPrompting: boolean;
+  /** Always makes audio, and rejects a request to turn it off. */
+  audioAlwaysOn?: boolean;
+  /**
+   * How a negative prompt reaches the model: `native` is a provider field,
+   * `appended` is added to the prompt because the model has no such field. Absent
+   * means neither, so a request naming one is rejected.
+   */
+  negativePrompt?: 'native' | 'appended';
   aspectRatios: VideoAspectRatio[];
   resolutions: VideoResolution[];
   durations?: number[];
@@ -45,6 +53,7 @@ export interface ResolvedVideoSelection {
  * settings and tool calls that still name one are mapped to the successor by
  * RetiredMediaModels.
  */
+// `negativePrompt: 'native'` follows allowed_passthrough_parameters in that listing.
 const VIDEO_MODELS: VideoModelDeclaration[] = [
   {
     // GA 2026-08-27; Google's documented replacement for every Veo 3.1 preview
@@ -58,6 +67,8 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
+    audioAlwaysOn: true,
+    negativePrompt: 'appended',
     aspectRatios: ['16:9', '9:16'],
     resolutions: ['360p', '720p', '1080p', '4k'],
     durations: [3, 4, 5, 6, 7, 8, 9, 10],
@@ -71,6 +82,7 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
+    negativePrompt: 'native',
     aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p', '1080p', '4k'],
     durations: [4, 6, 8],
@@ -84,6 +96,7 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
+    negativePrompt: 'native',
     aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p', '1080p'],
     durations: [4, 6, 8],
@@ -97,6 +110,7 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: true,
     supportsAudioPrompting: true,
+    negativePrompt: 'native',
     aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p', '1080p', '4k'],
     durations: [4, 6, 8],
@@ -125,6 +139,8 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     execution: 'long-running-operation',
     supportsReferenceImage: false,
     supportsAudioPrompting: true,
+    // Its passthrough is keyed by a provider slug the listing does not name.
+    negativePrompt: 'appended',
     aspectRatios: ['16:9', '9:16', '1:1'],
     resolutions: ['720p'],
     durations: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
@@ -156,6 +172,50 @@ const VIDEO_MODELS: VideoModelDeclaration[] = [
     aspectRatios: ['16:9', '9:16'],
     resolutions: ['720p'],
     durations: [2, 3, 4, 5, 6, 7, 8, 9, 10],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-11-05 from /api/v1/videos/models. Listing also offers 21:9, 4:3 and 3:4, outside the union.
+    // Opening and closing keyframes only; no input_references.
+    provider: 'openrouter',
+    id: 'black-forest-labs/flux-3-video',
+    name: 'Black Forest Labs: FLUX.3 Video via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: false,
+    supportsAudioPrompting: true,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['720p', '1080p', '2k', '4k'],
+    durations: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '720p',
+  },
+  {
+    // Added 2026-11-05 from /api/v1/videos/models. 2K only; the listing prices reference images.
+    provider: 'openrouter',
+    id: 'minimax/hailuo-3',
+    name: 'MiniMax: Hailuo 3 via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: true,
+    supportsAudioPrompting: true,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['2k'],
+    durations: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    defaultAspectRatio: '16:9',
+    defaultResolution: '2k',
+  },
+  {
+    // Added 2026-11-05 from /api/v1/videos/models. Listing also offers 480p, 4:3 and 3:4,
+    // outside the union, and describes reference-guided generation.
+    provider: 'openrouter',
+    id: 'alibaba/wan-3.0',
+    name: 'Alibaba: Wan 3.0 via OpenRouter',
+    execution: 'long-running-operation',
+    supportsReferenceImage: true,
+    supportsAudioPrompting: true,
+    aspectRatios: ['16:9', '9:16', '1:1'],
+    resolutions: ['720p', '1080p'],
+    durations: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
     defaultAspectRatio: '16:9',
     defaultResolution: '720p',
   },
@@ -192,6 +252,13 @@ export function buildVideoProviderAvailability(settings: LLMProviderSettings | n
       models: getVideoModelsForProvider(provider).filter(model => modelConfig?.[model.id]?.enabled !== false),
     };
   });
+}
+
+/** Models a request can use right now: the provider has a key and is on, and the model is not disabled. */
+export function listConfiguredVideoModels(settings: LLMProviderSettings | null | undefined): VideoModelDeclaration[] {
+  return buildVideoProviderAvailability(settings ?? null)
+    .filter(provider => provider.enabled && provider.configured)
+    .flatMap(provider => provider.models);
 }
 
 export function resolveDefaultVideoSelection(

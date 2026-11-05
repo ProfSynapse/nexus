@@ -161,6 +161,58 @@ describe('OpenAI image provider wiring', () => {
       expect([...schema.properties.provider.enum].sort()).toEqual(['google', 'openai', 'openrouter']);
     });
 
+    it.each([
+      ['svg', 'images/logo.svg', 'images/logo.svg'],
+      ['svg', 'images/logo.png', 'images/logo.svg'],
+      ['gif', 'images/loop.gif', 'images/loop.gif'],
+    ] as const)('carries outputFormat %s through the tool and saves %s as %s', async (outputFormat, savePath, expected) => {
+      const requests: CapturedRequest[] = [];
+      __setRequestUrlMock(async (request) => {
+        requests.push(request);
+        return jsonResponse(200, {
+          data: [{ b64_json: Buffer.from('file bytes').toString('base64') }],
+          output_format: outputFormat,
+          size: '1024x1024',
+          usage: { input_tokens: 10, output_tokens: 100 }
+        });
+      });
+
+      const { vault, saved } = makeVault();
+      const tool = new GenerateImageTool({ vault: vault as never, llmSettings: settingsWith(['openai']) });
+      const result = await tool.execute({
+        prompt: 'a teacup',
+        provider: 'openai',
+        model: 'gpt-image-2.6-flare',
+        outputFormat,
+        complexity: 'low',
+        savePath
+      } as never);
+
+      expect(result.success).toBe(true);
+      expect(result.data?.imagePath).toBe(expected);
+      expect(saved[0].path).toBe(expected);
+      expect(JSON.parse(requests[0].body || '{}')).toMatchObject({ output_format: outputFormat, complexity: 'low' });
+    });
+
+    it('fails an impossible request through the tool without calling the provider', async () => {
+      const request = jest.fn(async () => openAIImagesResponse(pngBase64(1024, 1024)));
+      __setRequestUrlMock(request);
+
+      const { vault } = makeVault();
+      const tool = new GenerateImageTool({ vault: vault as never, llmSettings: settingsWith(['openai']) });
+      const result = await tool.execute({
+        prompt: 'a teacup',
+        provider: 'openai',
+        model: 'gpt-image-2',
+        outputFormat: 'svg',
+        savePath: 'images/logo.svg'
+      } as never);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/cannot produce svg/);
+      expect(request).not.toHaveBeenCalled();
+    });
+
     it('executes an openai request end to end through the tool', async () => {
       const b64 = pngBase64(1024, 1024);
       const requests: CapturedRequest[] = [];

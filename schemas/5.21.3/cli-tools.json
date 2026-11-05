@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-02T12:23:41.998Z",
+  "generatedAt": "2026-11-05T12:12:42.548Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -884,7 +884,7 @@
       "tool": "soundEffects",
       "description": "Generate cinematic sound effects from text descriptions (e.g., \"thunder rolling across a mountain valley\").",
       "command": "elevenlabs sound-effects",
-      "usage": "elevenlabs sound-effects <prompt> [--duration-seconds <durationSeconds>] [--prompt-influence <promptInfluence>] [--output-path <outputPath>]",
+      "usage": "elevenlabs sound-effects <prompt> [--duration-seconds <durationSeconds>] [--prompt-influence <promptInfluence>] [--loop] [--output-path <outputPath>]",
       "arguments": [
         {
           "name": "prompt",
@@ -909,6 +909,14 @@
           "required": false,
           "positional": false,
           "description": "[OPTIONAL] How closely to follow the text prompt (0.0-1.0) (number)"
+        },
+        {
+          "name": "loop",
+          "flag": "--loop",
+          "type": "boolean",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] If true, make a sound effect that loops smoothly (default: false) (boolean)"
         },
         {
           "name": "outputPath",
@@ -1693,7 +1701,7 @@
     {
       "agent": "promptManager",
       "tool": "generateAudio",
-      "description": "Generate audio files in the vault. Supports voice mode using configured Voice settings, OpenAI, ElevenLabs, Google, Mistral, or OpenRouter speech.",
+      "description": "Generate voice audio files in the vault from text, using configured Voice settings or ElevenLabs, OpenAI, Google, Mistral, or OpenRouter speech.",
       "command": "prompt generate-audio",
       "usage": "prompt generate-audio [--mode <mode>] <prompt> [--provider <provider>] [--model <model>] [--voice <voice>] <outputPath> [--overwrite]",
       "arguments": [
@@ -1703,7 +1711,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Audio generation mode. Voice is currently supported; music and sfx will be unlocked by provider capability in a later phase. (One of: [\"voice\"])"
+          "description": "[OPTIONAL] Audio generation mode. Only voice is available. (One of: [\"voice\"])"
         },
         {
           "name": "prompt",
@@ -1711,7 +1719,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Text to convert into voice audio. (string)"
+          "description": "[REQUIRED] Text to convert into voice audio. Longest input: 10000 characters on elevenlabs: eleven_v4; 5000 characters on elevenlabs: eleven_v3; 40000 characters on elevenlabs: eleven_flash_v2_5; 2000 tokens on openai: gpt-4o-mini-tts; 8192 tokens on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts. (string)"
         },
         {
           "name": "provider",
@@ -1719,7 +1727,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional speech provider. Defaults to Voice settings. (One of: [\"openai\", \"elevenlabs\", \"google\", \"mistral\", \"openrouter\"])"
+          "description": "[OPTIONAL] Optional speech provider. Defaults to Voice settings. (One of: [\"elevenlabs\", \"openai\", \"google\", \"mistral\", \"openrouter\"])"
         },
         {
           "name": "model",
@@ -1727,7 +1735,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. (string)"
+          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. Available: elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; openai: gpt-4o-mini-tts, tts-1, tts-1-hd; google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, mistralai/voxtral-mini-tts-2603, elevenlabs/eleven-turbo-v2. OpenRouter also takes any other speech model it lists. (string)"
         },
         {
           "name": "voice",
@@ -1735,7 +1743,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional provider voice ID. Defaults to Voice settings or the model default. (string)"
+          "description": "[OPTIONAL] Optional voice. Defaults to Voice settings or the model default. Accepted: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar on openai: gpt-4o-mini-tts; alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer on openai: tts-1, tts-1-hd; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts. Use a voice ID from the provider on elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, mistralai/voxtral-mini-tts-2603, elevenlabs/eleven-turbo-v2. ElevenLabs voice IDs come from its listVoices tool. (string)"
         },
         {
           "name": "outputPath",
@@ -1743,7 +1751,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Vault-relative output path for the generated audio file, usually ending in .mp3. (string)"
+          "description": "[REQUIRED] Vault-relative output path for the generated audio file. The extension must match the provider: .mp3 on elevenlabs, openai, mistral, openrouter; .wav on google. (string)"
         },
         {
           "name": "overwrite",
@@ -1761,9 +1769,9 @@
     {
       "agent": "promptManager",
       "tool": "generateImage",
-      "description": "Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance.",
+      "description": "Generate images with Google Nano Banana, OpenAI GPT Image, or any OpenRouter image model. Supports reference images for style/composition guidance. Can also make SVG and animated GIF files (openai: gpt-image-2.6-sunburst, gpt-image-2.6-flare). Can edit from an annotated overlay (openai: gpt-image-2.6-sunburst, gpt-image-2.6-flare).",
       "command": "prompt generate-image",
-      "usage": "prompt generate-image <prompt> [--provider <provider>] [--model <model>] [--aspect-ratio <aspectRatio>] [--number-of-images <numberOfImages>] [--image-size <imageSize>] [--reference-images <referenceImages>] <savePath>",
+      "usage": "prompt generate-image <prompt> [--provider <provider>] [--model <model>] [--aspect-ratio <aspectRatio>] [--image-size <imageSize>] [--reference-images <referenceImages>] [--complexity <complexity>] [--output-format <outputFormat>] [--frame-count <frameCount>] [--frame-duration-ms <frameDurationMs>] [--markup-image <markupImage>] <savePath>",
       "arguments": [
         {
           "name": "prompt",
@@ -1787,7 +1795,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, flux-3-image, seedream-5-pro, seedream-5-flash (One of: [\"gemini-nano-banana-2.1\", \"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\"])"
+          "description": "[OPTIONAL] Image generation model (default: gemini-3.1-flash-image). Available: google: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image; openai: gpt-image-2, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare; openrouter: gemini-nano-banana-2.1, gemini-3.1-flash-image, gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gemini-3.1-flash-lite-image, gemini-3-pro-image, gpt-image-2, seedream-4.5, seedream-5-lite, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare, flux-3-image, seedream-5-pro, seedream-5-flash, mai-image-2.6, grok-imagine-image-2.0, qwen-image-3 (One of: [\"gemini-nano-banana-2.1\", \"gemini-3.1-flash-lite-image\", \"gemini-3.1-flash-image\", \"gemini-3-pro-image\", \"gpt-5.4-image-2\", \"flux-2-pro\", \"flux-2-flex\", \"flux-2-klein-4b\", \"gpt-image-2\", \"seedream-4.5\", \"seedream-5-lite\", \"gpt-image-2.5-sunburst\", \"gpt-image-2.5-flare\", \"gpt-image-2.6-sunburst\", \"gpt-image-2.6-flare\", \"flux-3-image\", \"seedream-5-pro\", \"seedream-5-flash\", \"mai-image-2.6\", \"grok-imagine-image-2.0\", \"qwen-image-3\"])"
         },
         {
           "name": "aspectRatio",
@@ -1795,15 +1803,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Aspect ratio for the generated image (One of: [\"1:1\", \"2:3\", \"3:2\", \"3:4\", \"4:3\", \"4:5\", \"5:4\", \"9:16\", \"16:9\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"])"
-        },
-        {
-          "name": "numberOfImages",
-          "flag": "--number-of-images",
-          "type": "number",
-          "required": false,
-          "positional": false,
-          "description": "[OPTIONAL] Number of images to generate (1-4) (number) [min: 1, max: 4]"
+          "description": "[OPTIONAL] Aspect ratio for the generated image. Supported per model: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9, 1:4, 4:1, 1:8, 8:1 on google: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image; 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9 on google: gemini-3-pro-image; 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9 on openai: gpt-image-2, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare; 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9, 1:4, 4:1, 1:8, 8:1 on openrouter: gemini-nano-banana-2.1, gemini-3.1-flash-image, gemini-3.1-flash-lite-image; 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9 on openrouter: gpt-5.4-image-2, flux-2-pro, flux-2-flex, flux-2-klein-4b, gpt-image-2, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare; 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9 on openrouter: gemini-3-pro-image, seedream-4.5, seedream-5-lite, flux-3-image, seedream-5-pro, seedream-5-flash; 1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9 on openrouter: mai-image-2.6, grok-imagine-image-2.0; 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 1:4, 4:1 on openrouter: qwen-image-3 (One of: [\"1:1\", \"2:3\", \"3:2\", \"3:4\", \"4:3\", \"4:5\", \"5:4\", \"9:16\", \"16:9\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"])"
         },
         {
           "name": "imageSize",
@@ -1811,7 +1811,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Image resolution. gemini-3.1-flash-lite-image is 1K only; 512px is available on gemini-3.1-flash-image; 4K on gemini-3.1-flash-image, gemini-nano-banana-2.1 and gemini-3-pro-image. Not accepted by the FLUX models. (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
+          "description": "[OPTIONAL] Image resolution. Models not listed do not take one. 1K, 2K, 4K on google: gemini-nano-banana-2.1, gemini-3-pro-image; 1K on google: gemini-3.1-flash-lite-image; 512px, 1K, 2K, 4K on google: gemini-3.1-flash-image; 1K, 2K, 4K on openrouter: gemini-nano-banana-2.1, gemini-3-pro-image, flux-3-image; 512px, 1K, 2K, 4K on openrouter: gemini-3.1-flash-image; 1K on openrouter: gemini-3.1-flash-lite-image; 2K, 4K on openrouter: seedream-4.5, seedream-5-lite; 1K, 2K on openrouter: seedream-5-pro, seedream-5-flash, grok-imagine-image-2.0, qwen-image-3 (One of: [\"512px\", \"1K\", \"2K\", \"4K\"])"
         },
         {
           "name": "referenceImages",
@@ -1819,7 +1819,47 @@
           "type": "array<string>",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Reference images for style/composition. Max 14 for the Gemini models; per-model limits apply on OpenRouter; up to 16 on OpenAI (Array of a string) [max items: 14]"
+          "description": "[OPTIONAL] Reference images for style/composition. Most per model: 14 on google: gemini-nano-banana-2.1, gemini-3.1-flash-lite-image, gemini-3.1-flash-image, gemini-3-pro-image; 16 on openai: gpt-image-2, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare; 14 on openrouter: gemini-nano-banana-2.1, gemini-3.1-flash-image, gemini-3.1-flash-lite-image, gemini-3-pro-image, seedream-4.5, seedream-5-lite, seedream-5-pro, seedream-5-flash; 16 on openrouter: gpt-5.4-image-2, gpt-image-2, gpt-image-2.5-sunburst, gpt-image-2.5-flare, gpt-image-2.6-sunburst, gpt-image-2.6-flare; 8 on openrouter: flux-2-pro, flux-2-flex; 4 on openrouter: flux-2-klein-4b; 10 on openrouter: flux-3-image; 5 on openrouter: mai-image-2.6; 3 on openrouter: grok-imagine-image-2.0, qwen-image-3 (Array of a string) [max items: 16]"
+        },
+        {
+          "name": "complexity",
+          "flag": "--complexity",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] How much the model plans before rendering. Omitted means high. Lower is faster and suits focused edits; higher helps dense text and complex layouts but can introduce unwanted changes. Same price at every level. Only on openai: gpt-image-2.6-sunburst, gpt-image-2.6-flare; openrouter: gpt-image-2.6-sunburst, gpt-image-2.6-flare (One of: [\"low\", \"medium\", \"high\"])"
+        },
+        {
+          "name": "outputFormat",
+          "flag": "--output-format",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Make an editable SVG or an animated GIF instead of a raster image. Cannot use referenceImages. SVG is slow (up to a few minutes). For GIF, describe the motion and loop in the prompt. Omit for a raster image. Set provider and model to one of openai: gpt-image-2.6-sunburst, gpt-image-2.6-flare (One of: [\"svg\", \"gif\"])"
+        },
+        {
+          "name": "frameCount",
+          "flag": "--frame-count",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Frames in the animation (default 9). Only with outputFormat gif. (number) [min: 2, max: 16]"
+        },
+        {
+          "name": "frameDurationMs",
+          "flag": "--frame-duration-ms",
+          "type": "number",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Milliseconds per frame, rounded to 10 (default 200). Only with outputFormat gif. (number) [min: 20]"
+        },
+        {
+          "name": "markupImage",
+          "flag": "--markup-image",
+          "type": "string",
+          "required": false,
+          "positional": false,
+          "description": "[OPTIONAL] Vault path of a transparent PNG with circles or sketches showing where to edit the first reference image. Must match that image's width and height. Requires referenceImages. Say in the prompt to remove the marks from the result. Set provider and model to one of openai: gpt-image-2.6-sunburst, gpt-image-2.6-flare (string)"
         },
         {
           "name": "savePath",
@@ -1827,11 +1867,11 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Vault-relative path for the image. Extension may change based on API response format. (string) [pattern: ^[^/].*\\.(png|jpg|jpeg|webp)$]"
+          "description": "[REQUIRED] Vault-relative path for the image. Extension may change based on API response format. (string) [pattern: ^[^/].*\\.(png|jpg|jpeg|webp|svg|gif)$]"
         }
       ],
       "examples": [
-        "prompt generate-image \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --aspect-ratio \"aspectRatio-value\" --number-of-images 1 --image-size \"imageSize-value\" --reference-images \"value-1,value-2\" \"savePath-value\""
+        "prompt generate-image \"prompt-value\" --provider \"provider-value\" --model \"model-value\" --aspect-ratio \"aspectRatio-value\" --image-size \"imageSize-value\" --reference-images \"value-1,value-2\" --complexity \"complexity-value\" --output-format \"outputFormat-value\" --frame-count 1 --frame-duration-ms 1 --markup-image \"markupImage-value\" \"savePath-value\""
       ]
     },
     {
@@ -1863,7 +1903,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Google: gemini-omni-1.1-flash (retired Veo 3.1 preview ids are mapped to it). OpenRouter: e.g. google/veo-3.1-fast, google/veo-3.1. (string)"
+          "description": "[OPTIONAL] Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Available: google: gemini-omni-1.1-flash; openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1, bytedance/seedance-2.5, kwaivgi/kling-v3.0-pro, x-ai/grok-imagine-video-1.5, runway/gen-4.5, black-forest-labs/flux-3-video, minimax/hailuo-3, alibaba/wan-3.0 (One of: [\"gemini-omni-1.1-flash\", \"google/veo-3.1-fast\", \"google/veo-3.1-lite\", \"google/veo-3.1\", \"bytedance/seedance-2.5\", \"kwaivgi/kling-v3.0-pro\", \"x-ai/grok-imagine-video-1.5\", \"runway/gen-4.5\", \"black-forest-labs/flux-3-video\", \"minimax/hailuo-3\", \"alibaba/wan-3.0\"])"
         },
         {
           "name": "outputPath",
@@ -1887,7 +1927,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional output aspect ratio. Defaults to Video generation settings or model default. (One of: [\"16:9\", \"9:16\", \"1:1\"])"
+          "description": "[OPTIONAL] Optional output aspect ratio. Defaults to Video generation settings or model default. Supported per model: 16:9, 9:16 on google: gemini-omni-1.1-flash; 16:9, 9:16 on openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1, runway/gen-4.5; 16:9, 9:16, 1:1 on openrouter: bytedance/seedance-2.5, kwaivgi/kling-v3.0-pro, x-ai/grok-imagine-video-1.5, black-forest-labs/flux-3-video, minimax/hailuo-3, alibaba/wan-3.0 (One of: [\"16:9\", \"9:16\", \"1:1\"])"
         },
         {
           "name": "resolution",
@@ -1895,7 +1935,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. 360p is Google Gemini Omni Flash only. (One of: [\"360p\", \"720p\", \"1080p\", \"4k\"])"
+          "description": "[OPTIONAL] Optional output resolution. Defaults to Video generation settings or model default. Supported per model: 360p, 720p, 1080p, 4k on google: gemini-omni-1.1-flash; 720p, 1080p, 4k on openrouter: google/veo-3.1-fast, google/veo-3.1; 720p, 1080p on openrouter: google/veo-3.1-lite, x-ai/grok-imagine-video-1.5, alibaba/wan-3.0; 720p on openrouter: bytedance/seedance-2.5, kwaivgi/kling-v3.0-pro, runway/gen-4.5; 720p, 1080p, 2k, 4k on openrouter: black-forest-labs/flux-3-video; 2k on openrouter: minimax/hailuo-3 (One of: [\"360p\", \"720p\", \"1080p\", \"2k\", \"4k\"])"
         },
         {
           "name": "seconds",
@@ -1903,7 +1943,7 @@
           "type": "number",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional clip duration in seconds. Provider/model support varies; Google Gemini Omni Flash accepts whole seconds from 3 to 10. (number)"
+          "description": "[OPTIONAL] Optional clip duration in seconds. Supported per model: 3-10s on google: gemini-omni-1.1-flash; 4, 6, 8s on openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1; 4-30s on openrouter: bytedance/seedance-2.5; 3-15s on openrouter: kwaivgi/kling-v3.0-pro; 1-15s on openrouter: x-ai/grok-imagine-video-1.5; 2-10s on openrouter: runway/gen-4.5; 5-20s on openrouter: black-forest-labs/flux-3-video; 5-15s on openrouter: minimax/hailuo-3; 2-30s on openrouter: alibaba/wan-3.0 (number)"
         },
         {
           "name": "referenceImage",
@@ -1911,7 +1951,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional vault-relative image path to guide image-to-video or reference-to-video generation. (string)"
+          "description": "[OPTIONAL] Optional vault-relative image path to guide image-to-video or reference-to-video generation. Only on google: gemini-omni-1.1-flash; openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1, bytedance/seedance-2.5, minimax/hailuo-3, alibaba/wan-3.0 (string)"
         },
         {
           "name": "generateAudio",
@@ -1919,7 +1959,7 @@
           "type": "boolean",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Whether to ask the provider to generate audio when the selected model supports it. Google Gemini Omni Flash always generates audio and rejects false. (boolean)"
+          "description": "[OPTIONAL] Whether to ask the provider to generate audio. Can be set on openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1, bytedance/seedance-2.5, kwaivgi/kling-v3.0-pro, black-forest-labs/flux-3-video, minimax/hailuo-3, alibaba/wan-3.0. Always on, and false is rejected, on google: gemini-omni-1.1-flash. (boolean)"
         },
         {
           "name": "negativePrompt",
@@ -1927,7 +1967,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional negative prompt for providers/models that support it. Google Gemini Omni Flash has no negative prompt, so it is appended to the prompt as \"Do not include: ...\". (string)"
+          "description": "[OPTIONAL] Optional things to leave out. Other models reject it. Sent to openrouter: google/veo-3.1-fast, google/veo-3.1-lite, google/veo-3.1. Added to the prompt as \"Do not include: ...\" on google: gemini-omni-1.1-flash; openrouter: kwaivgi/kling-v3.0-pro. (string)"
         },
         {
           "name": "pollIntervalMs",

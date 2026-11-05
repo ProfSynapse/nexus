@@ -30,12 +30,30 @@ export interface ImageGenerationParams {
   model?: string; // Internal id from the adapter catalog, e.g. gemini-3.1-flash-image, flux-2-pro
   size?: string; // Legacy support for pixel dimensions (converted to aspectRatio)
   aspectRatio?: AspectRatio; // Nano Banana aspect ratios
-  numberOfImages?: number; // 1-4 images
+  numberOfImages?: number; // Accepted from older callers and reported as ignored: every request makes one image
   imageSize?: NanoBananaImageSize; // Image resolution: 512px, 1K, 2K, or 4K (per-model availability)
   referenceImages?: string[]; // Vault-relative paths; per-model limit enforced by the adapter (14 for the Gemini 3.x family)
+  complexity?: ImageComplexity; // How much the model plans before rendering; models without it warn and ignore it
+  outputFormat?: ImageVectorOrAnimationFormat; // Omit for a raster image in the provider's usual format
+  frameCount?: number; // GIF only
+  frameDurationMs?: number; // GIF only
+  markupImage?: string; // Vault-relative transparent PNG annotating the first reference image
   savePath: string; // vault relative path
   sessionId?: string;
   context?: string;
+}
+
+// How much the model plans before rendering. OpenAI bills it no differently.
+export type ImageComplexity = 'low' | 'medium' | 'high';
+
+// Output formats beyond the raster ones every image model produces.
+export type ImageVectorOrAnimationFormat = 'svg' | 'gif';
+
+// Request features that only some image models offer.
+export interface ImageModelFeatures {
+  complexity?: boolean;
+  svgAndGif?: boolean;
+  markup?: boolean;
 }
 
 // Nano Banana image resolution sizes
@@ -44,7 +62,7 @@ export type NanoBananaImageSize = '512px' | '1K' | '2K' | '4K';
 // Image generation response from adapters
 export interface ImageGenerationResponse {
   imageData: Buffer;
-  format: 'png' | 'jpeg' | 'webp';
+  format: 'png' | 'jpeg' | 'webp' | ImageVectorOrAnimationFormat;
   dimensions: { width: number; height: number };
   metadata: Record<string, unknown>;
   usage?: ImageUsage;
@@ -249,6 +267,8 @@ export type ImageProvider = 'openai' | 'google' | 'openrouter';
 export type ImageModel =
   | 'gpt-image-2.5-sunburst'  // OpenAI GPT Image 2.5 Sunburst (OpenAI direct)
   | 'gpt-image-2.5-flare'     // OpenAI GPT Image 2.5 Flare (OpenAI direct)
+  | 'gpt-image-2.6-sunburst'  // OpenAI GPT Image 2.6 Sunburst (OpenAI direct and OpenRouter)
+  | 'gpt-image-2.6-flare'     // OpenAI GPT Image 2.6 Flare (OpenAI direct and OpenRouter)
   | 'gpt-5.4-image-2'                // OpenAI GPT-5.4 Image 2 (OpenRouter only)
   | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
   | 'flux-2-flex'                    // Black Forest Labs FLUX.2 Flex (OpenRouter only)
@@ -262,7 +282,10 @@ export type ImageModel =
   | 'gemini-nano-banana-2.1'         // Google Nano Banana 2.1, the default (Google direct and OpenRouter)
   | 'flux-3-image'                   // Black Forest Labs FLUX.3 Image (OpenRouter only)
   | 'seedream-5-pro'                 // ByteDance Seedream 5.0 Pro (OpenRouter only)
-  | 'seedream-5-flash';              // ByteDance Seedream 5.0 Flash (OpenRouter only)
+  | 'seedream-5-flash'               // ByteDance Seedream 5.0 Flash (OpenRouter only)
+  | 'mai-image-2.6'                  // Microsoft MAI-Image-2.6 (OpenRouter only)
+  | 'grok-imagine-image-2.0'         // xAI Grok Imagine Image 2.0 (OpenRouter only)
+  | 'qwen-image-3';                  // Qwen Image 3 (OpenRouter only)
 
 // Aspect ratio constants for Nano Banana models
 export enum AspectRatio {
@@ -281,6 +304,14 @@ export enum AspectRatio {
   ULTRA_NARROW_1_8 = '1:8',
   ULTRA_WIDE_8_1 = '8:1'
 }
+
+// Which ratios a model takes, by the sets catalogs share. Every catalog entry
+// names one, sourced from the provider's own listing or a live rejection.
+export const ALL_ASPECT_RATIOS: readonly string[] = Object.values(AspectRatio);
+/** Without the extreme 1:4, 4:1, 1:8 and 8:1. */
+export const STANDARD_ASPECT_RATIOS: readonly string[] = ALL_ASPECT_RATIOS.filter(ratio => !['1:4', '4:1', '1:8', '8:1'].includes(ratio));
+/** STANDARD without 4:5 and 5:4. */
+export const CORE_ASPECT_RATIOS: readonly string[] = STANDARD_ASPECT_RATIOS.filter(ratio => !['4:5', '5:4'].includes(ratio));
 
 // Image size presets
 export const IMAGE_SIZES = {

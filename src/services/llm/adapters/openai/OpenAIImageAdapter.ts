@@ -8,6 +8,10 @@
  * from the vault). The earlier Responses-API route (a chat model plus the
  * image_generation tool) picked the image model for us and hid its price.
  *
+ * GPT Image 2.6 adds `complexity`, SVG and GIF output on generations, and
+ * markup-guided edits. Where the docs and the endpoint disagreed, the limits
+ * here are what the endpoint enforced when probed on 2026-11-05.
+ *
  * Reference: https://developers.openai.com/api/docs/api-reference/images/create
  */
 
@@ -20,6 +24,7 @@ import {
   ImageGenerationResponse,
   ImageValidationResult,
   ImageModel,
+  ImageModelFeatures,
   ImageUsage,
   AspectRatio
 } from '../../types/ImageTypes';
@@ -32,8 +37,9 @@ import {
   StreamChunk
 } from '../types';
 import { readImageDimensions, sniffImageFormat } from '../shared/imageDimensions';
+import { OPENAI_MODELS } from './OpenAIModels';
 
-type OutputFormat = 'png' | 'jpeg' | 'webp';
+type OutputFormat = 'png' | 'jpeg' | 'webp' | 'svg' | 'gif';
 
 /**
  * Everything the adapter needs to know about one model. Token prices come from
@@ -50,6 +56,7 @@ export interface OpenAIImageModelSpec {
   outputTokenPricePerMillion: number;
   defaultQuality?: 'medium';
   strictSizeLimits?: boolean;
+  features?: ImageModelFeatures;
   lastUpdated: string;
 }
 
@@ -60,6 +67,10 @@ interface OpenAIImagesRequestBody {
   size?: string;
   output_format: OutputFormat;
   quality?: 'medium';
+  complexity?: string;
+  frame_count?: number;
+  frame_duration_ms?: number;
+  svg?: { model: string };
 }
 
 interface OpenAIImagesResponse {
@@ -85,12 +96,18 @@ interface OpenAIImagesResponse {
       text_tokens?: number;
     };
   };
+  /** The model that wrote the SVG, billed apart from the reference image in `usage`. */
+  svg_usage?: {
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+  };
 }
 
 const FIXED_SIZES = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
 
 /** The Images edits endpoint accepts up to 16 input images for GPT image models. */
-const MAX_REFERENCE_IMAGES = 16;
+export const MAX_REFERENCE_IMAGES = 16;
 
 const REFERENCE_MIME_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -107,7 +124,8 @@ interface ReferenceImagePart {
 
 // Pixel dimensions per aspect ratio for models that accept arbitrary sizes.
 // gpt-image-2 rejects any dimension not divisible by 16, so every entry is an
-// exact ratio built from multiples of 16 near one megapixel.
+// exact ratio built from multiples of 16 near one megapixel. Every GPT image
+// model rejects anything past 3:1, so 1:4, 4:1, 1:8 and 8:1 are not offered.
 const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
   '1:1': '1024x1024',
   '2:3': '832x1248',
@@ -118,12 +136,39 @@ const ASPECT_RATIO_TO_SIZE: Record<string, string> = {
   '5:4': '1120x896',
   '9:16': '1008x1792',
   '16:9': '1792x1008',
-  '21:9': '1568x672',
-  '1:4': '512x2048',
-  '4:1': '2048x512',
-  '1:8': '256x2048',
-  '8:1': '2048x256'
+  '21:9': '1568x672'
 };
+
+/** Every model in this catalog takes the same ratios. GIF frames use the same set. */
+export const OPENAI_IMAGE_ASPECT_RATIOS: readonly string[] = Object.keys(ASPECT_RATIO_TO_SIZE);
+
+// GIF frames are packed onto one sprite sheet, so frames near a megapixel do not
+// fit: 1024x1024 fails even at 4 frames. These stay within the frame area that
+// rendered at 16 frames, the maximum.
+const GIF_ASPECT_RATIO_TO_SIZE: Record<string, string> = {
+  '1:1': '512x512',
+  '2:3': '416x624',
+  '3:2': '624x416',
+  '3:4': '480x640',
+  '4:3': '640x480',
+  '4:5': '512x640',
+  '5:4': '640x512',
+  '9:16': '432x768',
+  '16:9': '768x432',
+  '21:9': '672x288'
+};
+
+/**
+ * Writes the SVG from the reference image the image model renders. The endpoint
+ * requires a text model here and the docs name none, so this is the cheapest
+ * current one. Its tokens are priced from OPENAI_MODELS.
+ */
+const SVG_AUTHOR_MODEL = 'gpt-6-luna';
+
+/** Reasoning plus authoring on top of the render. A low-quality icon took 45 s. */
+const SVG_TIMEOUT_MS = 300_000;
+
+const GPT_IMAGE_26_FEATURES: ImageModelFeatures = { complexity: true, svgAndGif: true, markup: true };
 
 export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelSpec>> = {
   'gpt-image-2': {
@@ -156,6 +201,33 @@ export const OPENAI_IMAGE_MODEL_SPECS: Readonly<Record<string, OpenAIImageModelS
     defaultQuality: 'medium',
     strictSizeLimits: true,
     lastUpdated: '2026-09-08'
+  },
+  // https://developers.openai.com/api/docs/models/gpt-image-2.6-sunburst
+  // Same token rates as 2.5, but a 1024x1024 medium image is about 3.3x the tokens.
+  'gpt-image-2.6-sunburst': {
+    displayName: 'GPT Image 2.6 Sunburst',
+    costPerImage: 0.04347,
+    pricingNote: 'Measured 1449 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+    inputTokenPricePerMillion: 8,
+    textInputTokenPricePerMillion: 5,
+    outputTokenPricePerMillion: 30,
+    defaultQuality: 'medium',
+    strictSizeLimits: true,
+    features: GPT_IMAGE_26_FEATURES,
+    lastUpdated: '2026-11-05'
+  },
+  // https://developers.openai.com/api/docs/models/gpt-image-2.6-flare
+  'gpt-image-2.6-flare': {
+    displayName: 'GPT Image 2.6 Flare',
+    costPerImage: 0.04347,
+    pricingNote: 'Measured 1449 output tokens at $30/M for 1024x1024 medium; input tokens billed separately',
+    inputTokenPricePerMillion: 8,
+    textInputTokenPricePerMillion: 5,
+    outputTokenPricePerMillion: 30,
+    defaultQuality: 'medium',
+    strictSizeLimits: true,
+    features: GPT_IMAGE_26_FEATURES,
+    lastUpdated: '2026-11-05'
   }
 };
 
@@ -175,7 +247,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
 
   readonly supportedModels: ImageModel[] = Object.keys(this.modelSpecs) as ImageModel[];
   readonly supportedSizes: string[] = [...FIXED_SIZES];
-  readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
+  readonly supportedFormats: string[] = ['png', 'jpeg', 'webp', 'svg', 'gif'];
 
   private readonly defaultModel = 'gpt-image-2';
   private vault: Vault | null = null;
@@ -198,6 +270,18 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     this.vault = vault;
   }
 
+  protected getImageModelFeatures(model: string): ImageModelFeatures {
+    return this.modelSpecs[model]?.features ?? {};
+  }
+
+  protected getModelAspectRatios(_model: string): readonly string[] {
+    return OPENAI_IMAGE_ASPECT_RATIOS;
+  }
+
+  protected getGenerationTimeoutMs(params: ImageGenerationParams): number {
+    return params.outputFormat === 'svg' ? SVG_TIMEOUT_MS : super.getGenerationTimeoutMs(params);
+  }
+
   /**
    * Generate one image through POST /v1/images/generations.
    */
@@ -215,16 +299,22 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         model,
         prompt: params.prompt,
         n: 1,
-        output_format: 'png'
+        output_format: params.outputFormat ?? 'png'
       };
 
       const size = this.resolveSize(params);
-      const sizeError = spec.strictSizeLimits ? this.getSizeError(size) : undefined;
+      const sizeError = spec.strictSizeLimits && params.outputFormat !== 'gif' ? this.getSizeError(size) : undefined;
       if (sizeError) throw new Error(sizeError);
       if (size) {
         requestBody.size = size;
       }
       if (spec.defaultQuality) requestBody.quality = spec.defaultQuality;
+      if (params.complexity && spec.features?.complexity) requestBody.complexity = params.complexity;
+      if (params.outputFormat === 'gif') {
+        if (params.frameCount !== undefined) requestBody.frame_count = params.frameCount;
+        if (params.frameDurationMs !== undefined) requestBody.frame_duration_ms = params.frameDurationMs;
+      }
+      if (params.outputFormat === 'svg') requestBody.svg = { model: SVG_AUTHOR_MODEL };
 
       const hasReferenceImages = !!params.referenceImages && params.referenceImages.length > 0;
 
@@ -240,7 +330,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
             'Authorization': `Bearer ${this.apiKey}`
           },
           body: JSON.stringify(requestBody),
-          timeoutMs: 120_000,
+          timeoutMs: this.getGenerationTimeoutMs(params),
           retries: 2
         });
 
@@ -263,6 +353,9 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   private resolveSize(params: ImageGenerationParams): string {
     if (params.size) {
       return params.size;
+    }
+    if (params.outputFormat === 'gif') {
+      return (params.aspectRatio && GIF_ASPECT_RATIO_TO_SIZE[params.aspectRatio]) || 'auto';
     }
     // Always send a size: with `size` omitted OpenAI also picks the quality,
     // which has resolved to a high-quality 1536x1024 at several times the
@@ -320,13 +413,9 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       warnings.push(`${model} sizes images in pixels; imageSize ${params.imageSize} ignored`);
       adjustedParams.imageSize = undefined;
     }
-    if (spec.strictSizeLimits) {
+    if (params.outputFormat !== 'gif' && spec.strictSizeLimits) {
       const sizeError = this.getSizeError(this.resolveSize(params));
       if (sizeError) errors.push(sizeError);
-    }
-
-    if (params.numberOfImages && params.numberOfImages > 1) {
-      warnings.push('OpenAI image generation produces one image per request; numberOfImages ignored');
     }
 
     if (params.referenceImages && params.referenceImages.length > 0) {
@@ -432,7 +521,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
 
   /**
    * POST /v1/images/edits: the prompt plus every reference image as an
-   * `image[]` part. Same response shape as generations.
+   * `image[]` part, and optionally a `markup` overlay that annotates the first.
+   * Same response shape as generations.
    */
   private async requestEdit(
     model: string,
@@ -448,10 +538,15 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     if (size) {
       fields.push({ name: 'size', value: size });
     }
-    const quality = this.modelSpecs[model]?.defaultQuality;
-    if (quality) fields.push({ name: 'quality', value: quality });
+    const spec = this.modelSpecs[model];
+    if (spec?.defaultQuality) fields.push({ name: 'quality', value: spec.defaultQuality });
+    if (params.complexity && spec?.features?.complexity) fields.push({ name: 'complexity', value: params.complexity });
     for (const part of await this.loadReferenceImages(params.referenceImages ?? [])) {
       fields.push({ name: 'image[]', value: part.bytes, filename: part.filename, contentType: part.mimeType });
+    }
+    if (params.markupImage) {
+      const [part] = await this.loadReferenceImages([params.markupImage]);
+      fields.push({ name: 'markup', value: part.bytes, filename: part.filename, contentType: part.mimeType });
     }
 
     const { body, contentType } = buildMultipartFormData(fields);
@@ -525,7 +620,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     const inputCost = spec.textInputTokenPricePerMillion === undefined
       ? inputTokens * spec.inputTokenPricePerMillion
       : textTokens * spec.textInputTokenPricePerMillion + (inputTokens - textTokens) * spec.inputTokenPricePerMillion;
-    const reportedCostUsd = (inputCost + outputTokens * spec.outputTokenPricePerMillion) / 1_000_000;
+    const reportedCostUsd = (inputCost + outputTokens * spec.outputTokenPricePerMillion) / 1_000_000 +
+      this.svgAuthorCostUsd(response.svg_usage);
 
     return {
       imageData: buffer,
@@ -547,8 +643,17 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     };
   }
 
+  /** The authoring model's share of an SVG, at its own token rates. */
+  private svgAuthorCostUsd(usage: OpenAIImagesResponse['svg_usage']): number {
+    const author = usage && OPENAI_MODELS.find(candidate => candidate.apiName === usage.model);
+    if (!usage || !author) return 0;
+    return ((usage.input_tokens ?? 0) * author.inputCostPerMillion +
+      (usage.output_tokens ?? 0) * author.outputCostPerMillion) / 1_000_000;
+  }
+
   private resolveFormat(outputFormat: string | undefined, buffer: Buffer): OutputFormat {
-    if (outputFormat === 'png' || outputFormat === 'jpeg' || outputFormat === 'webp') {
+    if (outputFormat === 'png' || outputFormat === 'jpeg' || outputFormat === 'webp' ||
+        outputFormat === 'svg' || outputFormat === 'gif') {
       return outputFormat;
     }
     return sniffImageFormat(buffer) || 'png';

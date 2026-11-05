@@ -162,7 +162,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
     // Use a dummy voice_id — the request will fail validation but auth check happens first
     const ttsResult = await probeEndpoint(
       'https://api.elevenlabs.io/v1/text-to-speech/dummy_voice_id',
-      { text: '', model_id: 'eleven_monolingual_v1' }
+      { text: '', model_id: DEFAULT_TTS_MODEL }
     );
 
     const sfxResult = await probeEndpoint(

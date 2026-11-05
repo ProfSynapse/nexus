@@ -13,6 +13,7 @@ import {
   ImageCostDetails,
   ImageGenerationError,
   ImageModel,
+  ImageModelFeatures,
   ImageUsage
 } from '../types/ImageTypes';
 import { ProviderCapabilities, ModelInfo, CostDetails } from './types';
@@ -54,6 +55,21 @@ export abstract class BaseImageAdapter extends BaseAdapter {
   abstract getSupportedImageSizes(): string[];
   abstract getImageModelPricing(model: string): Promise<CostDetails | null>;
 
+  /** Optional request features a model accepts. Adapters override this per model. */
+  protected getImageModelFeatures(_model: string): ImageModelFeatures {
+    return {};
+  }
+
+  /** Aspect ratios a model accepts, or null when the adapter does not know. */
+  protected getModelAspectRatios(_model: string): readonly string[] | null {
+    return null;
+  }
+
+  /** How long one generation may take before it is abandoned. */
+  protected getGenerationTimeoutMs(_params: ImageGenerationParams): number {
+    return 120_000;
+  }
+
   /**
    * Generate image with comprehensive validation and error handling
    */
@@ -90,7 +106,7 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       const finalParams = { ...params, ...validation.adjustedParams };
 
       // Generate the image with timeout
-      const timeout = this.createTimeout(120000); // 2 minute timeout
+      const timeout = this.createTimeout(this.getGenerationTimeoutMs(finalParams));
       let response: ImageGenerationResponse;
       try {
         response = await Promise.race([
@@ -271,11 +287,71 @@ export abstract class BaseImageAdapter extends BaseAdapter {
 
     // Format validation removed - Google Imagen only outputs PNG
 
+    this.validateModelFeatureParams(params, errors, warnings);
+
     return {
       isValid: errors.length === 0,
       errors,
       warnings
     };
+  }
+
+  /**
+   * Reject feature combinations before anything is billed. A model that cannot
+   * produce the requested format must fail here: quietly returning a PNG would
+   * charge for the wrong thing. Complexity only tunes the result, so a model
+   * without it warns and ignores it, like imageSize on a pixel-sized model.
+   */
+  private validateModelFeatureParams(params: ImageGenerationParams, errors: string[], warnings: string[]): void {
+    const model = params.model || this.currentModel;
+    const features = this.getImageModelFeatures(model);
+    const { outputFormat, frameCount, frameDurationMs, markupImage, referenceImages } = params;
+    const hasReferences = !!referenceImages && referenceImages.length > 0;
+
+    const aspectRatios = this.getModelAspectRatios(model);
+    if (params.aspectRatio && !params.size && aspectRatios && !aspectRatios.includes(params.aspectRatio)) {
+      errors.push(`${model} on ${this.name} does not support aspect ratio ${params.aspectRatio}. Supported: ${aspectRatios.join(', ')}`);
+    }
+
+    if (params.numberOfImages && params.numberOfImages > 1) {
+      warnings.push(`Each request makes one image; numberOfImages ${params.numberOfImages} ignored. Call once per image`);
+    }
+
+    if (params.complexity && !features.complexity) {
+      warnings.push(`${model} has no complexity setting; complexity ${params.complexity} ignored`);
+    }
+
+    if (outputFormat && !features.svgAndGif) {
+      errors.push(`${model} on ${this.name} cannot produce ${outputFormat} output`);
+    }
+    if (outputFormat && hasReferences) {
+      errors.push(`${outputFormat} output cannot use referenceImages: it is generation only`);
+    }
+
+    if (outputFormat !== 'gif' && (frameCount !== undefined || frameDurationMs !== undefined)) {
+      errors.push('frameCount and frameDurationMs require outputFormat "gif"');
+    }
+    if (frameCount !== undefined && (!Number.isInteger(frameCount) || frameCount < 2 || frameCount > 16)) {
+      errors.push('frameCount must be a whole number from 2 to 16');
+    }
+    if (frameDurationMs !== undefined && (!Number.isInteger(frameDurationMs) || frameDurationMs < 20)) {
+      errors.push('frameDurationMs must be a whole number of at least 20');
+    }
+
+    if (markupImage) {
+      if (!features.markup) {
+        errors.push(`${model} on ${this.name} does not support markupImage`);
+      }
+      if (!hasReferences) {
+        errors.push('markupImage annotates the first reference image, so referenceImages is required');
+      }
+      if (!markupImage.toLowerCase().endsWith('.png')) {
+        errors.push(`markupImage must be a transparent PNG: ${markupImage}`);
+      }
+      if (outputFormat) {
+        errors.push(`markupImage cannot be combined with ${outputFormat} output`);
+      }
+    }
   }
 
   /**

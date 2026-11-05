@@ -21,7 +21,9 @@ import {
   ImageModel,
   ImageUsage,
   AspectRatio,
-  NanoBananaImageSize
+  NanoBananaImageSize,
+  ALL_ASPECT_RATIOS,
+  STANDARD_ASPECT_RATIOS
 } from '../../types/ImageTypes';
 import {
   ProviderConfig,
@@ -46,6 +48,7 @@ export interface GeminiImageModelSpec {
   maxReferenceImages: number;
   /** imageConfig.imageSize values the model accepts. */
   imageSizes: GeminiImageSize[];
+  aspectRatios: readonly string[];
   contextWindow: number;
   lastUpdated: string;
 }
@@ -143,6 +146,7 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     imageTokenPricePerMillion: 30,
     maxReferenceImages: 14,
     imageSizes: ['1K', '2K', '4K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 131072,
     lastUpdated: '2026-10-14'
   },
@@ -153,6 +157,7 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     imageTokenPricePerMillion: 30,
     maxReferenceImages: 14,
     imageSizes: ['1K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
@@ -163,6 +168,7 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     imageTokenPricePerMillion: 60,
     maxReferenceImages: 14,
     imageSizes: ['512', '1K', '2K', '4K'],
+    aspectRatios: ALL_ASPECT_RATIOS,
     contextWindow: 65536,
     lastUpdated: '2026-09-02'
   },
@@ -173,6 +179,8 @@ export const GEMINI_IMAGE_MODEL_SPECS: Readonly<Record<string, GeminiImageModelS
     imageTokenPricePerMillion: 120,
     maxReferenceImages: 14,
     imageSizes: ['1K', '2K', '4K'],
+    // Rejects 1:4, 4:1, 1:8 and 8:1 with a 400 (live, 2026-11-05).
+    aspectRatios: STANDARD_ASPECT_RATIOS,
     contextWindow: 131072,
     lastUpdated: '2026-09-02'
   },
@@ -198,12 +206,6 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   private vault: Vault | null = null;
   private readonly defaultModel = DEFAULT_IMAGE_MODEL;
-
-  // Supported aspect ratios for Nano Banana models
-  private readonly nanoBananaAspectRatios: string[] = [
-    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
-    '1:4', '4:1', '1:8', '8:1'
-  ];
 
   constructor(config?: ProviderConfig & { vault?: Vault }) {
     const apiKey = config?.apiKey || '';
@@ -345,6 +347,10 @@ export class GeminiImageAdapter extends BaseImageAdapter {
     return mimeTypes[ext] || 'image/png';
   }
 
+  protected getModelAspectRatios(model: string): readonly string[] | null {
+    return this.modelSpecs[model]?.aspectRatios ?? null;
+  }
+
   /**
    * Validate Nano Banana-specific image generation parameters
    */
@@ -365,10 +371,6 @@ export class GeminiImageAdapter extends BaseImageAdapter {
       return { isValid: false, errors, warnings, adjustedParams };
     }
 
-    if (params.aspectRatio && !this.nanoBananaAspectRatios.includes(params.aspectRatio)) {
-      errors.push(`Invalid aspect ratio. Supported ratios: ${this.nanoBananaAspectRatios.join(', ')}`);
-    }
-
     if (params.imageSize) {
       const wireValue = IMAGE_SIZE_TO_GEMINI[params.imageSize];
       if (!wireValue) {
@@ -377,10 +379,6 @@ export class GeminiImageAdapter extends BaseImageAdapter {
         const supported = spec.imageSizes.map(s => (s === '512' ? '512px' : s)).join(', ');
         errors.push(`imageSize ${params.imageSize} is not available for ${model}. Supported: ${supported}`);
       }
-    }
-
-    if (params.numberOfImages && (params.numberOfImages < 1 || params.numberOfImages > 4)) {
-      errors.push('numberOfImages must be between 1 and 4');
     }
 
     if (params.referenceImages && params.referenceImages.length > 0) {

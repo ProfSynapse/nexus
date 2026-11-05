@@ -47,6 +47,7 @@ export class ResultProcessor {
 
     if (result.type === 'image') {
       if (result.imagePath) lean.imagePath = result.imagePath;
+      if (result.note) lean.note = result.note;
     } else {
       // Only include response if no action saved it to a file
       if (result.response && !result.actionPerformed?.success) {

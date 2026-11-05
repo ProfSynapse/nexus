@@ -177,7 +177,7 @@ describe('SpeechSynthesisService', () => {
       },
       defaultSpeechModel: {
         provider: 'google',
-        model: 'gemini-3.1-flash-tts-preview',
+        model: 'gemini-3.8-flash-tts',
         voice: 'Puck',
         source: 'user'
       }
@@ -186,7 +186,7 @@ describe('SpeechSynthesisService', () => {
     const result = await service.synthesize({ text: 'Read this.' });
 
     expect(requestUrlMock).toHaveBeenCalledWith({
-      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent',
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent',
       method: 'POST',
       headers: {
         'x-goog-api-key': 'google-key',
@@ -206,12 +206,12 @@ describe('SpeechSynthesisService', () => {
             },
           },
         },
-        model: 'gemini-3.1-flash-tts-preview',
+        model: 'gemini-3.8-flash-tts',
       }),
     });
     expect(result).toMatchObject({
       provider: 'google',
-      model: 'gemini-3.1-flash-tts-preview',
+      model: 'gemini-3.8-flash-tts',
       voice: 'Puck',
       mimeType: 'audio/wav',
     });

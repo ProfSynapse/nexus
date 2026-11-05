@@ -126,6 +126,27 @@ describe('GeminiImageAdapter', () => {
   });
 
   describe('validation', () => {
+    it('rejects the extreme ratios on Gemini 3 Pro, which refuses them live, and allows them elsewhere', () => {
+      const adapter = new GeminiImageAdapter({ apiKey: 'test-key' });
+      const pro = adapter.validateImageParams(baseParams({ model: 'gemini-3-pro-image', aspectRatio: AspectRatio.NARROW_1_4 }));
+      expect(pro.errors.join(' ')).toContain('does not support aspect ratio 1:4');
+      for (const model of ['gemini-nano-banana-2.1', 'gemini-3.1-flash-lite-image', 'gemini-3.1-flash-image']) {
+        expect(adapter.validateImageParams(baseParams({ model, aspectRatio: AspectRatio.ULTRA_WIDE_8_1 })).isValid).toBe(true);
+      }
+    });
+
+    it('reports numberOfImages as ignored instead of implying it worked', () => {
+      const result = new GeminiImageAdapter({ apiKey: 'test-key' }).validateImageParams(baseParams({ numberOfImages: 4 }));
+      expect(result.isValid).toBe(true);
+      expect(result.warnings?.join(' ')).toMatch(/numberOfImages 4 ignored/);
+    });
+
+    it.each(['svg', 'gif'] as const)('rejects %s output instead of billing for a raster image', outputFormat => {
+      const result = new GeminiImageAdapter({ apiKey: 'test-key' }).validateImageParams(baseParams({ outputFormat }));
+      expect(result.isValid).toBe(false);
+      expect(result.errors.join(' ')).toMatch(/cannot produce/);
+    });
+
     const adapter = new GeminiImageAdapter({ apiKey: 'g-test' });
 
     it('fills in the default model', () => {

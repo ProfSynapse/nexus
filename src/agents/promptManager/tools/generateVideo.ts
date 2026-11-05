@@ -5,7 +5,9 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { labelNamed, verbs } from '../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
-import type { VideoAspectRatio, VideoProvider, VideoResolution } from '../../../services/llm/types/VideoTypes';
+import type { VideoAspectRatio, VideoModelDeclaration, VideoProvider, VideoResolution } from '../../../services/llm/types/VideoTypes';
+import { listConfiguredVideoModels } from '../../../services/llm/types/VideoTypes';
+import { describeModelsByProvider, groupModels } from '../../../services/llm/mediaModelText';
 import { VideoGenerationService } from '../../../services/video/VideoGenerationService';
 import { VideoGenerationTimeoutError } from '../../../services/video/VideoGenerationTypes';
 import { ArtifactJobStore } from '../../../services/artifacts/ArtifactJobStore';
@@ -26,8 +28,33 @@ export interface GenerateVideoParams extends CommonParameters {
   timeoutMs?: number;
 }
 
+const ASPECT_RATIO_ORDER: VideoAspectRatio[] = ['16:9', '9:16', '1:1'];
+const RESOLUTION_ORDER: VideoResolution[] = ['360p', '720p', '1080p', '2k', '4k'];
+
+/** "3-10" for a run of whole seconds, otherwise "4, 6, 8". */
+function formatDurations(durations: number[]): string {
+  const sorted = [...durations].sort((a, b) => a - b);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  return sorted.length > 2 && last - first === sorted.length - 1 ? `${first}-${last}` : sorted.join(', ');
+}
+
+/**
+ * The one-line description an agent sees before it asks for the full schema.
+ * Written only from the models a provider with a key can serve.
+ */
+export function buildGenerateVideoDescription(settings: LLMProviderSettings | null | undefined): string {
+  const models = listConfiguredVideoModels(settings);
+  const direct = models.filter(model => model.provider === 'google').map(model => `Google ${model.name}`);
+  const sources = [...direct, ...(models.some(model => model.provider === 'openrouter') ? ['OpenRouter video models'] : [])];
+  const reference = models.some(model => model.supportsReferenceImage) ? ', optionally guided by a reference image,' : '';
+  const using = sources.length > 0 ? ` using ${sources.join(' or ')}` : '';
+  return `Generate MP4 video files in the vault from a text prompt${reference}${using}.`;
+}
+
 export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResult> {
   private videoService: VideoGenerationService;
+  private readonly llmSettings: LLMProviderSettings | null;
   private jobStore: ArtifactJobStore;
 
   constructor(dependencies: {
@@ -39,10 +66,11 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
     super(
       'generateVideo',
       'Generate Video',
-      'Generate MP4 video files in the vault from a text prompt, optionally guided by a reference image, using Google Gemini Omni Flash or OpenRouter video models.',
+      buildGenerateVideoDescription(dependencies.llmSettings),
       '1.0.0'
     );
 
+    this.llmSettings = dependencies.llmSettings;
     this.videoService = new VideoGenerationService(dependencies.app, dependencies.vault, {
       llmSettings: dependencies.llmSettings,
     });
@@ -116,7 +144,69 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
     return labelNamed(verbs('Generating video', 'Generated video', 'Failed to generate video'), params, tense, ['prompt']);
   }
 
+  /** Options that vary by model, each shown only when a configured model takes it. */
+  private buildCapabilityProperties(models: VideoModelDeclaration[]): Record<string, unknown> {
+    const properties: Record<string, unknown> = {};
+    if (models.length === 0) return properties;
+
+    properties.aspectRatio = {
+      type: 'string',
+      enum: ASPECT_RATIO_ORDER.filter(ratio => models.some(model => model.aspectRatios.includes(ratio))),
+      description: `Optional output aspect ratio. Defaults to Video generation settings or model default. Supported per model: ${groupModels(models, model => model.aspectRatios.join(', '))}`,
+    };
+    properties.resolution = {
+      type: 'string',
+      enum: RESOLUTION_ORDER.filter(resolution => models.some(model => model.resolutions.includes(resolution))),
+      description: `Optional output resolution. Defaults to Video generation settings or model default. Supported per model: ${groupModels(models, model => model.resolutions.join(', '))}`,
+    };
+
+    const withDurations = models.filter(model => model.durations?.length);
+    properties.seconds = {
+      type: 'number',
+      description: `Optional clip duration in seconds. Supported per model: ${groupModels(withDurations, model => `${formatDurations(model.durations ?? [])}s`)}`,
+    };
+
+    const withReference = models.filter(model => model.supportsReferenceImage);
+    if (withReference.length > 0) {
+      properties.referenceImage = {
+        type: 'string',
+        description: `Optional vault-relative image path to guide image-to-video or reference-to-video generation. Only on ${describeModelsByProvider(withReference)}`,
+      };
+    }
+
+    const withAudio = models.filter(model => model.supportsAudioPrompting && !model.audioAlwaysOn);
+    const alwaysAudio = models.filter(model => model.audioAlwaysOn);
+    if (withAudio.length > 0 || alwaysAudio.length > 0) {
+      const notes = [
+        ...(withAudio.length > 0 ? [`Can be set on ${describeModelsByProvider(withAudio)}.`] : []),
+        ...(alwaysAudio.length > 0 ? [`Always on, and false is rejected, on ${describeModelsByProvider(alwaysAudio)}.`] : []),
+      ];
+      properties.generateAudio = {
+        type: 'boolean',
+        description: `Whether to ask the provider to generate audio. ${notes.join(' ')}`,
+      };
+    }
+
+    const nativeNegative = models.filter(model => model.negativePrompt === 'native');
+    const appendedNegative = models.filter(model => model.negativePrompt === 'appended');
+    if (nativeNegative.length > 0 || appendedNegative.length > 0) {
+      const notes = [
+        ...(nativeNegative.length > 0 ? [`Sent to ${describeModelsByProvider(nativeNegative)}.`] : []),
+        ...(appendedNegative.length > 0 ? [`Added to the prompt as "Do not include: ..." on ${describeModelsByProvider(appendedNegative)}.`] : []),
+      ];
+      properties.negativePrompt = {
+        type: 'string',
+        description: `Optional things to leave out. Other models reject it. ${notes.join(' ')}`,
+      };
+    }
+
+    return properties;
+  }
+
   getParameterSchema(): JSONSchema {
+    const models = listConfiguredVideoModels(this.llmSettings);
+    const providers = Array.from(new Set(models.map(model => model.provider)));
+
     return this.getMergedSchema({
       type: 'object',
       properties: {
@@ -126,12 +216,13 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
         },
         provider: {
           type: 'string',
-          enum: ['google', 'openrouter'],
+          ...(providers.length > 0 ? { enum: providers } : {}),
           description: 'Optional video provider. Defaults to Video generation settings.',
         },
         model: {
           type: 'string',
-          description: 'Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Google: gemini-omni-1.1-flash (retired Veo 3.1 preview ids are mapped to it). OpenRouter: e.g. google/veo-3.1-fast, google/veo-3.1.',
+          ...(models.length > 0 ? { enum: Array.from(new Set(models.map(model => model.id))) } : {}),
+          description: `Optional video model ID. Defaults to Video generation settings or the first available model for the provider. Available: ${describeModelsByProvider(models)}`,
         },
         outputPath: {
           type: 'string',
@@ -141,32 +232,7 @@ export class GenerateVideoTool extends BaseTool<GenerateVideoParams, CommonResul
           type: 'boolean',
           description: 'If true, replace an existing file at outputPath. Default: false.',
         },
-        aspectRatio: {
-          type: 'string',
-          enum: ['16:9', '9:16', '1:1'],
-          description: 'Optional output aspect ratio. Defaults to Video generation settings or model default.',
-        },
-        resolution: {
-          type: 'string',
-          enum: ['360p', '720p', '1080p', '4k'],
-          description: 'Optional output resolution. Defaults to Video generation settings or model default. 360p is Google Gemini Omni Flash only.',
-        },
-        seconds: {
-          type: 'number',
-          description: 'Optional clip duration in seconds. Provider/model support varies; Google Gemini Omni Flash accepts whole seconds from 3 to 10.',
-        },
-        referenceImage: {
-          type: 'string',
-          description: 'Optional vault-relative image path to guide image-to-video or reference-to-video generation.',
-        },
-        generateAudio: {
-          type: 'boolean',
-          description: 'Whether to ask the provider to generate audio when the selected model supports it. Google Gemini Omni Flash always generates audio and rejects false.',
-        },
-        negativePrompt: {
-          type: 'string',
-          description: 'Optional negative prompt for providers/models that support it. Google Gemini Omni Flash has no negative prompt, so it is appended to the prompt as "Do not include: ...".',
-        },
+        ...this.buildCapabilityProperties(models),
         pollIntervalMs: {
           type: 'number',
           description: 'Optional polling interval for asynchronous jobs. Default: 10000.',

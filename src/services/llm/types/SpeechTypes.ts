@@ -5,6 +5,8 @@
  * provider may support only one of those capabilities.
  */
 
+import type { AppsSettings } from '../../../types/apps/AppTypes';
+import { getRetiredSpeechModel } from './RetiredMediaModels';
 import type {
   DefaultSpeechModelSettings,
   LLMProviderSettings,
@@ -37,6 +39,8 @@ export interface SpeechModelDeclaration {
   responseFormats: SpeechResponseFormat[];
   maxInputTokens?: number;
   maxInputChars?: number;
+  /** Still works, so saved settings keep running, but agents are not offered it. */
+  deprecated?: boolean;
 }
 
 export interface SpeechProviderAvailability {
@@ -81,6 +85,11 @@ const OPENAI_VOICES: SpeechVoiceDeclaration[] = [
   { id: 'marin', name: 'Marin' },
   { id: 'cedar', name: 'Cedar' }
 ];
+
+// tts-1 and tts-1-hd reject ballad, verse, marin and cedar with a 400 (live, 2026-11-05).
+const OPENAI_TTS1_VOICES: SpeechVoiceDeclaration[] = OPENAI_VOICES.filter(
+  voice => !['ballad', 'verse', 'marin', 'cedar'].includes(voice.id)
+);
 
 const GOOGLE_TTS_VOICES: SpeechVoiceDeclaration[] = [
   { id: 'Zephyr', name: 'Zephyr', description: 'Bright' },
@@ -128,10 +137,25 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsSpeed: false,
     responseFormats: ['mp3']
   },
+  // https://elevenlabs.io/docs/overview/models. Multilingual v2 stays first so a
+  // setup with no chosen model keeps the same voice engine.
   {
     provider: 'elevenlabs',
-    id: 'eleven_turbo_v2_5',
-    name: 'Eleven Turbo v2.5',
+    id: 'eleven_v4',
+    name: 'Eleven v4',
+    execution: 'speech-api',
+    defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['mp3'],
+    maxInputChars: 10000
+  },
+  {
+    provider: 'elevenlabs',
+    id: 'eleven_v4_turbo',
+    name: 'Eleven v4 Turbo',
     execution: 'speech-api',
     defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
     supportsDynamicVoices: true,
@@ -139,6 +163,57 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsInstructions: true,
     supportsSpeed: false,
     responseFormats: ['mp3']
+  },
+  {
+    provider: 'elevenlabs',
+    id: 'eleven_v3',
+    name: 'Eleven v3',
+    execution: 'speech-api',
+    defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['mp3'],
+    maxInputChars: 5000
+  },
+  {
+    provider: 'elevenlabs',
+    id: 'eleven_v3_conversational',
+    name: 'Eleven v3 Conversational',
+    execution: 'speech-api',
+    defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['mp3']
+  },
+  {
+    provider: 'elevenlabs',
+    id: 'eleven_flash_v2_5',
+    name: 'Eleven Flash v2.5',
+    execution: 'speech-api',
+    defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['mp3'],
+    maxInputChars: 40000
+  },
+  {
+    provider: 'elevenlabs',
+    id: 'eleven_turbo_v2_5',
+    name: 'Eleven Turbo v2.5 (deprecated)',
+    execution: 'speech-api',
+    defaultVoice: 'EXAVITQu4vr4xnSDxMaL',
+    supportsDynamicVoices: true,
+    supportsStreaming: true,
+    supportsInstructions: true,
+    supportsSpeed: false,
+    responseFormats: ['mp3'],
+    deprecated: true
   },
   {
     provider: 'openai',
@@ -159,7 +234,7 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     name: 'TTS 1',
     execution: 'speech-api',
     defaultVoice: 'alloy',
-    voices: OPENAI_VOICES,
+    voices: OPENAI_TTS1_VOICES,
     supportsStreaming: false,
     supportsInstructions: false,
     supportsSpeed: true,
@@ -171,16 +246,17 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     name: 'TTS 1 HD',
     execution: 'speech-api',
     defaultVoice: 'alloy',
-    voices: OPENAI_VOICES,
+    voices: OPENAI_TTS1_VOICES,
     supportsStreaming: false,
     supportsInstructions: false,
     supportsSpeed: true,
     responseFormats: ['mp3', 'wav', 'pcm']
   },
+  // Google's named successors for the TTS previews that shut down 2026-11-17.
   {
     provider: 'google',
-    id: 'gemini-3.1-flash-tts-preview',
-    name: 'Gemini 3.1 Flash TTS Preview',
+    id: 'gemini-3.8-flash-tts',
+    name: 'Gemini 3.8 Flash TTS',
     execution: 'speech-api',
     defaultVoice: 'Kore',
     voices: GOOGLE_TTS_VOICES,
@@ -192,21 +268,8 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
   },
   {
     provider: 'google',
-    id: 'gemini-2.5-flash-preview-tts',
-    name: 'Gemini 2.5 Flash Preview TTS',
-    execution: 'speech-api',
-    defaultVoice: 'Kore',
-    voices: GOOGLE_TTS_VOICES,
-    supportsStreaming: false,
-    supportsInstructions: true,
-    supportsSpeed: false,
-    responseFormats: ['wav', 'pcm'],
-    maxInputTokens: 8192
-  },
-  {
-    provider: 'google',
-    id: 'gemini-2.5-pro-preview-tts',
-    name: 'Gemini 2.5 Pro Preview TTS',
+    id: 'gemini-3.8-flash-lite-tts',
+    name: 'Gemini 3.8 Flash-Lite TTS',
     execution: 'speech-api',
     defaultVoice: 'Kore',
     voices: GOOGLE_TTS_VOICES,
@@ -227,15 +290,17 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsSpeed: false,
     responseFormats: ['mp3', 'wav', 'pcm']
   },
+  // Fallback list; the live speech listing replaces it once a key is present.
+  // First on purpose: a setup with no chosen model needs a voice known to fit.
   {
     provider: 'openrouter',
-    id: 'openai/gpt-4o-mini-tts-2025-12-15',
-    name: 'GPT-4o mini TTS via OpenRouter',
+    id: 'deepgram/aura-2',
+    name: 'Deepgram Aura-2 via OpenRouter',
     execution: 'speech-api',
-    defaultVoice: 'alloy',
-    voices: OPENAI_VOICES,
+    defaultVoice: 'aura-2-thalia-en',
+    supportsDynamicVoices: true,
     supportsStreaming: true,
-    supportsInstructions: true,
+    supportsInstructions: false,
     supportsSpeed: true,
     responseFormats: ['mp3', 'pcm']
   },
@@ -262,18 +327,6 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsSpeed: true,
     responseFormats: ['mp3', 'pcm']
   },
-  {
-    provider: 'openrouter',
-    id: 'deepgram/aura-2',
-    name: 'Deepgram Aura-2 via OpenRouter',
-    execution: 'speech-api',
-    defaultVoice: 'aura-2-thalia-en',
-    supportsDynamicVoices: true,
-    supportsStreaming: true,
-    supportsInstructions: false,
-    supportsSpeed: true,
-    responseFormats: ['mp3', 'pcm']
-  }
 ];
 
 export const SPEECH_PROVIDER_PRIORITY: SpeechProvider[] = [
@@ -283,6 +336,35 @@ export const SPEECH_PROVIDER_PRIORITY: SpeechProvider[] = [
   'mistral',
   'openrouter'
 ];
+
+/**
+ * The file type each provider's adapter returns. An output path has to match it,
+ * and checking before synthesis means a wrong path is not paid for.
+ */
+export const SPEECH_OUTPUT_EXTENSION: Readonly<Record<SpeechProvider, 'mp3' | 'wav'>> = {
+  elevenlabs: 'mp3',
+  openai: 'mp3',
+  google: 'wav',
+  mistral: 'mp3',
+  openrouter: 'mp3'
+};
+
+/** ElevenLabs is an app, so its key lives in the Apps settings. */
+export function getSpeechAppCapabilityStates(appsSettings: AppsSettings | null | undefined): SpeechAppCapabilityStates {
+  const elevenLabs = appsSettings?.apps?.elevenlabs;
+  return elevenLabs
+    ? { elevenlabs: { enabled: elevenLabs.enabled, configured: !!elevenLabs.credentials?.apiKey?.trim() } }
+    : {};
+}
+
+/** Providers a request can use right now: a key is set and the provider is on. */
+export function listConfiguredSpeechProviders(
+  settings: LLMProviderSettings | null | undefined,
+  appsSettings?: AppsSettings | null
+): SpeechProviderAvailability[] {
+  return buildSpeechProviderAvailability(settings ?? null, getSpeechAppCapabilityStates(appsSettings))
+    .filter(provider => provider.enabled && provider.configured);
+}
 
 export function getSpeechProviders(): SpeechProvider[] {
   return Array.from(new Set(SPEECH_MODELS.map(model => model.provider)));
@@ -348,7 +430,7 @@ function resolveUserSpeechSelection(
   availability: SpeechProviderAvailability[]
 ): ResolvedSpeechSelection {
   const provider = configuredDefault?.provider as SpeechProvider | undefined;
-  const model = configuredDefault?.model;
+  const model = getRetiredSpeechModel(provider, configuredDefault?.model)?.replacement ?? configuredDefault?.model;
   const voice = configuredDefault?.voice;
 
   if (!provider || !model) {
