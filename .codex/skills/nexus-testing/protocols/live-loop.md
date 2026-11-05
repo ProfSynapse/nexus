@@ -209,6 +209,23 @@ Obsidian (the headless container) to turn a skip into a failure.
      `SQLiteCacheManager.initialize` and `SQLitePersistenceService.saveDatabase`
      already use around `console.warn`/`console.log`: same problem, same fix.
 
+   **Testing provider setups without writing keys to disk.** `plugin.settings.adoptSettings(next)`
+   is the path a synced settings file takes, so it fires the real change events
+   without saving. Read the keys from outside the vault, then compare `data.json`
+   afterward. Two traps: it compares against current settings, and `AppManager`
+   shares its config object with `settings.apps`, so an app you just installed
+   looks unchanged and no event fires unless you first set `settings.apps` to its
+   earlier value. The app manager comes from
+   `getService('agentRegistrationService').getAppManager()`; there is no
+   `appManager` service.
+
+   Dry-run a paid or keyed script with a fake key first. A 401 from every call
+   proves the setup reached the provider, for free. Delete a supplied key only
+   after the real run has finished, not when the script stops.
+
+   A vault with its own sync script may belong to another worktree. Back up its
+   plugin folder before deploying, and restore it when done.
+
 6. **Observe. Assert on logs and DOM; screenshots are for humans.**
 
    ```bash

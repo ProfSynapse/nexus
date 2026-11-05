@@ -288,7 +288,7 @@ describe('DeepgramTranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('Deepgram transcription failed: HTTP 401');
+      ).rejects.toThrow('Deepgram did not accept the API key');
     });
   });
 });

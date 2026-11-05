@@ -9,9 +9,9 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { requestUrl } from 'obsidian';
 import { verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { ProviderHttpClient } from '../../../../services/llm/adapters/shared/ProviderHttpClient';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -82,7 +82,9 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
     }
 
     try {
-      const response = await requestUrl({
+      const response = await ProviderHttpClient.requestOk({
+        provider: 'elevenlabs',
+        operation: 'voice listing',
         url: 'https://api.elevenlabs.io/v1/voices',
         method: 'GET',
         headers: {
@@ -90,12 +92,7 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
         },
       });
 
-      if (response.status !== 200) {
-        return this.prepareResult(false, undefined,
-          `ElevenLabs API error (${response.status}): ${typeof response.text === 'string' ? response.text : 'Unknown error'}`);
-      }
-
-      const responseData = getRecord(response.json as unknown);
+      const responseData = getRecord(response.json);
       const rawVoices = Array.isArray(responseData?.voices) ? responseData.voices : [];
       let voices: VoiceInfo[] = rawVoices.map((voice): VoiceInfo => {
         const voiceRecord = getRecord(voice);

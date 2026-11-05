@@ -95,7 +95,7 @@ describe('AssemblyAITranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('AssemblyAI upload failed: HTTP 500');
+      ).rejects.toThrow('AssemblyAI had a server error');
     });
 
     it('throws when upload does not return upload_url', async () => {
@@ -170,7 +170,7 @@ describe('AssemblyAITranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('AssemblyAI transcript submit failed: HTTP 400');
+      ).rejects.toThrow('AssemblyAI rejected the request');
     });
   });
 
@@ -229,7 +229,7 @@ describe('AssemblyAITranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('AssemblyAI transcript poll failed: HTTP 503');
+      ).rejects.toThrow('AssemblyAI is overloaded');
     });
   });
 

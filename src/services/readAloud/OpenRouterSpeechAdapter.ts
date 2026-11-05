@@ -1,10 +1,12 @@
-import { requestUrl } from 'obsidian';
 import type { SpeechProvider } from '../llm/types/SpeechTypes';
 import type {
   ResolvedSpeechSynthesisRequest,
   SpeechAdapter,
   SpeechSynthesisResult
 } from './SpeechSynthesisTypes';
+import { ProviderHttpClient, ProviderHttpError } from '../llm/adapters/shared/ProviderHttpClient';
+import { getSpeechOutputExtension } from '../llm/types/SpeechTypes';
+import { wrapPcmAsWav } from './pcmToWav';
 
 export interface OpenRouterSpeechAdapterConfig {
   apiKey: string;
@@ -25,33 +27,50 @@ export class OpenRouterSpeechAdapter implements SpeechAdapter {
       throw new Error(`OpenRouter speech adapter cannot synthesize provider "${request.provider}".`);
     }
 
-    const response = await requestUrl({
-      url: this.endpoint,
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
-      },
-      body: JSON.stringify({
-        model: request.model,
-        input: request.text,
-        voice: request.voice,
-        response_format: 'mp3',
-      }),
+    const wantsPcm = getSpeechOutputExtension(this.provider, request.model) === 'wav';
+    const response = await this.send(request, wantsPcm ? 'pcm' : 'mp3').catch(async (error: unknown) => {
+      // A model the catalog has not met yet may be PCM only, as Gemini and HeyGen are.
+      if (!wantsPcm && error instanceof ProviderHttpError && /response_format/i.test(error.technicalMessage)) {
+        return this.send(request, 'pcm');
+      }
+      throw error;
     });
 
-    if (response.status !== 200) {
-      const errorText = typeof response.text === 'string' ? response.text : 'Unknown error';
-      throw new Error(`OpenRouter speech failed: HTTP ${response.status}: ${errorText}`);
-    }
+    const contentType = response.headers['content-type'] ?? response.headers['Content-Type'] ?? '';
+    const isPcm = /audio\/(?:pcm|l16)/i.test(contentType);
+    const audioData = isPcm
+      ? wrapPcmAsWav(response.arrayBuffer, Number(/rate=(\d+)/i.exec(contentType)?.[1]) || undefined, Number(/channels=(\d+)/i.exec(contentType)?.[1]) || undefined)
+      : response.arrayBuffer;
 
     return {
       provider: this.provider,
       model: request.model,
       voice: request.voice,
-      audioData: response.arrayBuffer,
-      mimeType: 'audio/mpeg',
+      audioData,
+      mimeType: isPcm ? 'audio/wav' : 'audio/mpeg',
     };
+  }
+
+  private send(request: ResolvedSpeechSynthesisRequest, format: 'mp3' | 'pcm') {
+    return ProviderHttpClient.requestOk({
+      provider: this.provider,
+      operation: 'speech generation',
+      timeoutMs: 300_000,
+      responseType: 'binary',
+      url: this.endpoint,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.config.apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: format === 'mp3' ? 'audio/mpeg' : 'audio/pcm',
+      },
+      body: JSON.stringify({
+        model: request.model,
+        input: request.text,
+        // Some models, such as Fish Audio's, take no voice at all.
+        ...(request.voice ? { voice: request.voice } : {}),
+        response_format: format,
+      }),
+    });
   }
 }

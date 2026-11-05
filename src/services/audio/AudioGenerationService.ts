@@ -4,7 +4,7 @@ import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import { tryResolveVaultPath } from '../../core/vaultPath';
 import { SpeechSynthesisService } from '../readAloud/SpeechSynthesisService';
 import type { SpeechSynthesisRequest } from '../readAloud/SpeechSynthesisTypes';
-import { SPEECH_OUTPUT_EXTENSION, type SpeechProvider } from '../llm/types/SpeechTypes';
+import { getSpeechOutputExtension, type SpeechProvider } from '../llm/types/SpeechTypes';
 
 export type AudioGenerationMode = 'voice';
 
@@ -129,16 +129,17 @@ export class AudioGenerationService {
    */
   private assertExtensionMatchesProvider(outputPath: string, request: SpeechSynthesisRequest): void {
     let provider: SpeechProvider;
+    let model: string;
     try {
-      provider = this.speechService.resolveRequest(request).provider;
+      ({ provider, model } = this.speechService.resolveRequest(request));
     } catch {
       return;
     }
 
-    const expected = SPEECH_OUTPUT_EXTENSION[provider];
+    const expected = getSpeechOutputExtension(provider, model);
     const actual = this.extensionOf(outputPath);
     if (actual !== expected) {
-      throw new Error(`outputPath extension ".${actual}" does not match what ${provider} returns: use ".${expected}".`);
+      throw new Error(`outputPath extension ".${actual}" does not match what ${model} on ${provider} returns: use ".${expected}".`);
     }
   }
 

@@ -23,6 +23,7 @@ import {
   loadReferenceImage,
   sleep,
 } from './videoAdapterUtils';
+import { ProviderHttpClient } from '../../llm/adapters/shared/ProviderHttpClient';
 
 export interface OpenRouterVideoAdapterConfig {
   apiKey: string;
@@ -244,16 +245,16 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
       ];
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'openrouter',
+      operation: 'video submission',
+      timeoutMs: 120_000,
       url: `${this.baseUrl}/videos`,
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(body),
     });
 
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`OpenRouter video generation failed: HTTP ${response.status}: ${response.text || 'Unknown error'}`);
-    }
 
     return this.asJob(response.json);
   }
@@ -265,15 +266,14 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
     // other host is fetched without the credential (SEC-M2). Mirrors the
     // allowlist used by downloadVideo below.
     const shouldAuthorize = this.isOpenRouterUrl(url);
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'openrouter',
+      operation: 'video polling',
       url,
       method: 'GET',
       headers: shouldAuthorize ? this.getHeaders() : undefined,
     });
 
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`OpenRouter video polling failed: HTTP ${response.status}: ${response.text || 'Unknown error'}`);
-    }
 
     return this.asJob(response.json);
   }
@@ -284,15 +284,16 @@ export class OpenRouterVideoAdapter implements VideoGenerationAdapter {
     // Attach the key only for OpenRouter API endpoints; when no unsigned_url was
     // returned the fallback URL is always OpenRouter-hosted, so authorize it too.
     const shouldAuthorize = !unsignedUrl || this.isOpenRouterUrl(url);
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'openrouter',
+      operation: 'video download',
+      timeoutMs: 300_000,
+      responseType: 'binary',
       url,
       method: 'GET',
       headers: shouldAuthorize ? this.getHeaders() : undefined,
     });
 
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`OpenRouter video download failed: HTTP ${response.status}: ${response.text || 'Unknown error'}`);
-    }
 
     return response.arrayBuffer;
   }

@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import {
   getSpeechModel,
   type SpeechProvider,
@@ -8,6 +7,7 @@ import type {
   SpeechAdapter,
   SpeechSynthesisResult
 } from './SpeechSynthesisTypes';
+import { ProviderHttpClient } from '../llm/adapters/shared/ProviderHttpClient';
 
 export interface OpenAISpeechAdapterConfig {
   apiKey: string;
@@ -33,7 +33,11 @@ export class OpenAISpeechAdapter implements SpeechAdapter {
       throw new Error(`Unsupported OpenAI speech model "${request.model}".`);
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'openai',
+      operation: 'speech generation',
+      timeoutMs: 300_000,
+      responseType: 'binary',
       url: this.endpoint,
       method: 'POST',
       headers: {
@@ -48,11 +52,6 @@ export class OpenAISpeechAdapter implements SpeechAdapter {
         response_format: 'mp3',
       }),
     });
-
-    if (response.status !== 200) {
-      const errorText = typeof response.text === 'string' ? response.text : 'Unknown error';
-      throw new Error(`OpenAI speech failed: HTTP ${response.status}: ${errorText}`);
-    }
 
     return {
       provider: this.provider,

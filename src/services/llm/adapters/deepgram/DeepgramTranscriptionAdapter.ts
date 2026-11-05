@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import { BaseTranscriptionAdapter } from '../BaseTranscriptionAdapter';
 import type {
   AudioChunk,
@@ -7,6 +6,7 @@ import type {
   TranscriptionSegment,
   TranscriptionWord
 } from '../../types/VoiceTypes';
+import { ProviderHttpClient } from '../shared/ProviderHttpClient';
 
 export class DeepgramTranscriptionAdapter extends BaseTranscriptionAdapter {
   readonly provider: TranscriptionProvider = 'deepgram';
@@ -26,7 +26,10 @@ export class DeepgramTranscriptionAdapter extends BaseTranscriptionAdapter {
       url.searchParams.set('diarize', 'true');
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'deepgram',
+      operation: 'transcription',
+      timeoutMs: 600_000,
       url: url.toString(),
       method: 'POST',
       headers: {
@@ -36,11 +39,7 @@ export class DeepgramTranscriptionAdapter extends BaseTranscriptionAdapter {
       body: chunk.data
     });
 
-    if (response.status !== 200) {
-      throw new Error(`Deepgram transcription failed: HTTP ${response.status}`);
-    }
-
-    return this.parseResponse(response.json as unknown, chunk.durationSeconds);
+    return this.parseResponse(response.json, chunk.durationSeconds);
   }
 
   private parseResponse(data: unknown, chunkDurationSeconds: number): TranscriptionSegment[] {

@@ -124,6 +124,72 @@ const GOOGLE_TTS_VOICES: SpeechVoiceDeclaration[] = [
   { id: 'Sulafat', name: 'Sulafat', description: 'Warm' },
 ];
 
+// tts-1 style voices do not exist across these models, so each row names a voice from
+// its own supported_voices (Fish Audio and Seed Audio take none). Sent one request per
+// model on 2026-11-05. Rows with no mp3 answered only in PCM, wrapped as WAV.
+// First on purpose: a setup with no chosen model needs a voice known to fit.
+const OPENROUTER_ELEVENLABS_VOICES: SpeechVoiceDeclaration[] = [
+  'george', 'sarah', 'adam', 'alice', 'bella', 'bill', 'brian', 'callum', 'charlie', 'chris', 'daniel',
+  'eric', 'harry', 'jessica', 'laura', 'liam', 'lily', 'matilda', 'river', 'roger', 'will'
+].map(id => ({ id, name: id.charAt(0).toUpperCase() + id.slice(1) }));
+
+const OPENROUTER_SPEECH_ROWS: ReadonlyArray<readonly [id: string, name: string, defaultVoice: string | undefined]> = [
+  ['deepgram/aura-2', 'Aura-2 via OpenRouter', 'aura-2-thalia-en'],
+  ['assemblyai/assemblyai-tts-1', 'TTS 1 via OpenRouter', 'aai-antonioluis'],
+  ['bytedance-seed/seed-audio-1-0', 'Seed Audio 1.0 via OpenRouter', undefined],
+  ['canopylabs/orpheus-3b-0.1-ft', 'Orpheus 3B via OpenRouter', 'tara'],
+  ['deepgram/flux-tts', 'Flux TTS via OpenRouter', 'flux-alexis-en'],
+  ['elevenlabs/eleven-flash-v2.5', 'Eleven Flash v2.5 via OpenRouter', 'sarah'],
+  ['elevenlabs/eleven-multilingual-v2', 'Eleven Multilingual v2 via OpenRouter', 'sarah'],
+  ['elevenlabs/eleven-v3', 'Eleven v3 via OpenRouter', 'sarah'],
+  ['elevenlabs/eleven-v3-conversational', 'Eleven v3 Conversational via OpenRouter', 'sarah'],
+  ['elevenlabs/eleven-v4', 'Eleven v4 via OpenRouter', 'sarah'],
+  ['elevenlabs/eleven-v4-turbo', 'Eleven v4 Turbo via OpenRouter', 'sarah'],
+  ['fish-audio/drama-3', 'Drama 3 via OpenRouter', undefined],
+  ['fish-audio/s1', 'S1 via OpenRouter', undefined],
+  ['fish-audio/s2-pro', 'S2 Pro via OpenRouter', undefined],
+  ['fish-audio/s2.1-pro', 'S2.1 Pro via OpenRouter', undefined],
+  ['fish-audio/s2.1-pro-free:free', 'S2.1 Pro Free (free) via OpenRouter', undefined],
+  ['google/gemini-3.8-flash-lite-tts', 'Gemini 3.8 Flash Lite TTS via OpenRouter', 'Kore'],
+  ['google/gemini-3.8-flash-tts', 'Gemini 3.8 Flash TTS via OpenRouter', 'Kore'],
+  ['hexgrad/kokoro-82m', 'Kokoro 82M via OpenRouter', 'af_alloy'],
+  ['heygen/heygen-voice-1', 'HeyGen Voice via OpenRouter', 'nadine'],
+  ['heygen/heygen-voice-1-turbo', 'HeyGen Voice Turbo via OpenRouter', 'nadine'],
+  ['microsoft/mai-voice-2.1', 'MAI-Voice-2.1 via OpenRouter', 'en-US-Harper:MAI-Voice-2.1'],
+  ['microsoft/mai-voice-2.1-flash', 'MAI-Voice-2.1-Flash via OpenRouter', 'en-US-Harper:MAI-Voice-2.1-Flash'],
+  ['minimax/speech-2.8-hd', 'Speech 2.8 HD via OpenRouter', 'English_expressive_narrator'],
+  ['minimax/speech-2.8-turbo', 'Speech 2.8 Turbo via OpenRouter', 'English_expressive_narrator'],
+  ['mistralai/voxtral-mini-tts-2603', 'Voxtral Mini TTS via OpenRouter', 'en_paul_neutral'],
+  ['mistralai/voxtral-mini-tts-3-0', 'Voxtral TTS 3 via OpenRouter', 'voice_3150'],
+  ['qwen/qwen-audio-3.0-tts-flash', 'Qwen-Audio-3.0-TTS Flash via OpenRouter', 'loongjohn'],
+  ['qwen/qwen-audio-3.0-tts-plus', 'Qwen-Audio-3.0-TTS Plus via OpenRouter', 'longanlingxin'],
+  ['sesame/csm-1b', 'CSM 1B via OpenRouter', 'conversational_a'],
+  ['x-ai/grok-voice-tts-1.0', 'Grok Voice TTS 1.0 via OpenRouter', 'eve'],
+];
+
+/** Models whose PCM is the only reliable output. Voxtral 3.0 also answers MP3, sometimes with a near-empty file. */
+function isOpenRouterPcmOnly(id: string): boolean {
+  return id.startsWith('google/') || id.startsWith('heygen/') || id === 'mistralai/voxtral-mini-tts-3-0';
+}
+
+function toOpenRouterSpeechModel([id, name, defaultVoice]: readonly [string, string, string | undefined]): SpeechModelDeclaration {
+  const voices = id.startsWith('elevenlabs/') ? OPENROUTER_ELEVENLABS_VOICES
+    : id.startsWith('google/') ? GOOGLE_TTS_VOICES
+      : undefined;
+  return {
+    provider: 'openrouter',
+    id,
+    name,
+    execution: 'speech-api',
+    defaultVoice,
+    ...(voices ? { voices } : { supportsDynamicVoices: true }),
+    supportsStreaming: false,
+    supportsInstructions: false,
+    supportsSpeed: false,
+    responseFormats: isOpenRouterPcmOnly(id) ? ['pcm'] : ['mp3', 'pcm'],
+  };
+}
+
 const SPEECH_MODELS: SpeechModelDeclaration[] = [
   {
     provider: 'elevenlabs',
@@ -290,43 +356,7 @@ const SPEECH_MODELS: SpeechModelDeclaration[] = [
     supportsSpeed: false,
     responseFormats: ['mp3', 'wav', 'pcm']
   },
-  // Fallback list; the live speech listing replaces it once a key is present.
-  // First on purpose: a setup with no chosen model needs a voice known to fit.
-  {
-    provider: 'openrouter',
-    id: 'deepgram/aura-2',
-    name: 'Deepgram Aura-2 via OpenRouter',
-    execution: 'speech-api',
-    defaultVoice: 'aura-2-thalia-en',
-    supportsDynamicVoices: true,
-    supportsStreaming: true,
-    supportsInstructions: false,
-    supportsSpeed: true,
-    responseFormats: ['mp3', 'pcm']
-  },
-  {
-    provider: 'openrouter',
-    id: 'mistralai/voxtral-mini-tts-2603',
-    name: 'Voxtral Mini TTS via OpenRouter',
-    execution: 'speech-api',
-    defaultVoice: 'alloy',
-    supportsStreaming: true,
-    supportsInstructions: false,
-    supportsSpeed: false,
-    responseFormats: ['mp3', 'pcm']
-  },
-  {
-    provider: 'openrouter',
-    id: 'elevenlabs/eleven-turbo-v2',
-    name: 'Eleven Turbo v2 via OpenRouter',
-    execution: 'speech-api',
-    defaultVoice: 'alloy',
-    supportsDynamicVoices: true,
-    supportsStreaming: false,
-    supportsInstructions: false,
-    supportsSpeed: true,
-    responseFormats: ['mp3', 'pcm']
-  },
+  ...OPENROUTER_SPEECH_ROWS.map(toOpenRouterSpeechModel),
 ];
 
 export const SPEECH_PROVIDER_PRIORITY: SpeechProvider[] = [
@@ -348,6 +378,12 @@ export const SPEECH_OUTPUT_EXTENSION: Readonly<Record<SpeechProvider, 'mp3' | 'w
   mistral: 'mp3',
   openrouter: 'mp3'
 };
+
+/** The file type a model produces. PCM-only models are wrapped as WAV. */
+export function getSpeechOutputExtension(provider: SpeechProvider, model: string | undefined): 'mp3' | 'wav' {
+  const declaration = getSpeechModel(provider, model);
+  return declaration && !declaration.responseFormats.includes('mp3') ? 'wav' : SPEECH_OUTPUT_EXTENSION[provider];
+}
 
 /** ElevenLabs is an app, so its key lives in the Apps settings. */
 export function getSpeechAppCapabilityStates(appsSettings: AppsSettings | null | undefined): SpeechAppCapabilityStates {

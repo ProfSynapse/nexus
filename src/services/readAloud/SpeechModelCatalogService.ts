@@ -1,6 +1,7 @@
 import { requestUrl } from 'obsidian';
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import {
+  getSpeechModel,
   getSpeechModelsForProvider,
   type SpeechModelDeclaration,
   type SpeechProvider
@@ -72,17 +73,24 @@ export class SpeechModelCatalogService {
           return null;
         }
 
+        const known = getSpeechModel('openrouter', id);
+        const listedVoices = Array.isArray(model.supported_voices)
+          ? model.supported_voices.filter((voice): voice is string => typeof voice === 'string')
+          : [];
         return {
           provider: 'openrouter',
           id,
           name,
           execution: 'speech-api',
-          defaultVoice: getDefaultOpenRouterVoice(id),
-          supportsDynamicVoices: true,
-          supportsStreaming: true,
-          supportsInstructions: id.startsWith('openai/'),
-          supportsSpeed: id.startsWith('openai/') || id.startsWith('microsoft/'),
-          responseFormats: ['mp3', 'pcm'],
+          // A voice from another provider is a hard 400, so never guess one.
+          defaultVoice: known?.defaultVoice ?? listedVoices[0],
+          ...(listedVoices.length > 0
+            ? { voices: listedVoices.map(voice => ({ id: voice, name: voice })) }
+            : { supportsDynamicVoices: true }),
+          supportsStreaming: known?.supportsStreaming ?? false,
+          supportsInstructions: known?.supportsInstructions ?? false,
+          supportsSpeed: known?.supportsSpeed ?? false,
+          responseFormats: known?.responseFormats ?? ['mp3', 'pcm'],
         };
       })
       .filter((model): model is SpeechModelDeclaration => model !== null);
@@ -90,20 +98,4 @@ export class SpeechModelCatalogService {
     this.openRouterSpeechModelsCache = models;
     return models;
   }
-}
-
-function getDefaultOpenRouterVoice(modelId: string): string {
-  if (modelId.startsWith('deepgram/')) {
-    return 'aura-2-thalia-en';
-  }
-
-  if (modelId.startsWith('openai/')) {
-    return 'alloy';
-  }
-
-  if (modelId.startsWith('microsoft/')) {
-    return 'en-US-Harper:MAI-Voice-2';
-  }
-
-  return 'alloy';
 }

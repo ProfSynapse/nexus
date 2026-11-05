@@ -27,6 +27,8 @@ export interface ProviderHttpRequest {
   retries?: number;
   retryDelayMs?: number;
   retryOnStatuses?: number[];
+  /** A success body is media, so it is not decoded as text or JSON. Failures still are. */
+  responseType?: 'binary';
 }
 
 export interface ProviderStreamRequest {
@@ -72,6 +74,11 @@ export function providerErrorDetail(response: Pick<ErrorLikeResponse, 'json' | '
       : error;
   }
   if (typeof detail !== 'string' && 'message' in body) detail = body.message;
+  // ElevenLabs answers FastAPI style: { detail: { message } } or { detail: 'text' }.
+  if (typeof detail !== 'string' && 'detail' in body) {
+    const nested = body.detail;
+    detail = typeof nested === 'object' && nested !== null && 'message' in nested ? nested.message : nested;
+  }
   if (typeof detail !== 'string') return '';
 
   // Do not dump raw bodies (for example proxy HTML) into a user-facing error.
@@ -116,6 +123,15 @@ function enforceHttps(url: string): void {
         'HTTP is only allowed for localhost (Ollama, LM Studio).'
       );
     }
+  }
+}
+
+/** A proxy's HTML error page makes `response.json` throw, which must not hide the status. */
+function readBody<T>(read: () => T): T | undefined {
+  try {
+    return read();
+  } catch {
+    return undefined;
   }
 }
 
@@ -172,6 +188,18 @@ export class ProviderHttpClient {
       config.provider,
       'NETWORK_ERROR'
     );
+  }
+
+  /**
+   * `request` for callers that have no use for a failed response: a non-2xx throws
+   * a ProviderHttpError carrying the provider's own explanation. Use this rather
+   * than a bare requestUrl, which throws on non-2xx and discards the body, leaving
+   * only "Request failed, status 401".
+   */
+  static async requestOk<TJson = unknown>(
+    config: ProviderHttpRequest
+  ): Promise<ProviderHttpResponse<TJson>> {
+    return this.assertOk(await this.request<TJson>(config), `${config.operation} failed`, config.provider);
   }
 
   static async requestJson<TJson = unknown>(config: ProviderHttpRequest): Promise<TJson | null> {
@@ -430,12 +458,14 @@ export class ProviderHttpClient {
       throw: false,
     }, config.timeoutMs ?? 30_000, config.signal);
 
+    const ok = response.status >= 200 && response.status < 300;
+    const isMedia = ok && config.responseType === 'binary';
     return {
-      ok: response.status >= 200 && response.status < 300,
+      ok,
       status: response.status,
       headers: response.headers,
-      text: response.text,
-      json: (response.json ?? null) as TJson | null,
+      text: isMedia ? '' : readBody(() => response.text) ?? '',
+      json: isMedia ? null : (readBody<unknown>(() => response.json) ?? null) as TJson | null,
       arrayBuffer: response.arrayBuffer,
     };
   }

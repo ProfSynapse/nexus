@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import { BaseTranscriptionAdapter } from '../BaseTranscriptionAdapter';
 import type {
   AudioChunk,
@@ -8,6 +7,7 @@ import type {
 } from '../../types/VoiceTypes';
 import { buildMultipartFormData } from '../../utils/MultipartFormDataBuilder';
 import { parseWhisperResponse } from '../../utils/WhisperResponseParser';
+import { ProviderHttpClient } from '../shared/ProviderHttpClient';
 
 /**
  * Response format per model. OpenAI's transcription models no longer share one
@@ -64,7 +64,10 @@ export class OpenAITranscriptionAdapter extends BaseTranscriptionAdapter {
     }
 
     const { body, contentType } = buildMultipartFormData(fields);
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'openai',
+      operation: 'transcription',
+      timeoutMs: 600_000,
       url: this.endpoint,
       method: 'POST',
       headers: {
@@ -74,11 +77,7 @@ export class OpenAITranscriptionAdapter extends BaseTranscriptionAdapter {
       body
     });
 
-    if (response.status !== 200) {
-      throw new Error(`OpenAI transcription failed: HTTP ${response.status}`);
-    }
-
-    return parseWhisperResponse(response.json as unknown, chunk.durationSeconds, {
+    return parseWhisperResponse(response.json, chunk.durationSeconds, {
       extractSpeakers: responseFormat === 'diarized_json'
     });
   }

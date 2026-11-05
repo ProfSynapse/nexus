@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-05T12:12:42.548Z",
+  "generatedAt": "2026-11-05T13:28:21.775Z",
   "selector": "--help",
   "toolCount": 80,
   "agentCount": 14,
@@ -1735,7 +1735,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. Available: elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; openai: gpt-4o-mini-tts, tts-1, tts-1-hd; google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, mistralai/voxtral-mini-tts-2603, elevenlabs/eleven-turbo-v2. OpenRouter also takes any other speech model it lists. (string)"
+          "description": "[OPTIONAL] Optional speech model ID. Defaults to Voice settings or the provider default. Available: elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; openai: gpt-4o-mini-tts, tts-1, tts-1-hd; google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, assemblyai/assemblyai-tts-1, bytedance-seed/seed-audio-1-0, canopylabs/orpheus-3b-0.1-ft, deepgram/flux-tts, elevenlabs/eleven-flash-v2.5, elevenlabs/eleven-multilingual-v2, elevenlabs/eleven-v3, elevenlabs/eleven-v3-conversational, elevenlabs/eleven-v4, elevenlabs/eleven-v4-turbo, fish-audio/drama-3, fish-audio/s1, fish-audio/s2-pro, fish-audio/s2.1-pro, fish-audio/s2.1-pro-free:free, google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, hexgrad/kokoro-82m, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, microsoft/mai-voice-2.1, microsoft/mai-voice-2.1-flash, minimax/speech-2.8-hd, minimax/speech-2.8-turbo, mistralai/voxtral-mini-tts-2603, mistralai/voxtral-mini-tts-3-0, qwen/qwen-audio-3.0-tts-flash, qwen/qwen-audio-3.0-tts-plus, sesame/csm-1b, x-ai/grok-voice-tts-1.0. OpenRouter also takes any other speech model it lists. (string)"
         },
         {
           "name": "voice",
@@ -1743,7 +1743,7 @@
           "type": "string",
           "required": false,
           "positional": false,
-          "description": "[OPTIONAL] Optional voice. Defaults to Voice settings or the model default. Accepted: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar on openai: gpt-4o-mini-tts; alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer on openai: tts-1, tts-1-hd; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts. Use a voice ID from the provider on elevenlabs: eleven_multilingual_v2, eleven_v4, eleven_v4_turbo, eleven_v3, eleven_v3_conversational, eleven_flash_v2_5; mistral: voxtral-mini-tts-2603; openrouter: deepgram/aura-2, mistralai/voxtral-mini-tts-2603, elevenlabs/eleven-turbo-v2. ElevenLabs voice IDs come from its listVoices tool. (string)"
+          "description": "[OPTIONAL] Optional voice. Each model has a working default, so omit this unless a specific voice is wanted. A voice from one model usually fails on another. Accepted: alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse, marin, cedar on openai: gpt-4o-mini-tts; alloy, ash, coral, echo, fable, nova, onyx, sage, shimmer on openai: tts-1, tts-1-hd; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on google: gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts; george, sarah, adam, alice, bella, bill, brian, callum, charlie, chris, daniel, eric, harry, jessica, laura, liam, lily, matilda, river, roger, will on openrouter: elevenlabs/eleven-flash-v2.5, elevenlabs/eleven-multilingual-v2, elevenlabs/eleven-v3, elevenlabs/eleven-v3-conversational, elevenlabs/eleven-v4, elevenlabs/eleven-v4-turbo; Zephyr, Puck, Charon, Kore, Fenrir, Leda, Orus, Aoede, Callirrhoe, Autonoe, Enceladus, Iapetus, Umbriel, Algieba, Despina, Erinome, Algenib, Rasalgethi, Laomedeia, Achernar, Alnilam, Schedar, Gacrux, Pulcherrima, Achird, Zubenelgenubi, Vindemiatrix, Sadachbia, Sadaltager, Sulafat on openrouter: google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts. Other models on elevenlabs, mistral, openrouter take voice IDs from that provider. ElevenLabs voice IDs come from its listVoices tool. (string)"
         },
         {
           "name": "outputPath",
@@ -1751,7 +1751,7 @@
           "type": "string",
           "required": true,
           "positional": true,
-          "description": "[REQUIRED] Vault-relative output path for the generated audio file. The extension must match the provider: .mp3 on elevenlabs, openai, mistral, openrouter; .wav on google. (string)"
+          "description": "[REQUIRED] Vault-relative output path for the generated audio file. The extension must match the model: .mp3 on elevenlabs; .mp3 on openai; .wav on google; .mp3 on mistral; .mp3 on openrouter except .wav for google/gemini-3.8-flash-lite-tts, google/gemini-3.8-flash-tts, heygen/heygen-voice-1, heygen/heygen-voice-1-turbo, mistralai/voxtral-mini-tts-3-0. (string)"
         },
         {
           "name": "overwrite",

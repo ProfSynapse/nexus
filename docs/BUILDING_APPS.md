@@ -30,7 +30,7 @@ Understand the patterns before writing any code:
 | `src/agents/baseTool.ts` | Tool base class: `execute()`, `getParameterSchema()`, `prepareResult()` |
 | `src/agents/apps/elevenlabs/ElevenLabsAgent.ts` | **Reference app**: manifest, constructor, `validateCredentials()` |
 | `src/agents/apps/elevenlabs/tools/listVoices.ts` | **Reference tool**: simple GET request, parameter schema, error handling |
-| `src/agents/apps/elevenlabs/tools/textToSpeech.ts` | **Reference tool**: POST with binary response, vault file saving |
+| `src/agents/apps/elevenlabs/tools/soundEffects.ts` | **Reference tool**: POST through `ProviderHttpClient.requestOk` with a binary response, vault file saving |
 | `src/agents/apps/webTools/WebToolsAgent.ts` | **Reference app**: desktop-only app with no credentials |
 | `src/agents/apps/webTools/tools/captureToMarkdown.ts` | **Reference tool**: command-driven Obsidian integration using `App`, `WorkspaceLeaf`, and required `outputPath` |
 | `src/agents/apps/webTools/tools/extractLinks.ts` | **Reference tool**: Web Viewer DOM extraction using `executeJavaScript()` |
@@ -136,7 +136,8 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { requestUrl, normalizePath } from 'obsidian';
+import { normalizePath } from 'obsidian';
+import { ProviderHttpClient } from '../../../../services/llm/adapters/shared/ProviderHttpClient';
 
 interface MyToolParams extends CommonParameters {
   query: string;
@@ -167,8 +168,14 @@ export class MyTool extends BaseTool<MyToolParams, CommonResult> {
     const apiKey = this.agent.getCredential('apiKey')!;
 
     try {
-      // 2. Call external API (always use requestUrl, never fetch)
-      const response = await requestUrl({
+      // 2. Call the external API. requestOk throws a readable error carrying the
+      // provider's explanation, and names a permission the key is missing. A bare
+      // requestUrl throws on non-2xx and loses that body, and fetch is not allowed.
+      // Add your app's id to PROVIDER_NAMES so errors use its name, and pass
+      // responseType: 'binary' when the response is media.
+      const response = await ProviderHttpClient.requestOk({
+        provider: 'my-app',
+        operation: 'my action',
         url: 'https://api.example.com/v1/action',
         method: 'POST',
         headers: {
@@ -178,23 +185,13 @@ export class MyTool extends BaseTool<MyToolParams, CommonResult> {
         body: JSON.stringify({ query: params.query }),
       });
 
-      // 3. Check status (requestUrl may throw on non-200, but be defensive)
-      if (response.status !== 200) {
-        return this.prepareResult(false, undefined,
-          `API error (${response.status}): ${response.text || 'Unknown error'}`);
-      }
-
-      // 4. Return result
+      // 3. Return result
       return this.prepareResult(true, {
         result: response.json,
       });
     } catch (error: unknown) {
-      const status = (error as Record<string, unknown>)?.status;
-      const body = (error as Record<string, unknown>)?.text
-        ?? (error as Record<string, unknown>)?.message
-        ?? String(error);
       return this.prepareResult(false, undefined,
-        `Failed${status ? ` (${status})` : ''}: ${body}`);
+        `Failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

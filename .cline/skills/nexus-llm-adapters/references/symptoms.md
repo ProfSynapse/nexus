@@ -36,6 +36,7 @@ end quietly. Treat missing output as a swallowed failure until proven otherwise.
 | Chat spinner never resolves against a CLI provider | A wedged child process. There are two independent bounds — the shared runner's inactivity watchdog and the provider's own timeout flag — and neither implies the other. Check which one applies before changing either. | `cli-providers.md` |
 | Streaming works on desktop, single blob on mobile | Expected. Without a Node runtime, `requestStream()` falls back to a buffered request wrapped as a one-chunk stream. | `streaming-contract.md` |
 | Settings still says “Connected” after ChatGPT rejects a Codex refresh token | The inference adapter can fail authentication without updating the persisted OAuth state. Handle only a confirmed invalid refresh token as a disconnect, persist a reconnect marker through the provider driver, and show the reconnect action in the provider modal. Do not disconnect on a temporary network or server failure. | `src/services/llm/adapters/openai-codex/OpenAICodexAdapter.ts`, `src/services/llm/providers/BuiltinProviderDrivers.ts` |
+| A tool says `Request failed, status 4xx` with no explanation | A bare `requestUrl` throws on non-2xx and discards the body; Jest's mock hides this | Call `ProviderHttpClient.requestOk` with `provider` and `operation`. It keeps the provider's message and reports a missing permission as such. Pass `responseType: 'binary'` for media. |
 
 ## When the symptom is not here
 Debug it, fix it, then add the row. `protocols/self-refine.md` step 2 exists for

@@ -131,6 +131,7 @@ describe('SpeechSynthesisService', () => {
     expect(requestUrlMock).toHaveBeenCalledWith({
       url: 'https://api.mistral.ai/v1/audio/speech',
       method: 'POST',
+      throw: false,
       headers: {
         Authorization: 'Bearer mistral-key',
         'Content-Type': 'application/json',
@@ -188,6 +189,7 @@ describe('SpeechSynthesisService', () => {
     expect(requestUrlMock).toHaveBeenCalledWith({
       url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent',
       method: 'POST',
+      throw: false,
       headers: {
         'x-goog-api-key': 'google-key',
         'Content-Type': 'application/json',
@@ -247,6 +249,7 @@ describe('SpeechSynthesisService', () => {
     expect(requestUrlMock).toHaveBeenCalledWith({
       url: 'https://openrouter.ai/api/v1/audio/speech',
       method: 'POST',
+      throw: false,
       headers: {
         Authorization: 'Bearer openrouter-key',
         'Content-Type': 'application/json',
@@ -255,14 +258,14 @@ describe('SpeechSynthesisService', () => {
       body: JSON.stringify({
         model: 'mistralai/voxtral-mini-tts-2603',
         input: 'Read this.',
-        voice: 'alloy',
+        voice: 'en_paul_neutral',
         response_format: 'mp3',
       }),
     });
     expect(result).toMatchObject({
       provider: 'openrouter',
       model: 'mistralai/voxtral-mini-tts-2603',
-      voice: 'alloy',
+      voice: 'en_paul_neutral',
       mimeType: 'audio/mpeg',
     });
   });
@@ -334,6 +337,7 @@ describe('SpeechSynthesisService', () => {
     expect(requestUrlMock).toHaveBeenCalledWith({
       url: 'https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL',
       method: 'POST',
+      throw: false,
       headers: {
         'xi-api-key': 'eleven-key',
         'Content-Type': 'application/json',

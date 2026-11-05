@@ -20,5 +20,6 @@ export const PROVIDER_NAMES: Record<string, string> = {
   requesty: 'Requesty',
   perplexity: 'Perplexity',
   'openai-codex': 'ChatGPT',
-  'github-copilot': 'GitHub Copilot'
+  'github-copilot': 'GitHub Copilot',
+  elevenlabs: 'ElevenLabs'
 };
