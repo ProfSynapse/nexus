@@ -13,6 +13,7 @@ import {
   buildGenerateVideoDescription,
   GenerateImageTool,
   GenerateVideoTool,
+  ListVoicesTool,
   CheckGeneratedArtifactTool,
   SubagentTool,
 } from './tools';
@@ -201,6 +202,15 @@ export class PromptManagerAgent extends BaseAgent {
 
     if (this.shouldHaveGenerateAudio(llmProviders)) {
       this.registerLazyTool({
+        slug: 'listVoices', name: 'List Voices',
+        description: 'List the voices a speech model takes, and which one is the default from Voice settings. Use before choosing a voice for generateAudio.',
+        version: '1.0.0',
+        factory: () => new ListVoicesTool({
+          llmSettings: this.settings.settings.llmProviders ?? null,
+          appsSettings: this.settings.settings.apps
+        }),
+      });
+      this.registerLazyTool({
         slug: 'generateAudio', name: 'Generate Audio',
         description: buildGenerateAudioDescription(llmProviders, settings.settings.apps),
         version: '1.0.0',
@@ -345,6 +355,14 @@ export class PromptManagerAgent extends BaseAgent {
   private refreshGenerateAudio(settings: LLMProviderSettings | undefined): void {
     const shouldHaveGenerateAudio = this.shouldHaveGenerateAudio(settings);
     const hasGenerateAudio = this.hasTool('generateAudio');
+
+    this.unregisterTool('listVoices');
+    if (shouldHaveGenerateAudio) {
+      this.registerTool(new ListVoicesTool({
+        llmSettings: settings ?? null,
+        appsSettings: this.settings.settings.apps
+      }));
+    }
 
     if (shouldHaveGenerateAudio && !hasGenerateAudio) {
       this.registerTool(new GenerateAudioTool({

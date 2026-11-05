@@ -61,7 +61,7 @@ describe('AudioGenerationService', () => {
     expect(vault.createBinary).toHaveBeenCalledWith('audio/read-this.mp3', expect.any(ArrayBuffer));
     expect(result).toMatchObject({
       path: 'audio/read-this.mp3',
-      mode: 'voice',
+      type: 'speech',
       provider: 'openai',
       model: 'gpt-4o-mini-tts',
       voice: 'marin',

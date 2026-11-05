@@ -7,9 +7,8 @@
 import { __setRequestUrlMock } from '../mocks/obsidian';
 import { describeProviderHttpFailure, findMissingPermission } from '../../src/services/llm/adapters/shared/ProviderErrorMessages';
 import { ProviderHttpClient, ProviderHttpError, providerErrorDetail } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
-import { SoundEffectsTool } from '../../src/agents/apps/elevenlabs/tools/soundEffects';
-import { MusicGenerationTool } from '../../src/agents/apps/elevenlabs/tools/musicGeneration';
-import { ListVoicesTool } from '../../src/agents/apps/elevenlabs/tools/listVoices';
+import { ListVoicesTool } from '../../src/agents/promptManager/tools/listVoices';
+import { AudioGenerationService } from '../../src/services/audio/AudioGenerationService';
 import { ElevenLabsSpeechAdapter } from '../../src/services/readAloud/ElevenLabsSpeechAdapter';
 import { OpenAISpeechAdapter } from '../../src/services/readAloud/OpenAISpeechAdapter';
 import { GoogleSpeechAdapter } from '../../src/services/readAloud/GoogleSpeechAdapter';
@@ -107,13 +106,13 @@ describe('requestOk', () => {
 
 describe('tools report it back', () => {
   const vault = { getAbstractFileByPath: () => null, createFolder: async () => undefined, createBinary: async () => undefined };
-  const agent = { hasRequiredCredentials: () => true, getMissingCredentials: () => [], getCredential: () => 'key', getVault: () => vault };
   const request = (provider: string, model: string) => ({ text: 'hi', provider, model, voice: 'v' }) as never;
+  const elevenLabsApp = { apps: { elevenlabs: { enabled: true, credentials: { apiKey: 'key' } } } } as never;
 
   it.each([
-    ['sound effects', () => new SoundEffectsTool(agent as never).execute({ prompt: 'rain', outputPath: 'a.mp3' } as never)],
-    ['music', () => new MusicGenerationTool(agent as never).execute({ prompt: 'jazz', outputPath: 'a.mp3' } as never)],
-    ['voices', () => new ListVoicesTool(agent as never).execute({} as never)],
+    ['sound effects', () => new AudioGenerationService({} as never, vault as never, { llmSettings: null, appsSettings: elevenLabsApp }).generate({ type: 'sfx', prompt: 'rain', outputPath: 'a.mp3' }).then(data => ({ success: true, data })).catch((error: Error) => ({ success: false, error: error.message }))],
+    ['music', () => new AudioGenerationService({} as never, vault as never, { llmSettings: null, appsSettings: elevenLabsApp }).generate({ type: 'music', prompt: 'jazz', outputPath: 'a.mp3' }).then(data => ({ success: true, data })).catch((error: Error) => ({ success: false, error: error.message }))],
+    ['voices', () => new ListVoicesTool({ llmSettings: null, appsSettings: elevenLabsApp }).execute({ provider: 'elevenlabs', model: 'eleven_v4' } as never)],
   ])('%s', async (_label, run) => {
     respondWith(401, ELEVENLABS_MISSING);
     const result = await run() as { success: boolean; error?: string };
@@ -246,9 +245,8 @@ describe('provider calls cannot lose the error body', () => {
     'src/services/llm/adapters/assemblyai/AssemblyAITranscriptionAdapter.ts',
     'src/services/llm/adapters/deepgram/DeepgramTranscriptionAdapter.ts',
     'src/services/llm/adapters/openai/OpenAITranscriptionAdapter.ts',
-    'src/agents/apps/elevenlabs/tools/listVoices.ts',
-    'src/agents/apps/elevenlabs/tools/musicGeneration.ts',
-    'src/agents/apps/elevenlabs/tools/soundEffects.ts',
+    'src/services/readAloud/VoiceCatalogService.ts',
+    'src/services/readAloud/SpeechModelCatalogService.ts',
   ];
 
   it.each(GUARDED)('%s', file => {

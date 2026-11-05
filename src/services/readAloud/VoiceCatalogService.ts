@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { ProviderHttpClient } from '../llm/adapters/shared/ProviderHttpClient';
 import type { AppsSettings } from '../../types/apps/AppTypes';
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import type { SpeechVoiceDeclaration } from '../llm/types/SpeechTypes';
@@ -74,7 +74,9 @@ export class VoiceCatalogService {
       return [];
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'elevenlabs',
+      operation: 'voice listing',
       url: 'https://api.elevenlabs.io/v1/voices',
       method: 'GET',
       headers: {
@@ -82,12 +84,8 @@ export class VoiceCatalogService {
       },
     });
 
-    if (response.status !== 200) {
-      return [];
-    }
-
-    const responseData = response.json as ElevenLabsVoiceResponse;
-    const rawVoices = Array.isArray(responseData.voices) ? responseData.voices : [];
+    const responseData = response.json as ElevenLabsVoiceResponse | null;
+    const rawVoices = Array.isArray(responseData?.voices) ? responseData.voices : [];
     const voices = rawVoices
       .map((voice): SpeechVoiceDeclaration | null => {
         if (!isRecord(voice)) {
@@ -123,7 +121,9 @@ export class VoiceCatalogService {
       return [];
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'mistral',
+      operation: 'voice listing',
       url: 'https://api.mistral.ai/v1/audio/voices',
       method: 'GET',
       headers: {
@@ -131,12 +131,8 @@ export class VoiceCatalogService {
       },
     });
 
-    if (response.status !== 200) {
-      return [];
-    }
-
-    const responseData = response.json as MistralVoiceResponse;
-    const rawVoices = Array.isArray(responseData.items) ? responseData.items : [];
+    const responseData = response.json as MistralVoiceResponse | null;
+    const rawVoices = Array.isArray(responseData?.items) ? responseData.items : [];
     const voices = rawVoices
       .map((voice): SpeechVoiceDeclaration | null => {
         if (!isRecord(voice)) {

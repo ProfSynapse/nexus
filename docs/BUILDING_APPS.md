@@ -29,8 +29,7 @@ Understand the patterns before writing any code:
 | `src/agents/apps/BaseAppAgent.ts` | Base class: credential management, vault access, validation |
 | `src/agents/baseTool.ts` | Tool base class: `execute()`, `getParameterSchema()`, `prepareResult()` |
 | `src/agents/apps/elevenlabs/ElevenLabsAgent.ts` | **Reference app**: manifest, constructor, `validateCredentials()` |
-| `src/agents/apps/elevenlabs/tools/listVoices.ts` | **Reference tool**: simple GET request, parameter schema, error handling |
-| `src/agents/apps/elevenlabs/tools/soundEffects.ts` | **Reference tool**: POST through `ProviderHttpClient.requestOk` with a binary response, vault file saving |
+| `src/services/audio/GeneratedAudioAdapters.ts` | **Reference calls**: POST through `ProviderHttpClient.requestOk` with a binary response |
 | `src/agents/apps/webTools/WebToolsAgent.ts` | **Reference app**: desktop-only app with no credentials |
 | `src/agents/apps/webTools/tools/captureToMarkdown.ts` | **Reference tool**: command-driven Obsidian integration using `App`, `WorkspaceLeaf`, and required `outputPath` |
 | `src/agents/apps/webTools/tools/extractLinks.ts` | **Reference tool**: Web Viewer DOM extraction using `executeJavaScript()` |

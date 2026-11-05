@@ -7,9 +7,6 @@
 
 import { BaseAppAgent } from '../BaseAppAgent';
 import { AppManifest } from '../../../types/apps/AppTypes';
-import { ListVoicesTool } from './tools/listVoices';
-import { SoundEffectsTool } from './tools/soundEffects';
-import { MusicGenerationTool } from './tools/musicGeneration';
 import { CommonResult } from '../../../types';
 import { requestUrl } from 'obsidian';
 
@@ -38,7 +35,7 @@ const getStatusCode = (value: unknown): number | undefined => {
 const ELEVENLABS_MANIFEST: AppManifest = {
   id: 'elevenlabs',
   name: 'ElevenLabs',
-  description: 'AI audio generation — voice listing, sound effects, and music generation',
+  description: 'Adds ElevenLabs speech, music and sound effects to generateAudio, and your voices to listVoices',
   version: '1.0.0',
   author: 'Nexus',
   docsUrl: 'https://elevenlabs.io/docs',
@@ -56,20 +53,14 @@ const ELEVENLABS_MANIFEST: AppManifest = {
       placeholder: 'sk_...',
     },
   ],
-  tools: [
-    { slug: 'listVoices', description: 'List available voices' },
-    { slug: 'soundEffects', description: 'Generate sound effects from text descriptions' },
-    { slug: 'generateMusic', description: 'Generate music from text prompts describing genre, mood, instruments, and lyrics' },
-  ],
+  // Voice, music and sound effects are generateAudio types; voices are listVoices.
+  tools: [],
 };
 
 export class ElevenLabsAgent extends BaseAppAgent {
   constructor() {
     super(ELEVENLABS_MANIFEST);
 
-    this.registerTool(new ListVoicesTool(this));
-    this.registerTool(new SoundEffectsTool(this));
-    this.registerTool(new MusicGenerationTool(this));
   }
 
   /**

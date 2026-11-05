@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { ProviderHttpClient } from '../llm/adapters/shared/ProviderHttpClient';
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import {
   getSpeechModel,
@@ -47,7 +47,10 @@ export class SpeechModelCatalogService {
       return [];
     }
 
-    const response = await requestUrl({
+    // A failure falls back to the built-in list, so it is not raised.
+    const response = await ProviderHttpClient.request({
+      provider: 'openrouter',
+      operation: 'speech model listing',
       url: 'https://openrouter.ai/api/v1/models?output_modalities=speech',
       method: 'GET',
       headers: {
@@ -59,8 +62,8 @@ export class SpeechModelCatalogService {
       return [];
     }
 
-    const responseData = response.json as OpenRouterModelsResponse;
-    const rawModels = Array.isArray(responseData.data) ? responseData.data : [];
+    const responseData = response.json as OpenRouterModelsResponse | null;
+    const rawModels = Array.isArray(responseData?.data) ? responseData.data : [];
     const models = rawModels
       .map((model): SpeechModelDeclaration | null => {
         if (!isRecord(model)) {

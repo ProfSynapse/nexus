@@ -5,7 +5,15 @@ import { tryResolveVaultPath } from '../../core/vaultPath';
 import { SpeechSynthesisService } from '../readAloud/SpeechSynthesisService';
 import type { SpeechSynthesisRequest } from '../readAloud/SpeechSynthesisTypes';
 import { getSpeechOutputExtension, type SpeechProvider } from '../llm/types/SpeechTypes';
+import {
+  listConfiguredGeneratedAudioModels,
+  type AudioType,
+  type GeneratedAudioModelDeclaration,
+  type GeneratedAudioType,
+} from '../llm/types/GeneratedAudioTypes';
+import { generateAudioWithProvider } from './GeneratedAudioAdapters';
 
+/** The earlier name for `type`. Saved calls may still send `mode: 'voice'`. */
 export type AudioGenerationMode = 'voice';
 
 /**
@@ -23,24 +31,32 @@ const AUDIO_MIME_TO_EXTENSION: Readonly<Record<string, string>> = {
 const ALLOWED_AUDIO_EXTENSIONS: readonly string[] = Object.values(AUDIO_MIME_TO_EXTENSION);
 
 export interface GenerateAudioRequest {
+  type?: AudioType;
   mode?: AudioGenerationMode;
   prompt: string;
   provider?: string;
   model?: string;
   voice?: string;
+  durationSeconds?: number;
+  instrumental?: boolean;
+  loop?: boolean;
   outputPath: string;
   overwrite?: boolean;
 }
 
 export interface GenerateAudioResult {
   path: string;
-  mode: AudioGenerationMode;
+  type: AudioType;
   provider: string;
   model: string;
-  voice: string;
+  voice?: string;
   mimeType: string;
   textLength: number;
   audioSize: number;
+  /** Lyrics and structure, when a music model writes them. */
+  lyrics?: string;
+  /** Set when a request had no effect on this model, or the model decided for itself. */
+  note?: string;
 }
 
 export interface AudioGenerationServiceOptions {
@@ -50,22 +66,21 @@ export interface AudioGenerationServiceOptions {
 
 export class AudioGenerationService {
   private speechService: SpeechSynthesisService;
+  private readonly options: AudioGenerationServiceOptions;
 
   constructor(
     private app: App,
     private vault: Vault,
     options: AudioGenerationServiceOptions
   ) {
+    this.options = options;
     this.speechService = new SpeechSynthesisService(options.llmSettings, {
       appsSettings: options.appsSettings,
     });
   }
 
   async generate(request: GenerateAudioRequest): Promise<GenerateAudioResult> {
-    const mode = request.mode ?? 'voice';
-    if (mode !== 'voice') {
-      throw new Error(`Unsupported audio generation mode "${String(mode)}". This version supports voice only.`);
-    }
+    const type = this.resolveType(request);
 
     if (!request.prompt.trim()) {
       throw new Error('Prompt is required.');
@@ -73,6 +88,16 @@ export class AudioGenerationService {
 
     const outputPath = this.normalizeOutputPath(request.outputPath);
     this.validateOutputExtension(outputPath);
+
+    if (type !== 'speech') {
+      return this.generateMusicOrEffect(type, request, outputPath);
+    }
+
+    const ignored = [
+      ...(request.durationSeconds !== undefined ? ['durationSeconds'] : []),
+      ...(request.instrumental !== undefined ? ['instrumental'] : []),
+      ...(request.loop !== undefined ? ['loop'] : []),
+    ];
     const speechRequest: SpeechSynthesisRequest = {
       text: request.prompt,
       provider: request.provider,
@@ -86,14 +111,103 @@ export class AudioGenerationService {
 
     return {
       path: outputPath,
-      mode,
+      type,
       provider: speechResult.provider,
       model: speechResult.model,
       voice: speechResult.voice,
       mimeType: speechResult.mimeType,
       textLength: request.prompt.length,
       audioSize: speechResult.audioData.byteLength,
+      ...(ignored.length > 0 ? { note: `${ignored.join(' and ')} ignored for speech.` } : {}),
     };
+  }
+
+  private resolveType(request: GenerateAudioRequest): AudioType {
+    const type: string | undefined = request.type ?? (request.mode === 'voice' ? 'speech' : request.mode);
+    if (type === undefined) return 'speech';
+    if (type !== 'speech' && type !== 'music' && type !== 'sfx') {
+      throw new Error(`Unsupported audio type "${String(type)}". Use speech, music or sfx.`);
+    }
+    return type;
+  }
+
+  private async generateMusicOrEffect(
+    type: GeneratedAudioType,
+    request: GenerateAudioRequest,
+    outputPath: string
+  ): Promise<GenerateAudioResult> {
+    const model = this.resolveGeneratedAudioModel(type, request);
+    const { duration } = model;
+    const notes: string[] = [];
+
+    if (request.durationSeconds !== undefined) {
+      if (duration.control === 'parameter' && (request.durationSeconds < duration.minSeconds || request.durationSeconds > duration.maxSeconds)) {
+        throw new Error(`${model.id} takes durationSeconds from ${duration.minSeconds} to ${duration.maxSeconds}, not ${request.durationSeconds}.`);
+      }
+      if (duration.control === 'fixed') notes.push(`${model.id} always makes ${duration.seconds} seconds; durationSeconds ignored.`);
+      if (duration.control === 'prompt') notes.push(`${model.id} treats durationSeconds as a request in the prompt, so the length can be far off.`);
+    }
+    if (request.instrumental !== undefined && !model.instrumental) notes.push('instrumental ignored for sound effects.');
+    if (request.loop !== undefined && !model.supportsLoop) notes.push(`${model.id} cannot loop; loop ignored.`);
+    if (request.voice) notes.push(`voice ignored for ${type}.`);
+
+    // Fail before paying: every music and effect model here returns MP3.
+    if (this.extensionOf(outputPath) !== 'mp3') {
+      throw new Error(`outputPath extension ".${this.extensionOf(outputPath)}" does not match what ${model.id} returns: use ".mp3".`);
+    }
+
+    const output = await generateAudioWithProvider({
+      model,
+      prompt: request.prompt,
+      durationSeconds: request.durationSeconds,
+      instrumental: request.instrumental,
+      loop: request.loop,
+      apiKey: this.getGeneratedAudioKey(model),
+    });
+
+    this.assertExtensionMatchesMime(outputPath, output.mimeType);
+    await this.writeAudio(outputPath, output.audioData, request.overwrite === true);
+
+    return {
+      path: outputPath,
+      type,
+      provider: model.provider,
+      model: model.id,
+      mimeType: output.mimeType,
+      textLength: request.prompt.length,
+      audioSize: output.audioData.byteLength,
+      ...(output.text ? { lyrics: output.text } : {}),
+      ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
+    };
+  }
+
+  /** An explicit model wins, then an explicit provider, then the first configured model. */
+  private resolveGeneratedAudioModel(type: GeneratedAudioType, request: GenerateAudioRequest): GeneratedAudioModelDeclaration {
+    const { llmSettings, appsSettings } = this.options;
+    const available = listConfiguredGeneratedAudioModels(llmSettings, appsSettings, type);
+    const label = type === 'sfx' ? 'Sound effects' : 'Music';
+    const summary = available.map(model => `${model.id} on ${model.provider}`).join(', ');
+    if (available.length === 0) {
+      throw new Error(type === 'sfx'
+        ? 'Sound effects need an ElevenLabs key, and none is configured.'
+        : 'Music needs an ElevenLabs, Google or OpenRouter key, and none is configured.');
+    }
+    const match = available.find(model =>
+      (!request.model || model.id === request.model) && (!request.provider || model.provider === request.provider)
+    );
+    if (!match) {
+      const asked = request.model ? `with ${request.model}${request.provider ? ` on ${request.provider}` : ''}` : `on ${request.provider ?? 'this provider'}`;
+      throw new Error(`${label} ${type === 'sfx' ? 'are' : 'is'} not available ${asked}. Available: ${summary}.`);
+    }
+    return match;
+  }
+
+  private getGeneratedAudioKey(model: GeneratedAudioModelDeclaration): string {
+    const key = model.provider === 'elevenlabs'
+      ? this.options.appsSettings?.apps?.elevenlabs?.credentials?.apiKey
+      : this.options.llmSettings?.providers?.[model.provider]?.apiKey;
+    if (!key) throw new Error(`No ${model.provider} API key is configured.`);
+    return key;
   }
 
   private normalizeOutputPath(outputPath: string): string {

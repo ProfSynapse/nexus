@@ -64,13 +64,14 @@ describe('VoiceCatalogService', () => {
       }
     });
 
-    expect(requestUrlMock).toHaveBeenCalledWith({
+    expect(requestUrlMock).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://api.elevenlabs.io/v1/voices',
       method: 'GET',
       headers: {
         'xi-api-key': 'test-key',
       },
-    });
+      throw: false,
+    }));
     expect(voices).toEqual([
       { id: 'voice-1', name: 'Rachel', description: 'premade' },
       { id: 'voice-2', name: 'Custom Voice', description: 'cloned' },
@@ -121,13 +122,14 @@ describe('VoiceCatalogService', () => {
       }
     });
 
-    expect(requestUrlMock).toHaveBeenCalledWith({
+    expect(requestUrlMock).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://api.mistral.ai/v1/audio/voices',
       method: 'GET',
       headers: {
         Authorization: 'Bearer mistral-key',
       },
-    });
+      throw: false,
+    }));
     expect(voices).toEqual([
       { id: 'mistral-voice-1', name: 'Narrator' },
       { id: 'mistral-voice-2', name: 'Guide' },

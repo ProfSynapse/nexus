@@ -8,8 +8,6 @@ import { normalizeRetiredMediaDefaults, getRetiredRealtimeModel, getRetiredSpeec
 import { getSpeechModel, getSpeechModelsForProvider, resolveDefaultSpeechSelection } from '../../src/services/llm/types/SpeechTypes';
 import { getRealtimeVoiceModel, resolveDefaultRealtimeVoiceSelection } from '../../src/services/llm/types/RealtimeVoiceTypes';
 import { SpeechSynthesisService } from '../../src/services/readAloud/SpeechSynthesisService';
-import { SoundEffectsTool } from '../../src/agents/apps/elevenlabs/tools/soundEffects';
-import { MusicGenerationTool } from '../../src/agents/apps/elevenlabs/tools/musicGeneration';
 import { ModelRegistry } from '../../src/services/llm/adapters/ModelRegistry';
 import { getVideoModel } from '../../src/services/llm/types/VideoTypes';
 import { OpenRouterVideoAdapter } from '../../src/services/video/adapters/OpenRouterVideoAdapter';
@@ -93,36 +91,7 @@ describe('chat models past or at shutdown are gone', () => {
   });
 });
 
-describe('ElevenLabs tools', () => {
-  const vault = { getAbstractFileByPath: () => null, createFolder: async () => undefined, createBinary: async () => undefined };
-  const agent = {
-    hasRequiredCredentials: () => true,
-    getMissingCredentials: () => [],
-    getCredential: () => 'el-key',
-    getVault: () => vault,
-  };
-
-  function capture() {
-    const bodies: Array<Record<string, unknown>> = [];
-    __setRequestUrlMock(async (request: { body?: string }) => {
-      bodies.push(JSON.parse(String(request.body)));
-      return { status: 200, headers: {}, text: '', json: {}, arrayBuffer: new ArrayBuffer(1) } as never;
-    });
-    return bodies;
-  }
-
-  it('sound effects name the current model, since the API default is being removed', async () => {
-    const bodies = capture();
-    await new SoundEffectsTool(agent as never).execute({ prompt: 'rain', outputPath: 'a.mp3', loop: true } as never);
-    expect(bodies[0]).toMatchObject({ model_id: 'eleven_text_to_sound_v3', loop: true });
-  });
-
-  it('music names the current model, since the API default is being removed', async () => {
-    const bodies = capture();
-    await new MusicGenerationTool(agent as never).execute({ prompt: 'jazz', outputPath: 'a.mp3' } as never);
-    expect(bodies[0].model_id).toBe('music_v2_5');
-  });
-
+describe('ElevenLabs speech catalog', () => {
   it('keeps Multilingual v2 first and a saved Turbo default working', () => {
     const models = getSpeechModelsForProvider('elevenlabs');
     expect(models[0].id).toBe('eleven_multilingual_v2');

@@ -9,6 +9,7 @@ export { ExecutePromptsTool } from './executePrompts';
 export { buildGenerateImageDescription, GenerateImageTool } from './generateImage';
 export { buildGenerateVideoDescription } from './generateVideo';
 export { buildGenerateAudioDescription } from './generateAudio';
+export { ListVoicesTool } from './listVoices';
 export { GenerateAudioTool } from './generateAudio';
 export { GenerateVideoTool } from './generateVideo';
 export { CheckGeneratedArtifactTool } from './checkGeneratedArtifact';

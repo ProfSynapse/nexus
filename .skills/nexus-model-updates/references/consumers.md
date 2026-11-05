@@ -79,3 +79,9 @@ a wrong declaration is what agents and users read. Declared `voices` are per mod
 when adding a model, send each one to the endpoint, because a shared list hid four
 rejected voices. `SPEECH_OUTPUT_EXTENSION` must match what the provider's adapter
 requests. ElevenLabs is keyed through Apps, not `llmProviders`.
+
+## Music and sound-effect models
+
+`GENERATED_AUDIO_MODELS` in `src/services/llm/types/GeneratedAudioTypes.ts` feeds `generateAudio`'s `type: music | sfx`, filtered by configured keys. An entry declares how the model takes duration and instrumental. The transport lives in `src/services/audio/GeneratedAudioAdapters.ts`, and a new provider needs a case there. Measure before claiming a length is exact: of the models here, none proved exact on every request.
+
+Voices have one path: `VoiceCatalogService` fills both the Voice settings picker and the `listVoices` tool, and `SpeechSynthesisService.resolveRequest` decides the default for `listVoices` and `generateAudio`. Add a provider's voice listing to the catalog, not to a tool.
