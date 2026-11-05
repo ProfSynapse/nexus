@@ -10,7 +10,6 @@ import { getRealtimeVoiceModel, resolveDefaultRealtimeVoiceSelection } from '../
 import { SpeechSynthesisService } from '../../src/services/readAloud/SpeechSynthesisService';
 import { SoundEffectsTool } from '../../src/agents/apps/elevenlabs/tools/soundEffects';
 import { MusicGenerationTool } from '../../src/agents/apps/elevenlabs/tools/musicGeneration';
-import { TextToSpeechTool } from '../../src/agents/apps/elevenlabs/tools/textToSpeech';
 import { ModelRegistry } from '../../src/services/llm/adapters/ModelRegistry';
 import { getVideoModel } from '../../src/services/llm/types/VideoTypes';
 import { OpenRouterVideoAdapter } from '../../src/services/video/adapters/OpenRouterVideoAdapter';
@@ -101,7 +100,6 @@ describe('ElevenLabs tools', () => {
     getMissingCredentials: () => [],
     getCredential: () => 'el-key',
     getVault: () => vault,
-    getDefaultModelId: () => undefined,
   };
 
   function capture() {
@@ -123,13 +121,6 @@ describe('ElevenLabs tools', () => {
     const bodies = capture();
     await new MusicGenerationTool(agent as never).execute({ prompt: 'jazz', outputPath: 'a.mp3' } as never);
     expect(bodies[0].model_id).toBe('music_v2_5');
-  });
-
-  it('text to speech offers current models from the catalog, not removed or deprecated ones', () => {
-    const schema = new TextToSpeechTool(agent as never).getParameterSchema() as unknown as { properties: { modelId: { description: string } } };
-    expect(schema.properties.modelId.description).toContain('eleven_v4');
-    expect(schema.properties.modelId.description).toContain('eleven_flash_v2_5');
-    expect(schema.properties.modelId.description).not.toMatch(/monolingual|eleven_turbo/);
   });
 
   it('keeps Multilingual v2 first and a saved Turbo default working', () => {

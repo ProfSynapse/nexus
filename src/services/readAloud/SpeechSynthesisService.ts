@@ -61,7 +61,7 @@ export class SpeechSynthesisService {
       text: request.text,
       provider: selection.provider,
       model: selection.model,
-      voice: request.voice || selection.voice || model?.defaultVoice || getProviderDefaultVoice(selection.provider, selection.model),
+      voice: request.voice || selection.voice || model?.defaultVoice || '',
     };
   }
 
@@ -184,20 +184,4 @@ export class SpeechSynthesisService {
   private getAppStates(): SpeechAppCapabilityStates {
     return getSpeechAppCapabilityStates(this.options.appsSettings);
   }
-}
-
-function getProviderDefaultVoice(provider: SpeechProvider, model: string): string {
-  if (provider === 'openrouter') {
-    if (model.startsWith('deepgram/')) {
-      return 'aura-2-thalia-en';
-    }
-
-    if (model.startsWith('microsoft/')) {
-      return 'en-US-Harper:MAI-Voice-2';
-    }
-
-    return 'alloy';
-  }
-
-  return '';
 }

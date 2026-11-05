@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import {
   getSpeechModel,
   type SpeechProvider,
@@ -8,6 +7,7 @@ import type {
   SpeechAdapter,
   SpeechSynthesisResult
 } from './SpeechSynthesisTypes';
+import { ProviderHttpClient } from '../llm/adapters/shared/ProviderHttpClient';
 
 export interface MistralSpeechAdapterConfig {
   apiKey: string;
@@ -47,7 +47,10 @@ export class MistralSpeechAdapter implements SpeechAdapter {
       body.voice_id = request.voice;
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'mistral',
+      operation: 'speech generation',
+      timeoutMs: 300_000,
       url: this.endpoint,
       method: 'POST',
       headers: {
@@ -57,13 +60,8 @@ export class MistralSpeechAdapter implements SpeechAdapter {
       body: JSON.stringify(body),
     });
 
-    if (response.status !== 200) {
-      const errorText = typeof response.text === 'string' ? response.text : 'Unknown error';
-      throw new Error(`Mistral speech failed: HTTP ${response.status}: ${errorText}`);
-    }
-
     const responseData = response.json as MistralSpeechResponse;
-    const audioData = typeof responseData.audio_data === 'string'
+    const audioData = typeof responseData?.audio_data === 'string'
       ? decodeBase64(responseData.audio_data)
       : response.arrayBuffer;
 

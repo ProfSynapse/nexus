@@ -196,28 +196,8 @@ export class AppsTab {
    */
   private buildSettingsSections(
     _appId: string,
-    agent: BaseAppAgent
+    _agent: BaseAppAgent
   ): AppSettingsSection[] {
-    if (agent.manifest.id === 'elevenlabs') {
-      return [{
-        key: 'defaultTTSModel',
-        label: 'Default TTS model',
-        description: 'Model used for text-to-speech when no model is specified.',
-        loadOptions: async () => {
-          const result = await agent.fetchTTSModels();
-          if (!result || !result.success || !result.models) {
-            return { success: false, error: result?.error || 'Model fetching not supported' };
-          }
-          return {
-            success: true,
-            options: result.models.map(m => ({
-              value: m.model_id,
-              label: m.name,
-            })),
-          };
-        },
-      }];
-    }
     return [];
   }
 

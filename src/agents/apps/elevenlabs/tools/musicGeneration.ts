@@ -9,10 +9,11 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { requestUrl, TFolder } from 'obsidian';
+import { TFolder } from 'obsidian';
 import { tryResolveVaultPath } from '../../../../core/vaultPath';
 import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { ProviderHttpClient } from '../../../../services/llm/adapters/shared/ProviderHttpClient';
 
 /** Sent explicitly: with no model_id the API falls back to music_v1, which it removes on 2027-01-31. */
 const MUSIC_MODEL = 'music_v2_5';
@@ -21,11 +22,6 @@ type UnknownRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is UnknownRecord =>
   typeof value === 'object' && value !== null;
-
-const getStatusCode = (value: unknown): number | undefined => {
-  if (!isRecord(value)) return undefined;
-  return typeof value.status === 'number' ? value.status : undefined;
-};
 
 const getErrorMessage = (value: unknown): string => {
   if (isRecord(value)) {
@@ -89,7 +85,11 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
     const outputFormat = params.outputFormat || 'mp3_44100_128';
 
     try {
-      const response = await requestUrl({
+      const response = await ProviderHttpClient.requestOk({
+        provider: 'elevenlabs',
+        operation: 'music generation',
+        timeoutMs: 600_000,
+        responseType: 'binary',
         url: `https://api.elevenlabs.io/v1/music?output_format=${outputFormat}`,
         method: 'POST',
         headers: {
@@ -99,12 +99,6 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
         },
         body: JSON.stringify(body),
       });
-
-      if (response.status !== 200) {
-        const errorText = typeof response.text === 'string' ? response.text : 'Unknown error';
-        return this.prepareResult(false, undefined,
-          `ElevenLabs API error (${response.status}): ${errorText}`);
-      }
 
       const vault = this.agent.getVault();
       if (!vault) {
@@ -138,10 +132,7 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
         audioSize: response.arrayBuffer.byteLength,
       });
     } catch (error: unknown) {
-      const status = getStatusCode(error);
-      const body = getErrorMessage(error);
-      return this.prepareResult(false, undefined,
-        `Music generation failed${status !== undefined ? ` (${status})` : ''}: ${body}`);
+      return this.prepareResult(false, undefined, `Music generation failed: ${getErrorMessage(error)}`);
     }
   }
 

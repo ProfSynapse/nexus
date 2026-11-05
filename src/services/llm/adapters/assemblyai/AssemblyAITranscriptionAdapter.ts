@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import { BaseTranscriptionAdapter } from '../BaseTranscriptionAdapter';
 import type {
   AudioChunk,
@@ -7,6 +6,7 @@ import type {
   TranscriptionSegment,
   TranscriptionWord
 } from '../../types/VoiceTypes';
+import { ProviderHttpClient } from '../shared/ProviderHttpClient';
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_POLL_ATTEMPTS = 80;
@@ -28,7 +28,10 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
   }
 
   private async uploadChunk(chunk: AudioChunk): Promise<string> {
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'assemblyai',
+      operation: 'upload',
+      timeoutMs: 300_000,
       url: this.uploadEndpoint,
       method: 'POST',
       headers: {
@@ -37,10 +40,6 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
       },
       body: chunk.data
     });
-
-    if (response.status !== 200) {
-      throw new Error(`AssemblyAI upload failed: HTTP ${response.status}`);
-    }
 
     const parsed = response.json as { upload_url?: unknown };
     if (typeof parsed.upload_url !== 'string' || !parsed.upload_url) {
@@ -54,7 +53,10 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
     audioUrl: string,
     request: TranscriptionRequest & { provider: TranscriptionProvider; model: string }
   ): Promise<string> {
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'assemblyai',
+      operation: 'transcript submission',
+      timeoutMs: 300_000,
       url: this.transcriptEndpoint,
       method: 'POST',
       headers: {
@@ -70,10 +72,6 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
         prompt: request.prompt?.trim() || undefined
       })
     });
-
-    if (response.status !== 200) {
-      throw new Error(`AssemblyAI transcript submit failed: HTTP ${response.status}`);
-    }
 
     const parsed = response.json as { id?: unknown; error?: unknown };
     if (typeof parsed.id !== 'string' || !parsed.id) {
@@ -92,17 +90,16 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
         throw new Error('AssemblyAI transcription was cancelled');
       }
 
-      const response = await requestUrl({
+      const response = await ProviderHttpClient.requestOk({
+        provider: 'assemblyai',
+        operation: 'transcript polling',
+        timeoutMs: 300_000,
         url: `${this.transcriptEndpoint}/${transcriptId}`,
         method: 'GET',
         headers: {
           Authorization: this.config.apiKey
         }
       });
-
-      if (response.status !== 200) {
-        throw new Error(`AssemblyAI transcript poll failed: HTTP ${response.status}`);
-      }
 
       const parsed = response.json as { status?: unknown; error?: unknown };
       if (parsed.status === 'completed') {

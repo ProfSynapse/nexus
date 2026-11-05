@@ -11,6 +11,7 @@ import {
   type AudioGenerationMode
 } from '../../../services/audio/AudioGenerationService';
 import {
+  getSpeechOutputExtension,
   listConfiguredSpeechProviders,
   SPEECH_OUTPUT_EXTENSION,
   type SpeechModelDeclaration,
@@ -106,25 +107,29 @@ export class GenerateAudioTool extends BaseTool<GenerateAudioParams, CommonResul
   private describeVoices(models: SpeechModelDeclaration[], providers: SpeechProvider[]): string {
     const listed = models.filter(model => model.voices?.length);
     const open = models.filter(model => !model.voices?.length);
+    const openProviders = Array.from(new Set(open.map(model => model.provider)));
     return [
-      'Optional voice. Defaults to Voice settings or the model default.',
+      'Optional voice. Each model has a working default, so omit this unless a specific voice is wanted. A voice from one model usually fails on another.',
       ...(listed.length > 0 ? [`Accepted: ${groupModels(listed, model => (model.voices ?? []).map(voice => voice.id).join(', '))}.`] : []),
-      ...(open.length > 0 ? [`Use a voice ID from the provider on ${describeModelsByProvider(open)}.`] : []),
+      ...(openProviders.length > 0 ? [`Other models on ${openProviders.join(', ')} take voice IDs from that provider.`] : []),
       ...(providers.includes('elevenlabs') ? ['ElevenLabs voice IDs come from its listVoices tool.'] : []),
     ].join(' ');
   }
 
-  /** Each provider returns one file type, and the path has to match it. */
-  private describeOutputPath(providers: SpeechProvider[]): string {
-    const extensions = Array.from(new Set(providers.map(provider => SPEECH_OUTPUT_EXTENSION[provider])));
-    if (extensions.length === 1) {
-      return `Vault-relative output path for the generated audio file, ending in .${extensions[0]}.`;
+  /** Each model returns one file type, and the path has to match it. */
+  private describeOutputPath(models: SpeechModelDeclaration[], providers: SpeechProvider[]): string {
+    const extensionOf = (model: SpeechModelDeclaration) => getSpeechOutputExtension(model.provider, model.id);
+    const all = new Set([...providers.map(provider => SPEECH_OUTPUT_EXTENSION[provider]), ...models.map(extensionOf)]);
+    if (all.size === 1) {
+      return `Vault-relative output path for the generated audio file, ending in .${Array.from(all)[0]}.`;
     }
-    const perExtension = extensions.map(extension => {
-      const matching = providers.filter(provider => SPEECH_OUTPUT_EXTENSION[provider] === extension);
-      return `.${extension} on ${matching.join(', ')}`;
+    // Name only the exceptions: a gateway's full list would drown the rule.
+    const rules = providers.map(provider => {
+      const usual = SPEECH_OUTPUT_EXTENSION[provider];
+      const exceptions = models.filter(model => model.provider === provider && extensionOf(model) !== usual);
+      return `.${usual} on ${provider}${exceptions.length > 0 ? ` except .${extensionOf(exceptions[0])} for ${exceptions.map(model => model.id).join(', ')}` : ''}`;
     });
-    return `Vault-relative output path for the generated audio file. The extension must match the provider: ${perExtension.join('; ')}.`;
+    return `Vault-relative output path for the generated audio file. The extension must match the model: ${rules.join('; ')}.`;
   }
 
   private describePrompt(models: SpeechModelDeclaration[]): string {
@@ -176,7 +181,7 @@ export class GenerateAudioTool extends BaseTool<GenerateAudioParams, CommonResul
         },
         outputPath: {
           type: 'string',
-          description: this.describeOutputPath(providers),
+          description: this.describeOutputPath(models, providers),
         },
         overwrite: {
           type: 'boolean',

@@ -1,4 +1,3 @@
-import { requestUrl } from 'obsidian';
 import {
   getSpeechModel,
   type SpeechProvider,
@@ -8,6 +7,7 @@ import type {
   SpeechAdapter,
   SpeechSynthesisResult
 } from './SpeechSynthesisTypes';
+import { ProviderHttpClient } from '../llm/adapters/shared/ProviderHttpClient';
 
 export interface ElevenLabsSpeechAdapterConfig {
   apiKey: string;
@@ -32,7 +32,11 @@ export class ElevenLabsSpeechAdapter implements SpeechAdapter {
       throw new Error(`Unsupported ElevenLabs speech model "${request.model}".`);
     }
 
-    const response = await requestUrl({
+    const response = await ProviderHttpClient.requestOk({
+      provider: 'elevenlabs',
+      operation: 'speech generation',
+      timeoutMs: 300_000,
+      responseType: 'binary',
       url: `https://api.elevenlabs.io/v1/text-to-speech/${request.voice}`,
       method: 'POST',
       headers: {
@@ -45,11 +49,6 @@ export class ElevenLabsSpeechAdapter implements SpeechAdapter {
         model_id: request.model,
       }),
     });
-
-    if (response.status !== 200) {
-      const errorText = typeof response.text === 'string' ? response.text : 'Unknown error';
-      throw new Error(`ElevenLabs speech failed: HTTP ${response.status}: ${errorText}`);
-    }
 
     return {
       provider: this.provider,

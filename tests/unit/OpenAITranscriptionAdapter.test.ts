@@ -406,7 +406,7 @@ describe('OpenAITranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('OpenAI transcription failed: HTTP 401');
+      ).rejects.toThrow('OpenAI did not accept the API key');
     });
 
     it('throws with 500 status', async () => {
@@ -417,7 +417,7 @@ describe('OpenAITranscriptionAdapter', () => {
 
       await expect(
         adapter.transcribeChunk(makeChunk(), makeRequest())
-      ).rejects.toThrow('OpenAI transcription failed: HTTP 500');
+      ).rejects.toThrow('OpenAI had a server error');
     });
   });
 });

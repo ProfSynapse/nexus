@@ -3,6 +3,7 @@ import type { AppsSettings } from '../../types/apps/AppTypes';
 import type { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import type { SpeechVoiceDeclaration } from '../llm/types/SpeechTypes';
 import { getSpeechModel } from '../llm/types/SpeechTypes';
+import { SpeechModelCatalogService } from './SpeechModelCatalogService';
 
 export interface VoiceCatalogOptions {
   appsSettings?: AppsSettings;
@@ -28,6 +29,7 @@ const getString = (value: unknown, fallback = ''): string =>
 export class VoiceCatalogService {
   private elevenLabsVoiceCache: SpeechVoiceDeclaration[] | null = null;
   private mistralVoiceCache: SpeechVoiceDeclaration[] | null = null;
+  private readonly speechModels = new SpeechModelCatalogService();
 
   async getVoices(
     provider: string | undefined,
@@ -50,6 +52,12 @@ export class VoiceCatalogService {
       if (dynamicVoices.length > 0) {
         return dynamicVoices;
       }
+    }
+
+    if (provider === 'openrouter' && options.llmSettings) {
+      const listed = await this.speechModels.getModels('openrouter', options.llmSettings).catch(() => []);
+      const voices = listed.find(model => model.id === modelId)?.voices;
+      if (voices?.length) return voices;
     }
 
     return getSpeechModel(provider, modelId)?.voices ?? [];

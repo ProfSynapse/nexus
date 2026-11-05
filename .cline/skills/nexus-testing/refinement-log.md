@@ -274,3 +274,5 @@ The actual SearchMemoryTool and ToolCatalogService supply test schemas, includin
 ### 2026-11-02 — Release candidate verification on Linux
 
 Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching artifact hashes, a vault-asserted running-version check and ready hybrid storage. The vault-first TTY wrapper worked for eval, plugin:reload, dev:errors and dev:screenshot; the packaged verifier completed VERIFIED. The CLI `version` command worked; `--version` launched an unhelpful GUI probe before the verifier fell back. Existing live-loop guidance covered the required targeting and version checks; no protocol change.
+
+- 2026-11-05 | Proving a merged media change in the app worked, but cost repeat key requests because a script deleted the key after setup failures, and a stale assumption about an `appManager` service and an `adoptSettings` no-op each looked like a product defect. Eval against a closed vault also silently answered from another open vault. | Added in-memory provider testing, fake-key dry runs and restoring borrowed test vaults to `protocols/live-loop.md`. | Files: `protocols/live-loop.md`, this log.

@@ -217,7 +217,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/transcription failed: HTTP 401/i);
+      ).rejects.toThrow(/did not accept the API key.*HTTP 401/i);
     });
 
     it('does not include body text in error message', async () => {
@@ -228,7 +228,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/transcription failed: HTTP 500/i);
+      ).rejects.toThrow(/server error.*HTTP 500/i);
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
       ).rejects.toThrow(expect.not.objectContaining({ message: expect.stringContaining('Internal server error') }));
@@ -242,7 +242,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/transcription failed: HTTP 400/i);
+      ).rejects.toThrow(/rejected the request.*HTTP 400/i);
     });
   });
 

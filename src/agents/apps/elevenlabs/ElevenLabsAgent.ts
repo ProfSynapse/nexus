@@ -5,15 +5,16 @@
  * via the ElevenLabs API. Requires an API key from elevenlabs.io.
  */
 
-import { BaseAppAgent, FetchTTSModelsResult } from '../BaseAppAgent';
-import { AppManifest, ElevenLabsModel } from '../../../types/apps/AppTypes';
+import { BaseAppAgent } from '../BaseAppAgent';
+import { AppManifest } from '../../../types/apps/AppTypes';
 import { ListVoicesTool } from './tools/listVoices';
 import { SoundEffectsTool } from './tools/soundEffects';
 import { MusicGenerationTool } from './tools/musicGeneration';
 import { CommonResult } from '../../../types';
 import { requestUrl } from 'obsidian';
 
-const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
+/** Only used to probe the permission; the request is rejected before anything generates. */
+const TTS_PROBE_MODEL = 'eleven_multilingual_v2';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -162,7 +163,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
     // Use a dummy voice_id — the request will fail validation but auth check happens first
     const ttsResult = await probeEndpoint(
       'https://api.elevenlabs.io/v1/text-to-speech/dummy_voice_id',
-      { text: '', model_id: DEFAULT_TTS_MODEL }
+      { text: '', model_id: TTS_PROBE_MODEL }
     );
 
     const sfxResult = await probeEndpoint(
@@ -225,49 +226,5 @@ export class ElevenLabsAgent extends BaseAppAgent {
         missingPermissions,
       },
     };
-  }
-
-  /**
-   * Fetch TTS-capable models from the ElevenLabs API.
-   * Filters out models that require alpha access.
-   */
-  async fetchTTSModels(): Promise<FetchTTSModelsResult> {
-    if (!this.hasRequiredCredentials()) {
-      return { success: false, error: 'API key not configured' };
-    }
-
-    const apiKey = this.getCredential('apiKey');
-    if (!apiKey) {
-      return { success: false, error: 'API key not configured' };
-    }
-
-    try {
-      const response = await requestUrl({
-        url: 'https://api.elevenlabs.io/v1/models',
-        method: 'GET',
-        headers: { 'xi-api-key': apiKey },
-      });
-
-      const responseJson = response.json as unknown;
-      const allModels = Array.isArray(responseJson) ? responseJson as ElevenLabsModel[] : [];
-      const ttsModels = allModels.filter(
-        m => m.can_do_text_to_speech && !m.requires_alpha_access
-      );
-
-      return { success: true, models: ttsModels };
-    } catch (error: unknown) {
-      const status = getStatusCode(error);
-      return {
-        success: false,
-        error: `Failed to fetch models${status !== undefined ? ` (${status})` : ''}`
-      };
-    }
-  }
-
-  /**
-   * Get the user's selected default TTS model ID, or fall back to eleven_multilingual_v2.
-   */
-  getDefaultModelId(): string {
-    return this.getSetting('defaultTTSModel') || DEFAULT_TTS_MODEL;
   }
 }

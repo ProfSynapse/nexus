@@ -68,3 +68,7 @@ When bulk-refreshing prices from a listing, match on id and name together. Some 
 are registered twice on purpose, as 200K and 1M context variants of one model, and
 a refresh keyed on id alone overwrites the smaller one. The registry gate catches
 this as a duplicate entry, so run it after any scripted edit.
+
+## OpenRouter speech
+
+Each model in `/api/v1/models?output_modalities=speech` has its own `supported_voices`, and a voice from another model is a hard 400. Some are PCM only, so `getSpeechOutputExtension` reports `.wav` for them. Send one short request per model before declaring it: the listing does not state the format.
