@@ -304,7 +304,7 @@ export class GoogleAdapter extends BaseAdapter {
         method: 'POST',
         headers: this.buildGoogleHeaders(),
         body: JSON.stringify(this.buildGenerateContentBody(request)),
-        timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 120_000,
+        timeoutMs: this.isGemini4StandardModel(model) ? 900_000 : 120_000,
         signal: options?.abortSignal
       });
 
@@ -508,7 +508,7 @@ export class GoogleAdapter extends BaseAdapter {
         generationConfig: {
           ...this.getSamplingConfig(model, options?.temperature),
           maxOutputTokens: this.getMaxOutputTokens(model, false, options?.maxTokens),
-          ...(model === GOOGLE_ARGON_MODEL && options?.enableThinking && {
+          ...(this.isGemini4StandardModel(model) && options?.enableThinking && {
             thinkingConfig: this.getThinkingConfig(model, options.thinkingEffort || 'medium', true)
           })
         }
@@ -534,7 +534,7 @@ export class GoogleAdapter extends BaseAdapter {
       method: 'POST',
       headers: this.buildGoogleHeaders(),
       body: JSON.stringify(this.buildGenerateContentBody(request)),
-      timeoutMs: model === GOOGLE_ARGON_MODEL ? 900_000 : 60_000
+      timeoutMs: this.isGemini4StandardModel(model) ? 900_000 : 60_000
     });
     this.assertOk(response, `Google generation failed: HTTP ${response.status}`);
     const responseJson = response.json;
@@ -657,13 +657,17 @@ export class GoogleAdapter extends BaseAdapter {
     return { ...thoughts, thinkingBudget: params?.thinkingBudget || 8192 };
   }
 
+  private isGemini4StandardModel(model: string): boolean {
+    return model === GOOGLE_ARGON_MODEL || model === 'gemini-4-carbon';
+  }
+
   private usesThinkingLevels(model: string): boolean {
     // Only add confirmed model contracts; future Gemini generations may differ.
-    return model.startsWith('gemini-3') || model === GOOGLE_ARGON_MODEL;
+    return model.startsWith('gemini-3') || this.isGemini4StandardModel(model);
   }
 
   private getMaxOutputTokens(model: string, stream: boolean, requested?: number): number | undefined {
-    if (model !== GOOGLE_ARGON_MODEL) return requested;
+    if (!this.isGemini4StandardModel(model)) return requested;
     // Standard generateContent is capped at 32K; SSE permits 64K explicitly.
     // A smaller caller budget always wins, including for reasoning-heavy work.
     return Math.min(requested ?? 32768, stream ? 65536 : 32768);
@@ -671,12 +675,12 @@ export class GoogleAdapter extends BaseAdapter {
 
   protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
     const model = options?.model || this.currentModel;
-    if (model !== GOOGLE_ARGON_MODEL) return super.generateCacheKey(prompt, options);
+    if (!this.isGemini4StandardModel(model)) return super.generateCacheKey(prompt, options);
     const key = super.generateCacheKey(prompt, {
       ...options,
       maxTokens: this.getMaxOutputTokens(model, false, options?.maxTokens)
     });
-    // Argon's buffered path honors thinking controls, so cached results must too.
+    // Gemini 4 standard models' buffered path honors thinking controls, so cached results must too.
     return `${key}:${JSON.stringify({
       enableThinking: Boolean(options?.enableThinking),
       thinkingEffort: options?.thinkingEffort || 'medium'

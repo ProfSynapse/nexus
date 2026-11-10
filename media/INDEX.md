@@ -192,13 +192,13 @@ Watch: `src/settings/tabs/WorkspacesTab.ts`, `src/components/workspace/*`, `src/
 
 ## apps — Available Apps lists each capability and an Install button. Read the description, choose only an app you need, then inspect its installed configuration.
 
-Status: **published**. Real released Nexus 5.21.1 UI, reused from the course. Practice data; providers were unconfigured.
+Status: **published**. Nexus 5.22.0 release candidate in a sanitized test vault, showing the shared ElevenLabs speech, music and sound-effects tools. Providers unconfigured; demonstrates available app descriptions, not generation.
 
 [Open asset](../media/screenshots/apps.png)
 
-Capture: Nexus 5.21.1, Obsidian 1.14.4 / Linux, 2026-10-19.
+Capture: Nexus 5.22.0, Obsidian 1.15.0 / Linux, 2026-11-10.
 
-Source: https://www.synapticlabs.ai/learn/your-ai-second-brain
+Source: Sanitized Nexus release-candidate test vault capture
 
 Placements:
 

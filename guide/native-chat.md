@@ -142,7 +142,7 @@ Use **Settings &rarr; Nexus &rarr; Defaults &rarr; Voice &rarr; Read aloud** to 
 Native chat also exposes built-in prompt tools for media generation when compatible backends are configured:
 
 - `listVoices` shows the voices a speech model takes and which is your default.
-- `generateAudio` creates spoken audio files directly in your vault using the configured Voice defaults or an explicit speech provider/model/voice
+- `generateAudio` saves speech, music, or sound effects directly in your vault. Choose `type` (`speech`, `music`, or `sfx`); speech uses your Voice defaults or an explicit provider/model/voice. The available types and models depend on your configured providers.
 - `generateVideo` creates MP4 files in your vault using Google or OpenRouter video models
 - `checkGeneratedArtifact` resumes a timed-out media job and saves the completed output to the requested vault path
 

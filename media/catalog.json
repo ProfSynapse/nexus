@@ -12,7 +12,14 @@
         "README.md",
         "guide/visual-tour.md"
       ],
-      "recipe": "Open the public course page, confirm its title and availability, and review the README and visual-guide callouts for accurate optional course promotion."
+      "recipe": "Open the public course page, confirm its title and availability, and review the README and visual-guide callouts for accurate optional course promotion.",
+      "review": {
+        "head": "52758948b2d7d7c47d345412d0d77334d678542d",
+        "fingerprint": "f214e76de8c33933b87c5d8eb952a38aa1a14a82abfc839cada28c06cb5a209d",
+        "decision": "keep",
+        "note": "Public course returned HTTP 200 on 2026-11-10 with title Your AI Second Brain Course: Obsidian + AI | Synaptic Labs; README and visual guide callouts remain optional alongside complete setup guides.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "course-m7-01-settings-gear",
@@ -264,10 +271,10 @@
       "title": "Available Apps lists each capability and an Install button. Read the description, choose only an app you need, then inspect its installed configuration.",
       "kind": "screenshot",
       "status": "published",
-      "description": "Real released Nexus 5.21.1 UI, reused from the course. Practice data; providers were unconfigured.",
-      "source": "https://www.synapticlabs.ai/learn/your-ai-second-brain",
-      "sourceFilename": "12-apps-list.png",
-      "sourceSha256": "ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17",
+      "description": "Nexus 5.22.0 release candidate in a sanitized test vault, showing the shared ElevenLabs speech, music and sound-effects tools. Providers unconfigured; demonstrates available app descriptions, not generation.",
+      "source": "Sanitized Nexus release-candidate test vault capture",
+      "sourceFilename": "nexus-522-apps-popout.png",
+      "sourceSha256": "8610509b2764f62c049c99db02ee4b2487d977008e721fe09ffcc1af57dde137",
       "watch": [
         "src/settings/tabs/AppsTab.ts",
         "src/services/apps/*",
@@ -276,16 +283,15 @@
       ],
       "recipe": "Settings → Nexus → Apps; show available capabilities and requirements without claiming execution.",
       "capture": {
-        "pluginVersion": "5.21.1",
-        "platform": "Obsidian 1.14.4 / Linux",
-        "date": "2026-10-19"
+        "pluginVersion": "5.22.0",
+        "platform": "Obsidian 1.15.0 / Linux",
+        "date": "2026-11-10"
       },
       "path": "media/screenshots/apps.png",
-      "bytes": 108606,
-      "sha256": "ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17",
+      "bytes": 113913,
+      "sha256": "8610509b2764f62c049c99db02ee4b2487d977008e721fe09ffcc1af57dde137",
       "width": 900,
-      "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17.png"
+      "height": 700
     },
     {
       "id": "course-m7-13-chat-provider-needed",

@@ -150,3 +150,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - Lesson: rewording `message` for people silently broke LM Studio's draft-model fallback, which regex-matched `err.message`; only a status-coded fixture exposed it. The symptoms row now says to match on `technicalMessage`.
 
 - 2026-11-05 | A key missing a scope reported `Request failed, status 401`: bare `requestUrl` throws on non-2xx and drops the body, while Jest's mock returns the failure, so every `status !== 200` branch looked covered and never ran. | Added `ProviderHttpClient.requestOk`, permission detection in `ProviderErrorMessages.ts`, a symptom row, and a test failing on a bare call in the guarded paths. | Files: `references/symptoms.md`, this log.
+
+- 2026-11-10 | Gemini 4 sibling required extending exact-model request guards; existing model-update routing protocol identified every guard. No adapter skill procedure change.

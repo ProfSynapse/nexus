@@ -2,6 +2,16 @@
 
 ## November 2026
 
+**v5.22.0** — Fable 5.2, Gemini 4 Carbon, and shared audio generation
+
+- Choose Claude Fable 5.2 through Anthropic, Claude Code, OpenRouter or Requesty, and Gemini 4 Carbon through Google, OpenRouter or Requesty. Existing provider defaults stay the same. Carbon uses Gemini 4 thinking levels and request limits.
+- Generate speech, music or sound effects with `prompt generate-audio`, and discover compatible voices with `prompt list-voices`. ElevenLabs now joins the shared audio tools instead of exposing separate speech, music and sound-effects tools ([#438](https://github.com/ProfSynapse/nexus/pull/438)).
+- OpenRouter read-aloud uses the selected model's supported voices and saves PCM-only output as WAV. Provider errors identify missing API-key permissions instead of presenting them as invalid keys ([#437](https://github.com/ProfSynapse/nexus/pull/437)).
+- GPT Image 2.6 is available through OpenAI and OpenRouter. Image and video tool options follow the capabilities available to your configured keys, and retired model selections use supported replacements ([#436](https://github.com/ProfSynapse/nexus/pull/436)).
+- The README and visual guide include real Nexus demonstrations and an updated Community plugins installation path ([#433](https://github.com/ProfSynapse/nexus/pull/433), [#434](https://github.com/ProfSynapse/nexus/pull/434)).
+
+---
+
 **v5.21.3** — Better compaction recovery, mobile ChatGPT sign-in, and clearer provider failures
 
 - Compaction preserves a saved state with the active task, exact paths and next steps before shortening chat context. Later replies receive recent goal/memory entries and previously used tool schemas when space allows, plus instructions to search earlier conversation for missing details. The full transcript stays saved ([#427](https://github.com/ProfSynapse/nexus/pull/427)).

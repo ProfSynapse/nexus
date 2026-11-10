@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "nexusVersion": "5.22.0",
+  "generatedAt": "2026-11-10T17:38:55.133Z",
+  "toolCount": 2,
+  "tools": [
+    {
+      "name": "toolManager_getTools",
+      "description": "Before useTools, obtain the current tool signature through getTools or a successful workflow/skill preload. Discover any tools whose schemas are not already loaded.\nThis returns CLI-oriented command metadata for the tools you need next.\nSend sessionId, memory, goal, and constraints at the top level.\nThe workspace is remembered per session: the first useTools call of a fresh session passes \"workspaceId\" once (\"default\" or an exact name from the workspaces list this call returns) or runs \"memory load-workspace\"; later calls inherit it. Omit \"workspaceId\" unless you are deliberately switching. getTools itself never needs it.\nUse one stable human-readable session name for the conversation. Reuse that same sessionId value for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state. Nexus stores an internal UUID silently.\nDo not send a nested \"context\" object or legacy \"request\" array.\n\nWorkflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands\nWorkspaceDetails lists the workflows you can preload with memory load-workspace --workflow. There is no default workflow. Loading prepares instructions and tool schemas without running a workflow; memory run executes it.\nFull tool schemas returned by a successful workspace workflow or skill load are current discovery metadata for those tools. Use those signatures without fetching the same schemas again; discover any additional tools with getTools. Loading prepares instructions and tools only; memory run starts workflow execution.\nKnown-good example: {\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available storage tools.\",\"tool\":\"storage move, content read\"}\nExample selectors: tool=\"--help\", tool=\"storage\", tool=\"storage move\", tool=\"storage move, content read\"\n\nAgents:\ncontent: [read,write,replace,insert,setProperty,removeProperty]\nstorage: [list,createFolder,move,copy,archive,open]\nsearch: [content,directory,memory,queryNotes]\nmemory: [createState,listStates,loadState,updateState,archiveState,createWorkspace,listWorkspaces,searchWorkspaces,loadWorkspace,updateWorkspace,archiveWorkspace,run]\nprompt: [list,get,create,update,archive,listModels,execute,generateImage,listVoices,generateAudio,generateVideo,checkGeneratedArtifact,subagent]\ncanvas: [read,write,update,list]\nbase: [read,write,update,list,analyze]\ntask: [createProject,listProjects,updateProject,archiveProject,create,list,open,update,move,query,linkNote]\ningest: [run,capabilities]\ncomposer: [compose,listFormats]\nweb: [open,capture-markdown,capture-png,capture-pdf,links]\nskills: [listSkills,loadSkill,createSkill,updateSkill,archiveSkill,syncSkills]\ndata: [runPython,listCapabilities]\n\nExisting workspaces: not listed here. The getTools RESULT carries the live list — read \"workspaces\" there and pass one of those exact names. Never infer a workspace name from the user's wording.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. Discovery never needs it — a fresh session names its workspace on its first useTools call (\"default\" for the global workspace, or an exact value from the workspaces list this call returns). An empty string is read as omitted, never as \"default\"."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Stable human-readable session name for this chat. Reuse the same value for every getTools/useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session."
+          },
+          "memory": {
+            "type": "string",
+            "description": "Brief summary of the conversation so far."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Brief statement of the current objective."
+          },
+          "constraints": {
+            "type": "string",
+            "description": "Optional rules or limits."
+          },
+          "tool": {
+            "type": "string",
+            "description": "CLI-style selector string. Supports one or more selectors separated by commas. Examples: \"--help\", \"storage\", \"storage move\", \"storage move, content read\"."
+          }
+        },
+        "required": [
+          "memory",
+          "goal",
+          "tool"
+        ]
+      }
+    },
+    {
+      "name": "toolManager_useTools",
+      "description": "Execute one or more CLI-style tool commands from the top-level \"tool\" field. Known-good example: {\"sessionId\":\"workspace setup\",\"memory\":\"Summarize work so far.\",\"goal\":\"Inspect available workspaces.\",\"tool\":\"memory list-workspaces\"}. The workspace is remembered per session: a fresh session passes \"workspaceId\" once (\"default\" or an exact name from getTools) or loads one with \"memory load-workspace\"; every later call in that session inherits it, so omit \"workspaceId\" unless you are deliberately switching. Use one stable human-readable session name for the conversation; reuse that same sessionId value for every useTools call so traces and saved states attach to the current session. Nexus stores the internal UUID silently. Full tool schemas returned by a successful workspace workflow or skill load are current discovery metadata for those tools. Use those signatures without fetching the same schemas again; discover any additional tools with getTools. Loading prepares instructions and tools only; memory run starts workflow execution. Separate multiple commands with a top-level comma outside quotes (\"cmd1, cmd2\"); commas inside quoted values stay literal and never split commands. For multiline content, wrap the value in quotes — literal newlines and escaped ones like \"# Title\\n\\nBody\" both work, and any double quote inside the value must be escaped as \\\". Never flatten multiline content to one line; quoting is enough. For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping entirely: put the text in the optional top-level \"values\" map and reference it from the tool string as @key (unquoted). Values are substituted after parsing with no escape processing, so the content arrives exactly as written. Quote the token (\"@key\") to pass literal text instead, and reference every declared key. Example: {\"tool\": \"content write --path snippet.md --content @body\", \"values\": {\"body\": \"const re = /\\\\d+/;\"}}. When you already know several files you want to read, batch them as comma-separated \"content read\" commands in ONE call with strategy \"parallel\" — do not issue a separate useTools call per file. Inspect exact command signatures through getTools or a successful preload before calling this tool.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "description": "Workspace name or ID. Pass it once to choose or switch the workspace for this session; later calls in the same session inherit it, so omit it otherwise. A fresh session must pass it once (or run \"memory load-workspace\") before other commands — \"default\" for the global workspace, or an exact value from the availableWorkspaces list returned by getTools. An empty string is read as omitted, never as \"default\"."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Stable human-readable session name for this chat. Reuse the same value for every useTools call so traces, saved states and the remembered workspace attach to the current session; Nexus stores the internal UUID silently. Omit it only when the runtime already supplies the session."
+          },
+          "memory": {
+            "type": "string",
+            "description": "Brief summary of the conversation so far."
+          },
+          "goal": {
+            "type": "string",
+            "description": "Brief statement of the current objective."
+          },
+          "constraints": {
+            "type": "string",
+            "description": "Optional rules or limits."
+          },
+          "tool": {
+            "type": "string",
+            "description": "CLI-style tool command string. Full tool schemas returned by a successful workspace workflow or skill load are current discovery metadata for those tools. Use those signatures without fetching the same schemas again; discover any additional tools with getTools. Loading prepares instructions and tools only; memory run starts workflow execution. Separate multiple commands with a top-level comma outside quotes (\"cmd1, cmd2\"); commas inside quoted values stay literal and never split commands. For multiline content, wrap the value in quotes — literal newlines and escaped ones like \"# Title\\n\\nBody\" both work, and any double quote inside the value must be escaped as \\\". Never flatten multiline content to one line; quoting is enough. Example: content write --path note.md --content \"# Title\\n\\nAlpha, beta, gamma\". Batching example: \"storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md\". Reading multiple known files? Batch them here as one comma-separated list (e.g. \"content read --path a.md, content read --path b.md, content read --path c.md\") instead of separate calls."
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "serial",
+              "parallel"
+            ],
+            "description": "Execution strategy for multiple CLI commands. Defaults to serial. Use \"parallel\" for independent read-only commands (e.g. batched content reads) to avoid wasted round-trips."
+          },
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "description": "Optional stable retry identity. Reuse the same value only for an exact retry; reusing it with different command parameters is rejected. Calls without it receive a non-replayable generated receipt and cannot be deduplicated across retries."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "For content heavy on backslashes, quotes, or length (code, Windows paths, LaTeX, regex), skip CLI escaping entirely: put the text in the optional top-level \"values\" map and reference it from the tool string as @key (unquoted). Values are substituted after parsing with no escape processing, so the content arrives exactly as written. Quote the token (\"@key\") to pass literal text instead, and reference every declared key. Keys use letters, digits, \"_\" or \"-\". Example: {\"tool\": \"content write --path snippet.md --content @body\", \"values\": {\"body\": \"const re = /\\\\d+/;\"}}"
+          }
+        },
+        "required": [
+          "memory",
+          "goal",
+          "tool"
+        ]
+      }
+    }
+  ]
+}
