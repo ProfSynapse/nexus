@@ -145,6 +145,26 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // https://openrouter.ai/api/v1/models (verified 2026-11-10)
+  {
+    provider: 'openrouter',
+    name: 'Claude Fable 5.2',
+    apiName: 'anthropic/claude-fable-5.2',
+    releaseDate: '2026-11-09',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 8.00,
+    outputCostPerMillion: 40.00,
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 10.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openrouter',
     name: 'Claude Fable 5.1',
@@ -503,6 +523,25 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     inputCostPerMillion: 0.825,
     outputCostPerMillion: 4.125,
     cacheReadCostPerMillion: 0.0825,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://openrouter.ai/api/v1/models (verified 2026-11-10)
+  {
+    provider: 'openrouter',
+    name: 'Gemini 4 Carbon',
+    apiName: 'google/gemini-4-carbon',
+    releaseDate: '2026-11-10',
+    contextWindow: 1048576,
+    maxTokens: 943718,
+    inputCostPerMillion: 2.0,
+    outputCostPerMillion: 10.0,
+    cacheReadCostPerMillion: 0.1,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

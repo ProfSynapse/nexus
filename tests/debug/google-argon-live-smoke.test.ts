@@ -1,7 +1,7 @@
 /**
  * Bounded live Argon checks: mocks cannot prove the provider accepts thinking
  * controls, emits reasoning, or surfaces rejected streaming requests.
- * RUN_GOOGLE_ARGON_SMOKE=1 npx jest tests/debug/google-argon-live-smoke.test.ts --runInBand --no-coverage
+ * RUN_GOOGLE_ARGON_SMOKE=1 GOOGLE_STANDARD_SMOKE_MODEL=gemini-4-carbon npx jest tests/debug/google-argon-live-smoke.test.ts --runInBand --no-coverage
  * Reads GEMINI_API_KEY from the environment or repo .env. No vault writes.
  * Two successful requests, each capped at 2,048 thinking + output tokens.
  */
@@ -17,7 +17,7 @@ import { GoogleAdapter } from '../../src/services/llm/adapters/google/GoogleAdap
 
 jest.setTimeout(180_000);
 const describeLive = process.env.RUN_GOOGLE_ARGON_SMOKE === '1' ? describe : describe.skip;
-const model = 'gemini-4-argon';
+const model = process.env.GOOGLE_STANDARD_SMOKE_MODEL || 'gemini-4-argon';
 
 function apiKey(): string {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
@@ -108,7 +108,7 @@ describeLive('Argon bounded live transport', () => {
   it('throws when the live streaming endpoint rejects an invalid model', async () => {
     await expect((async () => {
       for await (const chunk of new GoogleAdapter(apiKey(), model).generateStreamAsync('Reply OK.', {
-        model: 'gemini-4-argon-invalid-smoke', maxTokens: 1,
+        model: `${model}-invalid-smoke`, maxTokens: 1,
       })) { void chunk; }
     })()).rejects.toThrow();
   });

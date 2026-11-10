@@ -278,3 +278,12 @@ the `nexus-mobile-compat` skill's job.
 
 Encode the result at `run-gated-lanes.md`. When the loop is finished and banked,
 end the session at `self-refine.md`.
+
+### Settings screenshots in separate windows
+
+Obsidian can open Settings in its own window. A successful `dev:screenshot` then
+captures the main vault window while the settings controls live elsewhere.
+Inspect the image before treating it as evidence. Enumerate Electron windows
+from a vault-asserted diagnostic and capture the window whose title identifies
+the intended test vault and Settings; never select an arbitrary window index.
+Verify the captured image shows the candidate version and intended settings tab.

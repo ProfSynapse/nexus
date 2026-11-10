@@ -421,7 +421,7 @@ liberties never travel into plugin code.
 
 1. **PromptManager** (`src/agents/promptManager/`) - Custom prompts and LLM integration
    - `prompt`: execute, create, get, list, update, archive, sub, list-models,
-     generate-image, generate-audio, generate-video, check-generated-artifact
+     generate-image, generate-audio, list-voices, generate-video, check-generated-artifact
    - No delete — the AI gets `archive` (reversible). Media generation is async:
      `generate-*` returns a job, poll `check-generated-artifact <jobId>`.
 

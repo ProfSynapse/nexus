@@ -49,3 +49,5 @@ their tools appear in no export.
 ## 2026-10-24 — Compaction recovery signature
 
 Exported the search memory subset through the live normalizer and validated the scratch artifact. The prompt uses the current catalog schema; its small-window recovery subset retains original argument definitions and labels omitted advanced options. No catalog or parameter schema changed. No protocol change.
+
+- 2026-11-10 | Version lifecycle generated the CLI and MCP release bundle; catalog and exporter-coverage gates pass. No procedure change.

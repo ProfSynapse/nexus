@@ -85,6 +85,24 @@ export const ANTHROPIC_CLAUDE_CODE_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // Availability: https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan
+  {
+    provider: 'anthropic-claude-code',
+    name: 'Claude Fable 5.2',
+    apiName: 'claude-fable-5-2',
+    releaseDate: '2026-11-09',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'anthropic-claude-code',
     name: 'Claude Fable 5.1',

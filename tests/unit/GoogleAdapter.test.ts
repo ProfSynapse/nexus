@@ -521,8 +521,7 @@ describe('GoogleAdapter', () => {
   // These tests inspect real adapter requests; the HTTP fixture only supplies
   // responses. They fail if Argon regresses to Gemini 2 budget/sampling rules,
   // loses explicit small output caps, or reports long decode as a full answer.
-  describe('Gemini 4 Argon standard generation', () => {
-    const model = 'gemini-4-argon';
+  describe.each(['gemini-4-argon', 'gemini-4-carbon'])('%s standard generation', model => {
     const completed = { candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] };
 
     it.each([false, true])('uses thinking levels without sampling parameters (stream=%s)', async stream => {
@@ -633,7 +632,7 @@ describe('GoogleAdapter', () => {
     it('lists the verified standard model without changing the provider default', async () => {
       const adapter = new GoogleAdapter('gk-test');
       expect(await adapter.listModels()).toContainEqual(expect.objectContaining({
-        id: model, name: 'Gemini 4 Argon', contextWindow: 1048576, maxOutputTokens: 32768,
+        id: model, name: model === 'gemini-4-carbon' ? 'Gemini 4 Carbon' : 'Gemini 4 Argon', contextWindow: 1048576, maxOutputTokens: 32768,
         supportsThinking: true, supportsFunctions: true, supportsStreaming: true
       }));
       expect(await adapter.getModelPricing(model)).toMatchObject({

@@ -59,7 +59,29 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     }
   },
 
-  // Claude Fable 5.1 (native 1M context, 128k output; thinking is always on)
+  // Claude Fable 5.2 (native 1M context, 128k output; thinking is always on)
+  // https://platform.claude.com/docs/en/models/fable-5-2/overview (verified 2026-11-10)
+  {
+    provider: 'anthropic',
+    name: 'Claude Fable 5.2',
+    apiName: 'claude-fable-5-2',
+    releaseDate: '2026-11-09',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 8.00,
+    outputCostPerMillion: 40.00,
+    // Published cache-read rate is $0.20 (0.025x input), not the 0.1x structure.
+    cacheReadCostPerMillion: 0.20,
+    cacheWriteCostPerMillion: 10,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'anthropic',
     name: 'Claude Fable 5.1',

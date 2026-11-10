@@ -20,6 +20,47 @@ import { ModelSpec } from '../modelTypes';
 // Requesty provides access to models from other providers
 // Each model has its own specific API name in Requesty
 export const REQUESTY_MODELS: ModelSpec[] = [
+  // https://router.requesty.ai/v1/models (listing checked 2026-11-10)
+  {
+    provider: 'requesty',
+    name: 'Gemini 4 Carbon',
+    apiName: 'vertex/gemini-4-carbon',
+    releaseDate: '2026-11-10',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    // Requesty's current 50% discount; refresh against its listing when repricing.
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 5,
+    cacheReadCostPerMillion: 0.05,
+    cacheWriteCostPerMillion: 1,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://router.requesty.ai/v1/models (listing checked 2026-11-10)
+  {
+    provider: 'requesty',
+    name: 'Claude Fable 5.2',
+    apiName: 'anthropic/claude-fable-5.2',
+    releaseDate: '2026-11-09',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 8,
+    outputCostPerMillion: 40,
+    cacheReadCostPerMillion: 0.2,
+    cacheWriteCostPerMillion: 10,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // OpenAI models via Requesty
   {
     provider: 'requesty',

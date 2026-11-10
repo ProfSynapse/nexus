@@ -12,7 +12,14 @@
         "README.md",
         "guide/visual-tour.md"
       ],
-      "recipe": "Open the public course page, confirm its title and availability, and review the README and visual-guide callouts for accurate optional course promotion."
+      "recipe": "Open the public course page, confirm its title and availability, and review the README and visual-guide callouts for accurate optional course promotion.",
+      "review": {
+        "head": "52758948b2d7d7c47d345412d0d77334d678542d",
+        "fingerprint": "f214e76de8c33933b87c5d8eb952a38aa1a14a82abfc839cada28c06cb5a209d",
+        "decision": "keep",
+        "note": "Public course returned HTTP 200 on 2026-11-10 with title Your AI Second Brain Course: Obsidian + AI | Synaptic Labs; README and visual guide callouts remain optional alongside complete setup guides.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "course-m7-01-settings-gear",
@@ -264,10 +271,10 @@
       "title": "Available Apps lists each capability and an Install button. Read the description, choose only an app you need, then inspect its installed configuration.",
       "kind": "screenshot",
       "status": "published",
-      "description": "Real released Nexus 5.21.1 UI, reused from the course. Practice data; providers were unconfigured.",
-      "source": "https://www.synapticlabs.ai/learn/your-ai-second-brain",
-      "sourceFilename": "12-apps-list.png",
-      "sourceSha256": "ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17",
+      "description": "Nexus 5.22.0 release candidate in a sanitized test vault, showing the shared ElevenLabs speech, music and sound-effects tools. Providers unconfigured; demonstrates available app descriptions, not generation.",
+      "source": "Sanitized Nexus release-candidate test vault capture",
+      "sourceFilename": "nexus-522-apps-popout.png",
+      "sourceSha256": "8610509b2764f62c049c99db02ee4b2487d977008e721fe09ffcc1af57dde137",
       "watch": [
         "src/settings/tabs/AppsTab.ts",
         "src/services/apps/*",
@@ -276,16 +283,22 @@
       ],
       "recipe": "Settings → Nexus → Apps; show available capabilities and requirements without claiming execution.",
       "capture": {
-        "pluginVersion": "5.21.1",
-        "platform": "Obsidian 1.14.4 / Linux",
-        "date": "2026-10-19"
+        "pluginVersion": "5.22.0",
+        "platform": "Obsidian 1.15.0 / Linux",
+        "date": "2026-11-10"
       },
       "path": "media/screenshots/apps.png",
-      "bytes": 108606,
-      "sha256": "ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17",
+      "bytes": 113913,
+      "sha256": "8610509b2764f62c049c99db02ee4b2487d977008e721fe09ffcc1af57dde137",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/ba9335c42b5b1a305f79fd111f5dfb4c187882b12b7f17b2898e02ac03bfda17.png"
+      "review": {
+        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
+        "fingerprint": "a31cb9385cf1b364c0ba68de0a22992b86ca9c15006f9a09b2337084fd7f9522",
+        "decision": "replaced",
+        "note": "Inspected candidate 5.22.0 in sanitized test-vault Settings window on Obsidian 1.15.0. Recaptured Apps cards, including shared ElevenLabs speech/music/sfx and voices; no credentials or generated-result claims.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "course-m7-13-chat-provider-needed",
@@ -345,7 +358,14 @@
         "sourceFilename": "14-task-board.png",
         "sourceSha256": "ff30caecd0c08baa4784a1f76d4ac08ede54f830110c42250472cd5620431dd7"
       },
-      "source": "media/pilot-evidence.json"
+      "source": "media/pilot-evidence.json",
+      "review": {
+        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
+        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "decision": "keep",
+        "note": "Inspected candidate 5.22.0 test-vault task board and historical screenshot. Workspace/project filters, status columns and labels remain accurate. Trigger is additive Anthropic model metadata; demonstrated model/default and task UI are unchanged. Keep labeled 5.21.1 capture; no new provider-run claim.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "task-linked-note",
@@ -382,7 +402,14 @@
         "sourceFilename": "15-task-linked-note.png",
         "sourceSha256": "e35343170441fbe027f6be7699c3ea26b3faff32e5267824df7257fde56f9aa7"
       },
-      "source": "media/pilot-evidence.json"
+      "source": "media/pilot-evidence.json",
+      "review": {
+        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
+        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "decision": "keep",
+        "note": "Reviewed historical 5.21.1 linked-task form and candidate 5.22.0 task-board UI. Trigger is additive Anthropic model metadata, with no task editor/layout changes and no change to captured Sonnet model/default. Keep historical capture metadata and authenticated-run evidence; no recapture or fresh task-generation claim.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "course-m7-16-composer-requirements",
@@ -990,7 +1017,14 @@
       "bytes": 161050,
       "sha256": "2a4da683ad2de2f9401c11a2729aa0a1df3e0e1557f557a91a0b9d9765c5f02c",
       "width": 1439,
-      "height": 959
+      "height": 959,
+      "review": {
+        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
+        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "decision": "keep",
+        "note": "Inspected candidate 5.22.0 note rendering and historical source/result screenshot. Additive Anthropic catalog entries do not alter note rendering or the captured Sonnet model/default. Preserve historical 5.21.1 capture and authenticated-run provenance; no fresh generation claim.",
+        "date": "2026-11-10"
+      }
     },
     {
       "id": "chat-references-tools",

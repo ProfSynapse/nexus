@@ -145,3 +145,5 @@ authorized by this maintenance procedure. Source edits made in `.skills/` and
 mirrored with the repository sync command.
 
 - 2026-10-30 | Joseph's first pilot review found the hero mostly showed task editing and no chat. Added a release visual-review criterion: the exported clip must visibly demonstrate its advertised feature; chat heroes show the prompt, actual streaming reply and tool activity. Details are maintained in `media/WORKFLOW.md`; the chat-first replacement is indexed in the catalog.
+
+- 2026-11-10 | Preparing 5.22.0 with locked pnpm import, real test-vault bundle verification and affected-media review; existing procedures cover the installation and CLI targeting issues. No procedure change.

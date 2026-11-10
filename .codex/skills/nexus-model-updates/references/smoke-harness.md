@@ -92,6 +92,11 @@ Before treating a failure as a bad id or a bad key:
    saturated. Retry with backoff — these typically clear within minutes — rather
    than re-spelling the id or touching the entry.
 
+A model listing can succeed while generation fails on depleted prepaid credits
+(HTTP 402), or a subscription CLI can stop at a weekly usage limit. These are
+billing/entitlement blockers, not evidence of an invalid id. Record the listing
+and the blocked live call separately; do not claim transport verification.
+
 Network or DNS failures in a sandboxed session are a fourth category and mean
 the run never reached the provider. Re-run with network access rather than
 recording a failure.
