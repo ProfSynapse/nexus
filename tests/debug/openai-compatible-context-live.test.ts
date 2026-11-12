@@ -4,7 +4,11 @@
  * Context discovery and the Check request against a real, already-running server
  * started with a known context (llama.cpp `-c 2048`, vLLM `--max-model-len 2048`).
  * Set COMPATIBLE_CONTEXT_OVERSIZE=truncated for servers that shorten long prompts
- * instead of refusing them (Ollama). requestUrl is bridged to fetch; not in-app proof.
+ * instead of refusing them (Ollama), and COMPATIBLE_CONTEXT_REPORTED=none for
+ * servers whose model list carries no context size (Ollama's /v1). Ollama:
+ *   COMPATIBLE_CONTEXT_BASE_URL=http://127.0.0.1:11434/v1 COMPATIBLE_CONTEXT_MODEL=<model>
+ *   COMPATIBLE_CONTEXT_SERVED=<num_ctx> COMPATIBLE_CONTEXT_OVERSIZE=truncated COMPATIBLE_CONTEXT_REPORTED=none
+ * requestUrl is bridged to fetch; not in-app proof.
  */
 import { __setRequestUrlMock } from '../mocks/obsidian';
 import { discoverOpenAICompatibleModels } from '../../src/services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
@@ -16,6 +20,7 @@ describeLive('OpenAI-compatible context window against a live server', () => {
   const apiKey = process.env.COMPATIBLE_CONTEXT_API_KEY || '';
   const served = Number(process.env.COMPATIBLE_CONTEXT_SERVED || '2048');
   const oversize = process.env.COMPATIBLE_CONTEXT_OVERSIZE || 'too-large';
+  const reported = process.env.COMPATIBLE_CONTEXT_REPORTED === 'none' ? undefined : served;
   let model = process.env.COMPATIBLE_CONTEXT_MODEL || '';
 
   beforeAll(async () => {
@@ -29,9 +34,10 @@ describeLive('OpenAI-compatible context window against a live server', () => {
     if (!model) model = (await discoverOpenAICompatibleModels(baseUrl, apiKey))[0].id;
   });
 
-  test('discovery reports the context the server was started with', async () => {
+  test('discovery reports the served context, or none when the server reports none', async () => {
     const found = (await discoverOpenAICompatibleModels(baseUrl, apiKey)).find(entry => entry.id === model);
-    expect(found?.contextWindow).toBe(served);
+    expect(found).toBeDefined();
+    expect(found?.contextWindow).toBe(reported);
   }, 60_000);
 
   test('a Check at the served size fits', async () => {

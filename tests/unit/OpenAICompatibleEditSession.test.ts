@@ -126,4 +126,16 @@ describe('OpenAI-compatible endpoint editor', () => {
     expect(await pending).toBe('stale');
     expect(persist).not.toHaveBeenCalled();
   });
+
+  it('follows the server report when a check suggests the size the server already reports', () => {
+    const session = new OpenAICompatibleEditSession('id-1', config(), jest.fn(async () => undefined));
+    session.draft.openaiCompatible.models = {
+      reported: { source: 'discovered', reportedContextWindow: 8192, contextWindow: 32_768 },
+      unreported: { source: 'manual', contextWindow: 65_536 },
+    };
+    expect(session.useContextWindow('reported', 8192)).toBe('');
+    expect(session.draft.openaiCompatible.models.reported).toEqual({ source: 'discovered', reportedContextWindow: 8192 });
+    expect(session.useContextWindow('unreported', 32_768)).toBe('32768');
+    expect(session.draft.openaiCompatible.models.unreported).toEqual({ source: 'manual', contextWindow: 32_768 });
+  });
 });

@@ -161,6 +161,8 @@ export interface Conversation {
       modelId?: string;
       /** Budget committed together with this chat's model and compaction boundary. */
       effectiveContextWindow?: number;
+      /** The model's whole window when that budget was committed. */
+      modelContextWindow?: number;
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;

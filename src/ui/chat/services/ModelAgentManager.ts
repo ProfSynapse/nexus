@@ -29,7 +29,8 @@ import {
   type ModelAgentPromptContextSnapshot,
 } from './ModelAgentPromptContextAssembler';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
-import { getContextWindowOverrideKey, resolveContextWindowLimit } from '../utils/ContextWindowSettings';
+import { followRaisedContextWindow, getContextWindowOverrideKey, resolveContextWindowLimit } from '../utils/ContextWindowSettings';
+import { OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { StaticModelsService } from '../../../services/StaticModelsService';
@@ -300,7 +301,10 @@ export class ModelAgentManager {
         if (model) {
           this.selectedModel = model;
           this.committedContextWindow = typeof settings.effectiveContextWindow === 'number'
-            ? resolveContextWindowLimit(model.contextWindow, settings.effectiveContextWindow)
+            ? followRaisedContextWindow(
+              settings.effectiveContextWindow,
+              settings.modelContextWindow ?? this.legacyCommittedMaximum(model.providerId),
+              model.contextWindow)
             : this.resolveConfiguredContextWindow(model);
           this.updateCompactionFrontierPolicy(model);
           this.updateContextTokenTracker(model.providerId);
@@ -637,9 +641,15 @@ export class ModelAgentManager {
       try {
         metadata = await this.conversationSettingsStore.commitHandoff(
           conversationId,
-          { providerId: model.providerId, modelId: model.modelId, effectiveContextWindow: window, sessionId: this.pendingSessionId },
+          {
+            providerId: model.providerId, modelId: model.modelId, effectiveContextWindow: window,
+            modelContextWindow: model.contextWindow, sessionId: this.pendingSessionId
+          },
           frontier,
-          { providerId: source?.providerId, modelId: source?.modelId, effectiveContextWindow: source?.contextWindow, sessionId: this.pendingSessionId }
+          {
+            providerId: source?.providerId, modelId: source?.modelId, effectiveContextWindow: source?.contextWindow,
+            modelContextWindow: sourceModel?.contextWindow, sessionId: this.pendingSessionId
+          }
         );
       } catch (error) {
         if (error instanceof ContextHandoffRecoveryError) {
@@ -777,6 +787,36 @@ export class ModelAgentManager {
       ?.settings?.settings?.llmProviders?.contextWindowOverrides;
     const override = overrides?.[getContextWindowOverrideKey(model.providerId, model.modelId)];
     return resolveContextWindowLimit(model.contextWindow, override);
+  }
+
+  /**
+   * Chats saved before the model's whole window was recorded. On an
+   * OpenAI-compatible endpoint the only window they could commit was the
+   * 4,096 fallback, so that value meant "all of it". Elsewhere it is unknown.
+   */
+  private legacyCommittedMaximum(providerId: string): number | undefined {
+    return providerId.startsWith('openai-compatible-') ? OPENAI_COMPATIBLE_CONTEXT_WINDOW : undefined;
+  }
+
+  /**
+   * Re-read the selected model after provider settings change. When its window
+   * grew and this chat was using all of the old window, the chat follows the
+   * new one; a smaller budget the user chose is kept. Nothing is persisted
+   * here: the next save records it, and a reload reaches the same answer.
+   */
+  async followModelWindowChange(): Promise<void> {
+    const current = this.selectedModel;
+    if (!current || this.contextHandoffPromise) return;
+    const generation = this.modelSelectionGeneration;
+    const refreshed = await this.resolveModelOption(current.providerId, current.modelId);
+    if (!refreshed || this.contextHandoffPromise || generation !== this.modelSelectionGeneration
+      || this.selectedModel !== current || refreshed.contextWindow === current.contextWindow) return;
+    const budget = this.getEffectiveContextWindow();
+    this.selectedModel = refreshed;
+    this.committedContextWindow = followRaisedContextWindow(budget, current.contextWindow, refreshed.contextWindow);
+    this.updateCompactionFrontierPolicy(refreshed);
+    this.updateContextTokenTracker(refreshed.providerId);
+    this.events.onModelChanged(refreshed);
   }
 
   refreshContextWindowLimit(): void {
@@ -1343,6 +1383,7 @@ export class ModelAgentManager {
       providerId: this.selectedModel?.providerId,
       modelId: this.selectedModel?.modelId,
       effectiveContextWindow: this.getEffectiveContextWindow(),
+      modelContextWindow: this.selectedModel?.contextWindow,
       promptId: this.selectedPrompt?.id ?? null,
       workspaceId: this.selectedWorkspaceId,
       sessionId: this.pendingSessionId,

@@ -102,5 +102,15 @@ maximum context length is N tokens". llama.cpp: HTTP 400 with
 `error.type: exceed_context_size_error`, `error.n_ctx`, and the message
 "request (X tokens) exceeds the available context size (N tokens)". A server
 that truncates instead of refusing shows up only as a low
-`usage.prompt_tokens`. `tests/debug/openai-compatible-context-live.test.ts`
-exercises all of this against a real server.
+`usage.prompt_tokens`, and that count is not its context: Ollama 0.40 (llama.cpp
+runner, `num_ctx` 32,768) kept 16,386 tokens of any longer prompt, so never offer
+it as the size. Ollama's `/v1/models` reports no context at all, and its MLX
+runner accepted 49,140 tokens with `num_ctx` 32,768. `tests/debug/openai-compatible-context-live.test.ts`
+exercises all of this against a real server; for Ollama set
+`COMPATIBLE_CONTEXT_OVERSIZE=truncated COMPATIBLE_CONTEXT_REPORTED=none`.
+
+A chat stores its budget beside the model's whole window at that time
+(`chatSettings.modelContextWindow`). When the window later grows, a budget equal
+to the old window follows it, on reopen and in an open chat; a smaller one stays.
+Chats saved before that field existed are treated as "whole window" only at the
+OpenAI-compatible 4,096 fallback.

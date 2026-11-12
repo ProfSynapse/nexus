@@ -89,6 +89,18 @@ export class OpenAICompatibleEditSession {
     this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
   }
 
+  /**
+   * Adopts a size a check revealed. When the server reports that same size,
+   * the user's value is cleared so the model follows the server's report
+   * instead of pinning a copy that would outlive a later server change.
+   * Returns the value the field should show ('' when following the server).
+   */
+  useContextWindow(id: string, value: number): string {
+    const followsServer = this.draft.openaiCompatible.models[id]?.reportedContextWindow === value;
+    this.setContextWindow(id, followsServer ? undefined : value);
+    return followsServer ? '' : String(value);
+  }
+
   /** Sends one prompt of the model's current context size; the caller saves nothing on its behalf. */
   async checkContextWindow(id: string, signal?: AbortSignal): Promise<OpenAICompatibleContextCheckResult> {
     const error = this.validationError();

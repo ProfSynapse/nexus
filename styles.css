@@ -3511,6 +3511,17 @@ body.is-mobile .nexus-remote-agent-modal button {
     max-width: 100%;
 }
 
+/* The field, Check and toggle keep their width; the description wraps beside them. */
+.nexus-compatible-modal .nexus-compatible-model .setting-item-control {
+    flex-shrink: 0;
+}
+
+/* Keep the window line and the check note stacked even when a theme or another
+   plugin makes every setting description a flex row. */
+.nexus-compatible-modal .nexus-compatible-model .setting-item-description {
+    display: block;
+}
+
 .nexus-compatible-check {
     margin-top: var(--space-xs);
 }

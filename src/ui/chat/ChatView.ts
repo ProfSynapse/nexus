@@ -67,6 +67,7 @@ import type { ToolEventData as ChatServiceToolEventData } from '../../services/c
 import type { BranchViewContext } from './components/BranchHeader';
 import type { OverloadRetryNotice } from '../../services/llm/adapters/types';
 import { describeOverloadRetry } from '../../services/llm/adapters/shared/ProviderErrorMessages';
+import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 
 export const CHAT_VIEW_TYPE = CHAT_VIEW_TYPES.current;
 type ChatToolEventData = Parameters<ToolEventCoordinator['handleToolEvent']>[2];
@@ -838,6 +839,14 @@ export class ChatView extends ItemView {
         }
       })
     );
+
+    // A provider save can change the selected model's window, e.g. an
+    // OpenAI-compatible model raised from its 4,096 fallback.
+    this.registerEvent(LLMSettingsNotifier.onSettingsChanged(() => {
+      void this.modelAgentManager.followModelWindowChange()
+        .then(() => this.updateContextProgress())
+        .catch(error => console.error('[ChatView] Failed to refresh the model window:', error));
+    }));
 
     // Refresh conversation list / active conversation when Obsidian Sync
     // lands JSONL updates from another device. The adapter has already

@@ -38,9 +38,11 @@ export function describeContextCheck(result: OpenAICompatibleContextCheckResult)
     case 'fits-unmeasured':
       return { text: 'The server accepted a prompt of this size, but it does not report token counts, so Nexus cannot confirm it read the whole prompt.', warning: false };
     case 'truncated':
+      // No "Use" button: servers that shorten prompts may keep less than they
+      // hold. Ollama keeps about half its context, so this count understates it.
       return {
-        text: `The server read only ${tokens(result.promptTokens)} tokens of the prompt. It shortens long prompts instead of refusing them, so its real context is about that size.`,
-        warning: true, suggestion: result.promptTokens,
+        text: `The server read only ${tokens(result.promptTokens)} tokens of the prompt. It shortens long prompts instead of refusing them, so its context is smaller than this size. Servers such as Ollama keep less than their full context when they shorten a prompt, so enter the size your server runs the model with.`,
+        warning: true,
       };
     case 'too-large':
       return result.serverLimit
@@ -276,8 +278,8 @@ export class OpenAICompatibleModal extends Modal {
       if (suggestion === undefined) return;
       new ButtonComponent(line).setButtonText(`Use ${tokens(suggestion)}`).setClass('nexus-compatible-use-limit').onClick(() => {
         if (this.editor !== editor) return;
-        editor.setContextWindow(model, suggestion);
-        if (input) input.value = String(suggestion);
+        const shown = editor.useContextWindow(model, suggestion);
+        if (input) input.value = shown;
         note = null;
         this.changed();
         describe();

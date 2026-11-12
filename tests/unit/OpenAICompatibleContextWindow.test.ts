@@ -290,10 +290,18 @@ describe('what the settings row says', () => {
       .toBe('Context window: 65,536 tokens, set by you. Your server reports 131,072.');
   });
 
-  test('offers the size a failed check revealed', () => {
+  test('offers the size a refusal named', () => {
     expect(describeContextCheck({ kind: 'too-large', serverLimit: 4096, message: 'x' })).toMatchObject({ suggestion: 4096, warning: true });
-    expect(describeContextCheck({ kind: 'truncated', promptTokens: 2048 })).toMatchObject({ suggestion: 2048, warning: true });
     expect(describeContextCheck({ kind: 'fits', promptTokens: 8100 })).toMatchObject({ warning: false });
     expect(describeContextCheck({ kind: 'too-large', message: 'Prompt is too long' }).suggestion).toBeUndefined();
+  });
+
+  test('does not offer the count a shortening server read, which can be half its real context', () => {
+    // Ollama with num_ctx 32,768 read 16,386 tokens of a 65,536-token check.
+    const note = describeContextCheck({ kind: 'truncated', promptTokens: 16_386 });
+    expect(note.warning).toBe(true);
+    expect(note.suggestion).toBeUndefined();
+    expect(note.text).toMatch(/16,386 tokens/);
+    expect(note.text).toMatch(/enter the size your server runs the model with/);
   });
 });
