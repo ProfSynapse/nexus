@@ -1,21 +1,83 @@
 import type { LLMProviderConfig } from '../../../../types';
+import type { OpenAICompatibleModelDefinition } from '../../../../types/llm/ProviderTypes';
 import { ProviderHttpClient } from '../shared/ProviderHttpClient';
+import { getContextWindowOverrideKey } from '../../../../ui/chat/utils/ContextWindowSettings';
 import type { ModelInfo } from '../types';
 
 export const OPENAI_COMPATIBLE_GENERATION_TIMEOUT_MS = 600_000;
+/** Used only when neither the user nor the server has given a context window. */
 export const OPENAI_COMPATIBLE_CONTEXT_WINDOW = 4096;
 export const OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS = 1024;
+export const OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW = 256;
+/** Rejects typos such as an extra digit group; no current model is near this. */
+export const OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW = 16_777_216;
+
+export function isOpenAICompatibleContextWindow(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value)
+    && value >= OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW && value <= OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW;
+}
+
+export type OpenAICompatibleContextSource = 'user' | 'server' | 'default';
+
+/** The user's value wins, then what the server reported, then the conservative default. */
+export function resolveOpenAICompatibleContextWindow(
+  definition: OpenAICompatibleModelDefinition | undefined,
+): { contextWindow: number; source: OpenAICompatibleContextSource } {
+  if (isOpenAICompatibleContextWindow(definition?.contextWindow)) return { contextWindow: definition.contextWindow, source: 'user' };
+  if (isOpenAICompatibleContextWindow(definition?.reportedContextWindow)) {
+    return { contextWindow: definition.reportedContextWindow, source: 'server' };
+  }
+  return { contextWindow: OPENAI_COMPATIBLE_CONTEXT_WINDOW, source: 'default' };
+}
 
 /** Persisted model IDs remain available even when the server is offline. */
 export function buildOpenAICompatibleModels(config: LLMProviderConfig): ModelInfo[] {
-  return Object.keys(config.openaiCompatible?.models ?? {})
+  const definitions = config.openaiCompatible?.models ?? {};
+  return Object.keys(definitions)
     .filter(id => isOpenAICompatibleModelId(id) && config.models?.[id]?.enabled !== false)
     .map(id => ({
-      id, name: id, contextWindow: OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+      id, name: id, contextWindow: resolveOpenAICompatibleContextWindow(definitions[id]).contextWindow,
       maxOutputTokens: OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
       supportsStreaming: true, supportsFunctions: true, supportsThinking: true,
       supportsImages: false, supportsJSON: false, pricing: null,
     }));
+}
+
+export interface ContextOverrideRelease {
+  map: Record<string, number>;
+  key: string;
+  value: number;
+}
+
+/**
+ * Saving chat settings stores the model's whole window as its override, so a
+ * model that sat at the 4,096 fallback carries an override of exactly 4,096.
+ * When an endpoint save raises a model's window, an override equal to the old
+ * maximum meant "use all of it" and would otherwise pin the chat at the old
+ * size; it is removed. Smaller overrides were deliberate and stay. Returns what
+ * was removed so a failed save can put it back.
+ */
+export function releaseRaisedContextOverrides(
+  providerId: string,
+  previous: LLMProviderConfig | undefined,
+  next: LLMProviderConfig,
+  overrideMaps: Array<Record<string, number> | undefined>,
+): ContextOverrideRelease[] {
+  const released: ContextOverrideRelease[] = [];
+  const before = previous?.openaiCompatible?.models;
+  if (!before) return released;
+  for (const [model, definition] of Object.entries(next.openaiCompatible?.models ?? {})) {
+    if (!Object.prototype.hasOwnProperty.call(before, model)) continue;
+    const oldMaximum = resolveOpenAICompatibleContextWindow(before[model]).contextWindow;
+    if (resolveOpenAICompatibleContextWindow(definition).contextWindow <= oldMaximum) continue;
+    const key = getContextWindowOverrideKey(providerId, model);
+    for (const map of overrideMaps) {
+      if (map?.[key] !== oldMaximum) continue;
+      released.push({ map, key, value: oldMaximum });
+      delete map[key];
+    }
+  }
+  return released;
 }
 
 export function normalizeOpenAICompatibleBaseUrl(value: string): string {
@@ -61,10 +123,62 @@ export function validateOpenAICompatibleConfig(config: LLMProviderConfig): strin
   return normalizeOpenAICompatibleBaseUrl(endpoint.baseUrl);
 }
 
+export interface DiscoveredOpenAICompatibleModel {
+  id: string;
+  /** Present only when the server reported the context it actually serves. */
+  contextWindow?: number;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  return isOpenAICompatibleContextWindow(parsed) ? parsed : undefined;
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+/**
+ * Field names servers use for the context they serve, most specific first:
+ * vLLM/SGLang `max_model_len`; OpenRouter, Together and Bifrost `context_length`;
+ * Groq and Bifrost's OpenAI route `context_window`; Mistral and LM Studio
+ * `max_context_length`; OpenRouter `top_provider.context_length`.
+ * llama.cpp's `meta.n_ctx_train` is deliberately absent: it is the trained
+ * maximum, not what the server allocated, so it comes from `/props` instead.
+ */
+export function readReportedContextWindow(entry: unknown): number | undefined {
+  const item = record(entry);
+  if (!item) return undefined;
+  for (const key of ['max_model_len', 'context_length', 'context_window', 'max_context_length']) {
+    const value = positiveInteger(item[key]);
+    if (value !== undefined) return value;
+  }
+  return positiveInteger(record(item.top_provider)?.context_length);
+}
+
+/** llama.cpp serves `/props` beside `/v1`; its slot context is what one request can use. */
+async function readLlamaCppContextWindow(baseUrl: string, apiKey: string): Promise<number | undefined> {
+  try {
+    const url = new URL(baseUrl);
+    url.pathname = url.pathname.replace(/\/v1$/i, '');
+    const response = await ProviderHttpClient.request<unknown>({
+      url: `${url.href.replace(/\/+$/, '')}/props`,
+      provider: 'openai-compatible', operation: 'context discovery', method: 'GET',
+      headers: openAICompatibleHeaders(apiKey), timeoutMs: 10_000, retries: 0,
+    });
+    if (!response.ok) return undefined;
+    const props = record(response.json);
+    return positiveInteger(record(props?.default_generation_settings)?.n_ctx) ?? positiveInteger(props?.n_ctx);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Discovery only: never sends a generation request or invents a model identifier. */
-export async function discoverOpenAICompatibleModels(baseUrl: string, apiKey: string): Promise<string[]> {
+export async function discoverOpenAICompatibleModels(baseUrl: string, apiKey: string): Promise<DiscoveredOpenAICompatibleModel[]> {
+  const normalized = normalizeOpenAICompatibleBaseUrl(baseUrl);
   const response = await ProviderHttpClient.request<unknown>({
-    url: `${normalizeOpenAICompatibleBaseUrl(baseUrl)}/models`,
+    url: `${normalized}/models`,
     provider: 'openai-compatible', operation: 'model discovery', method: 'GET',
     headers: openAICompatibleHeaders(apiKey), timeoutMs: 30_000, retries: 0,
   });
@@ -73,10 +187,19 @@ export async function discoverOpenAICompatibleModels(baseUrl: string, apiKey: st
   if (!data || typeof data !== 'object' || !Array.isArray((data as Record<string, unknown>).data)) {
     throw new Error('Model discovery did not return a data array. Add a model ID manually.');
   }
-  const ids = (data as { data: unknown[] }).data.flatMap(item => {
-    if (!item || typeof item !== 'object') return [];
-    const id = (item as Record<string, unknown>).id;
-    return isOpenAICompatibleModelId(id) ? [id] : [];
-  });
-  return [...new Set(ids)];
+  const entries = (data as { data: unknown[] }).data;
+  const models = new Map<string, DiscoveredOpenAICompatibleModel>();
+  for (const entry of entries) {
+    const id = record(entry)?.id;
+    if (!isOpenAICompatibleModelId(id) || models.has(id)) continue;
+    const contextWindow = readReportedContextWindow(entry);
+    models.set(id, contextWindow === undefined ? { id } : { id, contextWindow });
+  }
+  // A single-model llama.cpp server marks its entry with `meta`; ask it what it allocated.
+  const only = models.size === 1 ? [...models.values()][0] : undefined;
+  if (only && only.contextWindow === undefined && entries.some(entry => record(record(entry)?.meta))) {
+    const contextWindow = await readLlamaCppContextWindow(normalized, apiKey);
+    if (contextWindow !== undefined) only.contextWindow = contextWindow;
+  }
+  return [...models.values()];
 }

@@ -137,7 +137,7 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
     return {
       supportsStreaming: true, streamingMode: 'streaming', supportsFunctions: true,
       supportsThinking: true, supportsJSON: false, supportsImages: false,
-      maxContextWindow: OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+      maxContextWindow: Math.max(OPENAI_COMPATIBLE_CONTEXT_WINDOW, ...this.savedModels.map(model => model.contextWindow)),
       supportedFeatures: ['messages', 'streaming', 'function_calling'],
     };
   }

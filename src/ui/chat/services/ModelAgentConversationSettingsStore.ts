@@ -15,6 +15,8 @@ export interface ConversationSettingsMetadata {
   modelId?: string;
   /** Committed budget for this conversation, independent of later global defaults. */
   effectiveContextWindow?: number;
+  /** The model's whole window when that budget was committed; tells "all of it" from a smaller choice. */
+  modelContextWindow?: number;
   promptId?: string | null;
   workspaceId?: string | null;
   sessionId?: string | null;
@@ -146,7 +148,8 @@ export class ModelAgentConversationSettingsStore {
           ...latestMetadata.chatSettings,
           providerId: metadata.chatSettings?.providerId ?? sourceSettings?.providerId,
           modelId: metadata.chatSettings?.modelId ?? sourceSettings?.modelId,
-          effectiveContextWindow: metadata.chatSettings?.effectiveContextWindow ?? sourceSettings?.effectiveContextWindow
+          effectiveContextWindow: metadata.chatSettings?.effectiveContextWindow ?? sourceSettings?.effectiveContextWindow,
+          modelContextWindow: metadata.chatSettings?.modelContextWindow ?? sourceSettings?.modelContextWindow
         },
         compaction: metadata.compaction ?? { frontier: [] }
       };

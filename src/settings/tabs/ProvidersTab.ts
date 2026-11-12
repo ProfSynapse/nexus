@@ -28,6 +28,7 @@ import { GeminiCliAuthService } from '../../services/external/GeminiCliAuthServi
 import { BRAND_NAME } from '../../constants/branding';
 import { OpenAICompatibleModal } from '../../components/openai-compatible/OpenAICompatibleModal';
 import { isCompatibleEndpoint } from '../../components/openai-compatible/OpenAICompatibleEditSession';
+import { releaseRaisedContextOverrides } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import { getDeviceOAuthState, usesDeviceOAuthTokens } from '../../services/oauth/DeviceOAuthState';
 
 /**
@@ -654,6 +655,8 @@ export class ProvidersTab {
             save: async (id, config) => {
                 const settings = this.getSettings();
                 const previous = settings.providers[id];
+                const released = releaseRaisedContextOverrides(id, previous, config,
+                    [settings.contextWindowOverrides, settings.agentContextWindowOverrides]);
                 settings.providers[id] = config;
                 try {
                     await this.saveSettings();
@@ -661,6 +664,7 @@ export class ProvidersTab {
                 } catch (error) {
                     if (previous) settings.providers[id] = previous;
                     else delete settings.providers[id];
+                    for (const { map, key, value } of released) map[key] = value;
                     throw error;
                 }
             },

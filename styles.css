@@ -3506,6 +3506,34 @@ body.is-mobile .nexus-remote-agent-modal button {
     margin-top: var(--space-l);
 }
 
+.nexus-compatible-modal .nexus-compatible-context-input {
+    width: 120px;
+    max-width: 100%;
+}
+
+/* The field, Check and toggle keep their width; the description wraps beside them. */
+.nexus-compatible-modal .nexus-compatible-model .setting-item-control {
+    flex-shrink: 0;
+}
+
+/* Keep the window line and the check note stacked even when a theme or another
+   plugin makes every setting description a flex row. */
+.nexus-compatible-modal .nexus-compatible-model .setting-item-description {
+    display: block;
+}
+
+.nexus-compatible-check {
+    margin-top: var(--space-xs);
+}
+
+.nexus-compatible-check.mod-warning {
+    color: var(--text-warning);
+}
+
+.nexus-compatible-check .nexus-compatible-use-limit {
+    margin-left: var(--space-s);
+}
+
 .nexus-compatible-manual summary {
     cursor: pointer;
     color: var(--text-muted);
@@ -3519,7 +3547,8 @@ body.is-mobile .nexus-remote-agent-modal button {
     margin-top: var(--space-l);
 }
 
-body.is-mobile .nexus-compatible-modal > .provider-modal-content > .setting-item {
+body.is-mobile .nexus-compatible-modal > .provider-modal-content > .setting-item,
+body.is-mobile .nexus-compatible-modal .nexus-compatible-model {
     flex-wrap: wrap;
 }
 
