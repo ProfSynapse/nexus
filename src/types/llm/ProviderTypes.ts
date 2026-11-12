@@ -38,6 +38,15 @@ export interface ModelConfig {
   description?: string; // Optional user-defined description (for backwards compatibility)
 }
 
+/** One saved model on an OpenAI-compatible endpoint. */
+export interface OpenAICompatibleModelDefinition {
+  source: 'discovered' | 'manual';
+  /** Context window the user entered; it wins over anything the server reports. */
+  contextWindow?: number;
+  /** Context window the server reported during discovery; refreshed on each Connect. */
+  reportedContextWindow?: number;
+}
+
 /**
  * LLM provider configuration
  */
@@ -48,7 +57,7 @@ export interface LLMProviderConfig {
     schemaVersion: 1;
     displayName: string;
     baseUrl: string;
-    models: Record<string, { source: 'discovered' | 'manual' }>;
+    models: Record<string, OpenAICompatibleModelDefinition>;
   };
   apiKey: string;
   userDescription?: string;

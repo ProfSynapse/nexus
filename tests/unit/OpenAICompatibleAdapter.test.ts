@@ -32,7 +32,7 @@ describe('OpenAI-compatible configuration', () => {
   test('discovery sends only GET, deduplicates valid IDs and keeps exact identifiers', async () => {
     const requests: CapturedRequest[] = [];
     __setRequestUrlMock(async request => { requests.push(request); return jsonResponse(200, { data: [{ id: 'a/b:latest' }, { id: 'a/b:latest' }, { id: '' }, { id: 'bad\n' }, null, { id: 'manual' }] }); });
-    expect(await discoverOpenAICompatibleModels('https://example.test/prefix/v1/', '')).toEqual(['a/b:latest', 'manual']);
+    expect(await discoverOpenAICompatibleModels('https://example.test/prefix/v1/', '')).toEqual([{ id: 'a/b:latest' }, { id: 'manual' }]);
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ url: 'https://example.test/prefix/v1/models', method: 'GET' });
     expect(requests[0].body).toBeUndefined();

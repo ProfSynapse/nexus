@@ -86,3 +86,21 @@ Not wired for local providers, deliberately. See `reasoning-rendering.md`.
 ## Verification
 Local servers are not covered by the live smoke lane. Verify them by hand through
 all three paths in `protocols/verify-adapter.md`.
+
+## Where an OpenAI-compatible server says its context
+`/v1/models` has no standard limit field. Read, in order: `max_model_len`
+(vLLM, SGLang), `context_length` (OpenRouter, Together, Bifrost),
+`context_window` (Groq, Bifrost's OpenAI route), `max_context_length`
+(Mistral, LM Studio native), `top_provider.context_length`. llama.cpp's
+`meta.n_ctx_train` is the trained maximum; the allocated per-slot context is
+`default_generation_settings.n_ctx` on `/props`, served beside `/v1`, not under
+it. Gateways can strip all of this: Bifrost re-serves custom upstreams as bare
+`{id, created, owned_by}`, so a user-entered value must always be possible.
+
+Over-long prompts fail fast and name the limit. vLLM: HTTP 400 "This model's
+maximum context length is N tokens". llama.cpp: HTTP 400 with
+`error.type: exceed_context_size_error`, `error.n_ctx`, and the message
+"request (X tokens) exceeds the available context size (N tokens)". A server
+that truncates instead of refusing shows up only as a low
+`usage.prompt_tokens`. `tests/debug/openai-compatible-context-live.test.ts`
+exercises all of this against a real server.

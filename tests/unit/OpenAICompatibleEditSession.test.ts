@@ -3,6 +3,7 @@ import {
   CompatibleEndpointConfig,
   OpenAICompatibleEditSession,
 } from '../../src/components/openai-compatible/OpenAICompatibleEditSession';
+import type { DiscoveredOpenAICompatibleModel } from '../../src/services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 
 function config(): CompatibleEndpointConfig {
   return {
@@ -23,13 +24,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 describe('OpenAI-compatible endpoint editor', () => {
   it('ignores discovery after the key changes, including an explicit clear', async () => {
-    const response = deferred<string[]>();
+    const response = deferred<DiscoveredOpenAICompatibleModel[]>();
     const persist = jest.fn(async () => undefined);
     const session = new OpenAICompatibleEditSession('id-1', config(), persist, () => response.promise);
     const discovery = session.connect();
     session.setApiKey('');
     await session.save();
-    response.resolve(['stale-model']);
+    response.resolve([{ id: 'stale-model' }]);
     expect(await discovery).toBe('stale');
     expect(session.draft.openaiCompatible.models).not.toHaveProperty('stale-model');
     expect(persist).toHaveBeenCalledTimes(1);
@@ -68,7 +69,7 @@ describe('OpenAI-compatible endpoint editor', () => {
   });
 
   it('retains manually entered models and disabled choices during discovery', async () => {
-    const session = new OpenAICompatibleEditSession('id-1', config(), jest.fn(async () => undefined), async () => ['existing', 'new-model', 'new-model']);
+    const session = new OpenAICompatibleEditSession('id-1', config(), jest.fn(async () => undefined), async () => [{ id: 'existing' }, { id: 'new-model' }, { id: 'new-model' }]);
     expect(await session.connect()).toBe('connected');
     expect(session.draft.openaiCompatible.models).toEqual({ existing: { source: 'manual' }, 'new-model': { source: 'discovered' } });
     expect(session.draft.models?.existing.enabled).toBe(false);
@@ -116,12 +117,12 @@ describe('OpenAI-compatible endpoint editor', () => {
   });
 
   it('ignores discovery after the editor closes', async () => {
-    const response = deferred<string[]>();
+    const response = deferred<DiscoveredOpenAICompatibleModel[]>();
     const persist = jest.fn(async () => undefined);
     const session = new OpenAICompatibleEditSession('id-1', config(), persist, () => response.promise);
     const pending = session.connect();
     session.close();
-    response.resolve(['late-model']);
+    response.resolve([{ id: 'late-model' }]);
     expect(await pending).toBe('stale');
     expect(persist).not.toHaveBeenCalled();
   });

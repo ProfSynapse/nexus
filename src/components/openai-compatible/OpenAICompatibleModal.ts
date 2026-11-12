@@ -1,12 +1,55 @@
 import { App, ButtonComponent, Modal, Notice, Setting } from 'obsidian';
 import type { LLMProviderConfig } from '../../types/llm/ProviderTypes';
 import { generateUUID } from '../../utils/uuid';
+import { resolveOpenAICompatibleContextWindow } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import type { OpenAICompatibleContextCheckResult } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleContextCheck';
+import type { OpenAICompatibleModelDefinition } from '../../types/llm/ProviderTypes';
 import {
   CompatibleEndpointConfig,
   copyEndpoint,
   isCompatibleEndpoint,
   OpenAICompatibleEditSession,
 } from './OpenAICompatibleEditSession';
+
+interface ContextNote {
+  text: string;
+  warning: boolean;
+  /** A size the server named or revealed, offered as a one-click replacement. */
+  suggestion?: number;
+}
+
+const tokens = (value: number): string => value.toLocaleString();
+
+export function describeContextWindow(definition: OpenAICompatibleModelDefinition | undefined): string {
+  const { contextWindow, source } = resolveOpenAICompatibleContextWindow(definition);
+  if (source === 'server') return `Context window: ${tokens(contextWindow)} tokens, reported by your server.`;
+  if (source === 'default') {
+    return `Context window: ${tokens(contextWindow)} tokens. Your server did not report one, so this is the default. Enter your model's real size to raise it.`;
+  }
+  const reported = definition?.reportedContextWindow;
+  return `Context window: ${tokens(contextWindow)} tokens, set by you.`
+    + (reported && reported !== contextWindow ? ` Your server reports ${tokens(reported)}.` : '');
+}
+
+export function describeContextCheck(result: OpenAICompatibleContextCheckResult): ContextNote {
+  switch (result.kind) {
+    case 'fits':
+      return { text: `Checked: the server read ${tokens(result.promptTokens)} tokens without trouble.`, warning: false };
+    case 'fits-unmeasured':
+      return { text: 'The server accepted a prompt of this size, but it does not report token counts, so Nexus cannot confirm it read the whole prompt.', warning: false };
+    case 'truncated':
+      return {
+        text: `The server read only ${tokens(result.promptTokens)} tokens of the prompt. It shortens long prompts instead of refusing them, so its real context is about that size.`,
+        warning: true, suggestion: result.promptTokens,
+      };
+    case 'too-large':
+      return result.serverLimit
+        ? { text: `Too large: the server says its limit is ${tokens(result.serverLimit)} tokens.`, warning: true, suggestion: result.serverLimit }
+        : { text: `Too large: the server refused a prompt of this size. It said: ${result.message}`, warning: true };
+    case 'failed':
+      return { text: `Check failed. ${result.message}`, warning: true };
+  }
+}
 
 export interface OpenAICompatibleModalOptions {
   getProviders: () => Record<string, LLMProviderConfig>;
@@ -26,6 +69,7 @@ export class OpenAICompatibleModal extends Modal {
   private saveVersion = 0;
   private saveQueue: Promise<void> = Promise.resolve();
   private closing = false;
+  private readonly checks = new Set<AbortController>();
 
   constructor(app: App, private readonly options: OpenAICompatibleModalOptions) {
     super(app);
@@ -40,6 +84,7 @@ export class OpenAICompatibleModal extends Modal {
   onClose(): void {
     this.opened = false;
     this.clearSaveTimer();
+    this.abortChecks();
     // Escape and the native X also flush the latest valid draft. The save queue
     // outlives the DOM; closing cannot drop a debounced change or resurrect a key.
     if (this.editor && this.dirty) {
@@ -77,6 +122,7 @@ export class OpenAICompatibleModal extends Modal {
   }
 
   private renderList(): void {
+    this.abortChecks();
     this.editor?.close();
     this.editor = null;
     this.dirty = false;
@@ -122,6 +168,7 @@ export class OpenAICompatibleModal extends Modal {
   }
 
   private renderEditor(id: string, config: CompatibleEndpointConfig): void {
+    this.abortChecks();
     this.editor?.close();
     const editor = new OpenAICompatibleEditSession(id, config, (endpointId, snapshot) => this.persist(endpointId, snapshot));
     this.editor = editor;
@@ -207,14 +254,93 @@ export class OpenAICompatibleModal extends Modal {
     const models = Object.keys(editor.draft.openaiCompatible.models);
     if (!models.length) return;
     this.models.createEl('h2', { text: 'Available models' });
-    for (const model of models) {
-      new Setting(this.models).setName(model).addToggle(toggle => {
-        toggle.setValue(editor.draft.models?.[model]?.enabled !== false).onChange(enabled => {
-          editor.setModelEnabled(model, enabled);
-          this.changed();
-        });
+    this.models.createEl('p', {
+      cls: 'setting-item-description',
+      text: 'Each model uses the context window your server reports. If it reports none, enter the size your server runs the model with. Check sends one prompt of that size to confirm the server accepts it.',
+    });
+    for (const model of models) this.renderModel(editor, model);
+  }
+
+  private renderModel(editor: OpenAICompatibleEditSession, model: string): void {
+    const setting = new Setting(this.models).setName(model);
+    setting.settingEl.addClass('nexus-compatible-model');
+    let note: ContextNote | null = null;
+    let input: HTMLInputElement | null = null;
+    const describe = (): void => {
+      setting.descEl.empty();
+      setting.descEl.createDiv({ text: describeContextWindow(editor.draft.openaiCompatible.models[model]) });
+      if (!note) return;
+      const line = setting.descEl.createDiv({ cls: note.warning ? 'nexus-compatible-check mod-warning' : 'nexus-compatible-check', text: note.text });
+      line.setAttribute('role', 'status');
+      const suggestion = note.suggestion;
+      if (suggestion === undefined) return;
+      new ButtonComponent(line).setButtonText(`Use ${tokens(suggestion)}`).setClass('nexus-compatible-use-limit').onClick(() => {
+        if (this.editor !== editor) return;
+        editor.setContextWindow(model, suggestion);
+        if (input) input.value = String(suggestion);
+        note = null;
+        this.changed();
+        describe();
       });
-    }
+    };
+    setting.addText(text => {
+      input = text.inputEl;
+      text.inputEl.type = 'number';
+      text.inputEl.setAttr('min', '256');
+      text.inputEl.setAttr('step', '1');
+      text.inputEl.setAttr('aria-label', `Context window for ${model}, in tokens`);
+      text.inputEl.addClass('nexus-compatible-context-input');
+      const definition = editor.draft.openaiCompatible.models[model];
+      text.setPlaceholder(String(resolveOpenAICompatibleContextWindow({ ...definition, contextWindow: undefined }).contextWindow))
+        .setValue(definition?.contextWindow ? String(definition.contextWindow) : '')
+        .onChange(value => {
+          const trimmed = value.trim();
+          try {
+            editor.setContextWindow(model, trimmed === '' ? undefined : Number(trimmed));
+            note = null;
+            this.changed();
+          } catch (error) {
+            note = { text: error instanceof Error ? error.message : 'Enter a whole number of tokens.', warning: true };
+          }
+          describe();
+        });
+    });
+    setting.addButton(button => {
+      button.setButtonText('Check')
+        .setTooltip('Sends one prompt of this size to your server. Large sizes can take minutes on local hardware, and hosted endpoints bill the input tokens.')
+        .onClick(async () => {
+          const size = resolveOpenAICompatibleContextWindow(editor.draft.openaiCompatible.models[model]).contextWindow;
+          const controller = new AbortController();
+          this.checks.add(controller);
+          button.setDisabled(true).setButtonText('Checking…');
+          note = { text: `Sending a prompt of about ${tokens(size)} tokens…`, warning: false };
+          describe();
+          try {
+            const result = await editor.checkContextWindow(model, controller.signal);
+            if (controller.signal.aborted || this.editor !== editor) return;
+            note = describeContextCheck(result);
+          } catch (error) {
+            if (controller.signal.aborted || this.editor !== editor) return;
+            note = { text: `Check failed. ${error instanceof Error ? error.message : 'The server could not be reached.'}`, warning: true };
+          } finally {
+            this.checks.delete(controller);
+            button.setDisabled(false).setButtonText('Check');
+          }
+          describe();
+        });
+    });
+    setting.addToggle(toggle => {
+      toggle.setValue(editor.draft.models?.[model]?.enabled !== false).onChange(enabled => {
+        editor.setModelEnabled(model, enabled);
+        this.changed();
+      });
+    });
+    describe();
+  }
+
+  private abortChecks(): void {
+    for (const controller of this.checks) controller.abort();
+    this.checks.clear();
   }
 
   private changed(): void {

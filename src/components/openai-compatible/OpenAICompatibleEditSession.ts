@@ -1,9 +1,17 @@
-import type { LLMProviderConfig } from '../../types/llm/ProviderTypes';
+import type { LLMProviderConfig, OpenAICompatibleModelDefinition } from '../../types/llm/ProviderTypes';
 import {
   discoverOpenAICompatibleModels,
+  isOpenAICompatibleContextWindow,
   isOpenAICompatibleModelId,
   normalizeOpenAICompatibleBaseUrl,
+  OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW,
+  OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW,
+  resolveOpenAICompatibleContextWindow,
 } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import {
+  checkOpenAICompatibleContextWindow,
+  type OpenAICompatibleContextCheckResult,
+} from '../../services/llm/adapters/openai-compatible/OpenAICompatibleContextCheck';
 
 export type CompatibleEndpointConfig = LLMProviderConfig & {
   driverKind: 'openai-compatible';
@@ -11,7 +19,7 @@ export type CompatibleEndpointConfig = LLMProviderConfig & {
     schemaVersion: 1;
     displayName: string;
     baseUrl: string;
-    models: Record<string, { source: 'discovered' | 'manual' }>;
+    models: Record<string, OpenAICompatibleModelDefinition>;
   };
 };
 
@@ -42,6 +50,7 @@ export class OpenAICompatibleEditSession {
     config: CompatibleEndpointConfig,
     private readonly persist: (id: string, config: CompatibleEndpointConfig) => Promise<void>,
     private readonly discover = discoverOpenAICompatibleModels,
+    private readonly check = checkOpenAICompatibleContextWindow,
   ) {
     this.draft = copyEndpoint(config);
   }
@@ -65,6 +74,31 @@ export class OpenAICompatibleEditSession {
 
   setModelEnabled(id: string, enabled: boolean): void {
     this.draft.models = { ...this.draft.models, [id]: { ...this.draft.models?.[id], enabled } };
+  }
+
+  /** Undefined clears the user's value, so the server's report or the default applies again. */
+  setContextWindow(id: string, value: number | undefined): void {
+    const definition = this.draft.openaiCompatible.models[id];
+    if (!definition) throw new Error('This model is not in the list.');
+    if (value !== undefined && !isOpenAICompatibleContextWindow(value)) {
+      throw new Error(`Enter a whole number of tokens from ${OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW.toLocaleString()} to ${OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW.toLocaleString()}.`);
+    }
+    const next = { ...definition };
+    if (value === undefined) delete next.contextWindow;
+    else next.contextWindow = value;
+    this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
+  }
+
+  /** Sends one prompt of the model's current context size; the caller saves nothing on its behalf. */
+  async checkContextWindow(id: string, signal?: AbortSignal): Promise<OpenAICompatibleContextCheckResult> {
+    const error = this.validationError();
+    if (error) throw new Error(error);
+    const definition = this.draft.openaiCompatible.models[id];
+    if (!definition) throw new Error('This model is not in the list.');
+    return this.check({
+      baseUrl: this.draft.openaiCompatible.baseUrl, apiKey: this.draft.apiKey, model: id,
+      contextWindow: resolveOpenAICompatibleContextWindow(definition).contextWindow, signal,
+    });
   }
 
   validationError(): string | null {
@@ -106,17 +140,21 @@ export class OpenAICompatibleEditSession {
     const baseUrl = normalizeOpenAICompatibleBaseUrl(this.draft.openaiCompatible.baseUrl);
     const key = this.draft.apiKey;
     try {
-      const ids = await this.discover(baseUrl, key);
+      const discovered = await this.discover(baseUrl, key);
       if (this.closed || revision !== this.revision) return 'stale';
-      for (const id of new Set(ids)) {
-        if (!Object.prototype.hasOwnProperty.call(this.draft.openaiCompatible.models, id)) {
-          this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: { source: 'discovered' } };
-          this.setModelEnabled(id, true);
-        }
+      for (const { id, contextWindow } of discovered) {
+        const existing = Object.prototype.hasOwnProperty.call(this.draft.openaiCompatible.models, id)
+          ? this.draft.openaiCompatible.models[id] : undefined;
+        // The report is refreshed on every Connect; the user's own value is never touched.
+        const next = { ...(existing ?? { source: 'discovered' as const }) };
+        if (contextWindow === undefined) delete next.reportedContextWindow;
+        else next.reportedContextWindow = contextWindow;
+        this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
+        if (!existing) this.setModelEnabled(id, true);
       }
-      if (ids.length > 0) this.draft.enabled = true;
+      if (discovered.length > 0) this.draft.enabled = true;
       await this.save();
-      return this.closed || revision !== this.revision ? 'stale' : ids.length ? 'connected' : 'empty';
+      return this.closed || revision !== this.revision ? 'stale' : discovered.length ? 'connected' : 'empty';
     } catch (error) {
       if (this.closed || revision !== this.revision) return 'stale';
       throw error;
