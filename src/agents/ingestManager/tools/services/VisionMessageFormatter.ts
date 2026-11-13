@@ -8,6 +8,7 @@
  */
 
 import { VisionProviderFamily, VisionMessage } from '../../types';
+import { resolveProviderWireFamily } from '../../../../services/llm/adapters/shared/CompatibleEndpointUtils';
 
 /** Map provider names to their vision format family */
 const PROVIDER_FAMILY_MAP: Record<string, VisionProviderFamily> = {
@@ -31,8 +32,11 @@ const PROVIDER_FAMILY_MAP: Record<string, VisionProviderFamily> = {
  * Determine the vision message format family for a given provider.
  * Defaults to 'openai' for unknown providers (most common format).
  */
-export function getProviderFamily(providerName: string): VisionProviderFamily {
-  return PROVIDER_FAMILY_MAP[providerName] || 'openai';
+export function getProviderFamily(providerName: string, model?: string): VisionProviderFamily {
+  const known = PROVIDER_FAMILY_MAP[providerName];
+  if (known) return known;
+  const family = resolveProviderWireFamily(providerName, model);
+  return family === 'anthropic' || family === 'google' ? family : 'openai';
 }
 
 /**

@@ -194,6 +194,9 @@ describe('AdapterRegistry provider instances', () => {
 
     expect(drivers).toEqual([
       { kind: 'openai-compatible', compatibility: 'all' },
+      { kind: 'responses-compatible', compatibility: 'all' },
+      { kind: 'anthropic-compatible', compatibility: 'all' },
+      { kind: 'antigravity-compatible', compatibility: 'all' },
       { kind: 'openrouter', compatibility: 'all' },
       { kind: 'requesty', compatibility: 'all' },
       { kind: 'perplexity', compatibility: 'all' },

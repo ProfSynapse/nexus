@@ -1,6 +1,12 @@
 import type { LLMProviderConfig } from '../../../../types';
-import type { OpenAICompatibleModelDefinition } from '../../../../types/llm/ProviderTypes';
+import type { OpenAICompatibleModelDefinition, ThinkingEffort } from '../../../../types/llm/ProviderTypes';
 import { ProviderHttpClient } from '../shared/ProviderHttpClient';
+import { resolveDefinitionThinking } from '../shared/CompatibleEndpointUtils';
+import {
+  probeOpenAICompatibleThinking,
+  readReportedThinkingMetadata,
+  type CompatibleThinkingProbeResult,
+} from '../shared/CompatibleThinkingProbe';
 import { getContextWindowOverrideKey } from '../../../../ui/chat/utils/ContextWindowSettings';
 import type { ModelInfo } from '../types';
 
@@ -38,7 +44,8 @@ export function buildOpenAICompatibleModels(config: LLMProviderConfig): ModelInf
     .map(id => ({
       id, name: id, contextWindow: resolveOpenAICompatibleContextWindow(definitions[id]).contextWindow,
       maxOutputTokens: OPENAI_COMPATIBLE_MAX_OUTPUT_TOKENS,
-      supportsStreaming: true, supportsFunctions: true, supportsThinking: true,
+      supportsStreaming: true, supportsFunctions: true,
+      supportsThinking: resolveDefinitionThinking(definitions[id]).supportsThinking ?? true,
       supportsImages: false, supportsJSON: false, pricing: null,
     }));
 }
@@ -127,6 +134,10 @@ export interface DiscoveredOpenAICompatibleModel {
   id: string;
   /** Present only when the server reported the context it actually serves. */
   contextWindow?: number;
+  /** Present only when the server explicitly advertised or disabled thinking/reasoning. */
+  supportsThinking?: boolean;
+  /** Present only when the server advertised distinct thinking effort tiers. */
+  thinkingEfforts?: ThinkingEffort[];
 }
 
 function positiveInteger(value: unknown): number | undefined {
@@ -193,7 +204,12 @@ export async function discoverOpenAICompatibleModels(baseUrl: string, apiKey: st
     const id = record(entry)?.id;
     if (!isOpenAICompatibleModelId(id) || models.has(id)) continue;
     const contextWindow = readReportedContextWindow(entry);
-    models.set(id, contextWindow === undefined ? { id } : { id, contextWindow });
+    const thinking = readReportedThinkingMetadata(entry);
+    const discovered: DiscoveredOpenAICompatibleModel = { id };
+    if (contextWindow !== undefined) discovered.contextWindow = contextWindow;
+    if (thinking.supportsThinking !== undefined) discovered.supportsThinking = thinking.supportsThinking;
+    if (thinking.thinkingEfforts !== undefined) discovered.thinkingEfforts = thinking.thinkingEfforts;
+    models.set(id, discovered);
   }
   // A single-model llama.cpp server marks its entry with `meta`; ask it what it allocated.
   const only = models.size === 1 ? [...models.values()][0] : undefined;
@@ -202,4 +218,18 @@ export async function discoverOpenAICompatibleModels(baseUrl: string, apiKey: st
     if (contextWindow !== undefined) only.contextWindow = contextWindow;
   }
   return [...models.values()];
+}
+
+export async function probeOpenAICompatibleModelThinking(request: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  signal?: AbortSignal;
+}): Promise<CompatibleThinkingProbeResult> {
+  return probeOpenAICompatibleThinking({
+    chatCompletionsUrl: `${normalizeOpenAICompatibleBaseUrl(request.baseUrl)}/chat/completions`,
+    headers: openAICompatibleHeaders(request.apiKey),
+    model: request.model,
+    signal: request.signal,
+  });
 }

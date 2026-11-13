@@ -12,6 +12,11 @@ import { isMobile } from '../../../utils/platform';
 import type { BaseAdapter } from '../adapters/BaseAdapter';
 import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebLLMAdapter';
 import {
+  getCustomCompatibleDisplayName,
+  isCustomCompatibleConfig,
+  syncCompatibleWireProtocols,
+} from '../adapters/shared/CompatibleEndpointUtils';
+import {
   createBuiltinProviderDrivers,
   type BuiltinProviderDriverRegistration,
 } from '../providers/BuiltinProviderDrivers';
@@ -60,6 +65,7 @@ export class AdapterRegistry implements IAdapterRegistry {
 
   initialize(settings: LLMProviderSettings, vault?: Vault): void {
     if (vault) this.vault = vault;
+    syncCompatibleWireProtocols(settings?.providers);
 
     const settingsSnapshot = settings;
     const vaultSnapshot = this.vault;
@@ -166,7 +172,7 @@ export class AdapterRegistry implements IAdapterRegistry {
         await this.providerRegistry.createInstance({
           driverKind: driver.kind,
           instanceId: providerInstanceId(instanceId),
-          displayName: config.openaiCompatible?.displayName || driver.displayName,
+          displayName: isCustomCompatibleConfig(config) ? getCustomCompatibleDisplayName(config) : driver.displayName,
           config,
           vault,
           onSettingsDirty: () => this.onSettingsDirty?.(),

@@ -21,10 +21,18 @@ import { extractStreamErrorMessage } from '../../streaming/streamErrorFrames';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper, isAnthropicAdaptiveThinkingModel, mapAnthropicAdaptiveEffort } from '../../utils/ThinkingEffortMapper';
 import { staticModelToModelInfo, getStaticModelPricing } from '../shared/StaticModelHelpers';
-import type { AnthropicThinkingBlock, ThinkingEffort } from '../../../../types/llm/ProviderTypes';
+import type {
+  AnthropicCompatibleAuthMode,
+  AnthropicThinkingBlock,
+  ThinkingEffort
+} from '../../../../types/llm/ProviderTypes';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { acceptsSamplingParams } from '../shared/SamplingParams';
-
+import {
+  clampEffortToSupportedTiers,
+  stripCompatibleModelPrefix,
+  type ResolvedCompatibleModelThinking
+} from '../shared/CompatibleEndpointUtils';
 interface AnthropicMessage {
   role: string;
   content: string | AnthropicContentBlock[];
@@ -116,12 +124,31 @@ interface AnthropicStreamEvent extends AnthropicResponse {
   };
 }
 
-export class AnthropicAdapter extends BaseAdapter {
-  readonly name = 'anthropic';
-  readonly baseUrl = 'https://api.anthropic.com';
+export interface AnthropicAdapterOptions {
+  instanceName?: string;
+  baseUrl?: string;
+  messagesUrl?: string;
+  authMode?: AnthropicCompatibleAuthMode;
+  customModels?: ModelInfo[];
+  thinkingOverrides?: Record<string, ResolvedCompatibleModelThinking>;
+}
 
-  constructor(apiKey: string, model?: string) {
+export class AnthropicAdapter extends BaseAdapter {
+  readonly name: string;
+  readonly baseUrl: string;
+  private readonly messagesUrl: string;
+  private readonly authMode?: AnthropicCompatibleAuthMode;
+  private readonly customModels?: ModelInfo[];
+  private readonly thinkingOverrides?: Record<string, ResolvedCompatibleModelThinking>;
+
+  constructor(apiKey: string, model?: string, options?: AnthropicAdapterOptions) {
     super(apiKey, model || ANTHROPIC_DEFAULT_MODEL);
+    this.name = options?.instanceName || 'anthropic';
+    this.baseUrl = (options?.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+    this.messagesUrl = options?.messagesUrl || `${this.baseUrl}/v1/messages`;
+    this.authMode = options?.authMode;
+    this.customModels = options?.customModels;
+    this.thinkingOverrides = options?.thinkingOverrides;
     this.initializeCache();
   }
 
@@ -220,7 +247,7 @@ export class AnthropicAdapter extends BaseAdapter {
       }
 
       // Look up model spec for beta headers (sent via HTTP header, not body field)
-      const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
+      const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === stripCompatibleModelPrefix(options?.model || this.currentModel));
 
       let usage: AnthropicUsage | undefined;
       let stopReason: string | null = null;
@@ -230,7 +257,7 @@ export class AnthropicAdapter extends BaseAdapter {
       const webSources = new Map<string, SearchResult>();
       const responseBlocks = new Map<number, Record<string, unknown>>();
       const nodeStream = await this.requestStream({
-        url: `${this.baseUrl}/v1/messages`,
+        url: this.messagesUrl,
         operation: 'streaming generation',
         method: 'POST',
         headers: this.buildAnthropicHeaders(modelSpec?.betaHeaders),
@@ -370,6 +397,9 @@ export class AnthropicAdapter extends BaseAdapter {
   }
 
   listModels(): Promise<ModelInfo[]> {
+    if (this.customModels) {
+      return Promise.resolve(this.customModels.map(model => ({ ...model })));
+    }
     try {
       return Promise.resolve(ANTHROPIC_MODELS.map(model => ({
         ...staticModelToModelInfo(model),
@@ -458,10 +488,10 @@ export class AnthropicAdapter extends BaseAdapter {
     }
 
     // Look up model spec for beta headers (sent via HTTP header, not body field)
-    const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
+    const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === stripCompatibleModelPrefix(options?.model || this.currentModel));
 
     const response = await this.request<AnthropicResponse>({
-      url: `${this.baseUrl}/v1/messages`,
+      url: this.messagesUrl,
       operation: 'generation',
       method: 'POST',
       headers: this.buildAnthropicHeaders(modelSpec?.betaHeaders),
@@ -560,18 +590,36 @@ export class AnthropicAdapter extends BaseAdapter {
   }
 
   private resolveMaxTokens(options?: GenerateOptions): number {
-    const modelId = this.normalizeModelId(options?.model || this.currentModel);
+    const rawId = options?.model || this.currentModel;
+    const modelId = this.normalizeModelId(rawId);
+    const bareId = stripCompatibleModelPrefix(modelId);
+    const customMax = this.customModels?.find(m => m.id === rawId || m.id === modelId)?.maxOutputTokens;
     // The request requires max_tokens; unknown model limits cannot be inferred.
-    return options?.maxTokens ?? ANTHROPIC_MODELS.find(model => model.apiName === modelId)?.maxTokens ?? 4096;
+    return options?.maxTokens
+      ?? customMax
+      ?? ANTHROPIC_MODELS.find(model => model.apiName === bareId)?.maxTokens
+      ?? (this.customModels ? 8192 : 4096);
   }
 
   private supportsThinking(modelId: string): boolean {
-    const model = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(modelId));
+    const normalized = this.normalizeModelId(modelId);
+    const override = this.thinkingOverrides?.[modelId] ?? this.thinkingOverrides?.[normalized];
+    if (override?.supportsThinking !== undefined) {
+      return override.supportsThinking;
+    }
+    if (this.customModels) {
+      const custom = this.customModels.find(m => m.id === modelId || m.id === normalized);
+      if (custom?.supportsThinking !== undefined) {
+        return custom.supportsThinking;
+      }
+      return true;
+    }
+    const model = ANTHROPIC_MODELS.find(m => m.apiName === stripCompatibleModelPrefix(modelId));
     return model?.capabilities.supportsThinking || false;
   }
 
   private supportsAdaptiveThinking(modelId: string): boolean {
-    return isAnthropicAdaptiveThinkingModel(this.normalizeModelId(modelId));
+    return isAnthropicAdaptiveThinkingModel(stripCompatibleModelPrefix(modelId));
   }
 
   private captureThinkingBlock(
@@ -614,13 +662,13 @@ export class AnthropicAdapter extends BaseAdapter {
 
   /** Newer Claude models reject `temperature` even with thinking off. */
   private dropUnsupportedSampling(requestParams: Record<string, unknown>): void {
-    if (!acceptsSamplingParams(ANTHROPIC_MODELS, this.normalizeModelId(String(requestParams.model)))) {
+    if (!acceptsSamplingParams(ANTHROPIC_MODELS, stripCompatibleModelPrefix(String(requestParams.model)))) {
       delete requestParams.temperature;
     }
   }
 
   private applyDisabledThinkingConfig(requestParams: Record<string, unknown>, options?: GenerateOptions): void {
-    if (this.normalizeModelId(options?.model || this.currentModel) !== 'claude-haiku-5-5') return;
+    if (stripCompatibleModelPrefix(options?.model || this.currentModel) !== 'claude-haiku-5-5') return;
     // Haiku defaults to adaptive thinking if the field is omitted. Explicitly
     // disable it and keep a stale enabled-mode effort below the rejection tier.
     const effort = options?.thinkingEffort || 'medium';
@@ -630,7 +678,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
   protected generateCacheKey(prompt: string, options?: GenerateOptions): string {
     const key = super.generateCacheKey(prompt, options);
-    const model = this.normalizeModelId(options?.model || this.currentModel);
+    const model = stripCompatibleModelPrefix(options?.model || this.currentModel);
     if (model !== 'claude-haiku-5-5') return key;
     const requested = options?.thinkingEffort || 'medium';
     const effort = options?.enableThinking
@@ -648,15 +696,26 @@ export class AnthropicAdapter extends BaseAdapter {
     // Anthropic rejects sampling temperature whenever thinking is enabled.
     delete requestParams.temperature;
 
-    if (this.supportsAdaptiveThinking(modelId)) {
+    const override = this.thinkingOverrides?.[modelId] ?? this.thinkingOverrides?.[this.normalizeModelId(modelId)];
+    const clampedEffort = clampEffortToSupportedTiers(effort, override?.efforts);
+    const bareModelId = stripCompatibleModelPrefix(modelId);
+    const useAdaptive = override?.mode === 'adaptive'
+      ? true
+      : override?.mode === 'budget'
+        ? false
+        : this.supportsAdaptiveThinking(modelId);
+
+    if (useAdaptive) {
       requestParams.thinking = { type: 'adaptive', display: 'summarized' };
-      requestParams.output_config = { effort: mapAnthropicAdaptiveEffort(effort, modelId) };
+      requestParams.output_config = {
+        effort: override?.efforts?.length ? clampedEffort : mapAnthropicAdaptiveEffort(clampedEffort, bareModelId)
+      };
       return maxTokens;
     }
 
-    const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort }, maxTokens);
+    const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort: clampedEffort }, maxTokens);
     const budgetTokens = thinkingParams?.budget_tokens ?? 16000;
-    if ((effort === 'xhigh' || effort === 'max') && budgetTokens < 1024) {
+    if ((clampedEffort === 'xhigh' || clampedEffort === 'max') && budgetTokens < 1024) {
       throw new Error('Anthropic manual thinking at Extra high or Max requires maxTokens of at least 2048.');
     }
     requestParams.thinking = { type: 'enabled', budget_tokens: budgetTokens };
@@ -673,9 +732,22 @@ export class AnthropicAdapter extends BaseAdapter {
   private buildAnthropicHeaders(betaHeaders?: string[]): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-api-key': this.apiKey,
       'anthropic-version': '2023-06-01'
     };
+
+    if (this.authMode === undefined) {
+      headers['x-api-key'] = this.apiKey;
+    } else {
+      const key = this.apiKey.trim();
+      if (key) {
+        if (this.authMode === 'x-api-key' || this.authMode === 'both') {
+          headers['x-api-key'] = key;
+        }
+        if (this.authMode === 'bearer' || this.authMode === 'both') {
+          headers['Authorization'] = `Bearer ${key}`;
+        }
+      }
+    }
 
     if (betaHeaders && betaHeaders.length > 0) {
       headers['anthropic-beta'] = betaHeaders.join(',');
@@ -763,6 +835,9 @@ export class AnthropicAdapter extends BaseAdapter {
   }
 
   getModelPricing(modelId: string): Promise<ModelPricing | null> {
+    if (this.customModels) {
+      return Promise.resolve(null);
+    }
     return Promise.resolve(getStaticModelPricing(ANTHROPIC_MODELS, this.normalizeModelId(modelId)));
   }
 }

@@ -49,6 +49,7 @@ import { normalizeThinkingEffortForModel } from '../../services/llm/utils/thinki
 import { contextWindowStopIndex, contextWindowStops } from './chatSettings/contextWindowStops';
 import { resolveSubagentTarget } from './chatSettings/subagentTarget';
 import { isLocalProvider } from '../../services/llm/utils/SubagentModelResolver';
+import { getCustomCompatibleBaseUrl, getCustomCompatibleDisplayName, isCustomCompatibleDriverKind } from '../../services/llm/adapters/shared/CompatibleEndpointUtils';
 import { ModelCapabilityResolver, type ModelCapabilities } from './chatSettings/modelCapabilities';
 import { Accordion } from '../Accordion';
 import { FoldStateStore } from './settings/FoldStateStore';
@@ -432,7 +433,7 @@ export class ChatSettingsRenderer {
       getUnsetModelText: isAgent ? () => this.inheritedSubagentModelText() : undefined,
       modelOptionMap: isAgent ? this.agentModelOptionMap : this.modelOptionMap,
       providerManager: this.providerManager,
-      getProviderDisplayName: (id) => this.config.llmProviderSettings.providers[id]?.driverKind === 'openai-compatible'
+      getProviderDisplayName: (id) => isCustomCompatibleDriverKind(this.config.llmProviderSettings.providers[id]?.driverKind)
         ? this.getProviderDisplayName(id) : undefined,
       isCodexConnected: () => this.isCodexConnected(),
       isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
@@ -1085,8 +1086,8 @@ export class ChatSettingsRenderer {
 
   private getProviderDisplayName(providerId: string): string {
     const config = this.config.llmProviderSettings.providers[providerId];
-    if (config?.driverKind === 'openai-compatible') {
-      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
+    if (isCustomCompatibleDriverKind(config?.driverKind)) {
+      return getCustomCompatibleDisplayName(config);
     }
     return ProviderUtils.getProviderDisplayName(providerId);
   }
@@ -1118,7 +1119,7 @@ function isProviderUsable(settings: LLMProviderSettings, id: string): boolean {
   }
 
   if (!isProviderCompatible(config.driverKind ?? id)) return false;
-  if (config.driverKind === 'openai-compatible') return !!config.openaiCompatible?.baseUrl.trim();
+  if (isCustomCompatibleDriverKind(config.driverKind)) return Boolean(getCustomCompatibleBaseUrl(config));
   if (id === 'webllm') return true;
   return !!config.apiKey;
 }

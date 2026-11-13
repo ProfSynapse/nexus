@@ -7,7 +7,13 @@ import { Vault } from 'obsidian';
 import { ModelInfo } from '../adapters/types';
 import { LLMProviderSettings } from '../../../types';
 import { isProviderCompatible } from '../../../utils/platform';
-import { buildOpenAICompatibleModels } from '../adapters/openai-compatible/OpenAICompatibleConfig';
+import {
+  getCustomCompatibleBaseUrl,
+  getCustomCompatibleDisplayName,
+  isCustomCompatibleDriverKind,
+  syncCompatibleWireProtocols,
+} from '../adapters/shared/CompatibleEndpointUtils';
+import { buildCustomCompatibleModels } from '../adapters/shared/CompatibleModelsCatalog';
 import { VaultOperations } from '../../../core/VaultOperations';
 import { LLMService } from '../core/LLMService';
 
@@ -36,6 +42,7 @@ export class LLMProviderManager {
   constructor(settings: LLMProviderSettings, vault?: Vault) {
     this.settings = settings;
     this.vault = vault;
+    syncCompatibleWireProtocols(settings?.providers);
     this.llmService = new LLMService(settings, vault);
   }
 
@@ -44,6 +51,7 @@ export class LLMProviderManager {
    */
   updateSettings(settings: LLMProviderSettings): void {
     this.settings = settings;
+    syncCompatibleWireProtocols(settings?.providers);
     this.llmService.updateSettings(settings);
   }
 
@@ -92,9 +100,9 @@ export class LLMProviderManager {
     // For each enabled provider, get their models
     for (const provider of enabledProviders) {
       const config = this.settings.providers[provider.id];
-      if (config?.driverKind === 'openai-compatible') {
+      if (isCustomCompatibleDriverKind(config?.driverKind)) {
         // Saved model definitions are available even while the server is offline.
-        const models = buildOpenAICompatibleModels(config);
+        const models = buildCustomCompatibleModels(config);
         allModels.push(...models
           .filter(model => config.models?.[model.id]?.enabled !== false)
           .map(model => ({
@@ -424,11 +432,17 @@ export class LLMProviderManager {
     ];
 
     const configuredProviders = Object.entries(this.settings.providers)
-      .filter(([, config]) => config.driverKind === 'openai-compatible')
+      .filter(([, config]) => isCustomCompatibleDriverKind(config.driverKind))
       .map(([id, config]) => ({
         id,
-        name: config.openaiCompatible?.displayName || 'OpenAI-compatible',
-        description: 'Models from an OpenAI-compatible endpoint'
+        name: getCustomCompatibleDisplayName(config),
+        description: config.driverKind === 'anthropic-compatible'
+          ? 'Models from an Anthropic-compatible endpoint'
+          : config.driverKind === 'antigravity-compatible'
+            ? 'Models from an Antigravity-compatible gateway'
+            : config.driverKind === 'responses-compatible'
+              ? 'Models from an OpenAI Responses-compatible endpoint'
+              : 'Models from an OpenAI-compatible endpoint'
       }));
 
     return [...supportedProviders, ...configuredProviders].map(provider => {
@@ -437,9 +451,9 @@ export class LLMProviderManager {
 
       // For local providers, check if server URL is configured (except webllm which needs nothing)
       let hasApiKey = false;
-      if (config?.driverKind === 'openai-compatible') {
+      if (isCustomCompatibleDriverKind(config?.driverKind)) {
         // Authentication is optional; readiness depends on endpoint configuration.
-        hasApiKey = Boolean(config.openaiCompatible?.baseUrl.trim());
+        hasApiKey = Boolean(getCustomCompatibleBaseUrl(config));
       } else if (provider.id === 'webllm') {
         hasApiKey = true; // WebLLM doesn't need an API key
       } else if (provider.id === 'openai-codex') {
@@ -475,7 +489,7 @@ export class LLMProviderManager {
     const enabled = allProviders.filter(provider => {
       if (!provider.isEnabled) return false;
       const config = this.settings.providers[provider.id];
-      if (config?.driverKind === 'openai-compatible') {
+      if (isCustomCompatibleDriverKind(config?.driverKind)) {
         return provider.hasApiKey && isProviderCompatible(config.driverKind);
       }
 

@@ -18,6 +18,7 @@ import { OpenAIContextBuilder } from './OpenAIContextBuilder';
 import { AnthropicContextBuilder } from './AnthropicContextBuilder';
 import { GoogleContextBuilder } from './GoogleContextBuilder';
 import { CustomFormatContextBuilder } from './CustomFormatContextBuilder';
+import { resolveProviderWireFamily } from '../../llm/adapters/shared/CompatibleEndpointUtils';
 
 // Singleton instances for each builder (they're stateless)
 const openAIBuilder = new OpenAIContextBuilder();
@@ -49,17 +50,17 @@ export function usesCustomToolFormat(modelId: string): boolean {
  * @returns The context builder for that provider
  */
 export function getContextBuilder(provider: string, model?: string): IContextBuilder {
+  const wireFamily = resolveProviderWireFamily(provider, model);
+  if (wireFamily === 'anthropic') {
+    return anthropicBuilder;
+  }
+  if (wireFamily === 'google') {
+    return googleBuilder;
+  }
+
   const normalizedProvider = provider.toLowerCase();
 
   switch (normalizedProvider) {
-    // Anthropic
-    case 'anthropic':
-      return anthropicBuilder;
-
-    // Google
-    case 'google':
-      return googleBuilder;
-
     // Local providers: check model to determine format
     case 'lmstudio':
     case 'ollama':
@@ -100,14 +101,17 @@ export function getContextBuilder(provider: string, model?: string): IContextBui
  * @returns Category string
  */
 export function getProviderCategory(provider: string, model?: string): ProviderCategory {
+  const wireFamily = resolveProviderWireFamily(provider, model);
+  if (wireFamily === 'anthropic') {
+    return 'anthropic';
+  }
+  if (wireFamily === 'google') {
+    return 'google';
+  }
+
   const normalizedProvider = provider.toLowerCase();
 
   switch (normalizedProvider) {
-    case 'anthropic':
-      return 'anthropic';
-    case 'google':
-      return 'google';
-    case 'lmstudio':
     case 'ollama':
       // Only Nexus/fine-tuned models use custom format
       if (model && usesCustomToolFormat(model)) {

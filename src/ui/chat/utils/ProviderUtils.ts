@@ -2,6 +2,8 @@
  * ProviderUtils - Utilities for provider and display name formatting
  */
 
+import { isCustomCompatibleProviderId } from '../../../services/llm/adapters/shared/CompatibleEndpointUtils';
+
 export class ProviderUtils {
   /**
    * Get display name for provider
@@ -164,6 +166,7 @@ export class ProviderUtils {
    * Check if provider supports streaming
    */
   static supportsStreaming(providerId: string): boolean {
+    if (isCustomCompatibleProviderId(providerId)) return true;
     const streamingProviders = [
       'openai',
       'anthropic',
@@ -187,6 +190,7 @@ export class ProviderUtils {
    * Based on API documentation research as of 2024-2025
    */
   static supportsFunctionCalling(providerId: string): boolean {
+    if (isCustomCompatibleProviderId(providerId)) return true;
     const functionCallingProviders = [
       'openai',      // ✅ Native OpenAI function calling
       'lmstudio',    // ✅ OpenAI-compatible function calling (model-dependent)
@@ -253,8 +257,8 @@ export class ProviderUtils {
     return {
       streaming: this.supportsStreaming(providerId),
       functionCalling: this.supportsFunctionCalling(providerId),
-      imageInput: ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot'].includes(providerId),
-      jsonMode: ['openai', 'mistral', 'deepseek'].includes(providerId)
+      imageInput: providerId.startsWith('responses-compatible-') || providerId.startsWith('anthropic-compatible-') || providerId.startsWith('antigravity-compatible-') || ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot'].includes(providerId),
+      jsonMode: providerId.startsWith('responses-compatible-') || providerId.startsWith('anthropic-compatible-') || providerId.startsWith('antigravity-compatible-') || ['openai', 'mistral', 'deepseek'].includes(providerId)
     };
   }
 }

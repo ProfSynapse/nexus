@@ -11,7 +11,8 @@ import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import type { ModelOption, PromptOption } from '../types/SelectionTypes';
 import type { ModelAgentWorkspaceContextService, ModelAgentWorkspaceState } from './ModelAgentWorkspaceContextService';
-import { buildOpenAICompatibleModels, OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import { buildCustomCompatibleModels, getDefaultCustomCompatibleContextWindow } from '../../../services/llm/adapters/shared/CompatibleModelsCatalog';
+import { getCustomCompatibleDisplayName, isCustomCompatibleDriverKind } from '../../../services/llm/adapters/shared/CompatibleEndpointUtils';
 import { resolveAgentTemperature } from '../../../services/llm/utils/SubagentModelResolver';
 import { getContextWindowOverrideKey } from '../utils/ContextWindowSettings';
 import { DEFAULT_IMAGE_MODEL } from '../../../services/llm/types/ImageTypes';
@@ -161,14 +162,14 @@ export class ModelAgentDefaultsResolver {
     }
 
     const config = this.getPlugin()?.settings?.settings?.llmProviders?.providers?.[providerId];
-    if (config?.driverKind === 'openai-compatible') {
-      const model = buildOpenAICompatibleModels(config).find(candidate => candidate.id === modelId);
+    if (config && isCustomCompatibleDriverKind(config.driverKind)) {
+      const model = buildCustomCompatibleModels(config).find(candidate => candidate.id === modelId);
       return {
         providerId,
-        providerName: config.openaiCompatible?.displayName || 'OpenAI-compatible',
+        providerName: getCustomCompatibleDisplayName(config),
         modelId,
         modelName: model?.name || modelId,
-        contextWindow: model?.contextWindow || OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+        contextWindow: model?.contextWindow || getDefaultCustomCompatibleContextWindow(config, modelId),
         maxOutputTokens: model?.maxOutputTokens,
         supportsThinking: model?.supportsThinking ?? false
       };
