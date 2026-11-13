@@ -6,13 +6,23 @@ import {
   normalizeOpenAICompatibleBaseUrl,
   OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW,
   OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW,
+  probeOpenAICompatibleModelThinking,
   resolveOpenAICompatibleContextWindow,
 } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
 import {
   checkOpenAICompatibleContextWindow,
   type OpenAICompatibleContextCheckResult,
 } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleContextCheck';
+import { normalizeThinkingEffortList } from '../../services/llm/adapters/shared/CompatibleEndpointUtils';
+import type { CompatibleThinkingProbeResult } from '../../services/llm/adapters/shared/CompatibleThinkingProbe';
 
+function cloneModelDefinition(definition: OpenAICompatibleModelDefinition): OpenAICompatibleModelDefinition {
+  return {
+    ...definition,
+    ...(definition.reportedThinkingEfforts ? { reportedThinkingEfforts: [...definition.reportedThinkingEfforts] } : {}),
+    ...(definition.probedThinkingEfforts ? { probedThinkingEfforts: [...definition.probedThinkingEfforts] } : {}),
+  };
+}
 export type CompatibleEndpointConfig = LLMProviderConfig & {
   driverKind: 'openai-compatible';
   openaiCompatible: {
@@ -29,7 +39,7 @@ export function copyEndpoint(config: CompatibleEndpointConfig): CompatibleEndpoi
     models: Object.fromEntries(Object.entries(config.models ?? {}).map(([id, model]) => [id, { ...model }])),
     openaiCompatible: {
       ...config.openaiCompatible,
-      models: Object.fromEntries(Object.entries(config.openaiCompatible.models).map(([id, model]) => [id, { ...model }])),
+      models: Object.fromEntries(Object.entries(config.openaiCompatible.models).map(([id, model]) => [id, cloneModelDefinition(model)])),
     },
   };
 }
@@ -51,6 +61,7 @@ export class OpenAICompatibleEditSession {
     private readonly persist: (id: string, config: CompatibleEndpointConfig) => Promise<void>,
     private readonly discover = discoverOpenAICompatibleModels,
     private readonly check = checkOpenAICompatibleContextWindow,
+    private readonly probe = probeOpenAICompatibleModelThinking,
   ) {
     this.draft = copyEndpoint(config);
   }
@@ -83,7 +94,7 @@ export class OpenAICompatibleEditSession {
     if (value !== undefined && !isOpenAICompatibleContextWindow(value)) {
       throw new Error(`Enter a whole number of tokens from ${OPENAI_COMPATIBLE_MIN_CONTEXT_WINDOW.toLocaleString()} to ${OPENAI_COMPATIBLE_MAX_CONTEXT_WINDOW.toLocaleString()}.`);
     }
-    const next = { ...definition };
+    const next = cloneModelDefinition(definition);
     if (value === undefined) delete next.contextWindow;
     else next.contextWindow = value;
     this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
@@ -111,6 +122,41 @@ export class OpenAICompatibleEditSession {
       baseUrl: this.draft.openaiCompatible.baseUrl, apiKey: this.draft.apiKey, model: id,
       contextWindow: resolveOpenAICompatibleContextWindow(definition).contextWindow, signal,
     });
+  }
+
+  /** Sends minimal probe requests to detect which thinking effort tiers this model accepts. */
+  async probeThinking(id: string, signal?: AbortSignal): Promise<CompatibleThinkingProbeResult> {
+    const error = this.validationError();
+    if (error) throw new Error(error);
+    const definition = this.draft.openaiCompatible.models[id];
+    if (!definition) throw new Error('This model is not in the list.');
+    const revision = this.revision;
+    const result = await this.probe({
+      baseUrl: this.draft.openaiCompatible.baseUrl,
+      apiKey: this.draft.apiKey,
+      model: id,
+      signal,
+    });
+    if (this.closed || revision !== this.revision) {
+      return { kind: 'failed', message: 'Connection changed before the thinking probe finished.' };
+    }
+    if (signal?.aborted) return result;
+    const current = this.draft.openaiCompatible.models[id];
+    if (!current) return result;
+    if (result.kind === 'supported') {
+      const next = cloneModelDefinition(current);
+      next.probedSupportsThinking = true;
+      next.probedThinkingEfforts = [...result.efforts];
+      next.probedThinkingMode = result.mode;
+      this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
+    } else if (result.kind === 'unsupported') {
+      const next = cloneModelDefinition(current);
+      next.probedSupportsThinking = false;
+      delete next.probedThinkingEfforts;
+      delete next.probedThinkingMode;
+      this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
+    }
+    return result;
   }
 
   validationError(): string | null {
@@ -154,13 +200,18 @@ export class OpenAICompatibleEditSession {
     try {
       const discovered = await this.discover(baseUrl, key);
       if (this.closed || revision !== this.revision) return 'stale';
-      for (const { id, contextWindow } of discovered) {
+      for (const { id, contextWindow, supportsThinking, thinkingEfforts } of discovered) {
         const existing = Object.prototype.hasOwnProperty.call(this.draft.openaiCompatible.models, id)
           ? this.draft.openaiCompatible.models[id] : undefined;
-        // The report is refreshed on every Connect; the user's own value is never touched.
-        const next = { ...(existing ?? { source: 'discovered' as const }) };
+        // The report is refreshed on every Connect; user and probed values are preserved.
+        const next = existing ? cloneModelDefinition(existing) : { source: 'discovered' as const };
         if (contextWindow === undefined) delete next.reportedContextWindow;
         else next.reportedContextWindow = contextWindow;
+        if (supportsThinking === undefined) delete next.reportedSupportsThinking;
+        else next.reportedSupportsThinking = supportsThinking;
+        const normalizedEfforts = normalizeThinkingEffortList(thinkingEfforts);
+        if (normalizedEfforts === undefined) delete next.reportedThinkingEfforts;
+        else next.reportedThinkingEfforts = [...normalizedEfforts];
         this.draft.openaiCompatible.models = { ...this.draft.openaiCompatible.models, [id]: next };
         if (!existing) this.setModelEnabled(id, true);
       }

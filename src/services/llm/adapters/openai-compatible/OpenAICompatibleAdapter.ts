@@ -1,6 +1,8 @@
 import type { LLMProviderConfig } from '../../../../types';
+import type { OpenAICompatibleModelDefinition } from '../../../../types/llm/ProviderTypes';
 import { BaseAdapter } from '../BaseAdapter';
 import { LLMProviderError, type GenerateOptions, type LLMResponse, type ModelInfo, type ModelPricing, type ProviderCapabilities, type StreamChunk } from '../types';
+import { clampEffortToSupportedTiers, resolveDefinitionThinking } from '../shared/CompatibleEndpointUtils';
 import { buildMessagesWithConversationHistory, convertFunctionTools } from '../shared/OpenAICompatHelpers';
 import {
   buildOpenAICompatibleModels, isOpenAICompatibleModelId, OPENAI_COMPATIBLE_CONTEXT_WINDOW,
@@ -13,6 +15,7 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
   readonly name: string;
   readonly baseUrl: string;
   private readonly savedModels: ModelInfo[];
+  private readonly modelDefinitions: Record<string, OpenAICompatibleModelDefinition>;
   private readonly activeRequests = new Set<AbortController>();
   private disposed = false;
 
@@ -23,6 +26,7 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
     this.name = instanceId;
     this.baseUrl = baseUrl;
     this.savedModels = models;
+    this.modelDefinitions = config.openaiCompatible?.models ?? {};
     this.initializeCache(); // BaseAdapter's metrics surface; generation deliberately bypasses it.
   }
 
@@ -47,6 +51,12 @@ export class OpenAICompatibleAdapter extends BaseAdapter {
     if (options?.enableTools !== false && options?.tools?.length) {
       body.tools = convertFunctionTools(options.tools);
       body.tool_choice = 'auto';
+    }
+    if (options?.enableThinking) {
+      const resolved = resolveDefinitionThinking(this.modelDefinitions[model]);
+      if (resolved.supportsThinking !== false) {
+        body.reasoning_effort = clampEffortToSupportedTiers(options.thinkingEffort || 'medium', resolved.efforts);
+      }
     }
     return body;
   }

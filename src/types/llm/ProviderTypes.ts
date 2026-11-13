@@ -38,25 +38,74 @@ export interface ModelConfig {
   description?: string; // Optional user-defined description (for backwards compatibility)
 }
 
-/** One saved model on an OpenAI-compatible endpoint. */
+export type CompatibleThinkingMode = 'adaptive' | 'budget' | 'level' | 'effort';
+
+/** One saved model on a custom compatible endpoint. */
 export interface OpenAICompatibleModelDefinition {
   source: 'discovered' | 'manual';
   /** Context window the user entered; it wins over anything the server reports. */
   contextWindow?: number;
   /** Context window the server reported during discovery; refreshed on each Connect. */
   reportedContextWindow?: number;
+  /** Whether server model metadata explicitly advertised or disabled thinking/reasoning. */
+  reportedSupportsThinking?: boolean;
+  /** Distinct thinking effort tiers advertised by server model metadata. */
+  reportedThinkingEfforts?: ThinkingEffort[];
+  /** Whether active parameter probing confirmed thinking support on this endpoint. */
+  probedSupportsThinking?: boolean;
+  /** Distinct thinking effort tiers accepted during active parameter probing. */
+  probedThinkingEfforts?: ThinkingEffort[];
+  /** Wire thinking mode confirmed during active probing. */
+  probedThinkingMode?: CompatibleThinkingMode;
 }
+export type CompatibleDriverKind =
+  | 'openai-compatible'
+  | 'responses-compatible'
+  | 'anthropic-compatible'
+  | 'antigravity-compatible';
 
+export type ResponsesCompatibleStateMode = 'stateless' | 'stateful';
+
+export type ResponsesCompatibleAuthMode = 'bearer' | 'x-api-key' | 'both';
+
+export type AnthropicCompatibleAuthMode = 'x-api-key' | 'bearer' | 'both';
+
+export type AntigravityCompatibleWireProtocol = 'auto' | 'v1beta' | 'messages';
+
+export type AntigravityCompatibleAuthMode = 'both' | 'bearer' | 'header-key';
 /**
  * LLM provider configuration
  */
 export interface LLMProviderConfig {
   /** Implementation family for a named endpoint; omitted for legacy providers. */
-  driverKind?: 'openai-compatible';
+  driverKind?: CompatibleDriverKind;
   openaiCompatible?: {
     schemaVersion: 1;
     displayName: string;
     baseUrl: string;
+    models: Record<string, OpenAICompatibleModelDefinition>;
+  };
+  responsesCompatible?: {
+    schemaVersion: 1;
+    displayName: string;
+    baseUrl: string;
+    stateMode?: ResponsesCompatibleStateMode;
+    authMode?: ResponsesCompatibleAuthMode;
+    models: Record<string, OpenAICompatibleModelDefinition>;
+  };
+  anthropicCompatible?: {
+    schemaVersion: 1;
+    displayName: string;
+    baseUrl: string;
+    authMode?: AnthropicCompatibleAuthMode;
+    models: Record<string, OpenAICompatibleModelDefinition>;
+  };
+  antigravityCompatible?: {
+    schemaVersion: 1;
+    displayName: string;
+    baseUrl: string;
+    wireProtocol?: AntigravityCompatibleWireProtocol;
+    authMode?: AntigravityCompatibleAuthMode;
     models: Record<string, OpenAICompatibleModelDefinition>;
   };
   apiKey: string;

@@ -28,6 +28,7 @@ import type { MessageQueueService } from './MessageQueueService';
 import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
 import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
 import { ContextCompactionService } from './ContextCompactionService';
+import { resolveProviderWireFamily } from '../llm/adapters/shared/CompatibleEndpointUtils';
 import type {
   ChatRuntimeEnvelope,
   ChatRuntimeEvent,
@@ -264,7 +265,7 @@ export class StreamingResponseService {
       // Only add user message if it's NOT already in the filtered conversation
       // (happens on first message when conversation is empty, or during retry)
       if (!filteredConversation || !filteredConversation.messages.some((m) => m.content === userMessage && m.role === 'user')) {
-        messages.push(provider === 'google'
+        messages.push(resolveProviderWireFamily(provider, options?.model || defaultModel.model) === 'google'
           ? { role: 'user', content: '', parts: [{ text: userMessage }] }
           : { role: 'user', content: userMessage });
       }

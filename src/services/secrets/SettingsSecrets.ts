@@ -31,6 +31,10 @@ import {
   remoteAgentApiKeySecretId
 } from './SecretStore';
 import { usesDeviceOAuthTokens } from '../oauth/DeviceOAuthState';
+import {
+  getCustomCompatibleFallbackLabel,
+  isCustomCompatibleDriverKind,
+} from '../llm/adapters/shared/CompatibleEndpointUtils';
 
 /**
  * One secret field located within a settings object: a stable secretStorage id
@@ -75,8 +79,8 @@ function collectSecretFields(settings: MCPSettings): SecretFieldRef[] {
     const deviceTokens = usesDeviceOAuthTokens(config.driverKind ?? providerId);
     refs.push({
       id: llmApiKeySecretId(providerId),
-      clearWhenEmpty: config.driverKind === 'openai-compatible' || deviceTokens,
-      clearLabel: deviceTokens ? 'OAuth access token' : 'OpenAI-compatible API key',
+      clearWhenEmpty: isCustomCompatibleDriverKind(config.driverKind) || deviceTokens,
+      clearLabel: deviceTokens ? 'OAuth access token' : `${getCustomCompatibleFallbackLabel(config.driverKind)} API key`,
       read: () => config.apiKey,
       write: (value) => { config.apiKey = value; }
     });

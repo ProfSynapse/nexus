@@ -22,6 +22,12 @@
 
 import type { ThinkingEffort } from '../../../types/llm/ProviderTypes';
 import {
+  clampEffortToSupportedTiers,
+  resolveCompatibleModelThinking,
+  resolveProviderWireFamily,
+  stripCompatibleModelPrefix
+} from '../adapters/shared/CompatibleEndpointUtils';
+import {
   clampThinkingEffortToHigh,
   isAnthropicAdaptiveThinkingModel,
   mapAnthropicAdaptiveEffort,
@@ -42,6 +48,28 @@ function isMistralLarge4(model: string): boolean {
 }
 
 function getEffortBehaviour(provider: string, model: string): EffortBehaviour | null {
+  const detected = resolveCompatibleModelThinking(provider, model);
+  if (detected?.efforts && detected.efforts.length > 0) {
+    const supportedEfforts = detected.efforts;
+    return (effort: ThinkingEffort) => clampEffortToSupportedTiers(effort, supportedEfforts);
+  }
+  if (provider.startsWith('responses-compatible-')) {
+    const bareModel = stripCompatibleModelPrefix(model);
+    return (effort) => mapOpenAIThinkingEffort(effort, bareModel);
+  }
+  if (provider.startsWith('anthropic-compatible-') || provider.startsWith('antigravity-compatible-')) {
+    const bareModel = stripCompatibleModelPrefix(model);
+    const family = resolveProviderWireFamily(provider, model);
+    if (family === 'anthropic') {
+      return isAnthropicAdaptiveThinkingModel(bareModel)
+        ? (effort) => mapAnthropicAdaptiveEffort(effort, bareModel)
+        : null;
+    }
+    if (family === 'google') {
+      return getEffortBehaviour('google', bareModel);
+    }
+    return null;
+  }
   switch (provider) {
     case 'anthropic':
       // Manual-budget models (Claude 4.5 and older) lift Extra high and Max

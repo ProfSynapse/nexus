@@ -120,8 +120,42 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
       compatibility: 'all',
       shouldInitialize: (config) => config?.enabled === true && config.driverKind === 'openai-compatible',
       createAdapter: async ({ config, instanceId }) => {
+        // Dynamic import keeps adapter modules off the mobile startup graph.
         const { OpenAICompatibleAdapter } = await import('../adapters/openai-compatible/OpenAICompatibleAdapter');
         return new OpenAICompatibleAdapter(config, instanceId);
+      },
+    }),
+    defineDriver({
+      kind: 'responses-compatible',
+      displayName: 'Responses compatible',
+      compatibility: 'all',
+      shouldInitialize: (config) => config?.enabled === true && config.driverKind === 'responses-compatible',
+      createAdapter: async ({ config, instanceId }) => {
+        // Dynamic import keeps adapter modules off the mobile startup graph.
+        const { ResponsesCompatibleAdapter } = await import('../adapters/responses-compatible/ResponsesCompatibleAdapter');
+        return new ResponsesCompatibleAdapter(config, instanceId);
+      },
+    }),
+    defineDriver({
+      kind: 'anthropic-compatible',
+      displayName: 'Anthropic compatible',
+      compatibility: 'all',
+      shouldInitialize: (config) => config?.enabled === true && config.driverKind === 'anthropic-compatible',
+      createAdapter: async ({ config, instanceId }) => {
+        // Dynamic import keeps adapter modules off the mobile startup graph.
+        const { AnthropicCompatibleAdapter } = await import('../adapters/anthropic-compatible/AnthropicCompatibleAdapter');
+        return new AnthropicCompatibleAdapter(config, instanceId);
+      },
+    }),
+    defineDriver({
+      kind: 'antigravity-compatible',
+      displayName: 'Antigravity compatible',
+      compatibility: 'all',
+      shouldInitialize: (config) => config?.enabled === true && config.driverKind === 'antigravity-compatible',
+      createAdapter: async ({ config, instanceId }) => {
+        // Dynamic import keeps adapter modules off the mobile startup graph.
+        const { AntigravityCompatibleAdapter } = await import('../adapters/antigravity-compatible/AntigravityCompatibleAdapter');
+        return new AntigravityCompatibleAdapter(config, instanceId);
       },
     }),
     defineDriver({

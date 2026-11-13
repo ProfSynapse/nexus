@@ -5,6 +5,10 @@ import { resolveOpenAICompatibleContextWindow } from '../../services/llm/adapter
 import type { OpenAICompatibleContextCheckResult } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleContextCheck';
 import type { OpenAICompatibleModelDefinition } from '../../types/llm/ProviderTypes';
 import {
+  describeThinkingCapability,
+  type CompatibleThinkingProbeResult,
+} from '../../services/llm/adapters/shared/CompatibleThinkingProbe';
+import {
   CompatibleEndpointConfig,
   copyEndpoint,
   isCompatibleEndpoint,
@@ -50,6 +54,19 @@ export function describeContextCheck(result: OpenAICompatibleContextCheckResult)
         : { text: `Too large: the server refused a prompt of this size. It said: ${result.message}`, warning: true };
     case 'failed':
       return { text: `Check failed. ${result.message}`, warning: true };
+  }
+}
+
+export function describeThinkingProbe(result: CompatibleThinkingProbeResult): ContextNote {
+  switch (result.kind) {
+    case 'supported':
+      return result.efforts.length > 0
+        ? { text: `Thinking tiers unlocked: ${result.efforts.join(', ')}.`, warning: false }
+        : { text: 'Thinking is supported by this model.', warning: false };
+    case 'unsupported':
+      return { text: 'Thinking is not supported by this model.', warning: false };
+    case 'failed':
+      return { text: `Thinking probe failed. ${result.message}`, warning: true };
   }
 }
 
@@ -271,6 +288,10 @@ export class OpenAICompatibleModal extends Modal {
     const describe = (): void => {
       setting.descEl.empty();
       setting.descEl.createDiv({ text: describeContextWindow(editor.draft.openaiCompatible.models[model]) });
+      const thinkingSummary = describeThinkingCapability(editor.draft.openaiCompatible.models[model]);
+      if (thinkingSummary) {
+        setting.descEl.createDiv({ text: thinkingSummary });
+      }
       if (!note) return;
       const line = setting.descEl.createDiv({ cls: note.warning ? 'nexus-compatible-check mod-warning' : 'nexus-compatible-check', text: note.text });
       line.setAttribute('role', 'status');
@@ -327,6 +348,32 @@ export class OpenAICompatibleModal extends Modal {
           } finally {
             this.checks.delete(controller);
             button.setDisabled(false).setButtonText('Check');
+          }
+          describe();
+        });
+    });
+    setting.addButton(button => {
+      button.setButtonText('Probe')
+        .setTooltip('Sends minimal requests to detect which thinking effort tiers your server accepts for this model.')
+        .onClick(async () => {
+          const controller = new AbortController();
+          this.checks.add(controller);
+          button.setDisabled(true).setButtonText('Probing…');
+          note = { text: 'Probing thinking tiers…', warning: false };
+          describe();
+          try {
+            const result = await editor.probeThinking(model, controller.signal);
+            if (controller.signal.aborted || this.editor !== editor) return;
+            if (result.kind !== 'failed') {
+              this.changed();
+            }
+            note = describeThinkingProbe(result);
+          } catch (error) {
+            if (controller.signal.aborted || this.editor !== editor) return;
+            note = { text: `Thinking probe failed. ${error instanceof Error ? error.message : 'The server could not be reached.'}`, warning: true };
+          } finally {
+            this.checks.delete(controller);
+            button.setDisabled(false).setButtonText('Probe');
           }
           describe();
         });

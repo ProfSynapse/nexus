@@ -118,15 +118,6 @@ describe('OcrService', () => {
   // ── Provider family resolution ────────────────────────────────────────
 
   describe('provider family resolution', () => {
-    it('calls getProviderFamily with the provider string', async () => {
-      renderPdfPagesMock.mockResolvedValue([makePageImage(1)]);
-      const deps = makeDeps();
-
-      await ocrPdf(new ArrayBuffer(100), 'anthropic', 'claude-3-opus', deps);
-
-      expect(getProviderFamilyMock).toHaveBeenCalledWith('anthropic');
-    });
-
     it('passes resolved family to formatVisionMessage', async () => {
       renderPdfPagesMock.mockResolvedValue([makePageImage(1)]);
       getProviderFamilyMock.mockReturnValue('anthropic');

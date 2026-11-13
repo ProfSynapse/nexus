@@ -65,7 +65,7 @@ export async function ocrPdf(
   const truncated = allImages.length > maxPages;
   const images = truncated ? allImages.slice(0, maxPages) : allImages;
 
-  const providerFamily = getProviderFamily(provider);
+  const providerFamily = getProviderFamily(provider, model);
   const pages: PdfPageContent[] = [];
 
   for (const image of images) {

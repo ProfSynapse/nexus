@@ -29,6 +29,10 @@ import { BRAND_NAME } from '../../constants/branding';
 import { OpenAICompatibleModal } from '../../components/openai-compatible/OpenAICompatibleModal';
 import { isCompatibleEndpoint } from '../../components/openai-compatible/OpenAICompatibleEditSession';
 import { releaseRaisedContextOverrides } from '../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import { CustomCompatibleModal } from '../../components/custom-compatible/CustomCompatibleModal';
+import type { CustomCompatibleKind } from '../../components/custom-compatible/CustomCompatibleEditSession';
+import { releaseRaisedCustomCompatibleContextOverrides } from '../../services/llm/adapters/shared/CompatibleModelsCatalog';
+import { syncCompatibleWireProtocols } from '../../services/llm/adapters/shared/CompatibleEndpointUtils';
 import { getDeviceOAuthState, usesDeviceOAuthTokens } from '../../services/oauth/DeviceOAuthState';
 
 /**
@@ -517,6 +521,31 @@ export class ProvidersTab {
                 comingSoon: false,
             };
         }
+        if (providerId === 'responses-compatible') {
+            const count = Object.values(settings.providers).filter(config =>
+                config.driverKind === 'responses-compatible' && config.responsesCompatible?.schemaVersion === 1
+            ).length;
+            return {
+                id: providerId,
+                providerId,
+                name: 'Responses-compatible',
+                description: `${count} ${count === 1 ? 'endpoint' : 'endpoints'} · OpenAI Responses API (/v1/responses)`,
+                isEnabled: false,
+                showToggle: false,
+                category: 'local',
+                comingSoon: false,
+            };
+        }
+        if (providerId === 'anthropic-compatible' || providerId === 'antigravity-compatible') {
+            const count = Object.values(settings.providers).filter(config => config.driverKind === providerId &&
+                (providerId === 'anthropic-compatible' ? config.anthropicCompatible?.schemaVersion === 1 : config.antigravityCompatible?.schemaVersion === 1)).length;
+            return {
+                id: providerId, providerId,
+                name: providerId === 'anthropic-compatible' ? 'Anthropic-compatible' : 'Antigravity-compatible',
+                description: `${count} ${count === 1 ? 'endpoint' : 'endpoints'} · local or hosted`,
+                isEnabled: false, showToggle: false, category: 'local', comingSoon: false,
+            };
+        }
         const displayConfig = this.providerConfigs[providerId];
         if (!displayConfig) return null;
 
@@ -550,10 +579,10 @@ export class ProvidersTab {
         if (!isDesktop()) {
             this.container.createEl('p', {
                 cls: 'setting-item-description',
-                text: 'Configure a supported provider or an OpenAI-compatible endpoint reachable from this device.'
+                text: 'Configure a supported provider or a compatible endpoint reachable from this device.'
             });
 
-            const items = [...new Set(['openai-compatible', ...MOBILE_COMPATIBLE_PROVIDERS])]
+            const items = [...new Set(['openai-compatible', 'responses-compatible', 'anthropic-compatible', 'antigravity-compatible', ...MOBILE_COMPATIBLE_PROVIDERS])]
                 .map(id => this.buildProviderCardItem(id, settings))
                 .filter((item): item is ProviderCardItem => item !== null);
 
@@ -578,6 +607,10 @@ export class ProvidersTab {
                             this.openCompatibleModal();
                             return;
                         }
+                        if (item.providerId === 'responses-compatible' || item.providerId === 'anthropic-compatible' || item.providerId === 'antigravity-compatible') {
+                            this.openCustomCompatibleModal(item.providerId);
+                            return;
+                        }
                         const displayConfig = this.providerConfigs[item.providerId];
                         const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
                         if (displayConfig) {
@@ -597,14 +630,16 @@ export class ProvidersTab {
         const groups: CardGroup<ProviderCardItem>[] = [];
 
         if (supportsLocalLLM()) {
-            const localItems = ['webllm', 'ollama', 'lmstudio', 'openai-compatible']
+            const localItems = ['webllm', 'ollama', 'lmstudio', 'openai-compatible', 'responses-compatible', 'anthropic-compatible', 'antigravity-compatible']
                 .map(id => this.buildProviderCardItem(id, settings))
                 .filter((item): item is ProviderCardItem => item !== null);
 
             groups.push({ title: 'LOCAL & CUSTOM PROVIDERS', items: localItems });
         } else {
-            const custom = this.buildProviderCardItem('openai-compatible', settings);
-            if (custom) groups.push({ title: 'CUSTOM PROVIDERS', items: [custom] });
+            const custom = ['openai-compatible', 'responses-compatible', 'anthropic-compatible', 'antigravity-compatible']
+                .map(id => this.buildProviderCardItem(id, settings))
+                .filter((item): item is ProviderCardItem => item !== null);
+            if (custom.length) groups.push({ title: 'CUSTOM PROVIDERS', items: custom });
         }
 
         const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'deepseek', 'deepgram', 'assemblyai', 'openrouter', 'requesty', 'perplexity', 'github-copilot'];
@@ -635,6 +670,10 @@ export class ProvidersTab {
                         this.openCompatibleModal();
                         return;
                     }
+                    if (item.providerId === 'responses-compatible' || item.providerId === 'anthropic-compatible' || item.providerId === 'antigravity-compatible') {
+                        this.openCustomCompatibleModal(item.providerId);
+                        return;
+                    }
                     const displayConfig = this.providerConfigs[item.providerId];
                     const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
                     if (displayConfig) {
@@ -658,13 +697,54 @@ export class ProvidersTab {
                 const released = releaseRaisedContextOverrides(id, previous, config,
                     [settings.contextWindowOverrides, settings.agentContextWindowOverrides]);
                 settings.providers[id] = config;
+                syncCompatibleWireProtocols(settings.providers);
                 try {
                     await this.saveSettings();
                     this.render();
                 } catch (error) {
                     if (previous) settings.providers[id] = previous;
                     else delete settings.providers[id];
+                    syncCompatibleWireProtocols(settings.providers);
                     for (const { map, key, value } of released) map[key] = value;
+                    throw error;
+                }
+            },
+        }).open();
+    }
+
+    private openCustomCompatibleModal(kind: CustomCompatibleKind): void {
+        new CustomCompatibleModal(this.services.app, {
+            kind,
+            getProviders: () => this.getSettings().providers,
+            save: async (id, config) => {
+                const settings = this.getSettings();
+                const previous = settings.providers[id];
+                const released = releaseRaisedCustomCompatibleContextOverrides(id, previous, config,
+                    [settings.contextWindowOverrides, settings.agentContextWindowOverrides]);
+                settings.providers[id] = config;
+                syncCompatibleWireProtocols(settings.providers);
+                try {
+                    await this.saveSettings();
+                    this.render();
+                } catch (error) {
+                    if (previous) settings.providers[id] = previous;
+                    else delete settings.providers[id];
+                    syncCompatibleWireProtocols(settings.providers);
+                    for (const { map, key, value } of released) map[key] = value;
+                    throw error;
+                }
+            },
+            remove: async id => {
+                const settings = this.getSettings();
+                const previous = settings.providers[id];
+                delete settings.providers[id];
+                syncCompatibleWireProtocols(settings.providers);
+                try {
+                    await this.saveSettings();
+                    this.render();
+                } catch (error) {
+                    if (previous) settings.providers[id] = previous;
+                    syncCompatibleWireProtocols(settings.providers);
                     throw error;
                 }
             },

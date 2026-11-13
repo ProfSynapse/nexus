@@ -14,7 +14,8 @@ import { ProviderUtils } from '../utils/ProviderUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { getAvailableProviders, isProviderCompatible } from '../../../utils/platform';
 import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
-import { OPENAI_COMPATIBLE_CONTEXT_WINDOW } from '../../../services/llm/adapters/openai-compatible/OpenAICompatibleConfig';
+import { getDefaultCustomCompatibleContextWindow } from '../../../services/llm/adapters/shared/CompatibleModelsCatalog';
+import { getCustomCompatibleDisplayName, isCustomCompatibleDriverKind } from '../../../services/llm/adapters/shared/CompatibleEndpointUtils';
 import { ModelWithProvider } from '../../../services/llm/core/ModelDiscoveryService';
 import { Settings } from '../../../settings';
 import type { App } from 'obsidian';
@@ -76,7 +77,7 @@ export class ModelSelectionUtility {
       const models: ModelOption[] = allModels
         .filter((model: ModelWithProvider) => {
           const config = providerSettings?.providers[model.provider];
-          if (config?.driverKind === 'openai-compatible') {
+          if (config && isCustomCompatibleDriverKind(config.driverKind)) {
             return config.enabled && config.models?.[model.id]?.enabled !== false &&
               isProviderCompatible(config.driverKind);
           }
@@ -158,7 +159,7 @@ export class ModelSelectionUtility {
       providerName: ModelSelectionUtility.getProviderDisplayName(model.provider, settings),
       modelId: model.id,
       modelName: model.name,
-      contextWindow: model.contextWindow || (settings?.providers[model.provider]?.driverKind === 'openai-compatible' ? OPENAI_COMPATIBLE_CONTEXT_WINDOW : 128000),
+      contextWindow: model.contextWindow || getDefaultCustomCompatibleContextWindow(settings?.providers[model.provider], model.id),
       maxOutputTokens: model.maxOutputTokens,
       supportsThinking: model.supportsThinking || false
     };
@@ -169,8 +170,8 @@ export class ModelSelectionUtility {
    */
   static getProviderDisplayName(providerId: string, settings?: LLMProviderSettings): string {
     const config = settings?.providers[providerId];
-    if (config?.driverKind === 'openai-compatible') {
-      return config.openaiCompatible?.displayName || 'OpenAI-compatible';
+    if (isCustomCompatibleDriverKind(config?.driverKind)) {
+      return getCustomCompatibleDisplayName(config);
     }
     return ProviderUtils.getProviderDisplayNameWithTools(providerId);
   }

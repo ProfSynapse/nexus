@@ -4,6 +4,7 @@ import { getServerKeyCandidates } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
 import { desktopRequire } from '../utils/desktopRequire';
 import { LocalCliInstaller } from '../services/cli/LocalCliInstaller';
+import { getCustomCompatibleBaseUrl, isCustomCompatibleDriverKind } from '../services/llm/adapters/shared/CompatibleEndpointUtils';
 import {
   type McpConfigStatus,
   getAntigravityConfigPath,
@@ -23,8 +24,8 @@ export function isProviderConfigured(providerId: string, config?: LLMProviderCon
     return true;
   }
 
-  if (config.driverKind === 'openai-compatible') {
-    return Boolean(config.openaiCompatible?.baseUrl?.trim());
+  if (isCustomCompatibleDriverKind(config.driverKind)) {
+    return Boolean(getCustomCompatibleBaseUrl(config));
   }
 
   if (providerId === 'anthropic-claude-code' || providerId === 'google-gemini-cli') {

@@ -88,9 +88,39 @@ Use this to connect any local or hosted server that exposes the OpenAI Chat Comp
 2. Click **Add endpoint**
 3. Enter a **Name** (shown in the model picker) and the **API base URL**, including any path such as `/v1`
 4. Enter an **API key** only if your server requires one; it is sent as a Bearer token
-5. Click **Connect** to discover the server's models through `/models`, then choose which ones to show in the model picker. If the server returns no list, use **Add a model manually** and enter the exact model ID it expects
+5. Click **Connect** to discover the server's models through `/models` (including any server-reported context window and reasoning metadata such as `supported_reasoning_levels` or `thinking`), then choose which ones to show in the model picker. If the server returns no list, use **Add a model manually** and enter the exact model ID it expects
 
-Chat and standard tool calling work through these endpoints. The endpoint must be reachable from the device you are using, so a `localhost` address only works on that computer.
+Chat and standard tool calling work through these endpoints. Each model row also lets you adjust and verify its context window with **Check**, or click **Probe** to send minimal test requests that detect which thinking effort tiers your server accepts for that model. The endpoint must be reachable from the device you are using, so a `localhost` address only works on that computer.
+
+---
+
+## Responses-compatible Endpoints
+
+Use this to connect any gateway or proxy that exposes the OpenAI Responses API (`/v1/responses`), such as CLIProxyAPI, Sub2API, LiteLLM, NewAPI, or custom proxies. You can add several endpoints; each keeps its own address, key, continuation mode, and model list.
+
+1. Open **Settings -> Nexus -> Providers** and choose **Responses-compatible**
+2. Click **Add endpoint**
+3. Enter a **Name** (shown in the model picker) and the **API base URL** (for example `https://api.example.com/v1` or a gateway base path ending in `/v1` or `/codex`)
+4. Enter an **API key** only if your gateway requires one
+5. Choose the **Continuation mode** your gateway supports:
+   - **Stateless (full input replay)** (default): replays full conversation items and tool calls on each turn with `store: false` — recommended for CLIProxyAPI, Sub2API, and Codex-backed gateways
+   - **Stateful (previous response ID)**: tracks server-side state via `previous_response_id` for gateways that persist response state
+6. Select the **Auth header** expected by your endpoint (`Authorization: Bearer`, `API key header`, or `Both headers`)
+7. Click **Connect** to discover models through `/models` (reading server-advertised reasoning tiers such as `supported_reasoning_levels` or `thinking` when provided), then enable the models you want. If the server returns no list, use **Add a model manually** and enter the exact model ID it expects
+
+Each model's context window uses the size your server reports when available, or can be edited and verified with **Check**. Click **Probe** on any model row to detect which thinking effort tiers your server accepts and unlock them in chat settings immediately.
+
+---
+
+## Anthropic-compatible Endpoints
+
+Choose **Anthropic-compatible** in Providers and add an endpoint with a name, API base URL, and optional API key. Select the authentication header your server expects (`x-api-key`, bearer, or both), then click **Connect** to discover models and any server-advertised reasoning tiers (`supported_reasoning_levels` / `thinking`). Enable the models you want, or add exact model IDs manually. You can adjust and verify each model's context window with **Check**, click **Probe** to detect supported thinking effort tiers per model, and delete an endpoint from its list card.
+
+---
+
+## Antigravity-compatible Endpoints
+
+Choose **Antigravity-compatible** in Providers and add your gateway's name, base URL, and optional API key. Select its authentication header and protocol: **Auto** routes Gemini models through v1beta and Claude models through Messages; the other modes force one protocol. Click **Connect** to discover models and any server-advertised reasoning tiers (`supported_reasoning_levels` / `thinking`), or add exact IDs manually, then enable the models you want. Context windows can be adjusted and checked with **Check**, and **Probe** detects supported thinking effort tiers per model across the selected protocol. These endpoints are distinct from the desktop Antigravity CLI.
 
 ---
 
