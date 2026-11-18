@@ -69,6 +69,8 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
         speaker_labels: request.requestSpeakerLabels === true,
         punctuate: true,
         format_text: true,
+        // Keep the clean transcript behavior used before STT 3.7.
+        disfluencies: request.model === 'assemblyai-stt-3-7' ? false : undefined,
         prompt: request.prompt?.trim() || undefined
       })
     });

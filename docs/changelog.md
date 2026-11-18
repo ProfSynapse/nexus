@@ -1,5 +1,9 @@
 # Nexus Changelog
 
+## Unreleased
+
+- Add AssemblyAI STT 3.7 for recorded audio and STT 3.7 Realtime / Realtime Agent for live voice. AssemblyAI now auto-selects STT 3.7 for transcription and Realtime Agent for voice chat; saved model choices remain available. Recorded STT 3.7 transcripts omit fillers to preserve the previous behavior.
+
 ## November 2026
 
 **v5.22.0** — Fable 5.2, Gemini 4 Carbon, and shared audio generation

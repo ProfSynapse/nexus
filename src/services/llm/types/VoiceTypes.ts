@@ -156,6 +156,15 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
   },
   {
     provider: 'assemblyai',
+    id: 'assemblyai-stt-3-7',
+    name: 'AssemblyAI STT 3.7',
+    execution: 'speech-api-async',
+    supportsWordTimestamps: true,
+    supportsSpeakerLabels: true,
+    supportsPrompt: true
+  },
+  {
+    provider: 'assemblyai',
     id: 'universal-3-5-pro',
     name: 'Universal 3.5 Pro',
     execution: 'speech-api-async',

@@ -280,3 +280,5 @@ Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching art
 - 2026-11-10 | Extended existing request-body assertions to a sibling model and reused gated transport smoke with an explicit model override. No skill procedure change.
 
 - 2026-11-10 | Release verification found Settings in a separate window; the CLI screenshot showed the main vault despite successful capture. Added guidance to select the matching test-vault Settings window and inspect the image. Files: protocols/live-loop.md.
+
+- 2026-11-18: AssemblyAI catalog and request regression checks passed; deliberately flipping the clean-transcript flag was detected in both plugins. No testing procedure change needed.
