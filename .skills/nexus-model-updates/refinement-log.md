@@ -153,3 +153,5 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 - 2026-11-10 | Provider listing succeeded while generation was blocked by depleted prepaid credits; subscription verification hit a weekly usage limit. Added guidance to separate listing evidence from billing/entitlement-blocked live calls. Files: references/smoke-harness.md.
 
 - 2026-11-18: Speech model catalogs are outside the chat registry checker. Clarified the unscoped structural gate and dedicated speech/session proof in protocols/verify-model.md; no chat registry should be fabricated for transcription.
+
+- 2026-11-18: Added registry-anatomy guidance for googleGeneration so new models declare supported thinking levels and separate buffered/streaming foreground limits.

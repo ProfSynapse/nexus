@@ -80,6 +80,8 @@ describe('OpenAIAdapter', () => {
   });
 
   it.each([
+    ['gpt-6.2-sol', 'max', 'max'],
+    ['gpt-6.2-astra', 'max', 'max'],
     ['gpt-6.1-sol', 'max', 'max'],
     ['gpt-5.6-sol', 'max', 'max'],
     ['gpt-5.4', 'max', 'xhigh'],
@@ -99,6 +101,8 @@ describe('OpenAIAdapter', () => {
 
   // GPT-6 models reject sampling parameters that normal chat settings supply.
   it.each([
+    ['gpt-6.2-sol', false], ['gpt-6.2-sol', true],
+    ['gpt-6.2-astra', false], ['gpt-6.2-astra', true],
     ['gpt-6.1-sol', false], ['gpt-6.1-sol', true],
     ['gpt-6-astra', false], ['gpt-6-astra', true],
     ['gpt-6-sol', false], ['gpt-6-sol', true],

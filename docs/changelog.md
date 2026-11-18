@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add GPT-6.2 Sol and Astra to OpenAI, ChatGPT (Codex), OpenRouter and Requesty, and Gemini 4 Hydrogen to Google, OpenRouter and Requesty. Provider defaults remain unchanged. Hydrogen uses thinking levels, including extra high, and its 65,536-token foreground output limit.
+
 - Add AssemblyAI STT 3.7 for recorded audio and STT 3.7 Realtime / Realtime Agent for live voice. AssemblyAI now auto-selects STT 3.7 for transcription and Realtime Agent for voice chat; saved model choices remain available. Recorded STT 3.7 transcripts omit fillers to preserve the previous behavior.
 
 ## November 2026

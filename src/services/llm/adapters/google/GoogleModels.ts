@@ -20,12 +20,34 @@ import { ModelSpec } from '../modelTypes';
 export const GOOGLE_ARGON_MODEL = 'gemini-4-argon';
 
 export const GOOGLE_MODELS: ModelSpec[] = [
+  // https://aistudio.google.com/docs/models/gemini-4-hydrogen; authenticated models.get limits (verified 2026-11-18).
+  {
+    provider: 'google',
+    name: 'Gemini 4 Hydrogen',
+    apiName: 'gemini-4-hydrogen',
+    releaseDate: '2026-11-12',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 1.5,
+    outputCostPerMillion: 7.5,
+    cacheReadCostPerMillion: 0.075,
+    supportsSamplingParams: false,
+    googleGeneration: { thinkingLevels: ['low', 'medium', 'high', 'xhigh'], maxStreamingTokens: 65536 },
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // Limits from authenticated models.get; launch pricing from:
   // https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-4-carbon-now-available/
   {
     provider: 'google',
     name: 'Gemini 4 Carbon',
     apiName: 'gemini-4-carbon',
+    googleGeneration: { thinkingLevels: ['low', 'medium', 'high'], maxStreamingTokens: 65536 },
     releaseDate: '2026-11-10',
     // Shared input + thinking + output window. The authenticated models.get
     // listing publishes 32,768 output tokens; streaming permits an explicit
@@ -52,6 +74,7 @@ export const GOOGLE_MODELS: ModelSpec[] = [
     provider: 'google',
     name: 'Gemini 4 Argon',
     apiName: GOOGLE_ARGON_MODEL,
+    googleGeneration: { thinkingLevels: ['low', 'medium', 'high'], maxStreamingTokens: 65536 },
     releaseDate: '2026-10-13',
     // Shared input + thinking + output window. The authenticated models.get
     // listing publishes 32,768 output tokens; streaming permits an explicit

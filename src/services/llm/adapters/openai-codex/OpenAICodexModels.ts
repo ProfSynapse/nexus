@@ -12,6 +12,46 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_CODEX_MODELS: ModelSpec[] = [
+  // https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol (verified 2026-11-18).
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6.2 Sol',
+    apiName: 'gpt-6.2-sol',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    cacheReadCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol (verified 2026-11-18).
+  {
+    provider: 'openai-codex',
+    name: 'GPT-6.2 Astra',
+    apiName: 'gpt-6.2-astra',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    cacheReadCostPerMillion: 0,
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openai-codex',
     name: 'GPT-6.1 Sol',

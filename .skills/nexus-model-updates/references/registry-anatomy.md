@@ -72,6 +72,13 @@ error:
   toggle and effort control render at all; set it false on a reasoning model and
   users simply have no way to turn thinking on.
 
+**`googleGeneration`** (optional) — the direct Google adapter's declared thinking
+levels and streaming foreground output ceiling. Together with `maxTokens` (the
+buffered ceiling), this selects the level-based request contract and bounded
+foreground generation. Declare the provider-supported levels rather than relying
+on an exact model-id guard; an omitted declaration leaves a new family member on
+the legacy budget path. Verify buffered and streaming requests independently.
+
 **`betaHeaders`** (optional) — provider beta opt-in headers the adapter attaches
 when the model is selected. This is how a capability that requires a header,
 rather than a parameter, gets expressed.
