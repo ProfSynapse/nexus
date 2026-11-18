@@ -20,6 +20,82 @@ import { ModelSpec } from '../modelTypes';
 // Requesty provides access to models from other providers
 // Each model has its own specific API name in Requesty
 export const REQUESTY_MODELS: ModelSpec[] = [
+  // https://router.requesty.ai/v1/models (verified 2026-11-18).
+  {
+    provider: 'requesty',
+    name: 'GPT-6.2 Sol',
+    apiName: 'openai/gpt-6.2-sol',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2,
+    outputCostPerMillion: 10,
+    cacheReadCostPerMillion: 0.1,
+    cacheWriteCostPerMillion: 2.5,
+    promptPricingTiers: [{
+      minPromptTokens: 272000,
+      inputCostPerMillion: 4,
+      outputCostPerMillion: 15,
+      cacheReadCostPerMillion: 0.2,
+      cacheWriteCostPerMillion: 5.0
+    }],
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://router.requesty.ai/v1/models (verified 2026-11-18).
+  {
+    provider: 'requesty',
+    name: 'GPT-6.2 Astra',
+    apiName: 'openai/gpt-6.2-astra',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 8,
+    outputCostPerMillion: 40,
+    cacheReadCostPerMillion: 0.4,
+    cacheWriteCostPerMillion: 10,
+    promptPricingTiers: [{
+      minPromptTokens: 272000,
+      inputCostPerMillion: 16,
+      outputCostPerMillion: 60,
+      cacheReadCostPerMillion: 0.8,
+      cacheWriteCostPerMillion: 20
+    }],
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://router.requesty.ai/v1/models (verified 2026-11-18).
+  {
+    provider: 'requesty',
+    name: 'Gemini 4 Hydrogen',
+    apiName: 'vertex/gemini-4-hydrogen',
+    releaseDate: '2026-11-12',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 1.5,
+    outputCostPerMillion: 7.5,
+    cacheReadCostPerMillion: 0.075,
+    cacheWriteCostPerMillion: 1.5,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://router.requesty.ai/v1/models (listing checked 2026-11-10)
   {
     provider: 'requesty',

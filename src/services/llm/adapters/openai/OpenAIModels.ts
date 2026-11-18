@@ -14,6 +14,62 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
+  // https://developers.openai.com/api/docs/models/ (verified 2026-11-18).
+  {
+    provider: 'openai',
+    name: 'GPT-6.2 Sol',
+    apiName: 'gpt-6.2-sol',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2,
+    outputCostPerMillion: 10,
+    cacheReadCostPerMillion: 0.1,
+    cacheWriteCostPerMillion: 2.5,
+    promptPricingTiers: [{
+      minPromptTokens: 272001,
+      inputCostPerMillion: 4,
+      outputCostPerMillion: 15,
+      cacheReadCostPerMillion: 0.2,
+      cacheWriteCostPerMillion: 5.0
+    }],
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  // https://developers.openai.com/api/docs/models/ (verified 2026-11-18).
+  {
+    provider: 'openai',
+    name: 'GPT-6.2 Astra',
+    apiName: 'gpt-6.2-astra',
+    releaseDate: '2026-11-17',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 8,
+    outputCostPerMillion: 40,
+    cacheReadCostPerMillion: 0.4,
+    cacheWriteCostPerMillion: 10,
+    promptPricingTiers: [{
+      minPromptTokens: 272001,
+      inputCostPerMillion: 16,
+      outputCostPerMillion: 60,
+      cacheReadCostPerMillion: 0.8,
+      cacheWriteCostPerMillion: 20
+    }],
+    supportsSamplingParams: false,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   // Standard short-context rates; prompts over 272K input tokens have higher rates.
   {

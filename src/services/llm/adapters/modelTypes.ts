@@ -50,6 +50,11 @@ export interface ModelSpec {
    * drops unsupported parameters itself, so its entries leave this unset.
    */
   supportsSamplingParams?: boolean;
+  /** Google models with thinking levels and bounded foreground generation. */
+  googleGeneration?: {
+    thinkingLevels: Array<'low' | 'medium' | 'high' | 'xhigh'>;
+    maxStreamingTokens: number;
+  };
   /** Optional beta headers required for this model (Anthropic only) */
   betaHeaders?: string[];
 }

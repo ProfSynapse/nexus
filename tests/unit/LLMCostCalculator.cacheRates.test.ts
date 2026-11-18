@@ -14,6 +14,7 @@ import { LLMCostCalculator } from '../../src/services/llm/utils/LLMCostCalculato
 import { CostCalculator } from '../../src/services/llm/adapters/CostCalculator';
 import { TokenUsageExtractor } from '../../src/services/llm/utils/TokenUsageExtractor';
 import { ANTHROPIC_MODELS } from '../../src/services/llm/adapters/anthropic/AnthropicModels';
+import { ModelRegistry } from '../../src/services/llm/adapters/ModelRegistry';
 import { OPENAI_MODELS } from '../../src/services/llm/adapters/openai/OpenAIModels';
 import type { ModelPricing } from '../../src/services/llm/adapters/types';
 
@@ -107,9 +108,12 @@ describe('model specs carry cache rates', () => {
 
   it('OpenAI cache rates use each model’s published rate', () => {
     for (const spec of OPENAI_MODELS) {
-      if (spec.apiName === 'gpt-6.1-sol') {
+      if (spec.apiName === 'gpt-6.2-sol' || spec.apiName === 'gpt-6.1-sol') {
         expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.10, 6);
         expect(spec.cacheWriteCostPerMillion).toBeCloseTo(2.50, 6);
+      } else if (spec.apiName === 'gpt-6.2-astra') {
+        expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.40, 6);
+        expect(spec.cacheWriteCostPerMillion).toBeCloseTo(10, 6);
       } else if (spec.apiName === 'gpt-6.1-terra') {
         expect(spec.cacheReadCostPerMillion).toBeCloseTo(0.05, 6);
         expect(spec.cacheWriteCostPerMillion).toBeCloseTo(1.25, 6);
@@ -245,5 +249,32 @@ describe('TokenUsageExtractor.normalize — one shape for every provider', () =>
   it('returns undefined for non-objects and objects with no counts', () => {
     expect(TokenUsageExtractor.normalize(null)).toBeUndefined();
     expect(TokenUsageExtractor.normalize({ foo: 1 })).toBeUndefined();
+  });
+});
+
+// A launch's short-context rates must not undercharge long and cached requests.
+describe('GPT-6.2 prompt-length prices', () => {
+  it.each(['openai', 'openrouter', 'requesty'])('%s bills the published threshold and cache classes', provider => {
+    for (const [name, baseInput, baseOutput, baseRead, baseWrite] of [
+      ['sol', 2, 10, 0.1, 2.5], ['astra', 8, 40, 0.4, 10]
+    ] as const) {
+      const model = `${provider === 'openai' ? '' : 'openai/'}gpt-6.2-${name}`;
+      const spec = ModelRegistry.findModel(provider, model)!;
+      expect(spec).toBeDefined();
+      const threshold = provider === 'openai' ? 272001 : 272000;
+      for (const promptTokens of [threshold - 1, threshold]) {
+        const long = promptTokens >= threshold;
+        const inputRate = baseInput * (long ? 2 : 1);
+        const outputRate = baseOutput * (long ? 1.5 : 1);
+        const readRate = baseRead * (long ? 2 : 1);
+        const writeRate = baseWrite * (long ? 2 : 1);
+        const cost = LLMCostCalculator.calculateCost({
+          promptTokens, completionTokens: 1000, totalTokens: promptTokens + 1000,
+          cacheReadTokens: 100000, cacheWriteTokens: 50000
+        }, model, LLMCostCalculator.pricingFromSpec(spec));
+        expect(cost?.inputCost).toBeCloseTo(((promptTokens - 150000) * inputRate + 100000 * readRate + 50000 * writeRate) / 1e6, 8);
+        expect(cost?.outputCost).toBeCloseTo(1000 * outputRate / 1e6, 8);
+      }
+    }
   });
 });

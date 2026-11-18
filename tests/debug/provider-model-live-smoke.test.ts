@@ -269,6 +269,11 @@ async function callModel(target: SmokeTarget): Promise<LLMResponse> {
     options.maxTokens = Number(getEnv('MODEL_SMOKE_MAX_TOKENS') || 64);
   }
 
+  if (target.provider === 'google') {
+    options.enableThinking = true;
+    options.thinkingEffort = 'low';
+  }
+
   return adapter.generateUncached(
     'Reply with exactly this token and no other words: OK',
     options
@@ -291,6 +296,33 @@ describeLive('generic provider model live smoke', () => {
       expect(response.text.trim().length).toBeGreaterThan(0);
       expect(response.text.toUpperCase()).toContain('OK');
     });
+
+    if (target.provider === 'google') {
+      it(`streams ${target.model} with thinking levels through the mobile HTTP fallback`, async () => {
+        const adapter = createAdapter(target.provider);
+        let text = '';
+        let complete = false;
+        for await (const chunk of adapter.generateStreamAsync('Reply with exactly OK.', {
+          model: target.model, maxTokens: 4096, enableThinking: true, thinkingEffort: 'xhigh'
+        })) {
+          text += chunk.content;
+          complete ||= chunk.complete;
+        }
+        expect(text.toUpperCase()).toContain('OK');
+        expect(complete).toBe(true);
+      });
+
+      it('surfaces a Google streaming rejection instead of an empty completion', async () => {
+        const consume = async () => {
+          for await (const chunk of createAdapter('google').generateStreamAsync('OK', {
+            model: 'nexus-invalid-model-for-error-smoke', maxTokens: 64
+          })) {
+            expect(chunk.complete).toBe(false);
+          }
+        };
+        await expect(consume()).rejects.toThrow();
+      });
+    }
 
     if (target.provider === 'anthropic') {
       it(`streams ${target.model} with Nexus compaction message metadata`, async () => {

@@ -15,7 +15,7 @@ import {
   TokenUsage,
   Tool
 } from '../types';
-import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL, GOOGLE_ARGON_MODEL } from './GoogleModels';
+import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL } from './GoogleModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { TokenUsageExtractor } from '../../utils/TokenUsageExtractor';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
@@ -70,7 +70,7 @@ interface GoogleToolWrapper {
 
 interface GoogleThinkingConfig {
   thinkingBudget?: number;
-  thinkingLevel?: 'low' | 'medium' | 'high';
+  thinkingLevel?: 'low' | 'medium' | 'high' | 'xhigh';
   /**
    * Gemini only emits thought-summary parts (`thought: true`) when this is set.
    * Without it the model still thinks, but the response carries no reasoning to
@@ -649,7 +649,10 @@ export class GoogleAdapter extends BaseAdapter {
     // thinkingLevel and the legacy thinkingBudget are mutually exclusive: sending
     // both in one request is rejected, so each generation gets exactly one.
     if (this.usesThinkingLevels(model)) {
-      const level = clampThinkingEffortToHigh(effort);
+      const levels = GOOGLE_MODELS.find(spec => spec.apiName === model)?.googleGeneration?.thinkingLevels;
+      const level = (effort === 'xhigh' || effort === 'max') && levels?.includes('xhigh')
+        ? 'xhigh'
+        : clampThinkingEffortToHigh(effort);
       return { ...thoughts, thinkingLevel: model.startsWith('gemini-3-pro-preview') && level === 'medium' ? 'high' : level };
     }
 
@@ -658,7 +661,7 @@ export class GoogleAdapter extends BaseAdapter {
   }
 
   private isGemini4StandardModel(model: string): boolean {
-    return model === GOOGLE_ARGON_MODEL || model === 'gemini-4-carbon';
+    return Boolean(GOOGLE_MODELS.find(spec => spec.apiName === model)?.googleGeneration);
   }
 
   private usesThinkingLevels(model: string): boolean {
@@ -668,9 +671,10 @@ export class GoogleAdapter extends BaseAdapter {
 
   private getMaxOutputTokens(model: string, stream: boolean, requested?: number): number | undefined {
     if (!this.isGemini4StandardModel(model)) return requested;
-    // Standard generateContent is capped at 32K; SSE permits 64K explicitly.
-    // A smaller caller budget always wins, including for reasoning-heavy work.
-    return Math.min(requested ?? 32768, stream ? 65536 : 32768);
+    const spec = GOOGLE_MODELS.find(candidate => candidate.apiName === model);
+    const ceiling = stream ? spec?.googleGeneration?.maxStreamingTokens : spec?.maxTokens;
+    // Keep caller budgets below the model's foreground output ceiling.
+    return Math.min(requested ?? spec?.maxTokens ?? 32768, ceiling ?? 32768);
   }
 
   protected generateCacheKey(prompt: string, options?: GenerateOptions): string {

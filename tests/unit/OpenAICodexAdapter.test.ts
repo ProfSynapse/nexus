@@ -38,7 +38,7 @@ describe('OpenAICodexAdapter', () => {
     }));
   });
 
-  it.each(['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'])('omits temperature for %s on the subscription endpoint', async (model) => {
+  it.each(['gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna'])('omits temperature for %s on the subscription endpoint', async (model) => {
     const requests: RequestRecord[] = [];
     __setRequestUrlMock(async (request) => {
       requests.push(request);
@@ -55,6 +55,8 @@ describe('OpenAICodexAdapter', () => {
   });
 
   it.each([
+    ['gpt-6.2-sol', 'max', 'max'],
+    ['gpt-6.2-astra', 'max', 'max'],
     ['gpt-6.1-sol', 'max', 'max'],
     ['gpt-5.6-sol', 'max', 'max'],
     ['gpt-5.2', 'max', 'xhigh']

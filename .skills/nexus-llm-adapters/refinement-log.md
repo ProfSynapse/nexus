@@ -152,3 +152,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-11-05 | A key missing a scope reported `Request failed, status 401`: bare `requestUrl` throws on non-2xx and drops the body, while Jest's mock returns the failure, so every `status !== 200` branch looked covered and never ran. | Added `ProviderHttpClient.requestOk`, permission detection in `ProviderErrorMessages.ts`, a symptom row, and a test failing on a bare call in the guarded paths. | Files: `references/symptoms.md`, this log.
 
 - 2026-11-10 | Gemini 4 sibling required extending exact-model request guards; existing model-update routing protocol identified every guard. No adapter skill procedure change.
+
+- 2026-11-18: A newly listed Google family member would fall through exact model-id checks to an invalid legacy thinking budget. Encoded its contract in ModelSpec and tested both request paths; existing skill protocols already direct this check, no procedure change.
