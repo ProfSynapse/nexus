@@ -80,11 +80,17 @@ describe('VoiceTypes', () => {
       expect(getTranscriptionModel('openai', 'nonexistent')).toBeUndefined();
     });
 
-    it('finds AssemblyAI Universal 3.5 Pro as the preferred async model', () => {
-      const model = getTranscriptionModel('assemblyai', 'universal-3-5-pro');
+    it('prefers AssemblyAI STT 3.7 for recorded audio and retains saved legacy choices', () => {
+      const model = getTranscriptionModel('assemblyai', 'assemblyai-stt-3-7');
       expect(model).toBeDefined();
       expect(model?.execution).toBe('speech-api-async');
-      expect(getTranscriptionModelsForProvider('assemblyai')[0].id).toBe('universal-3-5-pro');
+      expect(getTranscriptionModelsForProvider('assemblyai')[0].id).toBe('assemblyai-stt-3-7');
+      expect(resolveDefaultTranscriptionSelection(null, 'assemblyai').model).toBe('assemblyai-stt-3-7');
+      expect(model?.supportsWordTimestamps).toBe(true);
+      expect(model?.supportsSpeakerLabels).toBe(true);
+      expect(model?.supportsPrompt).toBe(true);
+      expect(getTranscriptionModel('assemblyai', 'universal-3-5-pro')).toBeDefined();
+      expect(getTranscriptionModel('assemblyai', 'assemblyai-stt-3-7-realtime')).toBeUndefined();
     });
 
     it('finds Deepgram Nova-3 through OpenRouter', () => {

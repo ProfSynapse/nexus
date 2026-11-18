@@ -119,6 +119,20 @@ describe('AssemblyAITranscriptionAdapter', () => {
       expect(submitBody.speech_models).toEqual(['universal-3-5-pro']);
     });
 
+    it('sends STT 3.7 with clean transcripts, prompts, and diarization', async () => {
+      setupHappyPath({ text: 'Hello', words: [] });
+      await adapter.transcribeChunk(makeChunk(), makeRequest({
+        model: 'assemblyai-stt-3-7', prompt: 'Names: Nexus', requestSpeakerLabels: true
+      }));
+
+      expect(JSON.parse(capturedRequests[1].body as string)).toEqual(expect.objectContaining({
+        speech_models: ['assemblyai-stt-3-7'],
+        disfluencies: false,
+        speaker_labels: true,
+        prompt: 'Names: Nexus'
+      }));
+    });
+
     it('sends prompt when provided', async () => {
       setupHappyPath({ text: 'Hello', words: [] });
       await adapter.transcribeChunk(makeChunk(), makeRequest({ prompt: '  Medical terms  ' }));

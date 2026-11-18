@@ -151,3 +151,5 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 - 2026-11-05 | Generic music and SFX on `generateAudio`. Live runs corrected three assumptions that mocks accepted: a schema promising exact lengths (Eleven music asked for 4s made 6, Lyria 3.5 asked for 25s made 61), Lyria section markers reported as lyrics, and an intermittent 200 with no audio from OpenRouter. Also found that OpenRouter refuses audio without `stream: true`. | Documented the catalog and its measuring rule in `references/consumers.md`. | Files: `references/consumers.md`, this log.
 
 - 2026-11-10 | Provider listing succeeded while generation was blocked by depleted prepaid credits; subscription verification hit a weekly usage limit. Added guidance to separate listing evidence from billing/entitlement-blocked live calls. Files: references/smoke-harness.md.
+
+- 2026-11-18: Speech model catalogs are outside the chat registry checker. Clarified the unscoped structural gate and dedicated speech/session proof in protocols/verify-model.md; no chat registry should be fabricated for transcription.

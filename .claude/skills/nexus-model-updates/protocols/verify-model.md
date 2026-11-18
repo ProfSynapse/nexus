@@ -22,6 +22,12 @@ structure, through a live call, to tool use.
    Use `--strict` if you changed a default. Read `references/consumers.md` for
    what each finding actually breaks at runtime.
 
+   Dedicated transcription and realtime voice catalogs are outside the
+   `ModelSpec[]` registry checker. For those changes, run the unscoped gate
+   plus the catalog/default and adapter/session tests; do not invent a chat
+   registry merely to make a provider-scoped invocation succeed. Their live
+   proof must use the speech adapter or session rather than the chat lane.
+
 2. **Unit lane.** The registry has unit tests that assert specific entries and
    defaults, and adapter tests that assert the model id a request body carries.
    Run the lanes that cover what you touched; `nexus-testing` owns lane choice.

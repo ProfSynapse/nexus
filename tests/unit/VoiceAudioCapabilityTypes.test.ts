@@ -245,12 +245,21 @@ describe('RealtimeVoiceTypes', () => {
     }));
   });
 
-  it('keeps Universal 3.5 Pro as the AssemblyAI realtime default ahead of the undocumented 3.6 ids', () => {
+  it('prefers STT 3.7 Realtime Agent for voice chat and offers both new streaming models', () => {
     const ids = getRealtimeVoiceModelsForProvider('assemblyai').map(model => model.id);
-    expect(ids[0]).toBe('universal-3-5-pro');
+    expect(ids[0]).toBe('assemblyai-stt-3-7-realtime-agent');
     expect(ids).toEqual(expect.arrayContaining(['universal-3-6-pro', 'universal-3-6']));
     expect(ids).not.toContain('universal-3-7-preview');
-    for (const id of ['universal-3-6-pro', 'universal-3-6']) {
+    const settings = makeSettings({ providers: { assemblyai: providerConfig() } });
+    expect(resolveDefaultRealtimeVoiceSelection(settings)).toEqual(expect.objectContaining({
+      provider: 'assemblyai', model: 'assemblyai-stt-3-7-realtime-agent', status: 'resolved'
+    }));
+    settings.defaultRealtimeVoiceModel = { provider: 'assemblyai', model: 'universal-3-5-pro', source: 'user' };
+    expect(resolveDefaultRealtimeVoiceSelection(settings)).toEqual(expect.objectContaining({
+      model: 'universal-3-5-pro', status: 'resolved'
+    }));
+
+    for (const id of ['assemblyai-stt-3-7-realtime-agent', 'assemblyai-stt-3-7-realtime']) {
       expect(getRealtimeVoiceModel('assemblyai', id)).toEqual(expect.objectContaining({
         transport: 'websocket',
         execution: 'transcription-pipeline'
