@@ -1181,6 +1181,18 @@ Refresh recipe: Capture genuine chat in a fictional vault. Establish source meet
 
 Watch: `src/ui/chat/*`, `src/ui/tasks/*`, `src/agents/storageManager/*`, `src/agents/taskManager/*`, `src/services/task/*`, `styles.css`
 
+## compatible-endpoint-context-window — Check a custom endpoint model context window
+
+Status: **planned**. Coverage gap for the per-model window field and Check result added after the existing provider overview captures; no finished capture claimed.
+
+Source: https://github.com/ProfSynapse/nexus/pull/441
+
+Placements: none in scanned repository files.
+
+Refresh recipe: In a sanitized practice vault, connect a local or fictional endpoint, enter a model context window, run Check against the actual endpoint, inspect the accepted or suggested limit, and capture the control and result without keys or private URLs.
+
+Watch: `src/components/openai-compatible/*`, `src/services/llm/adapters/openai-compatible/*`, `styles.css`
+
 ## Other discovered media references
 
 These are indexed even without a catalog entry. Register product screenshots and demos; badges and mockup/example references can remain here.

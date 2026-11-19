@@ -14,11 +14,11 @@
       ],
       "recipe": "Open the public course page, confirm its title and availability, and review the README and visual-guide callouts for accurate optional course promotion.",
       "review": {
-        "head": "52758948b2d7d7c47d345412d0d77334d678542d",
-        "fingerprint": "f214e76de8c33933b87c5d8eb952a38aa1a14a82abfc839cada28c06cb5a209d",
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "336bda8dbd5fe1641ed04c25c6c35ce83931c3d3f5b1fb046711d68c642b2a5d",
         "decision": "keep",
-        "note": "Public course returned HTTP 200 on 2026-11-10 with title Your AI Second Brain Course: Obsidian + AI | Synaptic Labs; README and visual guide callouts remain optional alongside complete setup guides.",
-        "date": "2026-11-10"
+        "note": "Verified current public course landing URL and optional CTA in README/visual tour; release docs change only the network-trigger explanation, not the course promotion.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -90,7 +90,14 @@
       "sha256": "21596c3f360fcbee812a7b027c692b59518131af0fbf3955568bfebeb94923df",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/21596c3f360fcbee812a7b027c692b59518131af0fbf3955568bfebeb94923df.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/21596c3f360fcbee812a7b027c692b59518131af0fbf3955568bfebeb94923df.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "6664abe4a9f656901430fcc6bea0ea98deacbc804660e328b81a7e966cc76406",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "get-started",
@@ -117,7 +124,14 @@
       "sha256": "fa2aa25a026ca618bd96e99c3a992b80f257c11b7e67c7165adb5ade0185e713",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/fa2aa25a026ca618bd96e99c3a992b80f257c11b7e67c7165adb5ade0185e713.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/fa2aa25a026ca618bd96e99c3a992b80f257c11b7e67c7165adb5ade0185e713.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "6664abe4a9f656901430fcc6bea0ea98deacbc804660e328b81a7e966cc76406",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "course-m7-05-external-agent-setup",
@@ -167,7 +181,14 @@
       "sha256": "c317de56f7c70c8215644f9f2cae787007798f5a4b54ac01eb816b15ba839558",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/c317de56f7c70c8215644f9f2cae787007798f5a4b54ac01eb816b15ba839558.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/c317de56f7c70c8215644f9f2cae787007798f5a4b54ac01eb816b15ba839558.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "9e78a57bf95cef0d4c1baaaf7a243b3f779f367c1a552d687322cadb7daf0eca",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "course-m7-07-openrouter-connection",
@@ -264,7 +285,14 @@
       "sha256": "b81d01a932c320eb6f9c7ed0510f0ffdb01c7b54dbe538c59f15c1995af5d09c",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/b81d01a932c320eb6f9c7ed0510f0ffdb01c7b54dbe538c59f15c1995af5d09c.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/b81d01a932c320eb6f9c7ed0510f0ffdb01c7b54dbe538c59f15c1995af5d09c.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "bc90a0bc26cc9e7d02860b931ed12b6ce96cec460be06f2f913638975a0adbee",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "apps",
@@ -293,11 +321,11 @@
       "width": 900,
       "height": 700,
       "review": {
-        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
-        "fingerprint": "a31cb9385cf1b364c0ba68de0a22992b86ca9c15006f9a09b2337084fd7f9522",
-        "decision": "replaced",
-        "note": "Inspected candidate 5.22.0 in sanitized test-vault Settings window on Obsidian 1.15.0. Recaptured Apps cards, including shared ElevenLabs speech/music/sfx and voices; no credentials or generated-result claims.",
-        "date": "2026-11-10"
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "20c3ff94e68ab144844f339731a87b51a8b9c14b0a63227f7c1ce1ab59cd4477",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -360,11 +388,11 @@
       },
       "source": "media/pilot-evidence.json",
       "review": {
-        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
-        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "e064c89035505bc95feafbf414719d50a63f1d11c10441bb079ce62d01e9606d",
         "decision": "keep",
-        "note": "Inspected candidate 5.22.0 test-vault task board and historical screenshot. Workspace/project filters, status columns and labels remain accurate. Trigger is additive Anthropic model metadata; demonstrated model/default and task UI are unchanged. Keep labeled 5.21.1 capture; no new provider-run claim.",
-        "date": "2026-11-10"
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -404,11 +432,11 @@
       },
       "source": "media/pilot-evidence.json",
       "review": {
-        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
-        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "e064c89035505bc95feafbf414719d50a63f1d11c10441bb079ce62d01e9606d",
         "decision": "keep",
-        "note": "Reviewed historical 5.21.1 linked-task form and candidate 5.22.0 task-board UI. Trigger is additive Anthropic model metadata, with no task editor/layout changes and no change to captured Sonnet model/default. Keep historical capture metadata and authenticated-run evidence; no recapture or fresh task-generation claim.",
-        "date": "2026-11-10"
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -459,7 +487,14 @@
       "sha256": "32a5424f7da6b52b8647ce9981ee5569561b21690f29ff36194362526622e622",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/32a5424f7da6b52b8647ce9981ee5569561b21690f29ff36194362526622e622.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/32a5424f7da6b52b8647ce9981ee5569561b21690f29ff36194362526622e622.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "6664abe4a9f656901430fcc6bea0ea98deacbc804660e328b81a7e966cc76406",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "course-m7-18-task-update",
@@ -510,7 +545,14 @@
       "sha256": "4cd1805250d3fb1be822a195934924b18e934172c43478b7c566e6295f036ef0",
       "width": 900,
       "height": 700,
-      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/4cd1805250d3fb1be822a195934924b18e934172c43478b7c566e6295f036ef0.png"
+      "sourceUrl": "https://cms.synapticlabs.ai/api/media/file/4cd1805250d3fb1be822a195934924b18e934172c43478b7c566e6295f036ef0.png",
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "bc90a0bc26cc9e7d02860b931ed12b6ce96cec460be06f2f913638975a0adbee",
+        "decision": "keep",
+        "note": "Reviewed historical capture against the running5.22.1 candidate in isolated Nexus Redesign Test on Obsidian1.15.1, including native settings-window captures for Providers, Apps and Workspaces. Controls shown remain accurate; changed CSS is scoped to the compatible-endpoint modal. Original capture versions remain labeled; new context-check modal coverage is tracked as planned.",
+        "date": "2026-11-19"
+      }
     },
     {
       "id": "course-m7-19-recorded-chat-shortcuts",
@@ -1019,11 +1061,11 @@
       "width": 1439,
       "height": 959,
       "review": {
-        "head": "fcad34c375e0c91b4abe8cb0be53474efbe06009",
-        "fingerprint": "32db6712087ab6fe6dcd73ad89547fb97c3a131d012badd8ba1017e0ab050a66",
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "e064c89035505bc95feafbf414719d50a63f1d11c10441bb079ce62d01e9606d",
         "decision": "keep",
-        "note": "Inspected candidate 5.22.0 note rendering and historical source/result screenshot. Additive Anthropic catalog entries do not alter note rendering or the captured Sonnet model/default. Preserve historical 5.21.1 capture and authenticated-run provenance; no fresh generation claim.",
-        "date": "2026-11-10"
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -1766,6 +1808,13 @@
         "date": "2026-11-02",
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
+      },
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "ffef32830a346129133ae6a118dfc83f19d4d370b83f741fdd73e2a5bebd3d98",
+        "decision": "keep",
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -1808,6 +1857,13 @@
         "date": "2026-11-02",
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
+      },
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "ffef32830a346129133ae6a118dfc83f19d4d370b83f741fdd73e2a5bebd3d98",
+        "decision": "keep",
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -1850,6 +1906,13 @@
         "date": "2026-11-02",
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
+      },
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "ffef32830a346129133ae6a118dfc83f19d4d370b83f741fdd73e2a5bebd3d98",
+        "decision": "keep",
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -1890,6 +1953,13 @@
         "date": "2026-11-02",
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
+      },
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "ffef32830a346129133ae6a118dfc83f19d4d370b83f741fdd73e2a5bebd3d98",
+        "decision": "keep",
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
     },
     {
@@ -1930,7 +2000,28 @@
         "date": "2026-11-02",
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
+      },
+      "review": {
+        "head": "2164e5a9e775656c2ff19eeb238d2c3652a09f4a",
+        "fingerprint": "ffef32830a346129133ae6a118dfc83f19d4d370b83f741fdd73e2a5bebd3d98",
+        "decision": "keep",
+        "note": "Inspected running5.22.1 chat and task-board UI in the isolated test vault against published task/chat captures. This release changes context budgeting and scoped compatible-endpoint modal CSS, not the demonstrated note-opening/task flow. Keep historical version labels and original authentic recordings; no new AI run or recapture claimed.",
+        "date": "2026-11-19"
       }
+    },
+    {
+      "id": "compatible-endpoint-context-window",
+      "title": "Check a custom endpoint model context window",
+      "kind": "screenshot",
+      "status": "planned",
+      "description": "Coverage gap for the per-model window field and Check result added after the existing provider overview captures; no finished capture claimed.",
+      "source": "https://github.com/ProfSynapse/nexus/pull/441",
+      "watch": [
+        "src/components/openai-compatible/*",
+        "src/services/llm/adapters/openai-compatible/*",
+        "styles.css"
+      ],
+      "recipe": "In a sanitized practice vault, connect a local or fictional endpoint, enter a model context window, run Check against the actual endpoint, inspect the accepted or suggested limit, and capture the control and result without keys or private URLs."
     }
   ]
 }

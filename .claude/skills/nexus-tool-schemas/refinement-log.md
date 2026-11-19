@@ -51,3 +51,5 @@ their tools appear in no export.
 Exported the search memory subset through the live normalizer and validated the scratch artifact. The prompt uses the current catalog schema; its small-window recovery subset retains original argument definitions and labels omitted advanced options. No catalog or parameter schema changed. No protocol change.
 
 - 2026-11-10 | Version lifecycle generated the CLI and MCP release bundle; catalog and exporter-coverage gates pass. No procedure change.
+
+- 2026-11-19: Release lifecycle regenerated versioned catalogs and compatibility aliases; no procedure change.

@@ -44,7 +44,7 @@ copying a previous doc forward.
 
 ### 3a. Review visual coverage and refresh affected media
 
-Read `<repo>/media/WORKFLOW.md`. The media directory and `scripts/media.py` are
+Read `<repo>/media/WORKFLOW.md`. The media directory and `<repo>/scripts/media.py` are
 also in scope for this phase; this does not broaden permission to edit internal
 plans or publish changes to the course, CMS or Drive.
 

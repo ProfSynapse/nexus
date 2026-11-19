@@ -1,14 +1,14 @@
 # Nexus Changelog
 
-## Unreleased
-
-- Add Gemini 4 Neon through Google, OpenRouter and Requesty, with extra-high thinking and provider-specific output limits. Existing defaults remain unchanged.
-
-- Add GPT-6.2 Sol and Astra to OpenAI, ChatGPT (Codex), OpenRouter and Requesty, and Gemini 4 Hydrogen to Google, OpenRouter and Requesty. Provider defaults remain unchanged. Hydrogen uses thinking levels, including extra high, and its 65,536-token foreground output limit.
-
-- Add AssemblyAI STT 3.7 for recorded audio and STT 3.7 Realtime / Realtime Agent for live voice. AssemblyAI now auto-selects STT 3.7 for transcription and Realtime Agent for voice chat; saved model choices remain available. Recorded STT 3.7 transcripts omit fillers to preserve the previous behavior.
-
 ## November 2026
+
+**v5.22.1** — New speech and chat models, and configurable endpoint context windows
+
+- Choose GPT-6.2 Sol and Astra through OpenAI, ChatGPT (Codex), OpenRouter or Requesty, and Gemini 4 Hydrogen and Neon through Google, OpenRouter or Requesty. Existing chat defaults remain selected. The new Gemini models support extra-high thinking and respect their foreground output limits ([#444](https://github.com/ProfSynapse/nexus/pull/444), [#445](https://github.com/ProfSynapse/nexus/pull/445)).
+- AssemblyAI now offers STT 3.7 for recorded audio and both STT 3.7 realtime models. Automatic AssemblyAI selection uses STT 3.7 for transcription and Realtime Agent for voice chat; saved older choices remain available. Recorded transcripts continue to omit fillers ([#443](https://github.com/ProfSynapse/nexus/pull/443)).
+- OpenAI-compatible endpoints can use the context window their models actually support. Set and check each model's limit in its endpoint settings; a higher advertised limit is kept when runtime metadata reports only the currently allocated window. Raised budgets remain available in chat instead of reverting to an old registry limit ([#441](https://github.com/ProfSynapse/nexus/pull/441), [#439](https://github.com/ProfSynapse/nexus/issues/439)).
+
+---
 
 **v5.22.0** — Fable 5.2, Gemini 4 Carbon, and shared audio generation
 

@@ -86,6 +86,14 @@ Obsidian (the headless container) to turn a skip into a failure.
    `script -qec "obsidian vault=<name> <command>" /dev/null`. Neither fact
    replaces the in-band `getName()` assertion below.
 
+   On Linux Obsidian 1.15.1, the argument order changed again: leading
+   `vault=<name>` made `eval` report "Command eval not found", while
+   `obsidian eval vault=<name> code=...` reached the named renderer. Use the
+   form that answers on the installed version and retain the in-band vault
+   assertion. Settings may live in a separate native window; its
+   `containerEl.ownerDocument.defaultView.electronWindow.capturePage()` can
+   capture that window when `dev:screenshot` captures only the main vault.
+
    That assertion has its own trap: the value `getName()` returns is the vault's
    directory basename (`test-vault`), not the key Obsidian stores it under in
    `obsidian.json` (`testvault0001` in `headless-obsidian.md` step 3). Asserting
