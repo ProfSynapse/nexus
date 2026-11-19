@@ -135,8 +135,8 @@ release verification step. | `protocols/cut-release.md`.
 # 2026-10-30 — Media maintenance is part of release documentation
 
 Joseph requested a complete media index and an easy screenshot/GIF refresh
-process at release time. Added `media/catalog.json`, a generated reverse placement
-index and `scripts/media.py`; doc-review now reports impacted assets from the
+process at release time. Added `<repo>/media/catalog.json`, a generated reverse placement
+index and `<repo>/scripts/media.py`; doc-review now reports impacted assets from the
 release diff, requires actual visual review, records retained/replaced decisions,
 and repeats media checks before tagging. Stable-path replacement updates hashes
 and capture metadata. README/visual-tour course promotion is included in review.
@@ -144,8 +144,8 @@ Scope: repository documentation only; no release, course upload or publication
 authorized by this maintenance procedure. Source edits made in `.skills/` and
 mirrored with the repository sync command.
 
-- 2026-10-30 | Joseph's first pilot review found the hero mostly showed task editing and no chat. Added a release visual-review criterion: the exported clip must visibly demonstrate its advertised feature; chat heroes show the prompt, actual streaming reply and tool activity. Details are maintained in `media/WORKFLOW.md`; the chat-first replacement is indexed in the catalog.
+- 2026-10-30 | Joseph's first pilot review found the hero mostly showed task editing and no chat. Added a release visual-review criterion: the exported clip must visibly demonstrate its advertised feature; chat heroes show the prompt, actual streaming reply and tool activity. Details are maintained in `<repo>/media/WORKFLOW.md`; the chat-first replacement is indexed in the catalog.
 
 - 2026-11-10 | Preparing 5.22.0 with locked pnpm import, real test-vault bundle verification and affected-media review; existing procedures cover the installation and CLI targeting issues. No procedure change.
 
-- 2026-11-19: Owner selected patch versions despite newly added models. Locked pnpm builds, full test suites and isolated app verification completed; no release procedure change.
+- 2026-11-19: Owner selected patch versions despite newly added models. Locked pnpm builds, full test suites and isolated app verification completed. Qualified repo-owned media paths with <repo> in doc-review.md and this log so skill validation resolves them correctly.
