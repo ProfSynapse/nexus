@@ -11,6 +11,25 @@ import { ModelSpec } from '../modelTypes';
 // OpenRouter provides access to models from other providers.
 // Keep this list alphabetized by display name for consistent dropdown ordering.
 export const OPENROUTER_MODELS: ModelSpec[] = [
+  // https://openrouter.ai/api/v1/models (verified 2026-11-19).
+  {
+    provider: 'openrouter',
+    name: 'Gemini 4 Neon',
+    apiName: 'google/gemini-4-neon',
+    releaseDate: '2026-11-18',
+    contextWindow: 1048576,
+    maxTokens: 943718,
+    inputCostPerMillion: 3,
+    outputCostPerMillion: 15,
+    cacheReadCostPerMillion: 0.15,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://openrouter.ai/api/v1/models (verified 2026-11-18).
   {
     provider: 'openrouter',

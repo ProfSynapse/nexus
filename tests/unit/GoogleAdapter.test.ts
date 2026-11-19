@@ -521,7 +521,7 @@ describe('GoogleAdapter', () => {
   // These tests inspect real adapter requests; the HTTP fixture only supplies
   // responses. They fail if Argon regresses to Gemini 2 budget/sampling rules,
   // loses explicit small output caps, or reports long decode as a full answer.
-  describe.each(['gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen'])('%s standard generation', model => {
+  describe.each(['gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen', 'gemini-4-neon'])('%s standard generation', model => {
     const completed = { candidates: [{ content: { parts: [{ text: 'Done' }] }, finishReason: 'STOP' }] };
 
     it.each([false, true])('uses thinking levels without sampling parameters (stream=%s)', async stream => {
@@ -538,7 +538,7 @@ describe('GoogleAdapter', () => {
         const config = JSON.parse(requests.at(-1)?.body ?? '{}').generationConfig;
         expect(config).toEqual({
           maxOutputTokens: 128,
-          thinkingConfig: { includeThoughts: true, thinkingLevel: effort === 'max' || effort === 'xhigh' ? (model === 'gemini-4-hydrogen' ? 'xhigh' : 'high') : effort }
+          thinkingConfig: { includeThoughts: true, thinkingLevel: effort === 'max' || effort === 'xhigh' ? ((model === 'gemini-4-hydrogen' || model === 'gemini-4-neon') ? 'xhigh' : 'high') : effort }
         });
       }
     });
@@ -567,7 +567,7 @@ describe('GoogleAdapter', () => {
         else await adapter.generateUncached('hi', { maxTokens });
       }
       expect(requests.map(request => JSON.parse(request.body ?? '{}').generationConfig.maxOutputTokens))
-        .toEqual(model === 'gemini-4-hydrogen'
+        .toEqual((model === 'gemini-4-hydrogen' || model === 'gemini-4-neon')
           ? [65536, 128, 32768, 60000, 65536]
           : [32768, 128, 32768, stream ? 60000 : 32768, stream ? 65536 : 32768]);
     });
@@ -634,14 +634,14 @@ describe('GoogleAdapter', () => {
     it('lists the verified standard model without changing the provider default', async () => {
       const adapter = new GoogleAdapter('gk-test');
       expect(await adapter.listModels()).toContainEqual(expect.objectContaining({
-        id: model, name: model === 'gemini-4-hydrogen' ? 'Gemini 4 Hydrogen' : model === 'gemini-4-carbon' ? 'Gemini 4 Carbon' : 'Gemini 4 Argon',
-        contextWindow: 1048576, maxOutputTokens: model === 'gemini-4-hydrogen' ? 65536 : 32768,
+        id: model, name: model === 'gemini-4-neon' ? 'Gemini 4 Neon' : model === 'gemini-4-hydrogen' ? 'Gemini 4 Hydrogen' : model === 'gemini-4-carbon' ? 'Gemini 4 Carbon' : 'Gemini 4 Argon',
+        contextWindow: 1048576, maxOutputTokens: (model === 'gemini-4-hydrogen' || model === 'gemini-4-neon') ? 65536 : 32768,
         supportsThinking: true, supportsFunctions: true, supportsStreaming: true
       }));
       expect(await adapter.getModelPricing(model)).toMatchObject({
-        rateInputPerMillion: model === 'gemini-4-hydrogen' ? 1.5 : 2,
-        rateOutputPerMillion: model === 'gemini-4-hydrogen' ? 7.5 : 10,
-        rateCacheReadPerMillion: model === 'gemini-4-hydrogen' ? 0.075 : 0.1
+        rateInputPerMillion: model === 'gemini-4-neon' ? 3 : model === 'gemini-4-hydrogen' ? 1.5 : 2,
+        rateOutputPerMillion: model === 'gemini-4-neon' ? 15 : model === 'gemini-4-hydrogen' ? 7.5 : 10,
+        rateCacheReadPerMillion: model === 'gemini-4-neon' ? 0.15 : model === 'gemini-4-hydrogen' ? 0.075 : 0.1
       });
       expect(GOOGLE_DEFAULT_MODEL).toBe('gemini-3.1-pro-preview');
     });

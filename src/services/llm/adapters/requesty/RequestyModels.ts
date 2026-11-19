@@ -20,6 +20,26 @@ import { ModelSpec } from '../modelTypes';
 // Requesty provides access to models from other providers
 // Each model has its own specific API name in Requesty
 export const REQUESTY_MODELS: ModelSpec[] = [
+  // https://router.requesty.ai/v1/models (verified 2026-11-19).
+  {
+    provider: 'requesty',
+    name: 'Gemini 4 Neon',
+    apiName: 'vertex/gemini-4-neon',
+    releaseDate: '2026-11-18',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 3,
+    outputCostPerMillion: 15,
+    cacheReadCostPerMillion: 0.15,
+    cacheWriteCostPerMillion: 3,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://router.requesty.ai/v1/models (verified 2026-11-18).
   {
     provider: 'requesty',

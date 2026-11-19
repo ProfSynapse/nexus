@@ -20,6 +20,27 @@ import { ModelSpec } from '../modelTypes';
 export const GOOGLE_ARGON_MODEL = 'gemini-4-argon';
 
 export const GOOGLE_MODELS: ModelSpec[] = [
+  // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-neon (verified 2026-11-19).
+  {
+    provider: 'google',
+    name: 'Gemini 4 Neon',
+    apiName: 'gemini-4-neon',
+    releaseDate: '2026-11-18',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 3,
+    outputCostPerMillion: 15,
+    cacheReadCostPerMillion: 0.15,
+    supportsSamplingParams: false,
+    googleGeneration: { thinkingLevels: ['low', 'medium', 'high', 'xhigh'], maxStreamingTokens: 65536 },
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   // https://aistudio.google.com/docs/models/gemini-4-hydrogen; authenticated models.get limits (verified 2026-11-18).
   {
     provider: 'google',
