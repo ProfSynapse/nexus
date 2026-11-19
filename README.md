@@ -82,7 +82,7 @@ Sign-in requests begin when you choose Connect. ChatGPT on mobile and GitHub Cop
 
 Ollama and LM Studio talk to your own machine and leave it entirely.
 
-**Addresses you add yourself.** An OpenAI-compatible endpoint (Providers) is contacted only at the URL you enter, and only when you connect to discover models or chat with one of its models. A Hermes or OpenClaw remote agent (Remote agents) is contacted only at the URL you enter; while a connection is enabled, Nexus also checks its availability once on startup and every 30 seconds after that, without sending any vault content. A task delegated to a remote agent sends that agent the task text and whatever context the model attaches to it. Turn the connection off to stop all of these requests.
+**Addresses you add yourself.** An OpenAI-compatible endpoint (Providers) is contacted only at the URL you enter, and only when you connect to discover models, check a model's context window, or chat with one of its models. A Hermes or OpenClaw remote agent (Remote agents) is contacted only at the URL you enter; while a connection is enabled, Nexus also checks its availability once on startup and every 30 seconds after that, without sending any vault content. A task delegated to a remote agent sends that agent the task text and whatever context the model attaches to it. Turn the connection off to stop all of these requests.
 
 **Downloads for optional desktop features.** A few features fetch their engine the first time you enable them, rather than shipping inside `main.js` — the download is cached and does not repeat. Never enabling the feature means never making the request.
 

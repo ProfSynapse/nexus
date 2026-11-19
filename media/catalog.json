@@ -36,7 +36,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -58,7 +58,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -79,7 +79,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -106,7 +106,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -121,7 +121,7 @@
     },
     {
       "id": "course-m7-05-external-agent-setup",
-      "title": "Public Nexus 5.21.1: Get started → Connect an external agent shows available app choices. Scroll down to Command line for the CLI route.",
+      "title": "Public Nexus 5.21.1: Get started \u2192 Connect an external agent shows available app choices. Scroll down to Command line for the CLI route.",
       "kind": "screenshot",
       "status": "source-only",
       "url": "https://cms.synapticlabs.ai/api/media/file/631e6f26ee683e3d04be2ae1a8121926eb44292f517d432515be272260177867.png",
@@ -134,7 +134,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -156,7 +156,7 @@
         "src/services/llm/models/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Providers; show connection status with keys hidden.",
+      "recipe": "Settings \u2192 Nexus \u2192 Providers; show connection status with keys hidden.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -185,7 +185,7 @@
         "src/services/llm/models/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Providers; show connection status with keys hidden.",
+      "recipe": "Settings \u2192 Nexus \u2192 Providers; show connection status with keys hidden.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -208,7 +208,7 @@
         "src/services/llm/models/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Providers; show connection status with keys hidden.",
+      "recipe": "Settings \u2192 Nexus \u2192 Providers; show connection status with keys hidden.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -231,7 +231,7 @@
         "src/services/WorkspaceService.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Workspaces → practice workspace; show purpose, preferences and key files.",
+      "recipe": "Settings \u2192 Nexus \u2192 Workspaces \u2192 practice workspace; show purpose, preferences and key files.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -253,7 +253,7 @@
         "src/services/WorkspaceService.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Workspaces → practice workspace; show purpose, preferences and key files.",
+      "recipe": "Settings \u2192 Nexus \u2192 Workspaces \u2192 practice workspace; show purpose, preferences and key files.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -281,7 +281,7 @@
         "src/agents/apps/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Apps; show available capabilities and requirements without claiming execution.",
+      "recipe": "Settings \u2192 Nexus \u2192 Apps; show available capabilities and requirements without claiming execution.",
       "capture": {
         "pluginVersion": "5.22.0",
         "platform": "Obsidian 1.15.0 / Linux",
@@ -316,7 +316,7 @@
         "src/services/llm/models/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Providers; show connection status with keys hidden.",
+      "recipe": "Settings \u2192 Nexus \u2192 Providers; show connection status with keys hidden.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -427,7 +427,7 @@
         "src/agents/apps/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Apps; show available capabilities and requirements without claiming execution.",
+      "recipe": "Settings \u2192 Nexus \u2192 Apps; show available capabilities and requirements without claiming execution.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -448,7 +448,7 @@
         "src/settings/SettingsView.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes.",
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -499,7 +499,7 @@
         "src/services/WorkspaceService.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Workspaces → practice workspace; show purpose, preferences and key files.",
+      "recipe": "Settings \u2192 Nexus \u2192 Workspaces \u2192 practice workspace; show purpose, preferences and key files.",
       "capture": {
         "pluginVersion": "5.21.1",
         "platform": "Obsidian 1.14.4 / Linux",
@@ -990,7 +990,7 @@
     },
     {
       "id": "hero-meeting-follow-through",
-      "title": "Meeting notes → summary → linked tasks",
+      "title": "Meeting notes \u2192 summary \u2192 linked tasks",
       "kind": "screenshot",
       "status": "published",
       "description": "Real source meeting beside the Anthropic-generated follow-through note. Fictional data; task dates checked and corrected before the final walkthrough.",
@@ -1084,7 +1084,7 @@
         "src/services/WorkspaceService.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Workspaces → practice workspace; show purpose, preferences and key files. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
+      "recipe": "Settings \u2192 Nexus \u2192 Workspaces \u2192 practice workspace; show purpose, preferences and key files. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
     },
     {
       "id": "task-workflow",
@@ -1158,7 +1158,7 @@
         "src/agents/apps/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Apps; show available capabilities and requirements without claiming execution. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
+      "recipe": "Settings \u2192 Nexus \u2192 Apps; show available capabilities and requirements without claiming execution. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
     },
     {
       "id": "voice-media",
@@ -1187,7 +1187,7 @@
         "src/services/remoteAgents/*",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Providers; show connection status with keys hidden. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
+      "recipe": "Settings \u2192 Nexus \u2192 Providers; show connection status with keys hidden. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
     },
     {
       "id": "mobile",
@@ -1217,11 +1217,11 @@
         "src/components/shared/ChatSettingsRenderer.ts",
         "styles.css"
       ],
-      "recipe": "Settings → Nexus → Get started; show both chat and external-agent routes. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
+      "recipe": "Settings \u2192 Nexus \u2192 Get started; show both chat and external-agent routes. Capture the action and verified result; retain raw master and produce a brief GIF plus MP4 when useful."
     },
     {
       "id": "meeting-follow-through-gif",
-      "title": "Meeting notes to verified follow-through — GIF",
+      "title": "Meeting notes to verified follow-through \u2014 GIF",
       "kind": "animation",
       "status": "retired",
       "path": "media/demos/meeting-follow-through.gif",
@@ -1255,7 +1255,7 @@
     },
     {
       "id": "meeting-follow-through-mp4",
-      "title": "Meeting notes to verified follow-through — MP4",
+      "title": "Meeting notes to verified follow-through \u2014 MP4",
       "kind": "video",
       "status": "retired",
       "path": "media/demos/meeting-follow-through.mp4",
@@ -1419,7 +1419,7 @@
     },
     {
       "id": "nexus-sidebar-showcase-storyboard-v3",
-      "title": "Professional sidebar-chat showcase — visual storyboard pending approval",
+      "title": "Professional sidebar-chat showcase \u2014 visual storyboard pending approval",
       "kind": "storyboard",
       "status": "retired",
       "path": "media/storyboards/nexus-sidebar-showcase-v3.png",
@@ -1456,7 +1456,7 @@
       "kind": "video",
       "status": "retired",
       "path": "media/storyboards/nexus-sidebar-text-motion-v4.mp4",
-      "description": "24-second review excerpt. Captions ease in after the camera settles; real prompt entry and streamed reply replace finished chat stills. Reply playback is 0.6x, with shortened tool waits disclosed. Captured at about 5 fps; needs 24–30 fps recapture for final motion quality. Pending visual approval; not the final walkthrough. Superseded by revision5: source-note opening and immediate post-send pullback.",
+      "description": "24-second review excerpt. Captions ease in after the camera settles; real prompt entry and streamed reply replace finished chat stills. Reply playback is 0.6x, with shortened tool waits disclosed. Captured at about 5 fps; needs 24\u201330 fps recapture for final motion quality. Pending visual approval; not the final walkthrough. Superseded by revision5: source-note opening and immediate post-send pullback.",
       "source": "Synaptic Studio project nexus-sidebar-showcase; NexusSidebarShowcase composition; stream-v4-ledger.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1468,7 +1468,7 @@
         "src/ui/chat/*",
         "styles.css"
       ],
-      "recipe": "Capture sidebar chat at 24–30 fps in a fictional vault. Show actual typing, send, streaming and completed response; preserve source pixels. Delay small caption fades until after the camera settles, keep the composer in frame, disclose timing edits, and review a bounded motion excerpt before final export.",
+      "recipe": "Capture sidebar chat at 24\u201330 fps in a fictional vault. Show actual typing, send, streaming and completed response; preserve source pixels. Delay small caption fades until after the camera settles, keep the composer in frame, disclose timing edits, and review a bounded motion excerpt before final export.",
       "composition": "NexusSidebarShowcase",
       "compositionFrames": [
         150,
@@ -1523,7 +1523,7 @@
       "kind": "video",
       "status": "retired",
       "path": "media/storyboards/nexus-sidebar-pullback-v5.mp4",
-      "description": "20-second bounded review excerpt: source note open first; real typing/send close-up; immediate pullback to show full workspace for reply. Task-board ending is shown separately in revision5 storyboard. Low-frame-rate source; final needs fresh24–30fps capture. Pending visual approval. User approved framing and proceeded to complete revision6 cut.",
+      "description": "20-second bounded review excerpt: source note open first; real typing/send close-up; immediate pullback to show full workspace for reply. Task-board ending is shown separately in revision5 storyboard. Low-frame-rate source; final needs fresh24\u201330fps capture. Pending visual approval. User approved framing and proceeded to complete revision6 cut.",
       "source": "Synaptic Studio project nexus-sidebar-showcase; NexusSidebarShowcase composition, revision-v5.md",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1730,7 +1730,7 @@
       "kind": "video",
       "status": "published",
       "path": "media/demos/nexus-chat-workflow.mp4",
-      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo→Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
+      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo\u2192Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
       "source": "media/chat-workflow-evidence.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1774,7 +1774,7 @@
       "kind": "gif",
       "status": "published",
       "path": "media/demos/chat-open-and-update.gif",
-      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo→Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
+      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo\u2192Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
       "source": "media/chat-workflow-evidence.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1816,7 +1816,7 @@
       "kind": "gif",
       "status": "published",
       "path": "media/demos/chat-complete-qa.gif",
-      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo→Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
+      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo\u2192Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
       "source": "media/chat-workflow-evidence.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1858,7 +1858,7 @@
       "kind": "screenshot",
       "status": "published",
       "path": "media/screenshots/agent-opened-plan.png",
-      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo→Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
+      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo\u2192Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
       "source": "media/chat-workflow-evidence.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1898,7 +1898,7 @@
       "kind": "screenshot",
       "status": "published",
       "path": "media/screenshots/agent-completed-qa.png",
-      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo→Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
+      "description": "Approved revision7 documentation asset. Genuine Sonnet4.6 continuation uses storage open, task open and task update. QA moves Todo\u2192Done; independent readback confirms only its status/completion timestamps changed. Waits shortened and follow-up typing accelerated.",
       "source": "media/chat-workflow-evidence.json",
       "capture": {
         "pluginVersion": "5.21.1",
@@ -1931,6 +1931,20 @@
         "decision": "approved",
         "note": "User reviewed full36.2-second revision7 and said looks great. Captured with Nexus5.21.1; approval does not imply recapture on newer versions."
       }
+    },
+    {
+      "id": "compatible-endpoint-context-window",
+      "title": "Check a custom endpoint model context window",
+      "kind": "screenshot",
+      "status": "planned",
+      "description": "Coverage gap for the per-model window field and Check result added after the existing provider overview captures; no finished capture claimed.",
+      "source": "https://github.com/ProfSynapse/nexus/pull/441",
+      "watch": [
+        "src/components/openai-compatible/*",
+        "src/services/llm/adapters/openai-compatible/*",
+        "styles.css"
+      ],
+      "recipe": "In a sanitized practice vault, connect a local or fictional endpoint, enter a model context window, run Check against the actual endpoint, inspect the accepted or suggested limit, and capture the control and result without keys or private URLs."
     }
   ]
 }

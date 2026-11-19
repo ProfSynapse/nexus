@@ -92,6 +92,8 @@ Use this to connect any local or hosted server that exposes the OpenAI Chat Comp
 
 Chat and standard tool calling work through these endpoints. The endpoint must be reachable from the device you are using, so a `localhost` address only works on that computer.
 
+For each enabled model, set its **Context window** to the maximum the endpoint supports. **Check** sends a test request to that endpoint to verify the entered limit; it can use provider credits. A server's runtime allocation can be lower than its advertised model maximum, so Nexus keeps the advertised or manually configured limit instead of silently reducing it. When a check reports a lower usable limit, you can apply that result to the model. Chat context budgets can then use the configured limit.
+
 ---
 
 ## Claude Code

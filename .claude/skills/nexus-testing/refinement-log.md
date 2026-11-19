@@ -286,3 +286,5 @@ Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching art
 - 2026-11-18: Extended parameterized provider-request assertions and cost-calculator threshold checks for a model release; no testing procedure change needed.
 
 - 2026-11-19: Added a provider-listed model using the existing generation declaration and request-contract tests; no skill procedure change needed.
+
+- 2026-11-19: Confirmed Linux Obsidian1.15.1 needs command-first vault targeting for eval; documented argument order and native settings-window capture in live-loop.md.
