@@ -155,3 +155,5 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 - 2026-11-18: Speech model catalogs are outside the chat registry checker. Clarified the unscoped structural gate and dedicated speech/session proof in protocols/verify-model.md; no chat registry should be fabricated for transcription.
 
 - 2026-11-18: Added registry-anatomy guidance for googleGeneration so new models declare supported thinking levels and separate buffered/streaming foreground limits.
+
+- 2026-11-19: Added a provider-listed model using the existing generation declaration and request-contract tests; no skill procedure change needed.

@@ -284,3 +284,5 @@ Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching art
 - 2026-11-18: AssemblyAI catalog and request regression checks passed; deliberately flipping the clean-transcript flag was detected in both plugins. No testing procedure change needed.
 
 - 2026-11-18: Extended parameterized provider-request assertions and cost-calculator threshold checks for a model release; no testing procedure change needed.
+
+- 2026-11-19: Added a provider-listed model using the existing generation declaration and request-contract tests; no skill procedure change needed.
