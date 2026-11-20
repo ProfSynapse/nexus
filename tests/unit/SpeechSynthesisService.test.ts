@@ -223,6 +223,27 @@ describe('SpeechSynthesisService', () => {
     expect(result.audioData.byteLength).toBe(48);
   });
 
+  it.each(['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'])('preserves the WAV file returned by %s', async model => {
+    const wav = Buffer.from('524946462800000057415645666d74201000000001000100c05d000080bb000002001000646174610400000001000200', 'hex');
+    requestUrlMock.mockResolvedValue({
+      status: 200,
+      headers: {},
+      arrayBuffer: new ArrayBuffer(0),
+      text: '',
+      json: {
+        candidates: [{ content: { parts: [{ inlineData: { mimeType: 'audio/wav', data: wav.toString('base64') } }] } }],
+      },
+    });
+    const service = new SpeechSynthesisService(makeSettings({
+      providers: { ...DEFAULT_LLM_PROVIDER_SETTINGS.providers, google: providerConfig() },
+    }));
+
+    const result = await service.synthesize({ provider: 'google', model, text: 'Read this.' });
+
+    expect(result.mimeType).toBe('audio/wav');
+    expect(Buffer.from(result.audioData)).toEqual(wav);
+  });
+
   it('synthesizes OpenRouter speech through the dedicated speech endpoint', async () => {
     requestUrlMock.mockResolvedValue({
       status: 200,

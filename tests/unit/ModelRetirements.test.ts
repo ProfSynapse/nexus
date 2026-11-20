@@ -24,8 +24,8 @@ function settingsWith(providers: Array<'google' | 'openai'>, extra: Partial<LLMP
 describe('retired speech models', () => {
   it.each(['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'])('%s is gone and maps to a shipped successor', id => {
     expect(getSpeechModel('google', id)).toBeUndefined();
-    const replacement = getRetiredSpeechModel('google', id)?.replacement;
-    expect(getSpeechModel('google', replacement)).toBeDefined();
+    expect(getRetiredSpeechModel('google', id)).toEqual({ id, replacement: 'gemini-3.8-flash-tts', shutdown: '2026-12-18' });
+    expect(getSpeechModel('google', 'gemini-3.8-flash-tts')).toBeDefined();
   });
 
   it('a saved default keeps working and keeps its voice', () => {
@@ -33,6 +33,8 @@ describe('retired speech models', () => {
       defaultSpeechModel: { provider: 'google', model: 'gemini-3.1-flash-tts-preview', voice: 'Puck', source: 'user' }
     });
     expect(resolveDefaultSpeechSelection(settings)).toMatchObject({ model: 'gemini-3.8-flash-tts', voice: 'Puck', status: 'resolved' });
+    expect(new SpeechSynthesisService(settings).resolveRequest({ text: 'hi', provider: 'google' }))
+      .toMatchObject({ model: 'gemini-3.8-flash-tts', voice: 'Puck' });
     expect(normalizeRetiredMediaDefaults(settings)).toBe(true);
     expect(settings.defaultSpeechModel).toMatchObject({ model: 'gemini-3.8-flash-tts', voice: 'Puck' });
   });
@@ -51,16 +53,17 @@ describe('retired speech models', () => {
 
 describe('retired realtime models', () => {
   it.each([
-    ['google', 'gemini-3.1-flash-live-preview', 'gemini-3.8-live'],
-    ['openai', 'gpt-realtime-mini', 'gpt-realtime-2.1-mini']
-  ] as const)('%s %s is gone and a saved default moves to %s', (provider, id, successor) => {
+    ['google', 'gemini-3.1-flash-live-preview', 'gemini-3.8-live', 'Puck'],
+    ['google', 'gemini-2.5-flash-native-audio-preview-12-2025', 'gemini-3.8-live', 'Puck'],
+    ['openai', 'gpt-realtime-mini', 'gpt-realtime-2.1-mini', 'cedar']
+  ] as const)('%s %s is gone and a saved default moves to %s', (provider, id, successor, voice) => {
     expect(getRealtimeVoiceModel(provider, id)).toBeUndefined();
-    expect(getRealtimeVoiceModel(provider, successor)).toBeDefined();
-    const settings = settingsWith([provider], { defaultRealtimeVoiceModel: { provider, model: id, source: 'user' } });
-    expect(resolveDefaultRealtimeVoiceSelection(settings)).toMatchObject({ model: successor, status: 'resolved' });
+    expect(getRealtimeVoiceModel(provider, successor)?.voices.map(candidate => candidate.id)).toContain(voice);
+    const settings = settingsWith([provider], { defaultRealtimeVoiceModel: { provider, model: id, voice, source: 'user' } });
+    expect(resolveDefaultRealtimeVoiceSelection(settings)).toMatchObject({ model: successor, voice, status: 'resolved' });
     expect(getRetiredRealtimeModel(provider, id)?.replacement).toBe(successor);
     expect(normalizeRetiredMediaDefaults(settings)).toBe(true);
-    expect(settings.defaultRealtimeVoiceModel?.model).toBe(successor);
+    expect(settings.defaultRealtimeVoiceModel).toMatchObject({ model: successor, voice });
   });
 });
 

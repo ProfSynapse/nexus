@@ -1,5 +1,5 @@
 /**
- * Image and video model ids that providers have shut down or scheduled for
+ * Media model ids that providers have shut down or scheduled for
  * shutdown, each with the successor the provider documents.
  *
  * The catalogs no longer offer these ids, but saved settings, per-conversation
@@ -72,15 +72,16 @@ const RETIRED_VIDEO_MODELS: Readonly<Partial<Record<VideoProvider, Readonly<Reco
 // predecessor's voices, so a saved voice keeps working.
 const RETIRED_SPEECH_MODELS: Readonly<Record<string, Readonly<Record<string, Omit<RetiredModel, 'id'>>>>> = {
   google: {
-    'gemini-3.1-flash-tts-preview': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
-    'gemini-2.5-flash-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
-    'gemini-2.5-pro-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-11-17' },
+    'gemini-3.1-flash-tts-preview': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-12-18' },
+    'gemini-2.5-flash-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-12-18' },
+    'gemini-2.5-pro-preview-tts': { replacement: 'gemini-3.8-flash-tts', shutdown: '2026-12-18' },
   },
 };
 
 const RETIRED_REALTIME_MODELS: Readonly<Record<string, Readonly<Record<string, Omit<RetiredModel, 'id'>>>>> = {
   google: {
     'gemini-3.1-flash-live-preview': { replacement: 'gemini-3.8-live', shutdown: '2026-11-17' },
+    'gemini-2.5-flash-native-audio-preview-12-2025': { replacement: 'gemini-3.8-live', shutdown: '2027-03-31' },
   },
   openai: {
     'gpt-realtime-mini': { replacement: 'gpt-realtime-2.1-mini', shutdown: '2027-01-20' },

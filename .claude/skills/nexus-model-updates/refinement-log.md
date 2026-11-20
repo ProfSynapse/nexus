@@ -157,3 +157,5 @@ Append-only record of changes made by `protocols/self-refine.md`. Newest on top.
 - 2026-11-18: Added registry-anatomy guidance for googleGeneration so new models declare supported thinking levels and separate buffered/streaming foreground limits.
 
 - 2026-11-19: Added a provider-listed model using the existing generation declaration and request-contract tests; no skill procedure change needed.
+
+- 2026-11-20: Verified the published Gemini audio shutdown dates and exercised the saved-selection migration. The existing billing guidance covered the rejected provider probes. No procedure change.

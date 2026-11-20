@@ -224,10 +224,7 @@ describeLive('Google realtime voice live smoke', () => {
         // session's own outbound path. Google answers it with audio + transcript
         // exactly as it would a spoken turn.
         (session as unknown as SessionWithInternals).sendMessage({
-          clientContent: {
-            turns: [{ role: 'user', parts: [{ text: 'Say hello and tell me which model you are, in one sentence.' }] }],
-            turnComplete: true,
-          },
+          realtimeInput: { text: 'Say hello and tell me which model you are, in one sentence.' },
         });
 
         await Promise.race([
