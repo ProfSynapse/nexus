@@ -76,8 +76,9 @@ export class GoogleSpeechAdapter implements SpeechAdapter {
     });
 
     const data = getInlineAudioData(response.json as GoogleGenerateContentResponse);
-    const pcmAudio = decodeBase64(data);
-    const wavAudio = wrapPcmAsWav(pcmAudio);
+    const audio = decodeBase64(data);
+    // Gemini 3.8 TTS returns WAV by default. Older responses can contain raw PCM.
+    const wavAudio = hasWavHeader(audio) ? audio : wrapPcmAsWav(audio);
 
     return {
       provider: this.provider,
@@ -87,6 +88,13 @@ export class GoogleSpeechAdapter implements SpeechAdapter {
       mimeType: 'audio/wav',
     };
   }
+}
+
+function hasWavHeader(audio: ArrayBuffer): boolean {
+  if (audio.byteLength < 12) return false;
+  const header = new Uint8Array(audio, 0, 12);
+  return String.fromCharCode(...header.subarray(0, 4)) === 'RIFF'
+    && String.fromCharCode(...header.subarray(8, 12)) === 'WAVE';
 }
 
 function getInlineAudioData(response: GoogleGenerateContentResponse): string {

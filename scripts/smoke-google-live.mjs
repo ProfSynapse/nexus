@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const GOOGLE_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
+const DEFAULT_MODEL = 'gemini-3.8-live';
 const DEFAULT_PROMPT = 'Reply with exactly the single word pong.';
 const DEFAULT_TIMEOUT_MS = 30000;
 
@@ -83,15 +83,7 @@ websocket.addEventListener('message', async (event) => {
     if (message.setupComplete !== undefined) {
       summary.setupComplete = true;
       websocket.send(JSON.stringify({
-        clientContent: {
-          turns: [
-            {
-              role: 'user',
-              parts: [{ text: prompt }],
-            },
-          ],
-          turnComplete: true,
-        },
+        realtimeInput: { text: prompt },
       }));
       return;
     }

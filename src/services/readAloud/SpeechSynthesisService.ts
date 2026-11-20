@@ -105,9 +105,10 @@ export class SpeechSynthesisService {
     }
 
     const settingsDefault = this.llmSettings?.defaultSpeechModel;
-    const defaultModel = settingsDefault?.provider === provider ? settingsDefault.model : undefined;
-    const requested = request.model || defaultModel || providerAvailability.models?.[0]?.id;
-    const model = getRetiredSpeechModel(provider, requested)?.replacement ?? requested;
+    const savedModel = settingsDefault?.provider === provider ? settingsDefault.model : undefined;
+    const defaultModel = getRetiredSpeechModel(provider, savedModel)?.replacement ?? savedModel;
+    const requestedModel = getRetiredSpeechModel(provider, request.model)?.replacement ?? request.model;
+    const model = requestedModel || defaultModel || providerAvailability.models?.[0]?.id;
     if (!model) {
       return {
         provider,
@@ -130,9 +131,7 @@ export class SpeechSynthesisService {
     }
 
     const modelDefaultVoice = getSpeechModel(provider, model)?.defaultVoice;
-    const settingsDefaultVoice = settingsDefault?.provider === provider && settingsDefault.model === model
-      ? settingsDefault.voice
-      : undefined;
+    const settingsDefaultVoice = defaultModel === model ? settingsDefault?.voice : undefined;
 
     return {
       provider,

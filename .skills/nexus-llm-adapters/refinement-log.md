@@ -154,3 +154,5 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-11-10 | Gemini 4 sibling required extending exact-model request guards; existing model-update routing protocol identified every guard. No adapter skill procedure change.
 
 - 2026-11-18: A newly listed Google family member would fall through exact model-id checks to an invalid legacy thinking budget. Encoded its contract in ModelSpec and tested both request paths; existing skill protocols already direct this check, no procedure change.
+
+- 2026-11-20: The speech adapter wrapped an already formatted WAV in a second header. Added the response-format check and regression approach to `references/symptoms.md`.
