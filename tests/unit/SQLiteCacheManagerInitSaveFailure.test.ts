@@ -68,6 +68,7 @@ function createInitHarness(options: {
     initializeModule: jest.fn(async () => sqlite3),
     createMemoryDatabase: jest.fn(() => dbHandle),
     deserializeDatabase: jest.fn(() => dbHandle),
+    isAutocommit: jest.fn(() => true),
     exportDatabase: jest.fn(() => {
       attempts++;
       if (exportFailure && failuresRemaining > 0) {

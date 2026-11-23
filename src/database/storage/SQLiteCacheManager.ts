@@ -94,6 +94,20 @@ export function isAllocationFailure(error: unknown): boolean {
     || (typeof message === 'string' && /\bSQLITE_NOMEM\b/.test(message));
 }
 
+/**
+ * A save that did not write because a transaction stayed open past the wait.
+ * The database is still dirty and a retry is armed.
+ */
+export class SaveDeferredError extends Error {
+  constructor() {
+    super(
+      'Save deferred: a transaction is still open, and exporting now could write a '
+      + 'half-applied database. Changes stay unsaved and the save is retried.'
+    );
+    this.name = 'SaveDeferredError';
+  }
+}
+
 /** SQLITE_NOMEM, from sqlite3.h. */
 const SQLITE_NOMEM_CODE = 7;
 
@@ -131,6 +145,9 @@ class DatabaseAdapter {
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
   private static readonly ALLOCATION_RETRY_BASE_MS = 2 * 60 * 1000;
   private static readonly ALLOCATION_RETRY_MAX_MS = 30 * 60 * 1000;
+  private static readonly SAVE_TRANSACTION_WAIT_MS = 5 * 1000;
+  private static readonly SAVE_TRANSACTION_POLL_MS = 50;
+  private static readonly SAVE_DEFERRED_RETRY_MS = 1000;
   private app: App;
   private dbPath: string;  // Relative path within vault
   private wasmPath?: string;
@@ -157,6 +174,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private saveInFlight: Promise<void> | null = null;
   /** The write generation the in-flight save captured before its export. */
   private inFlightGeneration = 0;
+  /** Retry armed when a save gave up waiting for a transaction to end. */
+  private deferredSaveTimer: number | null = null;
   /** The one coalesced save scheduled to follow the in-flight one, if any. */
   private pendingSave: Promise<void> | null = null;
   /** Set by stopAutoSave() and close() to cancel a scheduled follow-up. */
@@ -509,12 +528,33 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     // Captured BEFORE saveDatabase is called, not inside it: that method
     // exports the database as the first thing it does, so every write after
     // this line is newer than the bytes about to be written.
-    const generation = this.writeGeneration;
+    let generation = this.writeGeneration;
     this.inFlightGeneration = generation;
 
     const save = async (): Promise<void> => {
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
+      // Never export with a transaction open. Exporting mid-transaction writes
+      // whatever the transaction has already spilled into the in-memory file:
+      // once it outgrows the page cache (16 MiB by default) the snapshot is a
+      // half-written database, and the next load discards it as corrupt.
+      // Transactions span awaits, so the auto-save timer can fire inside one.
+      // The connection's own autocommit flag is checked, not the coordinator,
+      // because the coordinator does not see the raw beginTransaction().
+      const deadline = Date.now() + SQLiteCacheManager.SAVE_TRANSACTION_WAIT_MS;
+      while (!this.bridge.isAutocommit(sqlite3, db)) {
+        if (Date.now() >= deadline) {
+          this.deferSave();
+          throw new SaveDeferredError();
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, SQLiteCacheManager.SAVE_TRANSACTION_POLL_MS));
+      }
+      // From the check above to the export inside saveDatabase (which runs
+      // before its first await) there is no await, so nothing can open a
+      // transaction in between. Writes committed while waiting are in this
+      // snapshot, hence the generation is taken again here.
+      generation = this.writeGeneration;
+      this.inFlightGeneration = generation;
       try {
         await this.persistenceService.saveDatabase(sqlite3, db);
       } catch (error) {
@@ -547,6 +587,27 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     });
     this.saveInFlight = inFlight;
     return inFlight;
+  }
+
+  /**
+   * A save that found a transaction still open after waiting: nothing is
+   * written, the database stays dirty, and one retry is armed. The caller gets
+   * SaveDeferredError, because a resolved save means the bytes were written;
+   * it is not an allocation failure, so the back-off is left alone.
+   */
+  private deferSave(): void {
+    if (this.deferredSaveTimer !== null || this.followUpCancelled || !this.isInitialized) {
+      return;
+    }
+    this.deferredSaveTimer = window.setTimeout(() => {
+      this.deferredSaveTimer = null;
+      if (this.followUpCancelled || !this.isInitialized || this.db === null || !this.hasUnsavedData) {
+        return;
+      }
+      this.saveToFile().catch(error => {
+        console.error('[SQLiteCacheManager] Deferred save failed:', error);
+      });
+    }, SQLiteCacheManager.SAVE_DEFERRED_RETRY_MS);
   }
 
   /**
@@ -600,6 +661,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // it would have written, and nothing may reach the blob store after
       // close() returns: Rebuild Cache removes the blob on the next line.
       this.followUpCancelled = true;
+      if (this.deferredSaveTimer !== null) {
+        window.clearTimeout(this.deferredSaveTimer);
+        this.deferredSaveTimer = null;
+      }
 
       // Let an export that is already running finish before starting another,
       // so closing never puts a second full-size buffer alongside it. Its
@@ -611,7 +676,18 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
       // Final save
       if (this.hasUnsavedData) {
-        await this.saveToFile();
+        try {
+          await this.saveToFile();
+        } catch (error) {
+          if (!(error instanceof SaveDeferredError)) {
+            throw error;
+          }
+          console.error(
+            '[SQLiteCacheManager] Closing with a transaction still open; the changes since the '
+            + 'last save are not written and are rebuilt from the event store on next start.',
+            error
+          );
+        }
       }
 
       if (this.db) {
@@ -923,6 +999,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     // already scheduled independently of it, and it would export after the
     // caller believes writes have stopped.
     this.followUpCancelled = true;
+    if (this.deferredSaveTimer !== null) {
+      window.clearTimeout(this.deferredSaveTimer);
+      this.deferredSaveTimer = null;
+    }
   }
 
   /**

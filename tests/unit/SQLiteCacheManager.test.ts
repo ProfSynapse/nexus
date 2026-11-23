@@ -584,6 +584,7 @@ describe('SQLiteCacheManager save path', () => {
       deserializeDatabase: jest.fn(() => dbHandle),
       // A distinct buffer per call, so two overlapping saves are two live
       // allocations and not one shared object.
+      isAutocommit: jest.fn(() => true),
       exportDatabase: jest.fn(() => {
         attempts++;
         if (exportFailure && failuresRemaining > 0) {
