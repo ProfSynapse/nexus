@@ -72,6 +72,32 @@ export interface QueryResult<T> {
 }
 
 /**
+ * Whether a failed save ran out of memory rather than failing for a reason a
+ * retry cannot fix.
+ *
+ * Two shapes reach the save path. A JS-side copy of the export that cannot be
+ * allocated is a RangeError. The export itself running out of WASM heap is an
+ * SQLite3Error from sqlite3_js_db_export, and that one carries SQLITE_NOMEM
+ * only in its message: the export passes the code as a string, so resultCode
+ * is the generic SQLITE_ERROR. The numeric code is checked too, for a build
+ * that reports it properly.
+ */
+export function isAllocationFailure(error: unknown): boolean {
+  if (error instanceof RangeError) {
+    return /array buffer allocation failed/i.test(error.message);
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const { message, resultCode } = error as { message?: unknown; resultCode?: unknown };
+  return resultCode === SQLITE_NOMEM_CODE
+    || (typeof message === 'string' && /\bSQLITE_NOMEM\b/.test(message));
+}
+
+/** SQLITE_NOMEM, from sqlite3.h. */
+const SQLITE_NOMEM_CODE = 7;
+
+/**
  * Database adapter that wraps raw WASM SQLite database to provide
  * exec() and run() methods for MigratableDatabase interface.
  */
@@ -367,7 +393,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         const sqlite3 = this.getSqlite3OrThrow();
         const db = this.persistenceService.createFreshDatabase(sqlite3, SCHEMA_SQL);
         this.db = db;
-        await this.saveToFile();
+        await this.saveDuringInitialize('creating it');
       }
 
       // Run schema migrations for existing databases
@@ -376,7 +402,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
       if (migrationResult.applied > 0) {
-        await this.saveToFile(); // Save after migrations
+        await this.saveDuringInitialize('applying schema migrations');
       }
       // Hand the signal to the caller rather than dropping it: the result object
       // used to die in this scope, so `needsRebuild` could never mean anything.
@@ -398,6 +424,34 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     } catch (error) {
       console.error('[SQLiteCacheManager] Initialization failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Persist a change initialize() itself made, without letting the save decide
+   * whether the cache opens.
+   *
+   * The database is already open and correct in memory at this point; only
+   * writing it out can fail, and the usual reason is that exporting the whole
+   * database does not fit in the WASM heap (SQLITE_NOMEM). Rethrowing used to
+   * fail initialize(), which left the storage adapter failed for the session,
+   * every restart repeating the same export. Instead the change is recorded as
+   * unsaved, so auto-save and close() retry it, and an allocation failure arms
+   * the same back-off a failed auto-save does.
+   *
+   * The migrator writes through the raw handle, so nothing else marks those
+   * writes dirty; without markDirty() a swallowed failure would never be retried.
+   */
+  private async saveDuringInitialize(step: string): Promise<void> {
+    this.markDirty();
+    try {
+      await this.saveToFile();
+    } catch (error) {
+      console.error(
+        `[SQLiteCacheManager] Could not save the cache after ${step}; `
+        + 'continuing with the changes unsaved, auto-save will retry:',
+        error
+      );
     }
   }
 
@@ -464,7 +518,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       try {
         await this.persistenceService.saveDatabase(sqlite3, db);
       } catch (error) {
-        if (error instanceof RangeError && /array buffer allocation failed/i.test(error.message)) {
+        if (isAllocationFailure(error)) {
           this.allocationFailureCount++;
           const exponent = Math.min(this.allocationFailureCount - 1, 20);
           const delay = Math.min(
