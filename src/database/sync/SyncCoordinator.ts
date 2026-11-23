@@ -278,14 +278,12 @@ export class SyncCoordinator {
    * never permanently breaks cold-start:
    * - Per-file / per-event errors (a malformed JSONL file, an event an applier
    *   rejects) are RECOVERABLE: the offending file is skipped, accumulated in
-   *   `errors` as a warning, and the rebuild continues. The good cache is still
-   *   indexed, saved, and the sync state advanced, so cold-start does NOT re-run
-   *   the rebuild on every launch. The completed result is `success: true` and
-   *   `errors` carries the skipped-file warnings.
-   * - Fatal errors (clearAllData / rebuildFTSIndexes / updateSyncState / save
-   *   throwing — i.e. the rebuild engine itself failing) are NOT recoverable.
-   *   They propagate to the catch below, which returns `success: false` WITHOUT
-   *   saving, preserving the "never persist a half-built index" guarantee.
+   *   `errors` as a warning, and the rebuild continues. It indexes the good
+   *   cache, updates sync state and attempts to save the result.
+   * - Errors clearing, indexing or updating rebuild state fail the rebuild
+   *   before the final save.
+   * - A failed final save leaves the rebuilt cache usable in memory and dirty
+   *   for auto-save to retry. The caller still receives the warning.
    */
   async fullRebuild(options: SyncOptions = {}): Promise<SyncResult> {
     const startTime = Date.now();
@@ -326,19 +324,21 @@ export class SyncCoordinator {
         );
       }
 
-      // Rebuild FTS and save. Reaching here means the rebuild engine itself
-      // succeeded, so the cache is valid and MUST be persisted (even if some
-      // input files were skipped above).
+      // Finish updating the derived cache before attempting to persist it.
       options.onProgress?.('Rebuilding search indexes', 0, 1);
       await this.sqliteCache.rebuildFTSIndexes();
       await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
-      await this.sqliteCache.save();
+      try {
+        await this.sqliteCache.save();
+      } catch (error) {
+        const warning = `Could not save the rebuilt cache; continuing with it in memory: ${String(error)}`;
+        errors.push(warning);
+        console.error(`[SyncCoordinator] ${warning}`);
+      }
 
       options.onProgress?.('Complete', 1, 1);
 
-      // success: true even when `errors` is non-empty — those are skipped-file
-      // warnings, not a failed rebuild. Callers throw only on `!success`, so
-      // this persists the good cache and prevents the cold-start rebuild loop.
+      // The cache is queryable even if warnings were recorded during the replay or save.
       return this.createResult(true, eventsApplied, 0, errors, startTime, filesProcessed);
     } catch (error) {
       // Fatal: the rebuild engine failed. Do not save — never persist a

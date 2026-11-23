@@ -10,6 +10,11 @@ interface SQLitePersistenceServiceOptions {
   bridge: SQLiteWasmBridge;
 }
 
+interface LoadedCache {
+  db: SQLiteDatabaseHandle;
+  fresh: boolean;
+}
+
 /**
  * Floor between two cache-size console lines. One a minute is discoverable
  * without being the reason a long index run's console is unreadable.
@@ -29,17 +34,13 @@ export class SQLitePersistenceService {
     this.bridge = options.bridge;
   }
 
-  async loadDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {
+  async loadDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<LoadedCache> {
+    let data: ArrayBuffer | null = null;
+    let db: SQLiteDatabaseHandle | undefined;
     try {
-      const data = await this.blobStore.read();
-
-      if (!data || data.byteLength === 0) {
-        return this.createFreshDatabase(sqlite3, schemaSql);
-      }
-
-      const db = this.bridge.deserializeDatabase(sqlite3, new Uint8Array(data));
-
-      try {
+      data = await this.blobStore.read();
+      if (data && data.byteLength > 0) {
+        db = this.bridge.deserializeDatabase(sqlite3, new Uint8Array(data));
         const integrityResult = this.bridge.getIntegrityCheckResult(db);
         if (integrityResult !== 'ok') {
           const integrityMessage = typeof integrityResult === 'string'
@@ -47,16 +48,17 @@ export class SQLitePersistenceService {
             : JSON.stringify(integrityResult) ?? 'unknown';
           throw new Error(`Database integrity check failed: ${integrityMessage}`);
         }
-      } catch (integrityError) {
-        this.reportCacheRebuild('failed its integrity check', integrityError, data.byteLength);
-        return this.recreateCorruptedDatabase(sqlite3, schemaSql);
+        return { db, fresh: false };
       }
-
-      return db;
     } catch (error) {
-      this.reportCacheRebuild('could not be read or opened', error);
-      return this.recreateCorruptedDatabase(sqlite3, schemaSql);
+      const reason = db ? 'failed its integrity check' : 'could not be read or opened';
+      this.reportCacheRebuild(reason, error, data?.byteLength);
+      if (db) {
+        this.bridge.close(db);
+      }
+      await this.removeCorruptedBlob();
     }
+    return { db: this.createFreshDatabase(sqlite3, schemaSql), fresh: true };
   }
 
   /**
@@ -183,11 +185,11 @@ export class SQLitePersistenceService {
     );
   }
 
-  async recreateCorruptedDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {
+  private async removeCorruptedBlob(): Promise<void> {
     try {
       await this.blobStore.remove();
     } catch (removeError) {
-      // Non-fatal: the fresh database is written over the old blob below. Still
+      // Non-fatal: the next successful save overwrites the old blob. Still
       // worth saying, because a remove that keeps failing is the difference
       // between "corrupted once" and "corruption we can never clear".
       console.warn(
@@ -196,10 +198,6 @@ export class SQLitePersistenceService {
         removeError
       );
     }
-
-    const db = this.createFreshDatabase(sqlite3, schemaSql);
-    await this.saveDatabase(sqlite3, db);
-    return db;
   }
 
   createFreshDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): SQLiteDatabaseHandle {

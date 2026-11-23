@@ -175,3 +175,7 @@ Targeted chat message writes continue through the existing adapter/repository ev
 ## 2026-10-24 — Bounded recent goal/memory snapshot
 
 - Existing conversation metadata carries a bounded snapshot of original goal/memory trace entries and their trace IDs; no event type, table or storage root was added. Reads await query readiness and use the same workspace/session without a workspace-wide fallback. Failed optional lookups retain only a matching prior snapshot and mark it unavailable. The facade's trace reader is getTraces; its nested trace repository is private. Native-chat call arguments also preserve original goal/memory evidence when no separate MCP trace was written; merge that evidence into the bounded snapshot. No protocol change.
+
+## 2026-11-23 — Cache recovery after a failed export (#448)
+
+- Rebuild could fail while saving the snapshot it was about to remove. Updated the close sequence in `references/storage-model.md` to document discarding unsaved changes after draining the active blob write.

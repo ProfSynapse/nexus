@@ -126,7 +126,7 @@ export class StorageMaintenanceService {
         this.deps.getSqliteCache().stopAutoSave();
 
         options.onProgress?.('Closing cache', 0, 1);
-        await this.deps.getSqliteCache().close();
+        await this.deps.getSqliteCache().close({ discardUnsavedChanges: true });
 
         options.onProgress?.('Removing cache blob', 0, 1);
         await this.deps.getCacheBlobStore().remove();

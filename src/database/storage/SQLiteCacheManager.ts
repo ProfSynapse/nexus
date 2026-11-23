@@ -72,6 +72,32 @@ export interface QueryResult<T> {
 }
 
 /**
+ * Whether a failed save ran out of memory rather than failing for a reason a
+ * retry cannot fix.
+ *
+ * Two shapes reach the save path. A JS-side copy of the export that cannot be
+ * allocated is a RangeError. The export itself running out of WASM heap is an
+ * SQLite3Error from sqlite3_js_db_export, and that one carries SQLITE_NOMEM
+ * only in its message: the export passes the code as a string, so resultCode
+ * is the generic SQLITE_ERROR. The numeric code is checked too, for a build
+ * that reports it properly.
+ */
+export function isAllocationFailure(error: unknown): boolean {
+  if (error instanceof RangeError) {
+    return /array buffer allocation failed/i.test(error.message);
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const { message, resultCode } = error as { message?: unknown; resultCode?: unknown };
+  return resultCode === SQLITE_NOMEM_CODE
+    || (typeof message === 'string' && /\bSQLITE_NOMEM\b/.test(message));
+}
+
+/** SQLITE_NOMEM, from sqlite3.h. */
+const SQLITE_NOMEM_CODE = 7;
+
+/**
  * Database adapter that wraps raw WASM SQLite database to provide
  * exec() and run() methods for MigratableDatabase interface.
  */
@@ -129,6 +155,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private writeGeneration = 0;
   /** The save that is currently exporting or writing, if there is one. */
   private saveInFlight: Promise<void> | null = null;
+  private closeInFlight: Promise<void> | null = null;
   /** The write generation the in-flight save captured before its export. */
   private inFlightGeneration = 0;
   /** The one coalesced save scheduled to follow the in-flight one, if any. */
@@ -355,28 +382,21 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // vault.adapter file path (mobile) without leaking which backend is in
       // use into the cache manager.
       const meta = await this.blobStore.getMetadata();
-      const dbExists = meta !== null && meta.size > 0;
-      if (dbExists) {
-        this.lastSavedBytes = meta.size;
-      }
-
-      if (dbExists) {
-        // Load existing database from blob store
-        await this.loadFromFile();
-      } else {
-        const sqlite3 = this.getSqlite3OrThrow();
-        const db = this.persistenceService.createFreshDatabase(sqlite3, SCHEMA_SQL);
-        this.db = db;
-        await this.saveToFile();
-      }
+      const sqlite3 = this.getSqlite3OrThrow();
+      const { db, fresh } = meta && meta.size > 0
+        ? await this.persistenceService.loadDatabase(sqlite3, SCHEMA_SQL)
+        : { db: this.persistenceService.createFreshDatabase(sqlite3, SCHEMA_SQL), fresh: true };
+      this.db = db;
+      this.lastSavedBytes = fresh ? null : meta?.size ?? null;
+      this.hasUnsavedData = false;
 
       // Run schema migrations for existing databases
       // Wrap raw database in adapter to provide exec() and run() methods
-      const dbAdapter = new DatabaseAdapter(this.bridge, this.getDbOrThrow());
+      const dbAdapter = new DatabaseAdapter(this.bridge, db);
       const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
-      if (migrationResult.applied > 0) {
-        await this.saveToFile(); // Save after migrations
+      if (fresh || migrationResult.applied > 0) {
+        await this.saveDuringInitialize(fresh ? 'creating it' : 'applying schema migrations');
       }
       // Hand the signal to the caller rather than dropping it: the result object
       // used to die in this scope, so `needsRebuild` could never mean anything.
@@ -402,6 +422,34 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
+   * Persist a change initialize() itself made, without letting the save decide
+   * whether the cache opens.
+   *
+   * The database is already open and correct in memory at this point; only
+   * writing it out can fail, and the usual reason is that exporting the whole
+   * database does not fit in the WASM heap (SQLITE_NOMEM). Rethrowing used to
+   * fail initialize(), which left the storage adapter failed for the session,
+   * every restart repeating the same export. Instead the change is recorded as
+   * unsaved, so auto-save and close() retry it, and an allocation failure arms
+   * the same back-off a failed auto-save does.
+   *
+   * The migrator writes through the raw handle, so nothing else marks those
+   * writes dirty; without markDirty() a swallowed failure would never be retried.
+   */
+  private async saveDuringInitialize(step: string): Promise<void> {
+    this.markDirty();
+    try {
+      await this.saveToFile();
+    } catch (error) {
+      console.error(
+        `[SQLiteCacheManager] Could not save the cache after ${step}; `
+        + 'continuing with the changes unsaved, auto-save will retry:',
+        error
+      );
+    }
+  }
+
+  /**
    * Whether the schema migration that just ran needs the cache replayed from
    * JSONL, clearing the flag as it reports it. Consume-once so the second
    * `initialize()` that rebuildCache() performs does not rebuild again.
@@ -410,16 +458,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     const pending = this.pendingSchemaRebuild;
     this.pendingSchemaRebuild = false;
     return pending;
-  }
-
-  /**
-   * Load database from file using sqlite3_deserialize
-   * Includes corruption detection and auto-recovery
-   */
-  private async loadFromFile(): Promise<void> {
-    const sqlite3 = this.getSqlite3OrThrow();
-    this.db = await this.persistenceService.loadDatabase(sqlite3, SCHEMA_SQL);
-    this.hasUnsavedData = false;
   }
 
   /**
@@ -439,6 +477,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    *   many callers ask for it.
    */
   private saveToFile(): Promise<void> {
+    if (this.closeInFlight) {
+      return Promise.reject(new Error('Database is closing'));
+    }
     if (this.saveInFlight) {
       if (this.writeGeneration === this.inFlightGeneration) {
         return this.saveInFlight;
@@ -464,7 +505,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       try {
         await this.persistenceService.saveDatabase(sqlite3, db);
       } catch (error) {
-        if (error instanceof RangeError && /array buffer allocation failed/i.test(error.message)) {
+        if (isAllocationFailure(error)) {
           this.allocationFailureCount++;
           const exponent = Math.min(this.allocationFailureCount - 1, 20);
           const delay = Math.min(
@@ -531,40 +572,34 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     return pending;
   }
 
-  /**
-   * Close the database and save to file
-   */
-  async close(): Promise<void> {
+  /** Close the cache, saving pending changes unless a rebuild will discard it. */
+  close({ discardUnsavedChanges = false }: { discardUnsavedChanges?: boolean } = {}): Promise<void> {
+    this.closeInFlight ??= this.closeDatabase(discardUnsavedChanges).finally(() => {
+      this.closeInFlight = null;
+    });
+    return this.closeInFlight;
+  }
+
+  private async closeDatabase(discardUnsavedChanges: boolean): Promise<void> {
+    this.stopAutoSave();
     try {
-      // Stop auto-save timer
-      if (this.autoSaveTimer) {
-        window.clearInterval(this.autoSaveTimer);
-        this.autoSaveTimer = null;
+      try {
+        // Drain any existing blob write before closing. Rebuild Cache deletes
+        // the snapshot after this, and a late write could bring it back.
+        await this.saveInFlight?.catch(() => undefined);
+        await this.pendingSave?.catch(() => undefined);
+        if (this.db && this.hasUnsavedData && !discardUnsavedChanges) {
+          await this.startSave();
+        }
+      } finally {
+        if (this.db) {
+          this.bridge.close(this.db);
+          this.db = null;
+        }
+        this.sqlite3 = null;
+        this.isInitialized = false;
+        this.hasUnsavedData = false;
       }
-
-      // Cancel any scheduled follow-up. The final save below covers everything
-      // it would have written, and nothing may reach the blob store after
-      // close() returns: Rebuild Cache removes the blob on the next line.
-      this.followUpCancelled = true;
-
-      // Let an export that is already running finish before starting another,
-      // so closing never puts a second full-size buffer alongside it. Its
-      // outcome belongs to whoever asked for it; what matters here is the
-      // dirty flag it leaves behind.
-      if (this.saveInFlight) {
-        await this.saveInFlight.then(() => undefined, () => undefined);
-      }
-
-      // Final save
-      if (this.hasUnsavedData) {
-        await this.saveToFile();
-      }
-
-      if (this.db) {
-        this.bridge.close(this.db);
-        this.db = null;
-      }
-      this.isInitialized = false;
     } catch (error) {
       console.error('[SQLiteCacheManager] Error closing database:', error);
       throw error;

@@ -34,7 +34,8 @@ function createService() {
     exec: jest.fn(),
     exportDatabase: jest.fn().mockReturnValue(new ArrayBuffer(8)),
     deserializeDatabase: jest.fn().mockReturnValue(db),
-    getIntegrityCheckResult: jest.fn().mockReturnValue('ok')
+    getIntegrityCheckResult: jest.fn().mockReturnValue('ok'),
+    close: jest.fn()
   } as unknown as SQLiteWasmBridge;
 
   const sqlite3 = {} as SQLiteWasmModule;
@@ -78,7 +79,7 @@ describe('SQLitePersistenceService', () => {
 
     const result = await service.loadDatabase(sqlite3, 'CREATE TABLE test (id TEXT);');
 
-    expect(result).toBe(db);
+    expect(result).toEqual({ db, fresh: true });
     expect(bridge.createMemoryDatabase).toHaveBeenCalledWith(sqlite3);
     expect(bridge.exec).toHaveBeenCalledWith(db, 'CREATE TABLE test (id TEXT);');
     expect(bridge.deserializeDatabase).not.toHaveBeenCalled();
@@ -102,9 +103,10 @@ describe('SQLitePersistenceService', () => {
     try {
       const result = await service.loadDatabase(sqlite3, 'CREATE TABLE test (id TEXT);');
 
-      expect(result).toBe(db);
+      expect(result).toEqual({ db, fresh: true });
+      expect(bridge.close).toHaveBeenCalledWith(db);
       expect(blobStore.remove).toHaveBeenCalled();
-      expect(blobStore.write).toHaveBeenCalledWith(expect.any(ArrayBuffer));
+      expect(blobStore.write).not.toHaveBeenCalled();
     } finally {
       errSpy.mockRestore();
     }
@@ -218,9 +220,8 @@ describe('SQLitePersistenceService', () => {
       try {
         const result = await service.loadDatabase(sqlite3, 'CREATE TABLE test (id TEXT);');
 
-        // Behaviour unchanged: the rebuild still happens.
-        expect(result).toBe(db);
-        expect(blobStore.write).toHaveBeenCalledWith(expect.any(ArrayBuffer));
+        expect(result).toEqual({ db, fresh: true });
+        expect(blobStore.write).not.toHaveBeenCalled();
 
         const warned = messagesFrom(warnSpy);
         expect(warned).toContain('EPERM: operation not permitted');
@@ -293,7 +294,7 @@ describe('SQLitePersistenceService', () => {
 
         // The deserialized handle survives, so the migrator upgrades real data
         // instead of an empty replacement.
-        expect(result).toBe(db);
+        expect(result).toEqual({ db, fresh: false });
         expect(bridge.deserializeDatabase).toHaveBeenCalled();
         expect(blobStore.remove).not.toHaveBeenCalled();
         expect(messagesFrom(errSpy)).toBe('');

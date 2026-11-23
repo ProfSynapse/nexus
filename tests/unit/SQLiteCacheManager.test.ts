@@ -779,7 +779,7 @@ describe('SQLiteCacheManager save path', () => {
 
   // The one real correctness risk in Phase 1, and the reason the follow-up is
   // cancellable at all. StorageMaintenanceService.rebuildCache calls
-  // stopAutoSave(), then close(), then blobStore.remove(). A follow-up that
+  // stopAutoSave(), then discard-close, then blobStore.remove(). A follow-up that
   // survived that sequence would write the old database straight back over the
   // rebuild, and the next launch would load a cache the user asked to be gone.
   it('never writes after close(), so a rebuild removing the blob cannot be undone', async () => {
@@ -798,24 +798,22 @@ describe('SQLiteCacheManager save path', () => {
 
       // What rebuildCache does, in its order.
       harness.manager.stopAutoSave();
+      let closed = false;
+      const closing = harness.manager.close({ discardUnsavedChanges: true }).then(() => {
+        closed = true;
+      });
+      await flushMicrotasks();
+      expect(closed).toBe(false);
+      expect(harness.heldWriteCount()).toBe(1);
+      await expect(harness.manager.save()).rejects.toThrow('Database is closing');
       harness.releaseWrites();
-      await Promise.all([first, follower]);
+      await Promise.all([first, follower, closing]);
       await flushMicrotasks();
 
-      // The cancelled follow-up did not export.
+      // Only the write already in flight reached the blob store.
       expect(harness.exportCount()).toBe(1);
-
-      await harness.manager.close();
-      // close() is still allowed to persist the outstanding write; that save
-      // happens BEFORE the blob is removed, which is the safe order.
-      const exportsAfterClose = harness.exportCount();
-      expect(exportsAfterClose).toBe(2);
-
-      // Nothing at all after close() returns. This is the assertion that says
-      // blobStore.remove() stands.
-      await flushMicrotasks();
-      expect(harness.exportCount()).toBe(exportsAfterClose);
-      expect(harness.writtenBuffers()).toHaveLength(exportsAfterClose);
+      expect(harness.writtenBuffers()).toHaveLength(1);
+      expect(harness.manager.isReady()).toBe(false);
     } finally {
       await harness.dispose();
     }
