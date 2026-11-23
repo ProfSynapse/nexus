@@ -50,7 +50,10 @@ describe('SyncCoordinator', () => {
     );
   });
 
-  it('saves full rebuild once after replaying all JSONL files', async () => {
+  it.each([
+    ['saves the cache', false],
+    ['keeps the rebuilt cache usable when the snapshot fails', true]
+  ])('%s after replaying all JSONL files', async (_description, saveFails) => {
     const now = 1_000;
     const eventsByFile: Record<string, StorageEvent[]> = {
       'workspaces/ws_one.jsonl': [{
@@ -185,13 +188,25 @@ describe('SyncCoordinator', () => {
         workspaces.clear();
       }),
       rebuildFTSIndexes: jest.fn(async () => undefined),
-      save: jest.fn(async () => undefined)
+      save: jest.fn(async () => {
+        if (saveFails) {
+          throw new Error('Database serialization failed with code SQLITE_NOMEM');
+        }
+      })
     };
 
     const coordinator = new SyncCoordinator(jsonlWriter, sqliteCache);
-    const result = await coordinator.fullRebuild();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const onProgress = jest.fn();
+    const result = await coordinator.fullRebuild({ onProgress }).finally(() => errorSpy.mockRestore());
 
     expect(result.success).toBe(true);
+    if (saveFails) {
+      expect(result.errors).toEqual([expect.stringContaining('SQLITE_NOMEM')]);
+    } else {
+      expect(result.errors).toEqual([]);
+    }
+    expect(onProgress).toHaveBeenLastCalledWith('Complete', 1, 1);
     expect(result.eventsApplied).toBe(6);
     expect(result.filesProcessed).toHaveLength(6);
     expect(sqliteCache.markEventApplied).toHaveBeenCalledTimes(6);

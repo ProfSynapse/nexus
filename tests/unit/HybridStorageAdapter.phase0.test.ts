@@ -119,6 +119,7 @@ describe('HybridStorageAdapter (Phase 0 characterization)', () => {
 
       expect(adapter.sqliteCache.stopAutoSave).toHaveBeenCalledTimes(1);
       expect(adapter.sqliteCache.close).toHaveBeenCalledTimes(1);
+      expect(adapter.sqliteCache.close).toHaveBeenCalledWith({ discardUnsavedChanges: true });
       expect(adapter.cacheBlobStore.remove).toHaveBeenCalledTimes(1);
       expect(adapter.sqliteCache.initialize).toHaveBeenCalledTimes(1);
       expect(adapter.syncCoordinator.fullRebuild).toHaveBeenCalledTimes(1);

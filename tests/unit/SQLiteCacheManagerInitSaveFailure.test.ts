@@ -48,6 +48,7 @@ function createInitHarness(options: {
   autoSaveInterval?: number;
   existingBlobBytes?: number;
   schemaVersion?: number;
+  integrityCheckResult?: string;
 } = {}): InitHarness {
   let attempts = 0;
   let exported = 0;
@@ -87,7 +88,7 @@ function createInitHarness(options: {
     query: jest.fn(() => []),
     queryOne: jest.fn(() => null),
     run: jest.fn(() => ({ changes: 1, lastInsertRowid: 1 })),
-    getIntegrityCheckResult: jest.fn(() => 'ok'),
+    getIntegrityCheckResult: jest.fn(() => options.integrityCheckResult ?? 'ok'),
     close: jest.fn()
   };
 
@@ -194,6 +195,23 @@ describe('SQLiteCacheManager initialize when its own save fails', () => {
       await harness.manager.initialize();
       await harness.manager.save();
       expect(harness.exportCount()).toBe(1);
+      expect(harness.manager.hasUnsavedChanges()).toBe(false);
+    } finally {
+      harness.dispose();
+    }
+  });
+
+  it('keeps the replacement cache available when the corrupt-cache recovery save fails', async () => {
+    const harness = createInitHarness({ existingBlobBytes: 8192, integrityCheckResult: 'corrupt' });
+    try {
+      harness.failNextExports(exportNomem(), 1);
+      await expect(harness.manager.initialize()).resolves.toBeUndefined();
+      expect(harness.manager.isReady()).toBe(true);
+      expect(harness.manager.hasUnsavedChanges()).toBe(true);
+      expect(harness.manager.getLastSavedBytes()).toBeNull();
+
+      await harness.manager.save();
+      expect(harness.manager.getLastSavedBytes()).toBe(4096);
       expect(harness.manager.hasUnsavedChanges()).toBe(false);
     } finally {
       harness.dispose();

@@ -90,15 +90,11 @@ any single file, which is why they are here rather than in a comment.
 
 **1. Nothing may reach the blob store after `close()` returns.** "Nexus: Rebuild
 cache" is the reason. `StorageMaintenanceService.rebuildCache` runs
-`stopAutoSave()`, then `await close()`, then `blobStore.remove()`, then
-`initialize()` (`:118`, `:121`, `:124`, `:127`). A save that survives that sequence
-writes the removed blob straight back, and the rebuild appears to do nothing: the
-command reports success, the event store replays into a fresh database, and the old
-one is still on disk underneath it. `stopAutoSave()` exists for this and has exactly
-one external caller, that line. So a deferred or coalesced save must be cancellable,
-`close()` must await anything already running before its own final save, and a
-straggler arriving after `close()` must fail rather than write. Today that is the
-`followUpCancelled` latch plus the null handle check in `scheduleFollowUpSave`.
+`stopAutoSave()`, then `close({ discardUnsavedChanges: true })`, then
+`blobStore.remove()`, then `initialize()`. Close drains the write already in
+flight and cancels queued saves before the blob can be removed. The rebuild
+skips the final save because it is about to discard that snapshot. Normal
+shutdown still attempts a final save for a dirty cache.
 
 **2. No `await` may precede the export.** `startSave()` captures `writeGeneration`
 and then calls `SQLitePersistenceService.saveDatabase`, which reaches
