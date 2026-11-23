@@ -290,3 +290,7 @@ Verified the installed 5.21.3 candidate in Nexus Redesign Test with matching art
 - 2026-11-19: Confirmed Linux Obsidian1.15.1 needs command-first vault targeting for eval; documented argument order and native settings-window capture in live-loop.md.
 
 - 2026-11-20: Verified the migration and WAV regression tests failed against the previous implementation. Ran the installed Jest binary directly after `pnpm exec` attempted to convert the npm installation. No procedure change.
+
+### 2026-11-23 — Cache export recovery in the test vault
+
+On Linux Obsidian 1.15.1, command-first `eval` reached the focused vault. Vault-first `eval` reached the verified test vault after vault-first `dev:debug on`. The installed candidate passed twice after plugin reload with a disposable 1.2 MB cache and injected export failures. Updated `protocols/live-loop.md` with the debugger and vault verification sequence.

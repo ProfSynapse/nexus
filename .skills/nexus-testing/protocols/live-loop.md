@@ -86,11 +86,12 @@ Obsidian (the headless container) to turn a skip into a failure.
    `script -qec "obsidian vault=<name> <command>" /dev/null`. Neither fact
    replaces the in-band `getName()` assertion below.
 
-   On Linux Obsidian 1.15.1, the argument order changed again: leading
-   `vault=<name>` made `eval` report "Command eval not found", while
-   `obsidian eval vault=<name> code=...` reached the named renderer. Use the
-   form that answers on the installed version and retain the in-band vault
-   assertion. Settings may live in a separate native window; its
+   On Linux Obsidian 1.15.1, a vault-first `eval` can report
+   "Command eval not found" until the target vault has a debugger attached.
+   Run vault-first `dev:debug on`, then recheck with a vault-first `eval`
+   that returns `app.vault.getName()`. A command-first invocation can reach
+   the focused vault even when it includes a different vault name.
+   Settings may live in a separate native window. Its
    `containerEl.ownerDocument.defaultView.electronWindow.capturePage()` can
    capture that window when `dev:screenshot` captures only the main vault.
 
