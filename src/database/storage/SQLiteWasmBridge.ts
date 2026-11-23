@@ -25,6 +25,10 @@ export interface SQLiteWasmModule {
   };
   wasm: {
     allocFromTypedArray(data: Uint8Array): number;
+    alloc(size: number): number;
+    dealloc(ptr: number): void;
+    heap8u(): Uint8Array;
+    peek64(ptr: number): bigint;
   };
   capi: {
     sqlite3_deserialize(
@@ -36,9 +40,12 @@ export interface SQLiteWasmModule {
       flags: number
     ): number;
     sqlite3_js_db_export(db: SQLiteDatabaseHandle): { buffer: ArrayBuffer };
+    sqlite3_serialize(db: SQLiteDatabaseHandle, schema: string, sizePtr: number, flags: number): number;
+    sqlite3_get_autocommit(db: SQLiteDatabaseHandle): number;
     sqlite3_last_insert_rowid(db: SQLiteDatabaseHandle): number | bigint;
     SQLITE_DESERIALIZE_FREEONCLOSE: number;
     SQLITE_DESERIALIZE_RESIZEABLE: number;
+    SQLITE_SERIALIZE_NOCOPY: number;
   };
 }
 
@@ -54,6 +61,28 @@ interface SQLiteInitOptions {
 type SQLiteModuleFactory = (options?: SQLiteInitOptions) => Promise<SQLiteWasmModule>;
 
 const sqliteModuleFactory = sqlite3InitModule as unknown as SQLiteModuleFactory;
+
+/**
+ * Free space allocated behind a deserialized database, as a share of its size,
+ * clamped to [MIN, MAX].
+ *
+ * A deserialized database lives in one heap buffer exactly its own size, and
+ * the first write that needs one more page makes SQLite double that buffer
+ * (memdbEnlarge), holding old and new at once while it copies. For a 314 MiB
+ * cache that is ~940 MiB of WASM heap from a single new page. Allocating the
+ * buffer with room to spare lets ordinary growth land in that room, so a
+ * session doubles only after it has written more than the slack.
+ */
+const DESERIALIZE_SLACK_SHARE = 1 / 8;
+const DESERIALIZE_SLACK_MIN_BYTES = 8 * 1024 * 1024;
+const DESERIALIZE_SLACK_MAX_BYTES = 64 * 1024 * 1024;
+
+export function deserializeSlackBytes(size: number): number {
+  return Math.min(
+    DESERIALIZE_SLACK_MAX_BYTES,
+    Math.max(DESERIALIZE_SLACK_MIN_BYTES, Math.ceil(size * DESERIALIZE_SLACK_SHARE))
+  );
+}
 
 export class SQLiteWasmBridge {
   async initializeModule(wasmBinary: ArrayBuffer): Promise<SQLiteWasmModule> {
@@ -79,15 +108,82 @@ export class SQLiteWasmBridge {
     return new module.oo1.DB(':memory:');
   }
 
+  /**
+   * Open `data` as an in-memory database, in a heap buffer with slack behind it
+   * (see DESERIALIZE_SLACK_SHARE). The slack is never part of the database:
+   * exports and serializations cover the database's own size only.
+   */
   deserializeDatabase(module: SQLiteWasmModule, data: Uint8Array): SQLiteDatabaseHandle {
-    const ptr = module.wasm.allocFromTypedArray(data);
+    const size = data.byteLength;
+    let capacity = size + deserializeSlackBytes(size);
+    let ptr: number;
+    try {
+      ptr = module.wasm.alloc(capacity);
+    } catch {
+      // The slack is an optimisation; a heap that cannot spare it still opens
+      // the database the way it always did.
+      capacity = size;
+      ptr = module.wasm.alloc(capacity);
+    }
+    module.wasm.heap8u().set(data, ptr);
+    return this.adoptBuffer(module, ptr, size, capacity);
+  }
+
+  /**
+   * Export the whole database as bytes outside the WASM heap.
+   *
+   * A deserialized database is already one contiguous buffer, so it is copied
+   * straight out of the heap (SQLITE_SERIALIZE_NOCOPY) instead of through
+   * sqlite3_js_db_export, which first allocates a second full-size copy inside
+   * the heap - the allocation that fails with SQLITE_NOMEM once the database
+   * is around a quarter of the heap. Same bytes either way. A database that
+   * was never deserialized (a fresh :memory: one) has no such buffer; NOCOPY
+   * returns null for it and the old export is used.
+   */
+  exportDatabase(module: SQLiteWasmModule, db: SQLiteDatabaseHandle): ArrayBuffer {
+    const view = this.serializeInPlace(module, db);
+    if (view === null) {
+      return module.capi.sqlite3_js_db_export(db).buffer;
+    }
+    return view.heap.slice(view.ptr, view.ptr + view.size).buffer;
+  }
+
+  /** Whether `db` is outside any transaction (sqlite3_get_autocommit). */
+  isAutocommit(module: SQLiteWasmModule, db: SQLiteDatabaseHandle): boolean {
+    return module.capi.sqlite3_get_autocommit(db) !== 0;
+  }
+
+  private serializeInPlace(
+    module: SQLiteWasmModule,
+    db: SQLiteDatabaseHandle
+  ): { heap: Uint8Array; ptr: number; size: number } | null {
+    const sizePtr = module.wasm.alloc(8);
+    let ptr: number;
+    let size: number;
+    try {
+      ptr = module.capi.sqlite3_serialize(db, 'main', sizePtr, module.capi.SQLITE_SERIALIZE_NOCOPY);
+      size = Number(module.wasm.peek64(sizePtr));
+    } finally {
+      module.wasm.dealloc(sizePtr);
+    }
+    if (!ptr) {
+      return null;
+    }
+    const heap = module.wasm.heap8u();
+    if (size < 0 || ptr + size > heap.byteLength) {
+      throw new Error(`In-place serialization returned a buffer outside the WASM heap (ptr ${ptr}, size ${size})`);
+    }
+    return { heap, ptr, size };
+  }
+
+  private adoptBuffer(module: SQLiteWasmModule, ptr: number, size: number, capacity: number): SQLiteDatabaseHandle {
     const db = this.createMemoryDatabase(module);
     const rc = module.capi.sqlite3_deserialize(
       db,
       'main',
       ptr,
-      data.byteLength,
-      data.byteLength,
+      size,
+      capacity,
       module.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
       module.capi.SQLITE_DESERIALIZE_RESIZEABLE
     );
@@ -97,10 +193,6 @@ export class SQLiteWasmBridge {
     }
 
     return db;
-  }
-
-  exportDatabase(module: SQLiteWasmModule, db: SQLiteDatabaseHandle): ArrayBuffer {
-    return module.capi.sqlite3_js_db_export(db).buffer;
   }
 
   exec(db: SQLiteDatabaseHandle, sql: string): void {
