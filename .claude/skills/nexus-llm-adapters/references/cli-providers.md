@@ -21,6 +21,21 @@ enforced by a dedicated text-only-provider seam consulted by the chat layer, not
 by a provider capability flag. Look for that seam before adding a new switch to
 express the same limitation.
 
+## Evaluating a tool-capable CLI invocation
+
+Inspect the tools declared to the model by the exact binary and launch
+configuration Nexus would use. A temporary local model endpoint and a
+disposable MCP server can record the declared tools and verify both a call
+and its returned result without account credentials. Compare against the
+default launch so a filter that the CLI silently ignores is visible.
+
+For Antigravity, test the ACP client configuration and custom-agent profile
+together. The built-in tool filter and MCP server registration are distinct
+controls. Check for inherited servers, file and shell tools, and runtime
+helpers before describing a session as MCP-only. Also exercise a signed-in
+session against the real Nexus test vault before enabling a provider path.
+[Antigravity ACP guide](https://antigravity.google/docs/cli/acp/)
+
 ## Non-negotiable security constraints
 - **The auth probe is boolean-only.** It may read the credential file to test that
   a non-empty token exists, and returns only success/failure. It MUST NEVER read,

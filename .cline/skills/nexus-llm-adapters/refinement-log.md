@@ -156,3 +156,7 @@ to 0). Edit `.skills/` and run `npm run sync:skills`; never edit a mirror. |
 - 2026-11-18: A newly listed Google family member would fall through exact model-id checks to an invalid legacy thinking budget. Encoded its contract in ModelSpec and tested both request paths; existing skill protocols already direct this check, no procedure change.
 
 - 2026-11-20: The speech adapter wrapped an already formatted WAV in a second header. Added the response-format check and regression approach to `references/symptoms.md`.
+
+## 2026-11-23 — Antigravity ACP tool isolation
+
+Probed the official Linux CLI 1.5.15 in a disposable profile with a local Gemini-compatible fixture. Session-supplied MCP yielded callable `getTools` and `useTools`, but the attempted `_meta.agy` tool filters left file, shell, web, and subagent tools in the model declarations. A custom agent with `excludeDefaultComponents: true`, `inheritCustomizations: false` and `inheritMcp: false`, launched with `--include-default-customizations=false` and the loopback IDE MCP bridge, completed both fixture calls and advertised no external tools beyond those two. `list_resources`, `read_resource`, and `manage_task` remained. Added the comparison and tool-declaration check to `references/cli-providers.md`.
