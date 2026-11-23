@@ -5,6 +5,11 @@ type VaultLike = {
   getName: () => string;
 };
 
+jest.mock('obsidian', () => {
+  const actual = jest.requireActual<typeof import('obsidian')>('obsidian');
+  return { ...actual, Platform: { ...actual.Platform, isWin: true } };
+});
+
 jest.mock('../../src/utils/cliProcessRunner', () => ({
   runCliProcess: jest.fn(),
   // Re-export the real constants so the adapter's errorCode comparison works.

@@ -1,4 +1,4 @@
-import { Notice, type Vault } from 'obsidian';
+import { Notice, Platform, type Vault } from 'obsidian';
 import type { LLMProviderConfig } from '../../../types';
 import type { BaseAdapter } from '../adapters/BaseAdapter';
 import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
@@ -282,6 +282,10 @@ export function createBuiltinProviderDrivers(): BuiltinProviderDriverRegistratio
       shouldInitialize: (config, vault) => Boolean(config?.enabled && config.oauth?.connected && vault),
       createAdapter: async ({ vault }) => {
         if (!vault) throw new Error('Antigravity CLI requires a vault');
+        if (!Platform.isWin) {
+          const { AntigravityAcpAdapter } = await import('../adapters/google-gemini-cli/AntigravityAcpAdapter');
+          return new AntigravityAcpAdapter(vault);
+        }
         const { GoogleGeminiCliAdapter } = await import('../adapters/google-gemini-cli/GoogleGeminiCliAdapter');
         return new GoogleGeminiCliAdapter(vault);
       },

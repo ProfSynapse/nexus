@@ -187,7 +187,7 @@ export class ChatSendCoordinator {
 
       let messageOptions = await this.getReadyMessageOptions(modelAgentManager);
 
-      // Runtime guard: a text-completion-only provider (e.g. Antigravity) cannot
+      // Runtime guard: a text-completion-only provider cannot
       // execute Nexus tools/agents. If the user invoked tools/prompt-actions for
       // this send, the tool calls would silently no-op — surface a clear Notice
       // instead so the limitation is never silent.

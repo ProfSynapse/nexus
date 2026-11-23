@@ -63,6 +63,7 @@ function getEffortBehaviour(provider: string, model: string): EffortBehaviour | 
         }
         : clampThinkingEffortToHigh;
     case 'google-gemini-cli':
+      return model === 'gemini-4-neon' ? (effort) => effort === 'max' ? 'xhigh' : effort : clampThinkingEffortToHigh;
     case 'groq':
       return clampThinkingEffortToHigh;
     case 'deepseek':

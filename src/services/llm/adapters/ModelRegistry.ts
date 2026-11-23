@@ -7,6 +7,7 @@
  * Updated June 17, 2025 with modular provider structure
  */
 
+import { Platform } from 'obsidian';
 import { ModelSpec } from './modelTypes';
 import { OPENAI_MODELS, OPENAI_DEFAULT_MODEL } from './openai/OpenAIModels';
 import { GOOGLE_MODELS, GOOGLE_DEFAULT_MODEL } from './google/GoogleModels';
@@ -18,7 +19,7 @@ import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './perplexity/Perple
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './groq/GroqModels';
 import { OPENAI_CODEX_MODELS, OPENAI_CODEX_DEFAULT_MODEL } from './openai-codex/OpenAICodexModels';
 import { ANTHROPIC_CLAUDE_CODE_MODELS, ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './anthropic-claude-code/AnthropicClaudeCodeModels';
-import { GOOGLE_GEMINI_CLI_MODELS, GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './google-gemini-cli/GoogleGeminiCliModels';
+import { GOOGLE_GEMINI_CLI_MODELS, GOOGLE_GEMINI_CLI_DEFAULT_MODEL, ANTIGRAVITY_PRINT_DEFAULT_MODEL } from './google-gemini-cli/GoogleGeminiCliModels';
 import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './github-copilot/GithubCopilotModels';
 import { DEEPSEEK_MODELS, DEEPSEEK_DEFAULT_MODEL } from './deepseek/DeepSeekModels';
 import type { LLMProviderSettings } from '../../../types';
@@ -202,7 +203,7 @@ export const DEFAULT_MODELS: Record<string, string> = {
   openai: OPENAI_DEFAULT_MODEL,
   'openai-codex': OPENAI_CODEX_DEFAULT_MODEL,
   'anthropic-claude-code': ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL,
-  'google-gemini-cli': GOOGLE_GEMINI_CLI_DEFAULT_MODEL,
+  'google-gemini-cli': Platform.isWin ? ANTIGRAVITY_PRINT_DEFAULT_MODEL : GOOGLE_GEMINI_CLI_DEFAULT_MODEL,
   google: GOOGLE_DEFAULT_MODEL,
   anthropic: ANTHROPIC_DEFAULT_MODEL,
   mistral: MISTRAL_DEFAULT_MODEL,

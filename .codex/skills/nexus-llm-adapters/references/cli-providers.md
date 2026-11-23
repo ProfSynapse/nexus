@@ -14,12 +14,19 @@ Note that one such provider occupies a historical provider id that no longer
 matches the binary it runs. The id is settings-compatibility surface — do not
 rename it to match reality.
 
-## The contract is narrower than HTTP
-Print-mode plain-text output. No structured token usage, so cost reporting is
-absent by design rather than broken. No tool or function calling — which is
-enforced by a dedicated text-only-provider seam consulted by the chat layer, not
-by a provider capability flag. Look for that seam before adding a new switch to
-express the same limitation.
+## Print-mode providers
+Print mode emits plain text without streaming or token counts. The chat layer
+uses the existing text-only provider seam to suppress tool schemas for the
+Windows Antigravity adapter.
+
+## Antigravity ACP
+On macOS and Linux, Nexus runs an ephemeral custom agent and uses the ACP IDE
+transport to connect to the current vault's Unix socket. The published MCP tool
+names are `toolManager_getTools` and `toolManager_useTools`; Antigravity prefixes
+both with `mcp_ide-tools_`. Match the full name when handling permissions.
+Check sign-in with `initialize` and `session/new`, without prompting the model.
+Check the specific model and thinking variant against `availableModels` before
+sending the prompt. Apply both an inactivity and a total session timeout.
 
 ## Evaluating a tool-capable CLI invocation
 

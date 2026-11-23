@@ -19,7 +19,7 @@
  * test coupled to the REAL copy SSOT (getTextOnlyProviderWarningCopy) — not a
  * re-typed fixture — so a copy change in source turns it red.
  */
-import { Setting } from 'obsidian';
+import { Platform, Setting } from 'obsidian';
 import { ChatSettingsRenderer } from '../../src/components/shared/ChatSettingsRenderer';
 import { createFakeRoot, FakeElement } from '../mocks/obsidian/dom';
 
@@ -64,7 +64,10 @@ function renderAndExtract(
 }
 
 describe('ChatSettingsRenderer text-only provider warning copy', () => {
-  describe('Antigravity (google-gemini-cli) names BOTH limitations', () => {
+  describe('Antigravity on Windows names both limitations', () => {
+    beforeEach(() => { jest.replaceProperty(Platform, 'isWin', true); });
+    afterEach(() => jest.restoreAllMocks());
+
     it.each(['chat', 'agent'] as const)(
       'renders the no-tools AND no-streaming warning for the %s variant',
       (variant) => {
@@ -91,6 +94,10 @@ describe('ChatSettingsRenderer text-only provider warning copy', () => {
       expect(chat!.message).toContain("can't call tools or agents");
       expect(agent!.message).toContain("can't call tools or agents");
     });
+  });
+
+  it.each(['chat', 'agent'] as const)('omits the Windows warning for %s on ACP', (variant) => {
+    expect(renderAndExtract('google-gemini-cli', variant)).toBeNull();
   });
 
   describe('Perplexity copy is unchanged (no regression from the generalization)', () => {

@@ -116,9 +116,7 @@ export class ProvidersTab {
         'google-gemini-cli': {
             name: 'Antigravity CLI',
             keyFormat: 'Local Antigravity CLI Google login required',
-            // TODO: set to the authoritative Antigravity CLI docs/install URL once published (TBD).
-            // Dropped the deprecated google-gemini/gemini-cli link rather than guess an agy URL.
-            signupUrl: '',
+            signupUrl: 'https://antigravity.google/docs/cli/acp/',
             category: 'cloud'
         },
         mistral: {
@@ -330,7 +328,7 @@ export class ProvidersTab {
 
     /**
      * Check Gemini CLI auth status. The plugin does not initiate auth —
-     * users must authenticate externally via `gemini` in their terminal.
+     * users sign in through Antigravity CLI in their terminal.
      */
     private async startGeminiCliConnectFlow(): Promise<{ success: boolean; apiKey?: string; metadata?: Record<string, string>; error?: string }> {
         const authService = new GeminiCliAuthService(this.services.app);
@@ -747,7 +745,7 @@ export class ProvidersTab {
             secondaryOAuthProvider = {
                 providerId: 'google-gemini-cli',
                 providerLabel: 'Antigravity CLI',
-                description: 'Use Gemini models through the Antigravity CLI. Install the Antigravity CLI, then run `agy` once in your terminal to complete Google browser sign-in. (There is no `agy auth` command.)',
+                description: 'Use Gemini models through the Antigravity CLI. Install `agy`, then run `agy acp --login` in your terminal to sign in with Google.',
                 config: { ...geminiCliConfig },
                 oauthConfig: {
                     providerLabel: 'Antigravity CLI',
