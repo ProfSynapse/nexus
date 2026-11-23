@@ -113,13 +113,13 @@ Messages route through your local Claude CLI using your existing subscription. D
 
 Run Google's Gemini models locally through the **Antigravity CLI** (`agy`) using your existing Google account — no API key needed. (This replaces the older Gemini CLI runtime; your existing settings carry over.)
 
-1. Install the Antigravity CLI (`agy`)
-2. Run `agy` once in your terminal and complete the Google browser sign-in (there is no `agy auth` command)
+1. Install the Antigravity CLI (`agy`). Nexus uses ACP on macOS and Linux with version 1.5.14 or newer.
+2. Run `agy acp --login` in your terminal and complete the Google sign-in.
 3. In Nexus, go to **Settings -> Providers -> Google AI**
 4. Wait for the **Antigravity CLI** section to show **Connected**
 5. In chat settings, select an Antigravity (Gemini) model and set the thinking level with the effort slider
 
-Messages route through the local Antigravity CLI using your existing Google account. This runtime is **text-completion only — it does not support tool/function calling**, so choose a tool-capable provider for agentic chats. Desktop only.
+On macOS and Linux, Antigravity streams responses and uses the current vault’s Nexus MCP server when chat tools are enabled. Enable the MCP server for the vault first. The session also has Antigravity’s built-in resource and task helpers. Windows uses text completions.
 
 ---
 

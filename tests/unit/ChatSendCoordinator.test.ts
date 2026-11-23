@@ -14,6 +14,7 @@ jest.mock('obsidian', () => {
   };
 });
 
+import { Platform } from 'obsidian';
 import { ChatSendCoordinator } from '../../src/ui/chat/services/ChatSendCoordinator';
 import type { ConversationData, ConversationMessage } from '../../src/types/chat/ChatTypes';
 import type { MessageEnhancement } from '../../src/ui/chat/components/suggesters/base/SuggesterInterfaces';
@@ -531,9 +532,12 @@ describe('ChatSendCoordinator compaction after a model handoff', () => {
 
 describe('ChatSendCoordinator text-only provider runtime guard', () => {
   beforeEach(() => {
+    jest.replaceProperty(Platform, 'isWin', true);
     mockNotices.length = 0;
     jest.clearAllMocks();
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   const TEXT_ONLY_NOTICE =
     "This provider is text completions only — it can't run tools or agents, so the requested tool calls won't execute. Switch providers for agentic, tool-driven work.";
@@ -586,8 +590,9 @@ describe('ChatSendCoordinator text-only provider runtime guard', () => {
     expect(mockNotices).toHaveLength(0);
   });
 
-  it('stays SILENT for a normal tool-capable provider even when tools were invoked', async () => {
-    const harness = createHarness('openai');
+  it.each(['openai', 'google-gemini-cli'])('keeps the tool warning hidden for %s with tools enabled', async (provider) => {
+    jest.replaceProperty(Platform, 'isWin', false);
+    const harness = createHarness(provider);
 
     await harness.coordinator.handleSendMessage(
       'edit my note',

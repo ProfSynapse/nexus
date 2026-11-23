@@ -10,6 +10,7 @@ import { App, Platform } from 'obsidian';
 import { CliProcessResult } from '../../utils/cliProcessRunner';
 import { desktopRequire } from '../../utils/desktopRequire';
 import { resolveGeminiCliRuntime } from '../../utils/geminiCli';
+import { withAntigravitySession } from '../llm/adapters/google-gemini-cli/AntigravityAcpSession';
 
 export interface GeminiCliAuthStatus {
     available: boolean;
@@ -47,7 +48,25 @@ export class GeminiCliAuthService {
             };
         }
 
-        const probe = await Promise.resolve(this.runAuthProbe());
+        if (!Platform.isWin) {
+            try {
+                await withAntigravitySession({
+                    binary: runtime.geminiPath,
+                    onUpdate: () => {}
+                }, async () => {});
+                return { available: true, loggedIn: true, authMethod: 'google-cli-login', geminiPath: runtime.geminiPath };
+            } catch (error) {
+                return {
+                    available: true,
+                    loggedIn: false,
+                    authMethod: 'unknown',
+                    geminiPath: runtime.geminiPath,
+                    error: error instanceof Error ? error.message : 'Could not connect to Antigravity ACP.'
+                };
+            }
+        }
+
+        const probe = this.runAuthProbe();
         return {
             available: true,
             loggedIn: probe.exitCode === 0,

@@ -1,30 +1,26 @@
-import { ModelSpec } from '../modelTypes';
+import { Platform } from 'obsidian';
+import type { ModelSpec } from '../modelTypes';
 
-/**
- * Catalog of BASE Gemini models exposed by the Antigravity CLI (`agy`) for the
- * `google-gemini-cli` provider.
- *
- * Effort is NOT baked into the catalog. agy exposes each base model at several
- * effort levels (`agy models`: Gemini 3.5 Flash = Low/Medium/High; Gemini 3.1
- * Pro = Low/High — no Medium), but that effort comes from Nexus's existing
- * thinking/effort SLIDER, not from distinct model entries. So the catalog lists
- * just the 2 BASE models; the adapter composes the agy `--model "Base (Effort)"`
- * label at invocation time from base slug + slider effort (see
- * geminiCliModelNormalize.ts `composeAgyModelLabel`). Keep this catalog and that
- * module in LOCKSTEP — every base `apiName` here must be a known base there.
- *
- * Non-Gemini agy models (Claude Sonnet/Opus, GPT-OSS) are intentionally excluded
- * per product decision: this provider is Gemini-only.
- *
- * CAPABILITY NOTE — text-completion only. The Antigravity `agy --print` surface
- * supports NEITHER tool/function calling NOR streaming (investigation #62/#64/#66
- * proved every tool-use path NOT-FEASIBLE, and `--print` buffers one response).
- * So `supportsFunctions` and `supportsStreaming` are BOTH false here — this is the
- * single source of truth for the limitation; the user-facing warning surfaces
- * (settings notice + runtime guard) and the chat tool-schema suppression all key
- * off the text-only provider seam (see isTextOnlyProvider in ToolSchemaSupport.ts).
- */
+// ACP session/new advertises this id for the signed-in Google account.
+export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-4-neon';
+export const ANTIGRAVITY_PRINT_DEFAULT_MODEL = 'gemini-3.5-flash';
+
 export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
+  {
+    provider: 'google-gemini-cli',
+    name: 'Gemini 4 Neon',
+    apiName: 'gemini-4-neon',
+    contextWindow: 1048576,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: false,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'google-gemini-cli',
     name: 'Gemini 3.5 Flash',
@@ -57,6 +53,4 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   }
-];
-
-export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-3.5-flash';
+].filter(model => Platform.isWin === !model.capabilities.supportsStreaming);

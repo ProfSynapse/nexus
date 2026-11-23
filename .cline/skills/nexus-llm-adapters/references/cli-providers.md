@@ -14,12 +14,34 @@ Note that one such provider occupies a historical provider id that no longer
 matches the binary it runs. The id is settings-compatibility surface — do not
 rename it to match reality.
 
-## The contract is narrower than HTTP
-Print-mode plain-text output. No structured token usage, so cost reporting is
-absent by design rather than broken. No tool or function calling — which is
-enforced by a dedicated text-only-provider seam consulted by the chat layer, not
-by a provider capability flag. Look for that seam before adding a new switch to
-express the same limitation.
+## Print-mode providers
+Print mode emits plain text without streaming or token counts. The chat layer
+uses the existing text-only provider seam to suppress tool schemas for the
+Windows Antigravity adapter.
+
+## Antigravity ACP
+On macOS and Linux, Nexus runs an ephemeral custom agent and uses the ACP IDE
+transport to connect to the current vault's Unix socket. The published MCP tool
+names are `toolManager_getTools` and `toolManager_useTools`; Antigravity prefixes
+both with `mcp_ide-tools_`. Match the full name when handling permissions.
+Check sign-in with `initialize` and `session/new`, without prompting the model.
+Check the specific model and thinking variant against `availableModels` before
+sending the prompt. Apply both an inactivity and a total session timeout.
+
+## Evaluating a tool-capable CLI invocation
+
+Inspect the tools declared to the model by the exact binary and launch
+configuration Nexus would use. A temporary local model endpoint and a
+disposable MCP server can record the declared tools and verify both a call
+and its returned result without account credentials. Compare against the
+default launch so a filter that the CLI silently ignores is visible.
+
+For Antigravity, test the ACP client configuration and custom-agent profile
+together. The built-in tool filter and MCP server registration are distinct
+controls. Check for inherited servers, file and shell tools, and runtime
+helpers before describing a session as MCP-only. Also exercise a signed-in
+session against the real Nexus test vault before enabling a provider path.
+[Antigravity ACP guide](https://antigravity.google/docs/cli/acp/)
 
 ## Non-negotiable security constraints
 - **The auth probe is boolean-only.** It may read the credential file to test that

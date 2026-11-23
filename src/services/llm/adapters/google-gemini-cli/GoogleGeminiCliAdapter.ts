@@ -20,7 +20,7 @@ import {
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
 import { CliProcessResult, PROVIDER_TIMEOUT_ERROR_CODE, runCliProcess } from '../../../../utils/cliProcessRunner';
-import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
+import { ANTIGRAVITY_PRINT_DEFAULT_MODEL } from './GoogleGeminiCliModels';
 import { composeAgyModelLabel } from './geminiCliModelNormalize';
 import {
   buildGeminiCliEnv,
@@ -48,7 +48,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   private activeProcess: DesktopChildProcess | null = null;
 
   constructor(private vault: Vault) {
-    super('gemini-cli-local-auth', GOOGLE_GEMINI_CLI_DEFAULT_MODEL, 'gemini-cli://local', false);
+    super('gemini-cli-local-auth', ANTIGRAVITY_PRINT_DEFAULT_MODEL, 'gemini-cli://local', false);
     this.initializeCache();
   }
 

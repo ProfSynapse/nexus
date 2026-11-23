@@ -32,6 +32,7 @@ describe('getSupportedThinkingEfforts', () => {
     ['openai-codex', 'gpt-5.4', ['low', 'medium', 'high', 'xhigh']],
     ['google', 'gemini-3.1-pro-preview', ['low', 'medium', 'high']],
     ['google', 'gemini-3-pro-preview', ['low', 'high']],
+    ['google-gemini-cli', 'gemini-4-neon', ['low', 'medium', 'high', 'xhigh']],
     ['google-gemini-cli', 'gemini-3.5-flash', ['low', 'medium', 'high']],
     ['groq', 'openai/gpt-oss-120b', ['low', 'medium', 'high']],
     ['deepseek', 'deepseek-v4-pro-thinking', ['medium', 'max']],
